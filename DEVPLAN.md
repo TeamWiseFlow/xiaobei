@@ -52,31 +52,66 @@
 - 验收：xhs-browse 登录走 camoufox 跑通；cookie 入中央存储；下游 HTTP skill 复用 cookie 成功。
 - 约束：保留 patchright override + patch 005/006 供 fallback connectOverCDP；**不 fork camoufox-cli**（D18）；并发 = 每 agent 一个 session（独立 daemon + 独立浏览器进程 + 独立 profile dir）。
 
-## Phase 4.6 — 微信公众号 engagement 数据接入 published-track（待 spike，优先级排定）
+## Phase 4.6 — 微信公众号 engagement 数据接入 published-track
 
 > **背景**：微信公众号是 published-track + 复盘的唯一 engagement 缺口（小红书/抖音等已接）。目标：拿到阅读数/评论数，纳入统一复盘流。
-> **依赖**：Phase 4.5 camoufox 集成。
+> **依赖**：Phase 4.5 camoufox 集成 ✅。
 > **切分**：整块 client 容器内闭环，**不碰 relay**（credential 是会话 token，relay 持有无益且有风险）。
-> **状态**：⚠️ 待 spike 验证。三方案按优先级排，逐级回退。
+> **设计**：`docs/wechat-mp-engagement-design.md`（方案 A 全量设计）
+> **骨架实现**（2026-07-04）：`crews/main/skills/wx-mp-engagement/`（SKILL.md + 脚本 + 15 单测） + `published-track/fetch-and-update-metrics.sh` 路由加 wx_mp 分支 + `login-manager` 加 `wx-mp` 平台
+> **状态**：⚠️ **待真机 spike 验证**。本轮仅交付骨架，不实施真机验证（无公众号账号环境）。
 
-**方案 A（优先）：公众号后台 + camoufox**
-- camoufox 打开 `mp.weixin.qq.com` 公众号后台，通过创作者列表/内容管理页拿阅读数/评论数。
-- 每次需用户扫码登录后台（后台有网页登录入口，D18 camoufox 适用）。
-- 限制：仅能拿**用户自己有后台权限的号**，竞品号拿不到。
-- spike：camoufox 能否稳定登录后台 + 抓到内容管理页数据。
+### 方案优先级
 
-**方案 B（次选）：wxdown-service 抓包方案（容器内闭环）**
-- 依据：上游 `wechat-article/wxdown-service` 实证了**桌面浏览器 + 无微信登录**架构——被代理的是 Chrome/Edge/Safari（非手机），credential.py 只拦截 `mp.weixin.qq.com/s?__biz=...` 响应 Set-Cookie（guest 会话 token，无需登录），调 `/api/web/misc/comment` + `/api/web/mp/profile_ext_getmsg` 拿评论/阅读数。
-- 我们的改造：把"桌面浏览器"换成**容器内 camoufox**，mitmproxy 也在容器内 → mitmproxy CA 只在容器内 camoufox profile，**宿主钥匙串零接触**（优于 wxdown-service 官方用法——它要用户往系统钥匙串装根 CA，正是当年舍弃的安全顾虑，容器化解掉）。
-- spike 验证点（用户提出的关键疑虑）：
-  1. `mp.weixin.qq.com/s?__biz=...` URL **不易获得**——正常发包流程拿不到该域名，需先解决文章 URL 来源（可能要从后台或分享链拿到）。
-  2. **桌面浏览器能否真拿到该数据存疑**——正常桌面浏览器看不到阅读数/评论数，需验证 camoufox 无头访问时微信是否下发可用 Set-Cookie（可能对无头特征差异化响应或加风控）。
-- 复杂度：mitmproxy 进镜像（~50MB）+ camoufox 注入 mitmproxy CA + credential 解析 + API 移植 + 刷新机制。
+| 优先级 | 方案 | 状态 |
+|---|---|---|
+| A（首选） | 公众号后台 + camoufox | 骨架已交付，spike 待真机 |
+| B（兜底） | wxdown-service 抓包（容器内 mitmproxy） | 待 spike A 失败后启 |
+| C（兜底） | 维持现状 | A+B 都失败时启用 |
 
-**方案 C（兜底）：维持现状**
-- A、B 都搞不定或过于复杂 → 微信公众号 engagement 不接入，published-track 该平台维持当前缺口。
+**方案 A（优先）：公众号后台 + camoufox** — 骨架已交付：
+- camoufox 打开 `mp.weixin.qq.com` 公众号后台，通过创作者列表/内容管理页拿阅读数/评论数
+- 每次需用户扫码登录后台（后台有网页登录入口，D18 camoufox 适用）
+- 限制：仅能拿**用户自己有后台权限的号**，竞品号拿不到
+- spike：camoufox 能否稳定登录后台 + 抓到内容管理页数据
 
-**落实步骤**：先 spike A；A 通则采用 A；A 不通再 spike B；B 也不通或复杂度过高 → C。
+**方案 B（次选）：wxdown-service 抓包方案（容器内闭环）** — 待 spike A 失败后启：
+- 上游 `wechat-article/wxdown-service` 实证了**桌面浏览器 + 无微信登录**架构
+- 把"桌面浏览器"换成**容器内 camoufox**，mitmproxy 也在容器内 → mitmproxy CA 只在容器内
+- 复杂度：mitmproxy 进镜像（~50MB）+ camoufox 注入 mitmproxy CA + credential 解析 + API 移植
+
+**方案 C（兜底）**：维持现状。
+
+### Spike 验证 checklist（部署后由用户真账号跑）
+
+> 详见 `docs/wechat-mp-engagement-design.md` §七
+
+| # | 验证项 | 期望 |
+|---|---|---|
+| 1 | camoufox-cli 启 headless 打开 `mp.weixin.qq.com` 创作者中心 | 页面正常加载，无风控拦截 |
+| 2 | 触发扫码登录，PC 端微信扫描 | 30s 内登录成功，cookie 落 `~/.openclaw/logins/wx-mp.json` |
+| 3 | 内容管理列表页 DOM 含阅读数/点赞数/评论数 | selector 命中 |
+| 4 | 单篇分析页 DOM 含精确阅读数 | selector 命中 |
+| 5 | 评论管理 API 返回 JSON 列表 | 字段对齐 |
+| 6 | 抓取频率（每篇 1 次）不触发风控 | 验证通过 |
+| 7 | 批量抓最近 7 天文章 | 7 篇 ≤ 5 分钟，无封号 |
+| 8 | 凌晨复盘心跳集成 | 自动跑通 |
+| 9 | 竞品号（无后台权限） | 方案 A 自然失败（产品约束，接受） |
+| 10 | cookie 失效兜底 | 触发 qr-headless + qr-confirm |
+
+**失败回退**：
+- 1-5 任一失败 → 走方案 B
+- 6-7 失败 → 限频 + 错峰跑
+- 8 失败 → 保留 manual update 作为兜底
+
+### 落实步骤
+
+1. ~~设计 doc~~ ✅ `docs/wechat-mp-engagement-design.md`
+2. ~~skill 骨架~~ ✅ `crews/main/skills/wx-mp-engagement/`
+3. ~~login-manager 加 `wx-mp` 平台~~ ✅
+4. ~~published-track 集成点~~ ✅ `fetch-and-update-metrics.sh` 加 wx_mp 路由
+5. **spike 验证**：等统一部署后由用户真账号跑
+6. 根据 spike 结果决定走方案 A 完整化 / 回退到 B / 维持 C
 
 ## Phase 5 — img-gen 改火山
 
