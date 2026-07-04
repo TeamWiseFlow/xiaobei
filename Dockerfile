@@ -46,10 +46,20 @@ RUN mkdir -p /root/.openclaw
 COPY config/openclaw.json /root/.openclaw/openclaw.json
 # TODO(Phase 6): 各 skill 的 npm/pip install 统一在此跑
 # TODO(Phase 5): img-gen gen.py 改火山生图编译
-# TODO(Phase 4.5): 生成 camoufox 冻结指纹模板
-#   RUN camoufox-cli --session _template --persistent open about:blank && \
-#       camoufox-cli --session _template close && \
-#       cp -r ~/.camoufox-cli/profiles/_template /root/.openclaw/logins/_template
+# Phase 4.5.5: 冻结 camoufox 指纹模板（spike 报告 §"Spike ② D18 落地方式"）
+# 一次性 bootstrap：清空 profile dir → 跑一次 about:blank 生成 camoufox-cli.json
+# → close。运行时各 agent session cp 此模板到独立 profile dir 用
+# （D18：不 fork camoufox-cli；不 bake chromium；每 agent 一 session）。
+# --headless 避免依赖 Xvfb 虚拟显示（容器内 build 更稳）。
+# close --all 兜底清掉任何残留 daemon/进程，避免 build 上下文污染。
+RUN mkdir -p /root/.openclaw/logins/_template && \
+    rm -rf /root/.camoufox-cli/profiles/_template && \
+    camoufox-cli --session _template --persistent --headless --json open about:blank && \
+    camoufox-cli --session _template close; \
+    camoufox-cli close --all 2>/dev/null || true; \
+    cp /root/.camoufox-cli/profiles/_template/camoufox-cli.json \
+       /root/.openclaw/logins/_template/camoufox-cli.json && \
+    echo "[wiseflow-layer] camoufox fingerprint template baked to /root/.openclaw/logins/_template"
 
 # ── 阶段 4: runtime ───────────────────────────────────────────────────────────
 # 复制产物 + 装 openclaw-weixin 插件(tgz) + ENTRYPOINT
