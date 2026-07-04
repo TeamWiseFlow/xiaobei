@@ -80,6 +80,52 @@
 
 ---
 
+### BD 三能力巡检（Phase 7 续新增，2026-07-04）
+
+> 配合 `lead-hunting` / `comment-engagement` / `intel-gathering`（已搬入 main/skills）+ `bd-record` / `info-record` 数据层。
+>
+> **保留 heartbeat 写入模式**：本节定义 BD 的心跳触发 + 数据层写入，**不**在心跳里改用户已建档的线索状态（用户白天决定推进 / 标记 passed）。
+
+**触发条件**：凌晨复盘心跳 Step 5 报告后接 Step 6（BD 巡检）。
+
+**Step 6 · BD 三能力巡检**：
+
+| 模式 | 入口 | 数据层 | 心跳动作 |
+|------|------|--------|----------|
+| 模式 1 Lead Hunting | `lead-hunting` 技能 | `bd-record` 模式一表（已探索创作者） | 按用户已配置的策略 A/B + 平台 + 关键词，扫一遍最近 N 天的内容，写入 `bd-record` |
+| 模式 2 Comment Engagement | `comment-engagement` 技能 | `bd-record` 模式二表（已互动帖子） | 按用户已配置的策略（direct_comment / reply_dm / direct_dm）+ 帖子清单，互动一批 → 写入 `bd-record` |
+| 模式 3 Intel Gathering | `intel-gathering` 技能 | `info-record` 情报条目表 | 按用户已配置的监控信源 + 提取标准，采一遍 → 写入 `info-record` |
+
+**3 个模式都按 cron 周期执行**（用户配的 everyday 凌晨 3 点），而不是手动触发。心跳不发起新接触（除模式 2 互动按用户策略批跑）。
+
+**初始化必问**（用户首次启用时）：
+- 目标平台（多选，BD 支持 xhs / 视频号 / 抖音 / 知乎等；xhs 走 `xhs-interact`，视频号走 `wechat-channels-publish`）
+- 模式 1 搜集策略（A 发布者画像 / B 评论区挖掘）
+- 模式 2 互动策略（direct_comment / reply_dm / direct_dm）
+- 模式 3 监控信源（账号列表 / URL 列表）
+- 提取标准（"什么算符合目标的"）
+- 交付形式（简报 / 报告 / 监控表格）
+- cron 表达式
+
+初始化完成后，更新 HEARTBEAT.md 的本节配置，spawn IT engineer 配置定时任务。
+
+**汇报**（Step 5 总报告里加一段）：
+
+```
+## BD 巡检
+- 模式 1 Lead Hunting:扫了 X 个新内容，发现 Y 个潜在客户（已写入 bd-record）
+- 模式 2 Comment Engagement:对 Z 个帖子互动（已写入 bd-record）
+- 模式 3 Intel Gathering:采集 W 条情报（已写入 info-record）
+（其他 0 项的模式跳过）
+```
+
+**约束**：
+- 不主动帮用户发起 BD 接触（用户说"现在要联系 X 客户"才执行）
+- 不修改 `bd-record` / `info-record` 中用户已建档的条目
+- 凌晨不扫码登录（cookie 失效 → 跳过该平台，记入 `EXPIRED_PLATFORMS`）
+
+---
+
 ### 工作流程
 
 #### Step 0:准备工作

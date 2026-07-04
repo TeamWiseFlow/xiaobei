@@ -1,4 +1,6 @@
-# 得力 — Workflow
+# 小贝 — Workflow
+
+> **Phase 7 续·身份合体（2026-07-04）**：从 Pro 仓「得力」改名为「小贝」。
 
 ## 素材积累
 
@@ -162,41 +164,37 @@ reply_dm / direct_dm。
 
 ---
 
-## 投资人关系（IR）
+## 投资人关系（IR · Phase 7 续三模式入口）
 
-得力承担投资人关系专员职责：商业模式打磨、项目申报、投资人发掘与跟进。核心价值是
+小贝承担投资人关系专员职责：商业模式打磨、项目申报、投资人发掘与跟进。核心价值是
 长期积累 + 定期复盘迭代。
+
+> **Phase 7 续重写（2026-07-04）**：原 IR 三工作块**升级为 3 个顶层 skill**（用户视角入口清晰）：
+> - **模式 1** → `business-model-polish`（商业模式打磨）
+> - **模式 2** → `project-application`（项目申报）
+> - **模式 3** → `investor-pipeline`（投资人发掘与跟进）
+>
+> 三个顶层 skill 是 **orchestrator**，委派已有的子 skill：
+> - `ir-record`（数据层）
+> - `investor-hunting` / `investor-outreach` / `investor-materials`（模式 3 子能力）
+> - `swcr-register` / `market-research`（模式 2 子能力）
+> - `pitch-deck` / `council`（模式 1 辅助）
+>
+> 三模式状态机 / 工作流 / pitfall 详见各顶层 skill 的 SKILL.md。
 
 ### 工作块识别
 
-| 关键词 | 工作块 |
-|--------|--------|
-| 商业模式、复盘、BP、路演材料、Pitch Deck、融资材料、商业梳理 | **商业模式打磨** |
-| 申报、比赛、创业大赛、项目申请、补贴、政策申报、软著 | **项目申报** |
-| 找投资人、VC、投资机构、触达、联系投资人、进展、跟进、尽调、DD | **投资人发掘与跟进** |
+| 关键词 | 工作块 | 入口 skill |
+|--------|--------|-----------|
+| 商业模式、复盘、BP、路演材料、Pitch Deck、融资材料、商业梳理 | **商业模式打磨** | `business-model-polish` |
+| 申报、比赛、创业大赛、项目申请、补贴、政策申报、软著 | **项目申报** | `project-application` |
+| 找投资人、VC、投资机构、触达、联系投资人、进展、跟进、尽调、DD | **投资人发掘与跟进** | `investor-pipeline` |
 
-### 商业模式打磨
+### 三模式衔接
 
-- 用户输入想法/Idea/反思/经验教训 → 记录到 MEMORY.md 商业模式区域
-- 商业模式梳理按框架输出：问题描述 → 解决方案 → 市场规模（TAM/SAM/SOM）→ 商业模式
-  → 竞争壁垒 → 牵引力 → 团队 → 融资需求
-- 模糊商业判断调用 `council` 技能召集四方视角（Strategist/Skeptic/Pragmatist/Risk
-  Analyst）辩论复盘
-- BP/路演材料：在线冷接触场景调用 `pitch-deck` 生成 html
-
-### 项目申报
-
-调用 `swcr-register`（软件著作权登记）等子技能。按用户指示的项目申报/比赛/补贴流程
-执行。
-
-### 投资人发掘与跟进
-
-- 搜索：`investor-hunting` 技能，按投资人类别/偏好领域/地域筛选
-- 调研：`market-research` 技能
-- 冷接触：`investor-outreach` 技能
-- 材料生成：`investor-materials` 技能
-- 状态机：new → contacted → bp_sent → meeting → dd → ts → invested/passed
-- 跟进：超过 N 天未跟进的活跃投资人提醒；尽调中每天检查更新；每周一生成 Pipeline 摘要
+- **模式 1 跑完 → 接模式 3**：先打磨商业模式（30 秒电梯版 + 5 问结构化），再去找投资人
+- **模式 1 跑完 → 接模式 2**：申报材料需要先有清晰的商业故事
+- **模式 2 / 模式 3 平行**：项目申报 vs 融资是两条线，可同时跑
 
 ### 数据层
 
