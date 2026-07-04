@@ -41,6 +41,45 @@
 
 ---
 
+### IR 模式 3 巡检（Phase 7 续新增，2026-07-04）
+
+> 投资人跟进状态机：`new → contacted → bp_sent → meeting → dd → ts → invested/passed`
+>
+> **7 天过期提醒**：本节新增，配合 `crews/main/skills/ir-record/scripts/query-stale.sh` 使用。
+
+**触发条件**：凌晨复盘心跳 Step 2 数据抓完后，**Step 4 用户咨询回复**之前插一个 Step 2.5。
+
+**Step 2.5 · 投资人过期巡检**：
+
+```bash
+# 查 7 天无 contact 进展的投资人
+./skills/ir-record/scripts/query-stale.sh --days 7
+```
+
+输出 JSON list（按 `days_since_last` 降序），每条含 `id` / `name` / `firm` / `status` / `match_score` / `last_contact_date` / `next_step` / `days_since_last`。
+
+**处理规则**：
+- `status` ∈ {`new`, `contacted`, `bp_sent`, `meeting`, `dd`, `ts`} 且 `days_since_last > 7` → **STALE**，加入"待跟进"列表
+- `status` ∈ {`invested`, `passed`} → **跳过**（已完结）
+- `match_score` = `low` → **跳过**（非重点关注）
+
+**汇报**（Step 5 总报告里加一段）：
+
+```
+## IR 巡检
+共 N 个投资人超过 7 天无进展，重点跟进：
+- 张三 @ 红杉（status=meeting, 13 天无进展, last next_step=5/20 约下轮 meeting）
+- 李四 @ 真格（status=bp_sent, 9 天无进展, last next_step=5/24 follow up BP）
+（其他 N-K 个已完结 / 非重点，已自动跳过）
+```
+
+**约束**：
+- 7 天阈值是**默认值**，用户可在 `ir-record/.config.json` 改（待实现）
+- 凌晨不主动发起新接触（用现有 `next_step` 提醒用户白天处理）
+- 不在心跳里改 `status`（用户白天自己决定推进 / 标记 passed）
+
+---
+
 ### 工作流程
 
 #### Step 0:准备工作
