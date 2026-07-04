@@ -1,3 +1,62 @@
+# v5.5.3 (Unreleased)
+
+> **本版本聚焦产品拆分（client + relay 双仓）后的 client 侧改版**。所有变更与 `docs/product-split-plan.md` 对齐；openclaw 上游基线仍 v2026.6.10（与 v5.5.2 一致，本版本未做 openclaw 升级）。
+
+### 产品拆分（client 仓）
+
+- **client 仓独立成仓**：从 Pro 仓 `product-split/client` 分支切出独立仓 `wiseflow`（远程 `git@github.com:bigbrother666sh/wiseflow.git`），发布仓 `TeamWiseFlow/xiaobei.git`。
+- **relay 仓独立**：auth / sign / publish-relay / video-relay / tx-relay / awada-server 等服务搬到独立 PM2 仓 `wiseflow-relay`（`git-server:repos/wiseflow-relay.git`）。client 不持任何平台凭据，所有 relay 调用带 `X-OFB-Key` header。
+- **openclaw 版本锁定**：本仓 `openclaw.version` 锁 `v2026.6.10 / aa69b12d`，CI/release 按此 clone + checkout。
+- **patches 精简**：001（relax exec allowlist）+ 004（chrome port grace retry）已删，上游 6.10 已吸收或风险降级；保留 002/003/005/006。
+
+### D8 扁平化 + D15 删减 + addons 销毁 + awada 拍平
+
+- **D8**：原 `addons/officials/crew/{main,content-producer,it-engineer,sales-cs}` 拍平到 `crews/<crew-id>/`；公共技能统一在 `skills/`。
+- **D15**：删除所有不用的 addons 模板与脚本。
+- **awada 拍平**：原 `awada/awada-extension/` 改为 `awada/`（D8 一并）。
+- **D19 权限放开**（2026-07-03）：内 crew（main / content-producer / it-engineer）SOUL.md `command-tier: T3` + 清空 `ALLOWED_COMMANDS`；sales-cs 维持 `T0`。Docker 内对内全放开（消除 allowlist miss 摩擦），对外保留 prompt injection 防线。
+
+### Phase 4.5 — camoufox-cli 集成
+
+- **login-manager 重写**：从 CDP WebSocket 抽 cookie 路径 → camoufox-cli cookies export。保留中央存储 `~/.openclaw/logins/{platform}.json`；新增 5 个子命令（`qr-headless` / `qr-confirm` / `cookie-export` / `cookie-import` / `session-cleanup`），加 `wx-mp` 平台（Phase 4.6）。25 单元测试全过。
+- **browser-guide 改写**：加 §0 camoufox-cli 主推章节（5 小节），§1-6 标 fallback。
+- **浏览器类 skill 收敛**：viral-chaser / content-calibrator / xhs-content-ops / xhs-interact 4 个 skill SKILL.md 改用 camoufox-cli 主推路径（修过期引用 + xhs-interact 全文重写 161+ 行）。
+- **指纹模板 bake**：Dockerfile `wiseflow-layer` 阶段加 camoufox-cli 指纹模板 bake，产物 `/root/.openclaw/logins/_template/camoufox-cli.json`。
+- **D18 约束**：不 fork camoufox-cli / 不 bake chromium / 每 agent 一 session。
+- **设计骨架**：`docs/phase-4.5-design.md`（4 子任务地图 + 接口契约 + D18 约束清单）。
+- **spike 报告**：`docs/camoufox-spike-2026-07.md`（指纹复用 + cookies export 验证通过）。
+
+### Phase 4.6 — 微信公众号 engagement 接入（方案 A 骨架）
+
+- **wx-mp-engagement skill 新建**：`crews/main/skills/wx-mp-engagement/`（SKILL.md + fetch_engagement.py + 15 单元测试）。camoufox 跑创作者中心抓阅读数/点赞数/评论数/分享数/收藏数 → 写 `pub_wx_mp`。
+- **published-track 集成**：`fetch-and-update-metrics.sh` 加 `wx_mp` 平台路由（直接 exec `wx-mp-engagement.sh fetch --row-id $ROW_ID`），`MANUAL_PLATFORMS` 移除 `wx_mp`。
+- **登录复用**：走 login-manager `wx-mp` 平台（中央 cookie）+ camoufox 扫码流程。
+- **限制**：仅支持用户**自己有后台权限的号**（创作者中心用公众号账号登录），竞品号拿不到。
+- **spike 验证待真机**：10 项 checklist 见 `docs/wechat-mp-engagement-design.md` §七，等统一部署后由用户跑。
+- **失败回退**：方案 A → B（容器内 mitmproxy + camoufox）→ C（维持 manual update）。
+
+### Phase 5 — img-gen 改火山方舟 Seedream 4.0（D13 决策）
+
+- **siliconflow-img-gen 改调火山方舟**：`/api/v3/images/generations`（非 `/coding/v3`）。默认 model `doubao-seedream-4-0-250828`，可选 5.0 lite / 3.0 t2i。
+- **API key 改 AWK_API_KEY**（D13 决策：img-gen Key 用户自带，纯客户端不入 server）。Skill 内全部 SiliconFlow / Qwen 引用清除。
+- **size 校验**：按火山文档（方式 1: 2K/3K/4K；方式 2: WxH，总像素 [2560×1440, 4096×4096]，宽高比 [1/16, 16]）。
+- **28 单元测试全过**：常量 / size 校验 / payload 构造 / API 请求 / env 校验 / CLI smoke。
+- **SKILL.md 全文重写**：火山方舟专属文档，保留与 SiliconFlow 路径对比表。
+
+### Phase 8.1 / 8.2 — IT engineer 记忆注入
+
+- **产品拆分后运维知识集中注入**：`crews/it-engineer/MEMORY.md` 顶部加 116 行新章节（D19 / D20 / login-manager / awada / camoufox 排故 / 4.6 engagement / 部署路径 / 升级策略）。
+- **D20③ 依赖安装规范**（pip `--target vendor` / npm 局部 / 冲突处理 / it-engineer 介入准则）。
+- **未动**：SOUL / IDENTITY / AGENTS（属 Phase 7 续暂缓部分，待下一阶段）。
+
+### video relay 模式撤回
+
+- **2026-07-04 用户确认撤回**：`crews/main/skills/video-product/` / `crews/content-producer/skills/siliconflow-video-gen/` / `html-video/` 维持本地凭据，**不入 relay**。
+- relay `video-relay` 端点对本仓不再有客户端调用方。
+- `bilibili-publish` 走 relay 路线与 video 撤回**独立判断**（待拍板）。
+
+---
+
 # v5.5.2
 
 ### Selfmedia Operator 视频制作与分发能力

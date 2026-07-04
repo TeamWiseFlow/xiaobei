@@ -177,9 +177,18 @@ wiseflow-client/
   - **Phase 2 完成**（sign）：relay services/sign 实现 xhs(headers/proxy, GET+POST) + douyin(a_bogus，子进程隔离 vendor) + 6 测试 + smoke；client 侧 5 个调用点（viral-chaser/xhs-content-ops/xhs-publish/published-track）全部改走 relay，vendor/douyin.js 删并移至 relay
   - **Phase 4.5 spike 完成**：camoufox 两项验证通过，见 `docs/camoufox-spike-2026-07.md`
   - **awada-server 迁入**（Phase 4 部分）：整体迁入 relay/services/awada-server（99 文件），HTTP/WS 网关待 Phase 4
-- **未动**：Phase 3（relay 侧 publish-relay/video-relay）、Phase 4（awada HTTP transport + extension adapter）、Phase 4.5 实现 / 5 / 6 / 7 / 8（client 侧）
-- 现仓 master 不变（Pro 开发继续）；拆分工作在 `product-split/*` 分支
-- 阻塞项：配额计数上报待 BD 计费模型；抖音发布 spike 待有账号环境做
+- 2026-07-04 client 仓完成主体改版（详见 `CHANGELOG.md` v5.5.3 Unreleased + `DEVPLAN.md`）：
+  - **client 仓独立成仓**：`wiseflow`（远程 `bigbrother666sh/wiseflow.git`），发布仓 `TeamWiseFlow/xiaobei.git`
+  - **D8 + D15 + awada 拍平 + D19 权限放开**（内 crew T3 full / sales-cs T0）
+  - **Phase 4.5 全部完成**：login-manager 重写（25 单测）+ browser-guide §0 camoufox 主推 + 4 浏览器类 skill 收敛 + Dockerfile 指纹模板 bake
+  - **Phase 4.6 骨架完成**（spike 待真机）：wx-mp-engagement skill + published-track 集成 + login-manager 加 `wx-mp` 平台
+  - **Phase 5 完成**：siliconflow-img-gen → 火山方舟 Seedream 4.0（D13 客户端 key），28 单测全过
+  - **Phase 8.1 / 8.2 完成**：it-engineer MEMORY 注入产品拆分后运维知识 + D20③ 依赖安装规范
+  - **video relay 模式撤回**（2026-07-04 用户确认）：video-product / siliconflow-video-gen / html-video 维持本地凭据
+  - **Phase 7 续·身份文件合写暂缓**（用户口头"先放一放"）
+- **未动**：Phase 3（relay 侧 publish-relay/video-relay；video 撤回后仅 bilibili-publish 待拍板）/ Phase 4（awada HTTP transport + extension adapter 仍依赖 relay 端点）/ Phase 4.6 spike 待真机 / Phase 6（Dockerfile 阶段 3-4 填实 + entrypoint）/ Phase 8.3 端到端走查
+- **部署路径修订（2026-07-04 中段）**：完成改版后**先源码部署本机**（不走 Docker；拉新仓代码 + copy openclaw + apply skill 替换 + 重启 Gateway），验证通过后再做 Phase 6 Dockerfile
+- 阻塞项：配额计数上报待 BD 计费模型；抖音发布 spike 待有账号环境做；bilibili-publish 路线待拍板；relay Phase 3/4 端点（client Phase 3/4 直接挂起）
 
 ## 十二、抖音发布完整流程（H5 场景）
 
