@@ -1,5 +1,121 @@
 # IT Engineer Agent - Memory
 
+## 产品拆分后运维知识（Phase 8.1 注入，2026-07-04）
+
+> 本节是产品拆分（client + relay 双仓）后的运维速查。运维通用经验（pnpm build 警告 / binding routing / cron SQLite / ALLOWED_COMMANDS 等）见下方各原章节，本节只覆盖**产品拆分引入的**新运维面。
+
+### D19 权限策略（已落代码，2026-07-03）
+
+- **内 crew（main / content-producer / it-engineer）**：`command-tier: T3` + 清空 `ALLOWED_COMMANDS` → `exec-approvals.json` 给 full allowlist。
+- **对外 crew（sales-cs）**：`command-tier: T0` + 显式 `ALLOWED_COMMANDS` 白名单 → prompt injection 防线。
+- **Docker 内对内全放开**（消除 allowlist miss 摩擦），**对外保留白名单**。
+- 验证：`/usr/local/bin/wiseflow-crew T <agent-id>` → 应看到 T3 / T0 + 解析后的白名单。
+
+### D20 skill 依赖策略
+
+#### D20① 镜像预装常用包（Phase 6 落地）
+
+- `Dockerfile wiseflow-layer` 阶段按 `skills/`+`crews/` 实际 import 清单 pip 装进镜像：
+  - requests / Pillow / xhshow / python-pptx / reportlab / tccli / google-api-python-client / google-auth-oauthlib 等
+- 避免小白用户运行期 pip（小白场景是 Docker 部署态；本机源码部署场景下用户已有 Python 环境，但 D20① 仍适用）
+
+#### D20② volume 扩展（Phase 6 落地）
+
+- 用户额外装 skill 时的依赖路径：
+  - **Python**：`pip install --target ~/.openclaw/skills/<skill>/vendor/ <pkg>`（PYTHONPATH 由 `docker-entrypoint.sh` 注入）
+  - **Node**：`cd ~/.openclaw/skills/<skill> && npm install <pkg>`（局部 `node_modules`）
+- 重启不丢（volume 持久化）
+
+#### D20③ 依赖安装规范（it-engineer 介入准则）
+
+- **何时装**：
+  - skill 报错 `ModuleNotFoundError: No module named 'xxx'` → 装 xxx 到该 skill 的 vendor
+  - skill 报错 `Cannot find module 'xxx'`（Node）→ 装 xxx 到该 skill 局部 node_modules
+- **何时**不**装**：
+  - skill 内 import 但镜像已预装（按 D20①） → 检查 image 是否完整 / 用户是否漏装
+  - 通用依赖（如 requests、Pillow）应已在镜像，不需用户装
+- **依赖冲突处理**：
+  - **Python**：vendor 目录是隔离的（每个 skill 独立），不冲突；如果跨 skill 同名不同版本需求 → 各自装各自的 vendor
+  - **Node**：局部 node_modules 可能与全局 openclaw 依赖冲突 → 用 `npm install --save-prefix=~` 避免锁到特定 patch 版本
+- **it-engineer 介入**：
+  - 用户报告"skill 不能用" → 1）查 `~/.openclaw/logs/gateway-error.log` 2）确认 `pip list --target ~/.openclaw/skills/<skill>/vendor/` 或 `ls ~/.openclaw/skills/<skill>/node_modules/` 3）按需装
+  - **不**主动更新 skill 自带的依赖版本（避免破坏 skill 兼容性）
+- **特殊场景**：
+  - **镜像重建后**（用户重 deploy Docker 镜像）→ 镜像预装的包恢复；vendor 目录在 volume 持久化不受影响
+  - **本机源码部署**（非 Docker）→ 直接 `pip install <pkg>` 到系统 Python 即可（无 vendor 隔离需要），或者按 D20② 模式到 skill 子目录
+
+### 部署期 OpenClaw 源码同步
+
+- **开发期**：openclaw 源码读 `~/wiseflow-pro/openclaw/`（已 clone，v2026.6.10 / aa69b12d）。
+- **部署时**：把 openclaw 源码 copy 到本仓 `openclaw/` 目录（`.gitignore` 排除，install.sh 会读 `openclaw.version` 检出）。
+- **软链方案**（D21）：本机开发实例可软链 `~/.openclaw/skills/<name>` → `<repo>/skills/<name>`，改 repo 即时生效；Docker 镜像维持 COPY（重建即更新）。
+
+### login-manager 状态机（Phase 4.5.2 重写，2026-07-04）
+
+- **中央存储**：`~/.openclaw/logins/{platform}.json`（camoufox-cli 原生 JSON 格式 = Playwright `add_cookies` 期望格式）。
+- **平台常量**：`douyin` / `bilibili` / `kuaishou` / `xhs-publish` / `xhs-browse` / `weibo` / `zhihu` / `wechat-channels` / `wx-mp`（Phase 4.6 加）。
+- **9 个子命令**（兼容 + 新增）：
+  - 兼容（维持原 CLI 语义）：`check` / `read` / `write` / `status-all`
+  - Phase 4.5+ 新增：`qr-headless` / `qr-confirm` / `cookie-export` / `cookie-import` / `session-cleanup`
+- **退出码**：`0` 成功 / `1` 通用错误 / `2` cookie 失效或扫码超时 → 触发重新登录流程。
+- **登录两步式**：`qr-headless <platform>`（启 headless + 截 QR PNG）→ 用户扫码后 `qr-confirm <platform> --session <s> --timeout 180`（轮询成功 + cookies 落中央）。
+- **cookie 跨 session 污染 pitfall**：每个 agent 任务用新 session name（`secrets.token_hex(4)` nonce 唯一），不要跨任务复用。
+
+### awada 启用（Phase 4 HTTP/WS 待实施）
+
+- **当前路径**（D8 拍平后）：`<WISEFLOW_PROJECT_ROOT>/awada/`，**单层**结构（非 `awada/awada-extension/`）。通过 ioredis 直连 Redis。
+- **目标路径**（Phase 4）：改 HTTP/WS transport + `X-OFB-Key` header：
+  - `GET /api/v1/awada/outbound?lane=`（long-poll / WS 拉回复）
+  - `POST /api/v1/awada/inbound`（agent 回复入）
+  - relay 端点 = `RELAY_BASE_URL`（默认 `https://relay.wiseflow.example.com`）
+- **运维动作**：
+  - 启用：`awada-channel-setup` 技能（装依赖 → 写 openclaw.json → 重启 Gateway → 验证）
+  - 排障：见 `crews/it-engineer/skills/awada-channel-setup/SKILL.md` 排障检查单
+
+### camoufox-cli 排故（Phase 4.5 已落地）
+
+- **指纹模板 bake**（Docker 镜像内）：`/root/.openclaw/logins/_template/camoufox-cli.json`，由 `Dockerfile wiseflow-layer` 阶段跑 `camoufox-cli --session _template --persistent --headless open about:blank` 生成。
+- **运行时模板复用**：每个 agent session 启动前 `cp /root/.openclaw/logins/_template/camoufox-cli.json ~/.camoufox-cli/profiles/<session>/`。
+- **D18 约束**：不 fork camoufox-cli / 不 bake chromium / 每 agent 一 session / 独立 profile dir / 独立 cookie state。
+- **常见问题**：
+  - `camoufox-cli open` 超时 → `camoufox-cli close --all` 清残留 + 重试
+  - `qr-confirm` 轮询不到成功 → 用户手机上确认后再说；不要盲等超过 `--timeout`（默认 180s）
+  - `cookie-import` 后访问仍 401 → cookies 过期 / 域不匹配；重新走登录流
+  - daemon 残留 → `camoufox-cli close --all` 兜底；每任务结束必须 `session-cleanup`
+- **资源**：`docs/camoufox-spike-2026-07.md`（spike 报告）/ `docs/phase-4.5-design.md`（设计骨架）/ `skills/browser-guide/SKILL.md` §0（主推章节）。
+
+### 微信公众号 engagement 排故（Phase 4.6 方案 A 骨架，待 spike 验证）
+
+- **新 skill**：`crews/main/skills/wx-mp-engagement/`（fetch_engagement.py + SKILL.md）。
+- **新平台**：`login-manager` 加 `wx-mp`（中央存储 `~/.openclaw/logins/wx-mp.json`，登录页 `https://mp.weixin.qq.com/`，探活首页）。
+- **集成点**：`published-track/fetch-and-update-metrics.sh` 加 `wx_mp` 平台路由（直接 exec `wx-mp-engagement.sh fetch --row-id $ROW_ID`），`MANUAL_PLATFORMS` 移除 `wx_mp`。
+- **限制**：仅支持用户**自己有后台权限的号**（创作者中心用公众号账号登录），竞品号拿不到。
+- **spike 验证**：等真机部署后由用户跑 `docs/wechat-mp-engagement-design.md` §七 的 10 项 checklist。
+- **失败回退**：方案 A → B（容器内 mitmproxy + camoufox）→ C（维持 manual update）。
+
+### 部署路径（2026-07-04 修订）
+
+- **本机开发实例**：`~/wiseflow-pro` 仓 + `~/.openclaw/`（Pro 仓实例，仍在跑）。
+- **本轮新仓**：`~/wiseflow`（client 仓，master 分支，D8 扁平化结构 + Phase 4.5/4.6/5 新增）。
+- **部署策略**：**先源码部署本机**（不走 Docker；拉新仓代码 + copy openclaw + apply skill 替换 + 重启 Gateway），验证通过后再做 Phase 6 Dockerfile。
+- **OpenClaw 源码位置**（开发期）：`~/wiseflow-pro/openclaw/`（已 clone，版本对齐 `v2026.6.10 / aa69b12d`）。
+- **部署期操作清单**：
+  1. `cd ~/wiseflow && git pull origin master`（或 fetch + reset --hard）
+  2. `cp -r ~/wiseflow-pro/openclaw ~/wiseflow/openclaw`（或软链）
+  3. `bash scripts/install.sh`（按 install.sh 流程：apply-addons → pnpm build → 配置同步）
+  4. 重启 Gateway：`systemctl --user restart openclaw-gateway.service`
+  5. 自检：登录 main → 跑 `/help` → 触发 1 条消息全链路
+
+### 升级 / 降级策略（产品拆分后）
+
+- **client 仓独立升级**：只升级 `~/wiseflow` 仓代码，relay 端点不变（OFB_KEY 不变）。
+- **relay 仓独立升级**：relay 端点升级时 client 端无感知（除非 API 契约变）。
+- **openclaw 升级**：按 `~/.claude/projects/-home-wukong-wiseflow/memory/03-openclaw-upgrade.md` 流程（切版本→验 patch→重新生成→提交）。**生产 Gateway 运行中不得调 `pnpm openclaw <subcommand>`**（见下方"pnpm openclaw 警告"章节）。
+
+---
+
+## 关于 WiseFlow 项目(我正在维护的项目)
+
 ## 关于 WiseFlow 项目(我正在维护的项目)
 
 项目背景、功能介绍和目录结构详见工作区中的**项目背景.md**(由部署脚本自动同步,每次升级均为最新版)。
