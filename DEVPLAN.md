@@ -42,23 +42,26 @@
   - 依赖：relay 3.1 抖音路线定。
   - 做：若 API 逆向 → 改调 relay；若浏览器模拟 → 走 camoufox-cli（Phase 4.5）纯 client 操作。**定之前不动**。
 
-## Phase 4 — awada extension 改 HTTP/WS（依赖 relay Phase 4）
+## Phase 4 — ~~awada extension 改 HTTP/WS~~ 不动（2026-07-04 取消）
 
-- [ ] **awada extension 改 HTTP/WS transport**
-  - 依赖：relay awada-server HTTP/WS 网关就绪。
-  - 做：`awada/src/` 去掉 `ioredis` 直连，改 `relayBaseUrl` + `ofbKey`：
-    - `GET /api/v1/awada/outbound?lane=`（long-poll/WS 拉回复）
-    - `POST /api/v1/awada/inbound`（agent 回复入）
-    - 带 `X-OFB-Key` header。
-  - 改 `awada/src/config-schema.ts`：`redisUrl` 字段作废，换 `relayBaseUrl` + `ofbKey`。
-  - 验收：微信消息双向闭环；`grep -r "ioredis\|redisUrl" awada/src/` 仅剩类型残留或空。
+> **2026-07-04 用户决定取消**：当前 awada Extension 走 Redis 直连 awada Server 稳定可用，**不需要改 HTTP/WS**。大部分代码未动。
+>
+> **结论**：本轮 Phase 4 **不动**。`awada/src/` 保持 ioredis 直连，`awada-server` 维持 Redis 服务端。
+>
+> 取消理由：
+> - 当前架构稳定（Redis pub/sub 双向消息）
+> - HTTP/WS 改造需要改 relay 端 `awada-server` + 客户端 `awada/src/` 双向，**双方都要动**
+> - 收益不明确（HTTP/WS 不显著优于 Redis pub/sub 在本场景）
+> - 风险：改造期间破坏在线服务（依赖 awada 的 sales-cs 通道）
+>
+> 如未来真有需求（多客户端 / 跨网络 / 鉴权重构），再启新 Phase 评估。
 
-## Phase 4.5 — camoufox 集成（spike 已过，见 `docs/camoufox-spike-2026-07.md`）
+## Phase 4.5 — camoufox 集成（已完成，2026-07-04）
 
-- [ ] **browser-guide 改写**：`browser act` → camoufox-cli 调用指导。
-- [ ] **login-manager 重写**：无头截图 QR → camoufox cookies export → 中央存储 `~/.openclaw/logins/`（去掉 CDP WebSocket 抽 cookie）。
-- [ ] **浏览器类 skill 改 camoufox-cli**：xhs-interact / content-calibrator / viral-chaser / xhs-content-ops 等。
-- [ ] **指纹模板 bake**：Dockerfile 生成 `~/.camoufox-cli/profiles/_template` 冻结指纹。
+- [x] **browser-guide 改写**：`browser act` → camoufox-cli 调用指导。
+- [x] **login-manager 重写**：无头截图 QR → camoufox cookies export → 中央存储 `~/.openclaw/logins/`（去掉 CDP WebSocket 抽 cookie）。
+- [x] **浏览器类 skill 改 camoufox-cli**：xhs-interact / content-calibrator / viral-chaser / xhs-content-ops 等。
+- [x] **指纹模板 bake**：Dockerfile 生成 `~/.camoufox-cli/profiles/_template` 冻结指纹。
 - 验收：xhs-browse 登录走 camoufox 跑通；cookie 入中央存储；下游 HTTP skill 复用 cookie 成功。
 - 约束：保留 patchright override + patch 005/006 供 fallback connectOverCDP；**不 fork camoufox-cli**（D18）；并发 = 每 agent 一个 session（独立 daemon + 独立浏览器进程 + 独立 profile dir）。
 
