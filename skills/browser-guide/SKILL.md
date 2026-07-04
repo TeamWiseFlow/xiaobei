@@ -1,17 +1,99 @@
 ---
 name: browser-guide
 description: Best practices for using the managed browser — handling login walls,
-  CAPTCHAs, lazy-loaded content, paywalls, and tab cleanup.
+  CAPTCHAs, lazy-loaded content, paywalls, and tab cleanup. Phase 4.5+ prefers
+  camoufox-cli for login / scraping flows (anti-detect); built-in browser tool
+  + patchright remains as fallback for attaching the user's local Chrome.
 metadata:
   openclaw:
     emoji: 🌐
+    requires:
+      bins:
+      - camoufox-cli
 ---
 
 # Browser Best Practices
 
-Follow these rules whenever you use the `browser` tool to interact with web pages.
+> **Phase 4.5+ 主推 vs fallback 关系**：
+> - **主推**：`camoufox-cli`（反指纹 headless Firefox）— 登录 / 抓取 / 取数场景默认走这条，详见 §0
+> - **fallback**：openclaw 内置 `browser` tool + patchright（attach 用户本机 Chrome）— 适用于 camoufox 跑不通 / 用户已有本机 Chrome 需交互的场景，详见 §1-6
+>
+> 何时用 fallback：① camoufox-cli 在某平台持续触发风控；② 任务需要用户在浏览器里实时操作（人手介入）；③ 单次调试 / 排错
 
-## 1. Login Prompts
+Follow these rules whenever you use the `browser` tool (fallback) or `camoufox-cli` (主推) to interact with web pages.
+
+## 0. Camoufox-CLI 模式（主推）
+
+`camoufox-cli` 是 Phase 4.5+ 反指纹 headless Firefox 包装（D18），优先于内置 `browser` tool。所有路径必须用 **绝对路径** 调用 `camoufox-cli`（在 PATH 里即可直接调，或通过 wrapper）。相关 cookie 管理走 **login-manager** skill（不在本 skill 范围）。
+
+### 0.1 登录流程（qr-headless + qr-confirm）
+
+与平台 cookie 相关的登录一律走 login-manager skill 的两步式：
+
+```bash
+# 步骤 A：启 headless 会话 + 截 QR（输出 qr_path 和 session）
+login-manager.sh qr-headless xhs-browse
+
+# 步骤 B：用户扫码后，调 qr-confirm 轮询 + 落盘 cookies
+login-manager.sh qr-confirm xhs-browse --session xhs-browse-login-abc12345 --timeout 180
+```
+
+完整流程、用户消息模板、退出码语义见 **login-manager** skill。本 skill 不重复描述。
+
+**什么时候**用 camoufox-cli 走登录 vs 直接用 browser tool（fallback）：
+- 用 camoufox-cli：默认所有情况（反指纹 + 用户体验好 + 无 CDP 依赖）
+- 退回 browser tool：camoufox-cli 在某平台持续触发风控，或用户要求在自己 Chrome 里手动登录
+
+### 0.2 抓取 / 取数流程（headless session + cookies import）
+
+需要浏览器交互但不涉及登录态变化的取数（搜索结果、笔记详情、文章内容等）：
+
+```bash
+# 1. 从中央存储注 cookie 到临时 camoufox session
+login-manager.sh cookie-import <platform> <agent-session-abc>
+
+# 2. 启 session 跑抓取（headless + persistent + cookies 已在）
+camoufox-cli --session <agent-session-abc> --persistent --headless --json \
+    open "https://www.xiaohongshu.com/search_result?keyword=xxx"
+
+# 3. snapshot / eval 取数
+camoufox-cli --session <agent-session-abc> --json snapshot
+camoufox-cli --session <agent-session-abc> --json eval "document.body.innerText"
+
+# 4. 任务结束关 session（释放 daemon + 进程）
+login-manager.sh session-cleanup <platform> <agent-session-abc>
+```
+
+**约束**：第 2 步后只能用 camoufox-cli 的 `snapshot` / `eval` / `click` / `type` 子命令，**不要**混用 openclaw 内置 `browser` tool 指向同一 profile dir（会冲突）。
+
+### 0.3 Session 隔离与并发
+
+**每 agent 一 session**（D18 + 4.5.5）：
+- 不同 agent / 不同任务流 → 各自独立 session（独立 daemon + 独立 profile dir + 独立 cookie state）
+- 禁止两个 agent 共享 camoufox session（profile dir 冲突会污染 cookie state + 触发风控）
+- session 名规则：`{platform}-{purpose}-{nonce}`，如 `xhs-browse-agent-xyz78901`
+
+**指纹模板**：camoufox-cli 启动时读 `<profile dir>/camoufox-cli.json`。Docker 镜像内已 bake 冻结模板到 `/root/.openclaw/logins/_template/`，运行时各 agent session 启动前 `cp` 模板到自己的 profile dir 复用指纹。**不要**在运行时重生成（会污染多 session 的指纹一致性）。
+
+### 0.4 QR 截图与发图
+
+`login-manager.sh qr-headless` 输出的 `qr_path` 是 PNG 本地路径。**用 image 工具加载图片**（不能发本地路径给用户），按 login-manager skill §2 步骤 2 提示用户扫码。
+
+### 0.5 失败模式
+
+| 症状 | 原因 | 缓解 |
+|---|---|---|
+| `camoufox-cli open` 超时 | Firefox 启动慢 / 系统资源紧张 | 增加 `--timeout`；先 `camoufox-cli close --all` 清残留 |
+| `qr-confirm` 一直轮询不到成功 | 平台风控 / 用户未点确认 | 用户手机上确认后再说；不要盲等超过 `--timeout`（默认 180s） |
+| `cookie-import` 后访问仍 401 | cookies 过期 / 域不匹配 | 重新走 0.1 登录流；检查平台对应 `xhs-publish` / `xhs-browse` |
+| `snapshot` 返回空 DOM | 页面 lazy-load / 反爬 | eval 检查 `document.readyState`；加等待 + 滚动（见 §4） |
+| daemon 残留进程 | close 失败 | `camoufox-cli close --all` 兜底；每任务结束必须 cleanup |
+
+---
+
+## 1. Login Prompts（fallback 路径 — 优先 §0 camoufox-cli 主推）
+
+> **fallback 触发条件**：① camoufox-cli 在该平台持续触发风控；② 用户主动要求在自己浏览器里手动登录；③ 单次调试 / 排错。**默认情况下用 §0.1**。
 
 When a page shows a login wall, first identify which login mechanism is offered, then follow the matching procedure below.
 
