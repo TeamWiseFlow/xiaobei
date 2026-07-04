@@ -1,15 +1,15 @@
 #!/bin/bash
 # apply-addons.sh - wiseflow 基础能力安装 + 补丁应用 + 配置同步
 #
-# 产品拆分后（D8 扁平化）addons/ 结构已销毁，crew 全部在顶层 crews/，
-# 公共 skill 在顶层 skills/。本脚本现仅负责：
+# Phase 7 续精简（2026-07-04）：删除原 addons/ 扫描循环（D8 扁平化后死代码）。
+# 本脚本现仅负责：
 #   1. 恢复 openclaw/ 到干净状态
 #   2. 应用基础补丁（patches/*.patch）+ 依赖覆盖（patches/overrides.sh）
 #   3. 安装默认全局 skills（项目根目录 skills/ → ~/.openclaw/skills/）
 #   4. 注入 awada 扩展路径 + 同步 openclaw.json skills 节点
+#   5. 合并全仓 npm / pip 依赖到 ~/.openclaw/node_modules + ~/.openclaw/lib/python
+#   6. 编译 dist + 重启 gateway service
 # Crew 模板安装由 setup-crew.sh 单独负责（扫顶层 crews/）。
-#
-# TODO(Phase 6/7): addons 扫描循环（下方 ~260 行起）现为死代码，待整体精简删除。
 #
 # 技能两级体系：
 #   - 公共 skills: skills/ (项目根目录) → ~/.openclaw/skills/ (managed dir, 所有 Agent 可见)
@@ -18,7 +18,6 @@ set -e
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CREWS_DIR="$PROJECT_ROOT/crews"
-ADDONS_DIR="$PROJECT_ROOT/addons"
 OPENCLAW_DIR="$PROJECT_ROOT/openclaw"
 OPENCLAW_HOME="$HOME/.openclaw"
 CONFIG_PATH="$OPENCLAW_HOME/openclaw.json"
@@ -247,170 +246,6 @@ if [ "$GLOBAL_SKILL_COUNT" -gt 0 ]; then
   echo "📦 Global skills installed ($GLOBAL_SKILL_COUNT)"
 fi
 
-# ─── 扫描并加载 addons ──────────────────────────────────────────
-if [ ! -d "$ADDONS_DIR" ]; then
-  mkdir -p "$ADDONS_DIR"
-fi
-
-ADDON_COUNT=0
-
-for addon_dir in "$ADDONS_DIR"/*/; do
-  [ -d "$addon_dir" ] || continue
-
-  addon_name="$(basename "$addon_dir")"
-
-  # 跳过没有 addon.json 的目录
-  if [ ! -f "$addon_dir/addon.json" ]; then
-    echo "⚠️  Skipping $addon_name (no addon.json)"
-    continue
-  fi
-
-  echo "📦 Loading addon: $addon_name"
-  ADDON_COUNT=$((ADDON_COUNT + 1))
-
-  # ─── 第一层：全局 skills 安装 ──────────────────────────────────
-  if [ -d "$addon_dir/skills" ]; then
-    echo "  📚 Installing global skills..."
-    mkdir -p "$OPENCLAW_HOME/skills"
-    for skill_dir in "$addon_dir"/skills/*/; do
-      if [ -f "${skill_dir}SKILL.md" ]; then
-        skill_name="$(basename "$skill_dir")"
-        echo "    → $skill_name (global)"
-        rm -rf "$OPENCLAW_HOME/skills/$skill_name"
-        cp -r "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
-        append_global_shared_skill "$skill_name"
-      fi
-    done
-  fi
-
-  # ─── 第二层：Crew 模板安装（crew/ → ~/.openclaw runtime dirs） ──
-  if [ -d "$addon_dir/crew" ]; then
-    echo "  🤖 Installing crew templates..."
-
-    # 从 addon.json 读取 internal_crews / external_crews 数组（crew-type 的唯一权威来源）
-    # addon 模板的 SOUL.md 不要求包含 crew-type 字段；若包含则被此声明覆盖
-    addon_crew_lists="$(node -e "
-      try {
-        const a = JSON.parse(require('fs').readFileSync('${addon_dir}addon.json','utf8'));
-        const i = Array.isArray(a.internal_crews) ? a.internal_crews : [];
-        const e = Array.isArray(a.external_crews) ? a.external_crews : [];
-        console.log(JSON.stringify({ internal: i, external: e }));
-      } catch(err) { console.log(JSON.stringify({ internal: [], external: [] })); }
-    " 2>/dev/null || echo '{"internal":[],"external":[]}')"
-
-    for template_ws in "$addon_dir"/crew/*/; do
-      [ -d "$template_ws" ] || continue
-      # 需要至少有 SOUL.md 才算有效的模板
-      [ -f "${template_ws}SOUL.md" ] || continue
-
-      template_id="$(basename "$template_ws")"
-
-      # 从 addon.json 的 internal_crews / external_crews 数组确定 crew-type
-      addon_crew_type="$(ADDON_CREW_LISTS="$addon_crew_lists" node -e "
-        const { internal, external } = JSON.parse(process.env.ADDON_CREW_LISTS);
-        const id = '$template_id';
-        if (internal.includes(id) && external.includes(id)) console.log('CONFLICT');
-        else if (internal.includes(id)) console.log('internal');
-        else if (external.includes(id)) console.log('external');
-        else console.log('');
-      " 2>/dev/null || echo "")"
-
-      if [ "$addon_crew_type" = "CONFLICT" ]; then
-        echo "    ❌ template $template_id listed in both internal_crews and external_crews"
-        exit 1
-      elif [ -z "$addon_crew_type" ]; then
-        echo "    ⚠️  template $template_id not in internal_crews or external_crews, defaulting to external"
-        addon_crew_type="external"
-      fi
-
-      echo "    → $template_id (crew-type: $addon_crew_type)"
-
-      # 同步到运行时模板目录（按 crew-type 分路由）
-      if [ "$addon_crew_type" = "internal" ]; then
-        # 对内 Crew → crew_templates/（Main Agent 访问）
-        mkdir -p "$OPENCLAW_HOME/crew_templates"
-        runtime_template_dir="$OPENCLAW_HOME/crew_templates/$template_id"
-        rm -rf "$runtime_template_dir"
-        copy_crew_template_contents "$template_ws" "$runtime_template_dir"
-        ensure_soul_crew_type "$runtime_template_dir/SOUL.md" "$addon_crew_type"
-        echo "    ✅ synced to crew_templates/ (internal)"
-      else
-        # 对外 Crew → hrbp_templates/（HRBP 访问）
-        mkdir -p "$OPENCLAW_HOME/hrbp_templates"
-        runtime_template_dir="$OPENCLAW_HOME/hrbp_templates/$template_id"
-        rm -rf "$runtime_template_dir"
-        copy_crew_template_contents "$template_ws" "$runtime_template_dir"
-        ensure_soul_crew_type "$runtime_template_dir/SOUL.md" "$addon_crew_type"
-        echo "    ✅ synced to hrbp_templates/ (external)"
-      fi
-
-      # 可选自动实例化（addon.json 中 auto-activate: true）
-      auto_activate="$(node -e "
-        const a = JSON.parse(require('fs').readFileSync('$addon_dir/addon.json','utf8'));
-        console.log(a['auto-activate'] === true ? 'true' : 'false');
-      " 2>/dev/null || echo "false")"
-
-      if [ "$auto_activate" = "true" ]; then
-        agent_id="$template_id"
-        dest="$OPENCLAW_HOME/workspace-$agent_id"
-
-        if [ -d "$dest" ]; then
-          echo "    ⚠️  workspace-$agent_id already exists, skipping auto-activate"
-          # 对外 Crew：幂等同步 DECLARED_SKILLS（仅追加模板中有但 workspace 缺失的技能）
-          if [ "$addon_crew_type" = "external" ] \
-              && [ -f "${template_ws}DECLARED_SKILLS" ] \
-              && [ -f "$dest/DECLARED_SKILLS" ]; then
-            _added=0
-            while IFS= read -r _skill; do
-              [ -n "$_skill" ] || continue
-              grep -qxF "$_skill" "$dest/DECLARED_SKILLS" 2>/dev/null || {
-                echo "$_skill" >> "$dest/DECLARED_SKILLS"
-                _added=$((_added + 1))
-              }
-            done < <(
-              sed 's/#.*$//' "${template_ws}DECLARED_SKILLS" \
-                | tr ',' '\n' \
-                | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
-                | awk 'NF'
-            )
-            [ "$_added" -gt 0 ] && echo "    📝 DECLARED_SKILLS: synced $_added new skill(s) from template"
-          fi
-        else
-          copy_crew_template_contents "$template_ws" "$dest"
-          ensure_soul_crew_type "$dest/SOUL.md" "$addon_crew_type"
-          # 对外 Crew：复制 DECLARED_SKILLS 和创建 feedback/ 目录
-          if [ "$addon_crew_type" = "external" ]; then
-            mkdir -p "$dest/feedback"
-          fi
-          # 复制共享协议
-          if [ -d "$CREWS_DIR/shared" ]; then
-            cp "$CREWS_DIR/shared/"*.md "$dest/"
-          fi
-          echo "    ✅ workspace-$agent_id auto-activated"
-
-          # 注册 agent（如果尚未注册）
-          if [ -f "$CONFIG_PATH" ]; then
-            if ! node -e "
-              const c = JSON.parse(require('fs').readFileSync('$CONFIG_PATH','utf8'));
-              process.exit((c.agents?.list || []).some(a => a.id === '$agent_id') ? 0 : 1);
-            " 2>/dev/null; then
-              if [ ! -f "$HRBP_ADD_AGENT_SCRIPT" ]; then
-                echo "    ❌ HRBP add-agent script not found: $HRBP_ADD_AGENT_SCRIPT"
-                exit 1
-              fi
-              # 根据 crew-type 传入对应参数
-              "$HRBP_ADD_AGENT_SCRIPT" "$agent_id" --crew-type "$addon_crew_type"
-              echo "    ✅ agent $agent_id registered (crew-type: $addon_crew_type)"
-            fi
-          fi
-        fi
-      else
-        echo "    📋 template $template_id ready (use HRBP/Main Agent to instantiate)"
-      fi
-    done
-  fi
-  echo "  ✅ $addon_name loaded"
-done
 
 # ─── 安装全仓统一 Node.js 依赖到 ~/.openclaw/node_modules ──────────
 # 扫描 skills/ 和 addons/ 下所有 package.json，合并 dependencies。
