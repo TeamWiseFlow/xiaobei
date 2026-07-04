@@ -64,7 +64,9 @@ SCRIPT_PLATFORMS="xhs bilibili douyin kuaishou"
 COOKIE_PLATFORMS="xhs douyin kuaishou"
 
 # 只能手动提供数据的平台
-MANUAL_PLATFORMS="wx_mp wx_channel"
+# Phase 4.6：wx_mp 已接入 wx-mp-engagement skill 自动抓取，移出手动列表
+# wx_channel（视频号）暂未接入，保留 manual
+MANUAL_PLATFORMS="wx_channel"
 
 # ─── 参数解析 ──────────────────────────────────────────────────────────────
 
@@ -93,6 +95,23 @@ if [ -z "$PLATFORM" ]; then
 fi
 
 # ─── 平台路由 ──────────────────────────────────────────────────────────────
+
+# Phase 4.6 特殊平台：wx_mp 走 wx-mp-engagement skill（spike 验证待真机测试）
+# 不进 fetch-retro-data.ts，因为 wx-mp 是 camoufox 抓创作者中心，
+# 行为模式与 xhs/bilibili/douyin/kuaishou 的纯 HTTP+cookie 不同
+if [ "$PLATFORM" = "wx_mp" ]; then
+  WX_MP_ENGAGEMENT="$SCRIPT_DIR/../../wx-mp-engagement/scripts/wx-mp-engagement.sh"
+  if [ ! -x "$WX_MP_ENGAGEMENT" ]; then
+    echo "{\"ok\":false,\"error\":\"WX_MP_ENGAGEMENT_NOT_FOUND\",\"hint\":\"wx-mp-engagement.sh 不存在或不可执行: $WX_MP_ENGAGEMENT\"}"
+    exit 1
+  fi
+  if [ -z "$ROW_ID" ]; then
+    echo "{\"ok\":false,\"error\":\"WX_MP_NEEDS_ROW_ID\",\"hint\":\"wx_mp 平台需要 --id <row_id>（无 row_id 无法定位 pub_wx_mp 行）\"}"
+    exit 1
+  fi
+  echo "[fetch-and-update] wx_mp 走 wx-mp-engagement skill..." >&2
+  exec "$WX_MP_ENGAGEMENT" fetch --row-id "$ROW_ID"
+fi
 
 # 手动平台：直接返回
 for mp in $MANUAL_PLATFORMS; do

@@ -45,6 +45,7 @@ VALID_PLATFORMS = (
     "douyin", "bilibili", "kuaishou",
     "xhs-publish", "xhs-browse",
     "weibo", "zhihu", "wechat-channels",
+    "wx-mp",  # Phase 4.6 公众号创作者中心（engagement 抓取用）
 )
 
 # 平台 → camoufox 登录页 URL + 探活 URL
@@ -57,6 +58,7 @@ PLATFORM_LOGIN_URL = {
     "weibo":            "https://weibo.com/",
     "zhihu":            "https://www.zhihu.com/",
     "wechat-channels":  "https://channels.weixin.qq.com/",
+    "wx-mp":            "https://mp.weixin.qq.com/",
 }
 
 # 平台 → 探活 URL（带 cookie GET 一次判 200）
@@ -69,6 +71,8 @@ PLATFORM_PROBE_URL = {
     "weibo":            "https://weibo.com/ajax/profile/info",
     "zhihu":            "https://www.zhihu.com/api/v4/me",
     "wechat-channels":  "https://channels.weixin.qq.com/",
+    # Phase 4.6 wx-mp 探活：创作者中心首页（spike 后可换更精确的 API）
+    "wx-mp":            "https://mp.weixin.qq.com/",
 }
 
 
