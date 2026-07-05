@@ -26,12 +26,6 @@
             "input": [
               "text"
             ],
-            "cost": {
-              "input": 1.2,
-              "output": 2.4,
-              "cacheRead": 0.145,
-              "cacheWrite": 0
-            },
             "contextWindow": 1000000,
             "maxTokens": 128000,
             "compat": {
@@ -48,12 +42,6 @@
             "input": [
               "text"
             ],
-            "cost": {
-              "input": 0.1,
-              "output": 0.2,
-              "cacheRead": 0.028,
-              "cacheWrite": 0
-            },
             "contextWindow": 1000000,
             "maxTokens": 131072,
             "compat": {
@@ -77,12 +65,6 @@
             "input": [
               "text"
             ],
-            "cost": {
-              "input": 1.2,
-              "output": 2.4,
-              "cacheRead": 0.145,
-              "cacheWrite": 0
-            },
             "contextWindow": 1000000,
             "maxTokens": 128000,
             "compat": {
@@ -99,12 +81,6 @@
             "input": [
               "text"
             ],
-            "cost": {
-              "input": 0.1,
-              "output": 0.2,
-              "cacheRead": 0.028,
-              "cacheWrite": 0
-            },
             "contextWindow": 1000000,
             "maxTokens": 131072,
             "compat": {
@@ -122,12 +98,6 @@
               "image",
               "text"
             ],
-            "cost": {
-              "input": 0.0018,
-              "output": 0.0144,
-              "cacheRead": 0,
-              "cacheWrite": 0
-            },
             "contextWindow": 256000,
             "maxTokens": 8192
           }
@@ -167,9 +137,9 @@
         "mode": "safeguard"
       },
       "thinkingDefault": "medium",
-      "maxConcurrent": 2,
+      "maxConcurrent": 3,
       "subagents": {
-        "maxConcurrent": 2,
+        "maxConcurrent": 4,
         "announceTimeoutMs": 3600000,
         "maxSpawnDepth": 2
       }

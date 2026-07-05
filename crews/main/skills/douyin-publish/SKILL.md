@@ -35,7 +35,7 @@ metadata:
 ### 一键全流程
 
 ```bash
-python3 /abs/path/to/crews/main/skills/douyin-publish/scripts/publish_douyin.py run \
+python3 ./skills/douyin-publish/scripts/publish_douyin.py run \
   --video /path/to/video.mp4 \
   --title "视频标题" \
   --caption "视频描述 #话题1 #话题2"
@@ -45,22 +45,22 @@ python3 /abs/path/to/crews/main/skills/douyin-publish/scripts/publish_douyin.py 
 
 ```bash
 # 1. 探活（exit 0 = 有效, 2 = 失效需扫码登录）
-python3 .../publish_douyin.py login
+python3 ./publish_douyin.py login
 
 # 2. 上传视频（返回 session 名，后续步骤用）
-python3 .../publish_douyin.py upload --video video.mp4
+python3 ./skills/douyin-publish/scripts/publish_douyin.py upload --video video.mp4
 
 # 3. 填标题/描述
-python3 .../publish_douyin.py fill --session <s> --title "标题" --caption "描述"
+python3 ./skills/douyin-publish/scripts/publish_douyin.py fill --session <s> --title "标题" --caption "描述"
 
 # 4. 点发布
-python3 .../publish_douyin.py publish --session <s>
+python3 ./skills/douyin-publish/scripts/publish_douyin.py publish --session <s>
 
 # 5. 取视频链接
-python3 .../publish_douyin.py get-link --session <s>
+python3 ./skills/douyin-publish/scripts/publish_douyin.py get-link --session <s>
 
 # 6. 清理（最后一步必调）
-python3 .../publish_douyin.py cleanup --session <s>
+python3 ./skills/douyin-publish/scripts/publish_douyin.py cleanup --session <s>
 ```
 
 ---

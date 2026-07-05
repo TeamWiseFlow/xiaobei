@@ -80,9 +80,9 @@
         "mode": "safeguard"
       },
       "thinkingDefault": "medium",
-      "maxConcurrent": 2,
+      "maxConcurrent": 3,
       "subagents": {
-        "maxConcurrent": 2,
+        "maxConcurrent": 4,
         "announceTimeoutMs": 3600000,
         "maxSpawnDepth": 2
       }

@@ -16,7 +16,7 @@
 #### D20① 镜像预装常用包（Phase 6 落地）
 
 - `Dockerfile wiseflow-layer` 阶段按 `skills/`+`crews/` 实际 import 清单 pip 装进镜像：
-  - requests / Pillow / xhshow / python-pptx / reportlab / tccli / google-api-python-client / google-auth-oauthlib 等
+  - requests / Pillow / python-pptx / reportlab / tccli / google-api-python-client / google-auth-oauthlib 等
 - 避免小白用户运行期 pip（小白场景是 Docker 部署态；本机源码部署场景下用户已有 Python 环境，但 D20① 仍适用）
 
 #### D20② volume 扩展（Phase 6 落地）
