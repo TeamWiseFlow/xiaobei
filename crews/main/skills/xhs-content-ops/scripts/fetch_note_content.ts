@@ -126,10 +126,10 @@ if (!cookieDict.a1 || !cookieDict.web_session) {
   process.exit(2)
 }
 
-// ── Feed API via relay sign proxy（D1 签名收敛到 relay） ───────────────────
-// relay /api/v1/sign/xhs/proxy 签名 + 代请求 edith 返回原始 JSON，本文件做 parse。
+// ── Feed API：relay 只签名，client 自行 fetch xhs.com ────────────────────
+// xhsFetch = relay xhsHeaders 拿签名头 + 本机 fetch feed，本文件做 parse。
 
-import { xhsProxy } from "../../_shared/relay-sign.ts"
+import { xhsFetch } from "../../_shared/relay-sign.ts"
 
 interface NoteCard {
   note_id?: string

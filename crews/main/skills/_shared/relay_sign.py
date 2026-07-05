@@ -1,14 +1,12 @@
 """relay_sign.py — client 侧调用 relay sign 服务的统一入口（Python）
 
-产品拆分后签名收敛到 relay（D1）。本模块供 xhs-publish 等 Python skill 共用。
-RELAY_BASE_URL + OFB_KEY 由 entrypoint 从 daemon.env 注入（os.environ）。
+平台规则：relay **只**算签名算法（xhs a_bogus / xsec_token / 抖音 _signature 等），
+实际平台调用（登录 / 抓取 / 互动 / 上传 / 发布）**必须 client 端完成**。本模块供
+xhs-publish 等 Python skill 共用。RELAY_BASE_URL + OFB_KEY 由 entrypoint 从 daemon.env 注入。
 
 接口对应 relay 仓 services/sign/：
-  POST /api/v1/sign/xhs/headers  → 仅签名
-  POST /api/v1/sign/xhs/proxy    → 签名 + 代请求 edith，返回平台原始 JSON
+  POST /api/v1/sign/xhs/headers  → 仅签名（返回完整 headers，client 自行 fetch 平台）
   POST /api/v1/sign/douyin        → 算 a_bogus
-
-todo: 这里还缺一个bilibili签名接口，后续需要加上
 """
 
 import json
@@ -65,30 +63,6 @@ def xhs_headers(
             "x_rap": x_rap,
         },
     )["headers"]
-
-
-def xhs_proxy(
-    uri: str,
-    cookies: dict,
-    payload: dict | None = None,
-    xsec_token: str | None = None,
-    xsec_source: str | None = None,
-    sign_format: str = "xys",
-    x_rap: bool = False,
-) -> Any:
-    """签名 + 代请求 edith，返回平台原始 JSON（client 自行 parse）"""
-    return _post(
-        "/api/v1/sign/xhs/proxy",
-        {
-            "uri": uri,
-            "payload": payload or {},
-            "cookies": cookies,
-            "xsec_token": xsec_token,
-            "xsec_source": xsec_source,
-            "sign_format": sign_format,
-            "x_rap": x_rap,
-        },
-    )
 
 
 def douyin_sign(query_string: str, post_data: str = "", ua: str | None = None) -> str:

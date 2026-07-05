@@ -31,7 +31,9 @@ if [ ! -f "$LOGIN_FILE" ]; then
 fi
 
 OUT=$(python3 -c '
-import json, sys, requests
+import json, os, sys, requests
+sys.path.insert(0, sys.argv[2])
+from relay_sign import xhs_headers
 d = json.load(open(sys.argv[1]))
 cookies = {}
 for it in d["cookies"].split(";"):
@@ -45,9 +47,15 @@ if not cookies.get("a1") or not cookies.get("web_session"):
 ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 origin = "https://www.xiaohongshu.com"
 edith = "https://edith.xiaohongshu.com"
-# sign_h = <todo:部分改为通过中转站请求签名>
+# /api/sns/web/v1/user/me 是 data-fetching API，必须 xyw 签名（xys 会 406）
+sign_h = xhs_headers(
+    uri="/api/sns/web/v1/user/me",
+    cookies=cookies,
+    method="get",
+    sign_format="xyw",
+)
 h = {"User-Agent": ua, "Origin": origin, "Referer": origin + "/", "Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items())}
-h.update(sign_h)
+h.update({k: v for k, v in sign_h.items() if k.lower().startswith("x-")})
 r = requests.get(edith + "/api/sns/web/v1/user/me", headers=h, timeout=15)
 j = r.json()
 uid = (j.get("data") or {}).get("user_id")
@@ -55,7 +63,7 @@ if not uid:
     print(json.dumps({"ok": False, "error": "NO_USER_ID", "msg": r.text[:200]}))
     sys.exit(1)
 print(uid)
-' "$LOGIN_FILE" 2>&1) || EXIT=$?
+' "$LOGIN_FILE" "$ROOT/skills/_shared" 2>&1) || EXIT=$?
 EXIT=${EXIT:-0}
 
 if [ "$EXIT" -ne 0 ]; then
