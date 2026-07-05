@@ -52,6 +52,38 @@ metadata:
 | 国务院 | `sites/gov.md` | 政策文件 |
 | Amazon | `sites/shopping.md` | 购物 |
 
+### Per-Category Source Guides（**新，借鉴 OpenCLI v1.8.2**）
+
+> **2026-07 借鉴**：[OpenCLI v1.8.2 (2026-06-03)](https://github.com/jackwener/opencli/blob/main/CHANGELOG.md) "smart-search — restored as a skill with **per-category source guides (AI / info / media / shopping / social / tech / travel / other)**"。
+>
+> 本节**适配本仓业务**（main 知识 / BD 客户 / IR 投资人）—— 不是 OpenCLI 全套。
+
+每个分类列出**推荐源** + **典型用途** + **数据特征**：
+
+| 分类 | 推荐源 | 典型用途 | 数据特征 |
+|------|--------|---------|---------|
+| **AI** | openai.com / anthropic.com / huggingface.co / paperswithcode.com / arxiv.org/cs.AI | LLM / 模型 / benchmark / 学术 | 强时效性；英文为主；benchmark 数字多 |
+| **info** | reuters.com / bbc.com / ft.com / 36kr.com / 财新 / 新浪财经 / 澎湃 | 行业新闻 / 公司动态 / 政策 | 时效性强；中文 + 英文混合；财经类需付费墙 |
+| **media** | youtube.com / bilibili.com / pexels-footage / pixabay-footage（本仓 skill）| 视频 / 音乐 / 媒体库 | 视频 metadata 重要；版权注意 |
+| **shopping** | amazon.com / taobao.com / jd.com / pdd.cn | 电商 / 价格 / 评测 | 国内电商需登录；价格波动大 |
+| **social** | x.com / weibo.com / xiaohongshu.com / douyin.com（本仓 skill）| 实时讨论 / 社区 | 短文本；高噪；需 cookie |
+| **tech** | github.com / stackoverflow.com / jianshu.com / juejin.cn / segmentfault.com / v2ex.com | 代码 / 开源 / 编程 | 强时效；英文为主；stackoverflow 答案质量高 |
+| **travel** | ctrip.com / booking.com / tripadvisor.com / mafengwo.cn | 旅游 / 交通 | 季节性强；多语种；图片重要 |
+| **other** | duckduckgo.com / startpage.com / kagi.com / sogou.com / yandex.com | 兜底 / 隐私搜索 / 国内外通用 | 隐私优 DDG；国内兜底 sogou；俄罗斯 Yandex |
+
+**快速选择规则**：
+1. 用户**明确指定平台** → 用指定平台（不分类）
+2. 用户**未指定** → 按"用户未指定平台时"表的意图特征路由
+3. **兜底** → 选 `other` 分类的 DuckDuckGo / Startpage（隐私 + 通用）
+4. **国内**网络环境下 → DuckDuckGo 可能不稳，**优先** 百度 / Bing / 夸克
+
+**与路由表配合**：
+- 路由表是"按意图 → 选平台"（平台名 → sites/<name>.md）
+- 源 guides 是"按分类 → 列备选"（**多了** 1 步选平台的灵活性）
+- 推荐组合：先看路由表选定首选 → 源 guides 给备选 → 1 个站不够时切换
+
+**参考 OpenCLI v1.8.2 Site Maps Hub**（长期借鉴方向）：本节是"per-category source guides"——最小可行实现。完整 Site Maps Hub（`sitemaps/<site>/` per-site navigation knowledge）超出本轮范围，**不**做。
+
 ### 用户未指定平台时
 
 按意图优先级自动路由：
