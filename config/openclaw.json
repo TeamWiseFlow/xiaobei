@@ -167,7 +167,7 @@
         "tools": {
           "exec": {
             "host": "gateway",
-            "security": "allowlist",
+            "security": "full",
             "ask": "off"
           }
         },

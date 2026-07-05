@@ -5,7 +5,7 @@
 - Last updated: (auto-maintained)
 - Watching: xiaobei system (see OFB_ENV.md for project path)
 
-## 定期巡检任务（使用 healthcheck 技能）
+## 定期巡检任务
 
 每次心跳执行以下检查，发现异常立即告知用户：
 

@@ -13,7 +13,6 @@ metadata:
       - RELAY_BASE_URL
       - OFB_KEY
     primaryEnv: OFB_KEY
-    homepage: https://www.volcengine.com/docs/82379/1541523
 ---
 
 # B站视频发布（bilibili-publish，relay 代理版）

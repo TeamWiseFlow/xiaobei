@@ -91,7 +91,7 @@
       {
         "id": "main",
         "default": true,
-        "name": "Main Agent",
+        "name": "小贝",
         "workspace": "~/.openclaw/workspace-main",
         "skills": [
           "nano-pdf",
@@ -110,7 +110,7 @@
         "tools": {
           "exec": {
             "host": "gateway",
-            "security": "allowlist",
+            "security": "full",
             "ask": "off"
           }
         },

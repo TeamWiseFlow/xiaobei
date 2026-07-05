@@ -1,6 +1,6 @@
-# Wiseflow
+# 小贝（wiseflow）
 
-Wiseflow 是OPC/创业者/独立经营者的“AI搭子”，它基于 [openclaw](https://github.com/openclaw/openclaw) 打造，增加了诸多面向真实创业场景的实用技能（同时也删减了原版很多用不到的功能），目前它能帮你：
+小贝（wiseflow）是为 OPC/中小微企业老板们量身打造的"AI搞钱搭子"，它基于 [openclaw](https://github.com/openclaw/openclaw)，在原版基础上增加了诸多面向真实创业场景的实用技能（同时也做了很多精简和patches），目前它能帮你：
 
 - 微信公众号文章写作、排版与推送
 - 小红书图文创作与发布
@@ -131,61 +131,22 @@ cd wiseflow
 
 🌹 开源不易，感谢支持！
 
-## ✨ 创新点
+## ✨ 小贝详细能力清单
 
-Wiseflow 在 openclaw 基础上以addon、配置模板、专属技能等方式（不改上游一行代码，保证完全兼容性）做了如下改进：
+## 小贝不是一个人在战斗
 
-#### “Crew”的概念
-
-原版 OpenClaw 定位是 **personal AI assistant**——个人助理。但个人助理和工作场景是很不一样的：工作场景的技能不要求丰富，但要求稳定、专业；不同的工作要对应不同的定义约束和技能组合，即不同岗位需要使用不同的 harness。
-
-Wiseflow 的做法是提供 `Crew Template`，针对每个岗位提供专属 skill 和工作指导，并留给用户充分的调教空间。
-
-目前 xiaobei 内置如下 crew，可以按需启用：
+小贝的背后其实是一只AI团队，他们有的为小贝提供运维支持，有的扩增小贝的能力：
 
 | Crew | 职责 | 关键技能 |
 |------|------|---------|
-| Main Agent（微信上的那个，默认启用，全局唯一） | 管理所有 crew 生命周期，唯一对话入口 | crew 招募/管理、渠道配置 |
-| IT Engineer（默认启用，全局唯一，可协助其他 crew 排障） | 系统运维、配置、故障排查 | seo、icp-filing、icp-exemption、tccli、alicloud-find-skills、session-logs |
-| HRBP | 招募管理对外 crew，周期扫描 feedback 升级 | crew-recruit、crew-modify、crew-remove、crew-list、crew-usage |
-| 商务拓展 | 客户挖掘端 | 社交媒体潜客挖掘、竞品监控、行业情报、生成业务介绍 PPT |
-| 自媒体运营 | 内容生产端 | 写稿、生图、短视频制作（`video-product`：多输入源 → 自动脚本 → 分段生成 → 合成）、视频分发（微信视频号/小红书/抖音/Twitter 等）、`de-mouth`（去口误）、`highlight-clipper`（高光剪辑）、15 个平台自动发布 |
-| 设计师 | 视觉设计端 | 15 套品牌设计系统、完整网页/APP/品牌视觉体系构建 |
-| 销售型客服 | 获客转化端 | 自动回复促进成交、调研用户来源、记录客户信息、发起/确认收款 |
-| 投资人关系（预发布） | 融资端 | 寻找投资人、冷接触、填报申请表、生成 BP |
+| 小贝（main agent） |  ||
+| IT工程师（it engineer） |  ||
+| 销售型客服（sales-cs）|  |  |
+| 制作师（content producer） |  |  |
 
-
-  <details>
-  <summary><strong>自媒体运营 — 支持的社交媒体平台（16 个）</strong></summary>
-
-  | 平台 | 发布方式 |
-  |------|---------|
-  | 微信公众号 | API + wenyan-cli 渲染 |
-  | 微信视频号* | 浏览器 + CDP（wujie shadow DOM） |
-  | 企业微信朋友圈* | API |
-  | 小红书* | API |
-  | 抖音 | API（OAuth2） |
-  | B站* | Web API |
-  | 快手* | Web API |
-  | 今日头条 | 浏览器 + CDP |
-  | 掘金 | 浏览器 |
-  | Twitter/X | 浏览器 |
-  | YouTube | YouTube Data API v3 |
-  | TikTok | Content Posting API |
-  | Instagram | Meta Graph API |
-  | Facebook | Meta Graph API |
-  | Threads | Meta Graph API |
-  | Pinterest | Pinterest API v5 |
-
-  > *\* 标记的平台发布技能由 Pro 版本提供，开源版不包含*
-
-  </details>
-
-有关”多 crew 机制”设计，详见[CREW TYPE DESIGN](docs/crew-system.md)
-
-#### Crew 之间的自主协作
+### AI团队的自主协作
   
-我们巧妙的利用了 OpenClaw 的 Spawn Subagent 机制实现了 crew 之间的自主协作能力，这意味着：
+小贝团队成员之间可以自主完成协作，而无需用户介入，这也是为什么您只需要一个微信入口就可以完整使用所有功能的原因，这意味着：
 
 Crew 遇到自己不能解决的问题：
   ```text
@@ -197,51 +158,37 @@ Crew 遇到自己不能解决的问题：
 
 工作流程：
 
-  假设新媒体运营 crew 正在处理内容发布任务，突然遇到 API 调用失败：
+  假设小贝正在处理内容发布任务，突然遇到 API 调用失败：
   ```text
-  [media-operator] 正在发布文章到微信公众号...
-  [media-operator] 发现错误：access_token expired
-  [media-operator] 判断：这是技术问题，调用 IT Engineer
+  [xiaobei] 正在发布文章到微信公众号...
+  [xiaobei] 发现错误：access_token expired
+  [xiaobei] 判断：这是技术问题，调用 IT Engineer
     └── [it-engineer] 收到协助请求：access_token 过期
     └── [it-engineer] 分析原因：token 刷新机制异常
     └── [it-engineer] 执行修复：重新配置 token 刷新
     └── [it-engineer] 返回结果：问题已解决
-  [media-operator] 收到解决方案，继续发布文章
-  [media-operator] 任务完成
+  [xiaobei] 收到解决方案，继续发布文章
+  [xiaobei] 任务完成
   ```
   用户视角：整个过程用户无感知，Agent 自主完成了问题排查和修复。
   
-示例：
-  
-1. 目前 xiaobei 已经默认配置 `it-engineer` 为所有对内 crew 可 spawn，这令我们可以不必为一个任务分别找不同的 crew以及在任务执行过程中遇到问题，crew 也会自动唤起 it-engineer 进行协查：
-  
 <img width="960" src="assets/crews_co_work.png" />
 
-#### 可用性增强
+## 强大的AI客服就在这里
 
-原版openclaw的使用和维护并不简单，尤其对于非技术用户而言，充满暗坑，最受诟病的是**安全性**和**安装部署**，为此我们也做了不少改进：
+小贝的团队中包含强大的AI客服（sales-cs），您无需再额外部署其他系统。只需要对小贝说：“我需要招募一名客服”即可。
 
-##### 安全
+小贝团队中的sales-cs不仅可以按照预设知识库进行精准回答，同时也具有极高的情商，懂得在售前咨询中推进销售。应对客户的诘难式提问，也能妥当应对。
 
-我们采用三重命令执行机制，**权限由 `exec-approvals.json` + `tools.exec` 自动强制执行**，不单单是角色定义中告知。
+<img width="960" src="assets/nb1.jpg" />
 
-**层级概览**
+*如需让客户可以通过微信与AI客服进行沟通，则需要注册企业微信并购买增值服务awada server*
 
-| Tier | 名称 | 执行策略 | 适用 Crew |
-|------|------|----------|-----------|
-| T0 | read-only | `security: deny` — 默认禁止所有 shell 命令 | external crews（默认） |
-| T1 | basic-shell | `security: allowlist` — 仅允许只读命令 | low-risk internal crews |
-| T2 | dev-tools | `security: allowlist` — 开发工具链 + 只读命令 | main, content-producer... |
-| T3 | admin | `security: full` — 完整系统操作 | it-engineer |
+*详询“掌柜的”👆*
 
-##### 易用性脚本
+## patches
 
-- **配置模板** — 预设国内可用的模型、渠道、技能等配置
-- **工具脚本** — 一键启动、一键部署、一键更新…… 
-
-##### xiaobei 内置补丁与可配置环境变量
-
-xiaobei 通过 `patches/` 目录对 openclaw 源码打补丁，每次运行 `apply-addons.sh` 时自动应用。以下是当前生效的补丁及其可配置项：
+xiaobei 通过 `patches/` 目录对 openclaw 源码打补丁，从而实现对原版openclaw的源码级改造：
 
 | 补丁 | 说明 | 相关环境变量 |
 |------|------|-------------|
@@ -250,33 +197,7 @@ xiaobei 通过 `patches/` 目录对 openclaw 源码打补丁，每次运行 `app
 | `005-browser-timeout-env-var` | 支持通过环境变量自定义浏览器操作默认超时（原默认仅 20 秒，网络慢时容易中断） | `OPENCLAW_BROWSER_TIMEOUT_MS=60000` （执行 install.sh 脚本会自动配置）|
 | `006-connectovercdp-no-defaults` | `connectOverCDP` 启用 `noDefaults: true`，避免 Patchright 修改用户浏览器状态 | 无 |
 
-> 旧补丁 `001-relax-exec-allowlist-shell-syntax`、`004-chrome-port-grace-retry` 已于 v5.5.2 删除：前者上游 exec 审批重构后复合命令已原生支持逐段匹配 allowlist，后者上游新增主动杀陈旧 Chrome 占用进程的恢复逻辑，均被上游吸收。详见 [CHANGELOG.md](CHANGELOG.md)。
-
-#### 浏览器增强
-
-**🌍 反检测浏览器，且无需安装浏览器插件**
-
-xiaobei 将 openclaw 内置的 Playwright 替换为 [Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright)（Playwright 的反检测 fork），显著降低自动化浏览器被目标网站识别和拦截的概率。
-
-> 我们综合考察了目前市面上流行的各浏览器自动化框架，包括 nodriver、browser-use、vercel 的 agent-browser等，目前可以确认的是虽然基本原理都是通过走 cdp 并提供持久化 openclaw 专用的 profile，但是只有 patchright 提供了完全的针对 CDP 探针的移除，换言之，即便是用最纯粹的 cdp 直连方案，也是带有特征的，即也是可以被检测到的。其他框架的定位是自动化测试目的，而非获取目的，而 patchright 本身就定位于获取，并且它本质上是 playwright 的 patch，继承了几乎全部的 playwright 上层 api，这就天然与 openclaw 兼容，不必额外安装任何插件或者mcp
-
-我们认为反侦测能力是为了实现“在线搞钱“目的的一个基础能力，比如 `main` 能够实现自动去各个平台发帖、回帖就完全基于此项改进。
-
-**🔍 Smart Search（智能搜索） Skill**
-
-替代 openclaw 内置的 `web_search`，提供更强大的搜索能力。相比原版内置的 web search tool，Smart Search 具备三大核心优势：
-
-- **完全免费，无需 API Key**：不依赖任何第三方搜索 API，零成本使用
-- **即时搜索，时效性最佳**：直接驱动浏览器前往目标页面或各大社交媒体平台（微博、Twitter/X、facebook 等）进行搜索，第一时间获取最新发布的内容
-- **信源可自定义**：用户可以自由指定搜索源，精准匹配自己的信息需求
-
-https://github.com/user-attachments/assets/8d097b3b-f9ab-42eb-98bb-88af5d28b089
-
-#### 可私有化部署的私密信道 —— awada
-
-通过 awada，你可以完全私有化部署自己的 channel，或者是对接第三方消息中转站，实现接入企微 bot 等能力。
-
-详见 [awada readme](awada/README.md)
+## 极简的部署和上手设计
 
 ## 目录结构
 

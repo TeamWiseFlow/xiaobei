@@ -22,17 +22,9 @@
 {
   "scopes": {
     "tenant": [
-      "aily:file:read",
-      "aily:file:write",
-      "application:application.app_message_stats.overview:readonly",
-      "application:application:self_manage",
-      "application:bot.menu:write",
       "bitable:app",
-      "cardkit:card:write",
       "contact:contact.base:readonly",
-      "corehr:file:download",
       "docs:doc",
-      "docs:document.content:read",
       "docs:document.media:upload",
       "docx:document",
       "docx:document.block:convert",
@@ -42,15 +34,9 @@
       "drive:drive",
       "drive:drive.metadata:readonly",
       "drive:drive.search:readonly",
-      "drive:drive:version",
       "drive:drive:version:readonly",
-      "event:ip_list",
-      "im:chat",
-      "im:chat.access_event.bot_p2p_chat:read",
-      "im:chat.members:bot_access",
       "im:message",
       "im:message.group_at_msg:readonly",
-      "im:message.group_msg",
       "im:message.p2p_msg:readonly",
       "im:message:readonly",
       "im:message:send_as_bot",
@@ -59,9 +45,7 @@
       "wiki:wiki",
       "wiki:wiki:readonly"
     ],
-    "user": [
-      "im:chat.access_event.bot_p2p_chat:read"
-    ]
+    "user": []
   }
 }
 ```

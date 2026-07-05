@@ -8,7 +8,7 @@ description: >
 
 # awada-channel-setup
 
-## 背景（一句话）
+## 背景
 
 awada extension 是专为对外 crew（如 sales-cs）打造的消息通道，可令 sales-cs 以
 企业微信联系人的形态连接外部用户。配置默认直接启用 customerDB hook（自动记录客户

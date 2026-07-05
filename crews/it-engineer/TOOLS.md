@@ -1,41 +1,20 @@
 # IT Engineer Agent — Tools
 
-## 可用工具
+### 运行环境铁律：OpenClaw 控制面操作 **一律走 MCP 工具**，不跳 CLI
 
-### 通用工具
-- 文件读写：读取日志、配置文件，修改 workspace 文件
-- Shell 执行：运行系统命令、检查状态、查看日志
+直接使用CLI会触发写运行中 Gateway 共享的 `dist/`，极端情况下导致系统崩坏。
 
-### xiaobei 内置脚本（需先 cd 到 xiaobei 项目目录再执行）
+**铁律**：生产 Gateway 运行中，以下操作全部走 MCP 工具，**不允许走 `pnpm openclaw` / `node dist/index.js` 任何 CLI 入口**：
 
-> xiaobei 项目路径见同目录的 `OFB_ENV.md`（历史命名保留，每次 `setup-crew.sh` 自动更新，里面有完整命令）。
+| 需求 | 工具 |
+|------|------|
+| cron 查询 / 增删改 / 运行历史 / 手动触发 | `cron` MCP 工具 |
+| config 查询 / 修改 / 应用 / 重启 Gateway | `gateway` MCP 工具 |
+| 会话 查询 / 历史 / 状态 / 送信 / spawn | `sessions_list` / `sessions_history` / `session_status` / `sessions_send` / `sessions_spawn` |
+| 节点 / 文件传输 / 调用 | `nodes` / `file_fetch` / `file_write` / `dir_list` / `dir_fetch` |
+| 技能架库 增删改查 | `skill_workshop` |
 
-```bash
-# 开发模式前台启动（含日志输出）
-cd <WISEFLOW_PROJECT_ROOT> && ./scripts/dev.sh gateway
-
-# 生产模式重新安装后台服务
-cd <WISEFLOW_PROJECT_ROOT> && ./scripts/reinstall-daemon.sh
-
-# 重新同步 crew 配置（幂等，安全执行）
-cd <WISEFLOW_PROJECT_ROOT> && ./scripts/setup-crew.sh
-
-# 重新应用 addons
-cd <WISEFLOW_PROJECT_ROOT> && ./scripts/apply-addons.sh
-```
-
-> ⚠️ **生产 Gateway 运行中不得调用 `pnpm openclaw <subcommand>`**。`pnpm openclaw` 入口在 npm script 里绑了 “每次先 build”，这个 build 会占 CPU、写运行中 Gateway 共享的 `dist/`，多次连续调用可能令系统崩坏（2026-06-29 发生过两次，详见 MEMORY.md）。包括看起来“只读”的 `cron list / cron show / cron runs / config get` 都是高风险雷区。
->
-> 所有 cron / config / sessions / status 类的查询与增删改，全部走 MCP 工具：
->
-> | 需求 | 用什么 |
-> |------|--------|
-> | cron 查询 / 增删改 / 运行历史 | `cron` MCP 工具，`action` 支持 list/get/add/update/remove/run/runs |
-> | config 查询 / 修改 / 应用 / 重启 | `gateway` MCP 工具，`action` 支持 config.get/config.patch/config.apply/restart |
-> | 会话查询 / 历史 / 状态 | `sessions_list` / `sessions_history` / `session_status` |
-> | 节点 / 文件传输 / 接口调用 | `nodes` / `file_fetch` / `file_write` / `dir_list` / `dir_fetch` |
->
-> 上游 OpenClaw CLI 仅在开发机、升级后首次迁移、或研发手动排查时使用；IT Engineer 在运行环境 **不主动** 调用。如果确实需要，须提前与用户确认 Gateway 可接受崩溃重启。
+看起来“只读”的 `pnpm openclaw cron list / cron show / cron runs / config get` 同样会触发 build，**同样是雷区**。
 
 ### GitHub / 代码相关（需已启用 github、gh-issues、coding-agent 技能）
 - `github`：读取 xiaobei 和 OpenClaw 仓库的最新信息（commits、releases、README）
@@ -56,9 +35,8 @@ cd <WISEFLOW_PROJECT_ROOT> && ./scripts/apply-addons.sh
 ## 工具使用规则
 
 1. **备份重要文件**：修改 `~/.openclaw/openclaw.json` 前，先备份
-2. **脚本优先**：优先使用 xiaobei 内置脚本，不要直接操作 `openclaw/` 目录下的代码
-3. **日志是第一线索**：遇到问题先查日志，再猜原因
-4. **验证结果**：每次操作后确认效果（如重启后检查服务是否正常运行）
+2. **日志是第一线索**：遇到问题先查日志，再猜原因
+3. **验证结果**：每次操作后确认效果（如重启后检查服务是否正常运行）
 
 ## SEO 技术工具
 

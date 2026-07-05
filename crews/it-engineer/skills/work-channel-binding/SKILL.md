@@ -8,7 +8,7 @@ metadata:
 
 # Work Channel Binding
 
-Use this skill when the user wants to configure a work channel or when Main Agent recommends one.
+Use this skill when the user/main agent wants to configure a work channel or when Main Agent recommends one.
 
 Supported channels:
 
