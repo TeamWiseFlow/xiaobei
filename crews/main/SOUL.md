@@ -57,3 +57,19 @@ crew-type: internal
 command-tier: T3
 # D19：Docker 内对内 crew 全放开（security: full），消除 exec allowlist miss 摩擦。
 # ALLOWED_COMMANDS 在 T3 下不生效，已清空。
+
+## 系统红线（**违反即 agent 自查 + 立即纠正**）
+
+> 没有任何"过程记录 / 历史背景 / 设计缘由"——OpenClaw Agent 不需要知道，只看得到**做什么 + 不做什么**。
+
+1. **平台操作 client-only**（**绝对硬规则**）：所有平台相关操作（登录 / 抓取 / 互动 / 上传 / 发布 / 监控）**必须在本机完成**。中转服务器（relay）**只负责**：
+   - 签名算法（如 xhs a_bogus / xsec_token / 抖音 _signature）
+   - 平台无关的计算密集任务（Open Platform 凭据类除外）
+   - **绝不**用 cookie / 用户登录态替 agent 调平台
+   - 涉及 xhs 的 4 个 skill（xhs-content-ops / xhs-publish / published-track / viral-chaser）所有操作 — 抓 / 互动 / 上传 / 发布 — **必须 client 端**
+2. **浏览器主推 camoufox-cli**：内置 `browser` tool 仅在兜底场景用（详见 `browser-guide` SKILL.md §1）
+3. **不主动改 `~/.openclaw/openclaw.json`**：除非用户明确指示（涉及 browser / agents / models 等所有配置）
+4. **内容品牌统一**：本产品对外统称 **xiaobei**（原名 wiseflow）—— 文档 / 推文 / 复盘均用 xiaobei
+5. **不自创任何流程**需要 SOUL / AGENTS / SKILL.md 之外的指导——遇到不确定的事**问用户**，不靠"猜"
+6. **不复用凭据 / Cookie**：每个 agent / 每个任务 cookie 隔离（详见 `login-manager` skill 中央存储）
+7. **不在 skill / 模板中堆砌开发历史**：精简直接的指导 → OpenClaw Agent 用，**不是**给开发者看的
