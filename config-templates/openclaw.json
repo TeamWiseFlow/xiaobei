@@ -148,16 +148,15 @@
       {
         "id": "main",
         "default": true,
-        "name": "Main Agent",
+        "name": "小贝",
         "workspace": "~/.openclaw/workspace-main",
         "skills": [
-          "nano-pdf",
-          "skill-creator",
+          "smart-search",
+          "browser-guide",
+          "email-ops",
+          "council",
           "session-logs",
-          "tmux",
-          "weather",
-          "summarize",
-          "gifgrep"
+          "tmux"
         ],
         "subagents": {
           "allowAgents": [
