@@ -1,13 +1,15 @@
 /**
  * relay-sign.ts — client 侧调用 relay sign 服务的统一入口（TS）
  *
- * 产品拆分后签名收敛到 relay（D1）。本模块供 viral-chaser / xhs-content-ops / published-track 等
- * TS skill 共用。RELAY_BASE_URL + OFB_KEY 由 entrypoint 从 daemon.env 注入。
+ * 平台规则：relay **只**算签名算法（xhs a_bogus / xsec_token / 抖音 _signature 等），
+ * 实际平台调用（登录 / 抓取 / 互动 / 上传 / 发布）**必须 client 端完成**——不传 cookie 替 client
+ * 调平台。本模块供 viral-chaser / xhs-content-ops / published-track / xhs-publish / 等共用。
+ * RELAY_BASE_URL + OFB_KEY 由 entrypoint 从 daemon.env 注入。
  *
- * 接口对应 relay 仓 services/sign/：
- *   POST /api/v1/sign/xhs/headers  → 仅签名
- *   POST /api/v1/sign/xhs/proxy    → 签名 + 代请求 edith，返回平台原始 JSON
+ * 端点对应 relay 仓 services/sign/：
+ *   POST /api/v1/sign/xhs/headers  → 仅签名（返回完整 headers）
  *   POST /api/v1/sign/douyin        → 算 a_bogus
+ *   xhsFetch(input)                  → 调 xhsHeaders 拿签名 + client 自己 fetch xhs.com（client 端收尾）
  * todo: 这里还缺一个bilibili签名接口，后续需要加上
  */
 
@@ -61,9 +63,13 @@ export interface XhsSignInput {
   xRap?: boolean;
 }
 
-export interface XhsProxyInput extends XhsSignInput {
+export interface XhsFetchInput extends XhsSignInput {
+  /** xhs API base URL（发布域 edith.xiaohongshu.com / 消费者域 www.xiaohongshu.com） */
+  baseUrl: string;
   xsecToken?: string;
   xsecSource?: string;
+  /** 单次请求超时（ms），默认 30s */
+  timeoutMs?: number;
 }
 
 /** 仅签名，返回完整 headers（含 Cookie / UA / 签名头），client 自行发请求 */
@@ -80,22 +86,50 @@ export async function xhsHeaders(input: XhsSignInput): Promise<Record<string, st
       x_rap: Boolean(input.xRap),
     },
   );
-  return data.headers;
+  return data.headers
 }
 
-/** 签名 + 代请求 edith，返回平台原始 JSON（client 自行 parse） */
-export async function xhsProxy<T = unknown>(input: XhsProxyInput): Promise<T> {
-  return postJson<T>("/api/v1/sign/xhs/proxy", {
-    uri: input.uri,
-    method: input.method ?? "post",
-    payload: input.payload ?? {},
-    params: input.params ?? {},
-    cookies: input.cookies,
-    xsec_token: input.xsecToken,
-    xsec_source: input.xsecSource,
-    sign_format: input.signFormat ?? "xys",
-    x_rap: Boolean(input.xRap),
+/**
+ * 签名 + client 自己 fetch xhs.com。
+ * 替代旧 `xhsProxy`（relay 端 fetch，已删除避免误用导致 cookie 复用 + 封号风险）。
+ */
+export async function xhsFetch<T = unknown>(input: XhsFetchInput): Promise<T> {
+  const { baseUrl, uri, method = "post", params = {}, payload, cookies, xsecToken, xsecSource, xRap, timeoutMs = 30_000 } = input;
+
+  // 1) 拿签名 headers
+  const headers = await xhsHeaders({ uri, method, payload, params, cookies, xRap });
+
+  // 2) xsec_token / xsec_source 拼到 URL（xhs 协议）
+  const allParams: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) allParams[k] = String(v);
+  if (xsecToken) allParams["xsec_token"] = xsecToken;
+  if (xsecSource) allParams["xsec_source"] = xsecSource;
+
+  const qs = new URLSearchParams(allParams).toString();
+  const url = `${baseUrl.replace(/\/$/, "")}${uri}${qs ? "?" + qs : ""}`;
+
+  // 3) client 自己 fetch（带 cookie + 签名头 + 可选 body）
+  const reqHeaders: Record<string, string> = { ...headers };
+  if (cookies && Object.keys(cookies).length) {
+    reqHeaders["Cookie"] = Object.entries(cookies)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("; ");
+  }
+  if (method.toLowerCase() !== "get" && payload) {
+    reqHeaders["Content-Type"] ??= "application/json";
+  }
+
+  const resp = await fetch(url, {
+    method: method.toUpperCase(),
+    headers: reqHeaders,
+    body: method.toLowerCase() === "get" ? undefined : JSON.stringify(payload),
+    signal: AbortSignal.timeout(timeoutMs),
   });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`xhs ${method.toUpperCase()} ${uri} 失败 (${resp.status}): ${text.slice(0, 200)}`);
+  }
+  return (await resp.json()) as T
 }
 
 // ── douyin ──────────────────────────────────────────────────────────────────
@@ -113,7 +147,7 @@ export async function douyinSign(input: DouyinSignInput): Promise<string> {
     postData: input.postData ?? "",
     ua: input.ua,
   });
-  return data.a_bogus;
+  return data.a_bogus
 }
 
 export { RELAY_BASE_URL };

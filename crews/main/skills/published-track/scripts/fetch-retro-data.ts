@@ -26,6 +26,8 @@
  *   2  Cookie 无效/未登录 → 调用方应触发 login-manager
  */
 
+const XHS_BROWSE_BASE = "https://www.xiaohongshu.com"
+
 import { readFileSync, existsSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
@@ -462,7 +464,7 @@ async function fetchXhs(noteId: string, xsecToken: string = "", xsecSource: stri
   }
 
   // 签名走 relay
-  const { xhsProxy } = await import("../../_shared/relay-sign.ts")
+  const { xhsFetch } = await import("../../_shared/relay-sign.ts")
 
   console.error("  → 调小红书 API（relay 签名）...")
   try {
@@ -477,7 +479,8 @@ async function fetchXhs(noteId: string, xsecToken: string = "", xsecSource: stri
       feedPayload.xsec_source = xsecSource || "pc_feed"
       feedPayload.xsec_token = xsecToken
     }
-    const feedResp = await xhsProxy<{ data?: { items?: any[] }; msg?: string }>({
+    const feedResp = await xhsFetch<{ data?: { items?: any[] }; msg?: string }>({
+      baseUrl: XHS_BROWSE_BASE,
       uri: feedUri,
       method: "post",
       payload: feedPayload,
@@ -516,7 +519,8 @@ async function fetchXhs(noteId: string, xsecToken: string = "", xsecSource: stri
         top_comment_size: "0",
         image_formats: "jpg,webp,avif",
       }
-      const cResp = await xhsProxy<{ data?: { comments?: any[]; cursor?: string; has_more?: boolean } }>({
+      const cResp = await xhsFetch<{ data?: { comments?: any[]; cursor?: string; has_more?: boolean } }>({
+        baseUrl: XHS_BROWSE_BASE,
         uri: commentUri,
         method: "get",
         params: commentParams,

@@ -171,7 +171,8 @@ async function fetchNoteDetail(): Promise<{
     payload.xsec_source = xsecSource || "pc_feed"
     payload.xsec_token = xsecToken
   }
-  const resp = await xhsProxy<FeedResponse>({
+  const resp = await xhsFetch<FeedResponse>({
+    baseUrl: XHS_BROWSE_BASE,
     uri,
     method: "post",
     payload,
