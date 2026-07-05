@@ -69,7 +69,7 @@ metadata:
 ---
 title: 文章标题
 cover: ./cover.jpg           # 可选，缺省自动取正文第一张图
-author: 作者名称              # 可选，默认为“wiseflow 自媒体小编“
+author: 作者名称              # 可选，默认为“xiaobei 自媒体小编“
 source_url: https://...      # 可选，原文链接
 need_open_comment: true      # 可选，是否开启评论（默认 false）
 only_fans_can_comment: false # 可选，是否仅粉丝可评论（默认 false）

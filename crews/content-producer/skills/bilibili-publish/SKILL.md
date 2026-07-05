@@ -1,8 +1,8 @@
 ---
 name: bilibili-publish
-description: Publish videos to Bilibili (B站) via relay proxy (Phase 3.1 — D1 全 proxy).
-  One-step multipart upload: video + metadata → relay → B站 Open Platform.
-  No local BILIBILI_APP_ID / BILIBILI_APP_SECRET required; uses OFB_KEY + RELAY_BASE_URL.
+description: Publish videos to Bilibili (B站) via relay proxy. One-step multipart
+  upload: video + metadata → relay → B站 Open Platform. No local
+  BILIBILI_APP_ID / BILIBILI_APP_SECRET required; uses OFB_KEY + RELAY_BASE_URL.
 metadata:
   openclaw:
     emoji: 📺
@@ -18,11 +18,9 @@ metadata:
 
 # B站视频发布（bilibili-publish，relay 代理版）
 
-> **Phase 3.1 改版（2026-07-04）**：从原 Open Platform OAuth2 + HMAC 签名 + chunked upload 路径改为 **relay 一站式代理**。
->
-> **核心变化（D1 全 proxy）**：
-> - skill 内**不再持** BILIBILI_APP_ID / BILIBILI_APP_SECRET
-> - skill 内**不再做** OAuth2 授权 / token 刷新 / MD5 签名 / 分块上传
+> **架构**：relay 一站式代理。
+> - skill 内**不持** BILIBILI_APP_ID / BILIBILI_APP_SECRET
+> - skill 内**不做** OAuth2 授权 / token 刷新 / MD5 签名 / 分块上传
 > - 单一 multipart POST → relay → B站 Open Platform
 
 ---
@@ -159,7 +157,7 @@ python3 /abs/path/to/.../publish_bilibili.py \
 | 退出码 | 0/1/2 | 0/1/2（保持兼容） |
 
 **为什么值得多一跳**：
-- D1 决策：xhs/bilibili 全 proxy（凭据集中管理，避免泄露）
+- 凭据集中管理（避免泄露）
 - 客户端代码大幅简化（移除 OAuth2 / 签名 / 分块逻辑）
 - relay 端可做配额控制 / 失败重试 / 限流（业务侧）
 - 客户端无需处理 token 刷新（凭据生命周期由 relay 管理）
@@ -168,7 +166,7 @@ python3 /abs/path/to/.../publish_bilibili.py \
 - 多一次网络跳转（latency）
 - 大文件走 relay 占用 relay 带宽（成本）
 
-**验收标准**（dev plan §Phase 3.1）：
+**验收标准**：
 - 发一条真实动态成功
 - skill 内无 BILI 凭据（已达成：source grep 无 BILIBILI_APP_*）
 - 12 单元测试全过

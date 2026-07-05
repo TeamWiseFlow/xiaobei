@@ -1,8 +1,8 @@
 ---
 name: login-manager
 description: Manage platform login state (cookies) for Douyin, Bilibili, Kuaishou,
-  XHS, and other platforms. Uses camoufox-cli (Phase 4.5+) to capture QR login
-  flows and export cookies to a central store.
+  XHS, and other platforms. Uses camoufox-cli to capture QR login flows and export
+  cookies to a central store.
 metadata:
   openclaw:
     emoji: 🔑
@@ -16,8 +16,6 @@ metadata:
 
 Use this skill **before** calling any skill that requires platform cookies (viral-chaser, xhs-content-ops, xhs-publish, etc.). It ensures valid cookies are available, performing QR-code-based re-login via `camoufox-cli` when session expires.
 
-> **Phase 4.5+ change**：旧 CDP WebSocket 抽 cookie 流程已退役。统一走 `camoufox-cli` headless 截图 + `cookies export`。
->
 > 📍 **exec 调用方式**：本 skill 的 wrapper 路径为 `~/.openclaw/workspace-main/skills/login-manager/scripts/login-manager.sh`（具体路径以部署时 setup-crew 注入为准；TOOLS.md 也会给出）。**不要**用 `cd <dir> && ./scripts/xxx.sh` 复合形式（触发 allowlist miss），也**不要**用相对路径 `./scripts/...`（agent 容易误拼 CWD/前缀）。
 
 ---
@@ -70,7 +68,7 @@ login-manager.sh read  <platform>        # 输出中央 JSON
 login-manager.sh write <platform>        # 从 stdin 写中央 JSON
 login-manager.sh status-all              # 批量探活
 
-# camoufox 会话管理（Phase 4.5+ 新增）
+# camoufox 会话管理
 login-manager.sh qr-headless <platform> [url]   # 启 headless 会话 + 截图 QR → stdout JSON
 login-manager.sh qr-confirm <platform> --session <session>   # 轮询扫码 → cookies export 落盘
 login-manager.sh cookie-export <platform> <session>   # 从已登录 camoufox session 落中央 JSON
@@ -182,15 +180,15 @@ header = "; ".join(f"{c['name']}={c['value']}" for c in cookies if domain in c['
 
 ---
 
-## 并发约束（D18 + 4.5.5）
+## 并发约束
 
 - **每 agent 一 session**：禁止两个 agent 共享同一个 camoufox session（profile dir 冲突会污染 cookie state）
 - session 名规则：`{platform}-{purpose}-{nonce}`，如 `xhs-browse-agent-xyz78901`
 - 不同 agent / 不同登录流程 → 各自独立 session，独立 profile dir
 
-## D18 约束
+## 实现约束
 
-- **不 fork camoufox-cli**：Phase 4.5 spike 已验证原生 CLI 够用
+- **不 fork camoufox-cli**：原生 CLI 够用
 - **不 bake chromium**：Dockerfile 阶段 1 只装 camoufox Firefox 二进制
 - **保留 patchright fallback**：本 skill 替换 CDP 路径后，openclaw 内置 browser tool + patchright 仍可作用户 Chrome attach fallback（见 browser-guide §fallback）
 

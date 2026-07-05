@@ -1,3 +1,3 @@
 # main ALLOWED_COMMANDS
-# D19：command-tier=T3（security: full），allowlist 不生效，本文件保留空标记。
+# command-tier=T3（security: full），allowlist 不生效，本文件保留空标记。
 # 对内 crew 在 Docker 内全放开，不再维护命令白名单。

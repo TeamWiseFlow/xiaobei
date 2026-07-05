@@ -2,7 +2,7 @@
 name: wx-mp-engagement
 description: 微信公众号 engagement 数据抓取。通过 camoufox-cli 跑创作者中心
   拿已发布文章的阅读数 / 点赞数 / 评论数 / 分享数 / 收藏数，写入 published-track
-  的 pub_wx_mp 表。Phase 4.6 方案 A（spike 待真机验证）。
+  的 pub_wx_mp 表。
 metadata:
   openclaw:
     emoji: 📈
@@ -15,7 +15,7 @@ metadata:
 
 # 微信公众号 Engagement 抓取
 
-> ⚠️ **Phase 4.6 方案 A 骨架**：本 skill 当前为骨架实现，**未做真机 spike 验证**。selector / 抓取路径 / 风控行为均基于公开信息推测。部署后需用真实公众号账号跑 spike checklist（见 `docs/wechat-mp-engagement-design.md` §七）。
+> ⚠️ **骨架实现**：本 skill 当前为骨架，**未做真机 spike 验证**。selector / 抓取路径 / 风控行为均基于公开信息推测。部署后需用真实公众号账号跑 spike checklist（见 `docs/wechat-mp-engagement-design.md` §七）。
 >
 > **限制**：仅支持用户**自己有后台权限的号**（创作者中心用公众号账号登录）。竞品号拿不到——这是产品约束，不是技术约束。
 
@@ -76,7 +76,7 @@ wx-mp-engagement.sh fetch-all --days 7
    ├─ exit 2 → 退出（调用方触发 qr-headless + qr-confirm）
    └─ exit 0 → 继续
 2. lookup_published_row(row_id) → 拿 publish_url / publish_date / source_folder
-3. session_name() → 生成 wx-mp-engagement-{nonce} 独立 session（D18 + 4.5.5）
+3. session_name() → 生成 wx-mp-engagement-{nonce} 独立 session
 4. login-manager.sh cookie-import wx-mp <session>  → 中央 cookie 注 camoufox session
 5. camoufox-cli --session <s> --persistent --headless open <创作者中心>
 6. camoufox-cli ... eval document.documentElement.outerHTML  → 拿 HTML
@@ -124,15 +124,15 @@ fetch-and-update-metrics.sh --platform wx_mp --id 42
 ```
 
 **修改点**（本轮交付的一部分）：
-- `fetch-and-update-metrics.sh`：`MANUAL_PLATFORMS` 移除 `wx_mp`（保留 `wx_channel` 因 Phase 4.6 不覆盖视频号）
+- `fetch-and-update-metrics.sh`：`MANUAL_PLATFORMS` 移除 `wx_mp`（保留 `wx_channel`，本 skill 不覆盖视频号）
 - `fetch-retro-data.ts`：加 `wx-mp` 分支，薄壳调本 skill
 
 ---
 
-## 约束（D18 + D8 + D20）
+## 约束
 
-- **D18 浏览器方案**：camoufox-cli 主推；不 fork；不 bake chromium
-- **D18 并发**：每 agent 一 session（独立 daemon + 独立 profile dir）
+- **浏览器方案**：camoufox-cli 主推；不 fork；不 bake chromium
+- **并发**：每 agent 一 session（独立 daemon + 独立 profile dir）
 - **整块 client 容器内闭环**（不碰 relay）
 - **凭据边界**：本 skill 只用浏览器 session token；**不动** `wx-mp-publisher` 的 AppID/AppSecret
 
@@ -175,7 +175,7 @@ fetch-and-update-metrics.sh --platform wx_mp --id 42
 
 ## Notes
 
-- **必须 D19 内 crew 配合**：本 skill 在 Docker 内运行需 `command-tier=T3` full（内 crew 放开，**不需要**在 ALLOWED_COMMANDS 白名单）
+- Docker 内运行需 `command-tier=T3` full（内 crew 放开，**不需要**在 ALLOWED_COMMANDS 白名单）
 - **限频建议**：单公众号每 24h 全量 ≤ 1 次；单篇分析按需触发
-- **失败兜底**：方案 A 跑不通时回退到 manual update（`update-metrics.sh --reads ... --likes ... --comments ...` 手动填）
+- **失败兜底**：本 skill 跑不通时回退到 manual update（`update-metrics.sh --reads ... --likes ... --comments ...` 手动填）
 - **依赖版本**：camoufox-cli@0.6.2（Dockerfile 阶段 1 锁定）

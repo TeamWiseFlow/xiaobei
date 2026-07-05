@@ -15,7 +15,7 @@ metadata:
 
 通过 creator 平台 COS 上传 + `/web_api/sns/v2/note` 创建笔记，支持图文和视频两种模式。使用 login-manager 管理 cookie 认证。签名使用 relay sign 服务。
 
-上传流程（对齐 AiToEarn v2.4.0）：
+上传流程：
 1. 获取 COS 上传许可证：`creator.xiaohongshu.com/api/media/v1/upload/web/permit`
 2. PUT 文件到 COS 对象存储（大文件自动分片）
 3. 创建笔记：`edith.xiaohongshu.com/web_api/sns/v2/note`

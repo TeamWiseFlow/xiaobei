@@ -72,7 +72,7 @@
 
 - `config-templates/openclaw.json` 主力模型由 DeepSeek V4 Pro 切换为 **GLM-5.2**（经火山引擎方舟 Coding Plan 接入，`awk/glm-latest`），fallback 为 siliconflow provider
 - `install.sh` 交互式收集的 key 由 `DEEPSEEK_API_KEY` 改为 `AWK_API_KEY`
-- 大模型推荐主推**火山方舟 Coding Plan**：支持 GLM-5.2、Kimi-K2.7、MiniMax-M3、DeepSeek-V4 系列、Doubao-Seed-2.0 系列等模型，工具不限；通过 wiseflow 邀请链接订阅叠加 9.5 折，首月尝鲜低至 9.4 元。邀请链接 https://volcengine.com/L/dx-wt80li-I/ ，邀请码 `5Y5A6L86`
+- 大模型推荐主推**火山方舟 Coding Plan**：支持 GLM-5.2、Kimi-K2.7、MiniMax-M3、DeepSeek-V4 系列、Doubao-Seed-2.0 系列等模型，工具不限；通过 xiaobei 邀请链接订阅叠加 9.5 折，首月尝鲜低至 9.4 元。邀请链接 https://volcengine.com/L/dx-wt80li-I/ ，邀请码 `5Y5A6L86`
 - siliconflow、aihubmix 推荐不变（siliconflow 仍需申请，作为视觉/替补模型）
 
 > 想使用 5.5.2 的视频生成能力，需额外开通火山方舟 doubao-seedance-2.0 系列或阿里云百炼 happyhorse-1.1 系列模型，并将对应 key（`AWK_GEN_KEY` 或 `MODELSTUDIO_API_KEY`）配置到 `daemon.env`。
@@ -84,7 +84,7 @@
 - **删除 patch 004**（chrome port grace retry）：上游新增 `ensureManagedChromePortAvailable` + `recoverOwnedStaleManagedChromeCdpListener`，命中 EADDRINUSE 时主动杀掉占用端口的陈旧 Chrome 进程并清 singleton lock 再重探，比 3×500ms 轮询更强
 - 保留 patch 002/003/005/006（验证 apply 通过，上游无等价改动）
 
-### 上游关键变更摘要（与 wiseflow 相关）
+### 上游关键变更摘要（与 xiaobei 相关）
 
 - **GLM-5.2（6.10）**：暴露 reasoning levels、GLM overload failover、Zai 合成模型回退 manifest baseUrl
 - **心跳（6.9）**：修复 5.20 及所有 5.x 上心跳 scheduler 不触发的回归（#88970）
@@ -249,9 +249,9 @@
 
 ### 架构调整
 
-- **patches 与 addon 分离**：将代码补丁（`patches/*.patch`）、插件（`patches/suppress-stale-reply`）和依赖覆盖（`patches/overrides.sh`）从 `addons/officials/` 迁移至项目根目录 `patches/`，作为 wiseflow 的共性基础能力，对所有 addon 生效。addon 不再支持 patches 层，仅提供额外全局技能和 Crew 模板。
+- **patches 与 addon 分离**：将代码补丁（`patches/*.patch`）、插件（`patches/suppress-stale-reply`）和依赖覆盖（`patches/overrides.sh`）从 `addons/officials/` 迁移至项目根目录 `patches/`，作为 xiaobei 的共性基础能力，对所有 addon 生效。addon 不再支持 patches 层，仅提供额外全局技能和 Crew 模板。
 
-- **默认全局技能重新划分**：`smart-search`、`browser-guide` 从 addon 专属技能迁移至 `skills/`（项目根目录），成为 wiseflow 所有 crew 默认可用的内置技能，无需依赖 official addon 即可生效。
+- **默认全局技能重新划分**：`smart-search`、`browser-guide` 从 addon 专属技能迁移至 `skills/`（项目根目录），成为 xiaobei 所有 crew 默认可用的内置技能，无需依赖 official addon 即可生效。
 
 - **`apply-addons.sh` 重构**：先应用 `patches/` 下的基础补丁和覆盖，再安装默认全局技能（`skills/`），最后逐 addon 安装额外技能和 Crew 模板。addon 加载流程简化为两层（skills → crew），移除原有的 overrides 和 patches 层。
 

@@ -1,7 +1,7 @@
 ---
 name: douyin-publish
-description: 通过浏览器自动化发布视频到抖音创作者中心。Phase 3.2 浏览器模拟
-  方案（camoufox-cli 主推）。绕过抖音开放平台资质限制。
+description: 通过浏览器自动化发布视频到抖音创作者中心（camoufox-cli 主推）。绕过
+  抖音开放平台资质限制。
 metadata:
   openclaw:
     emoji: 🎤
@@ -11,13 +11,11 @@ metadata:
       - camoufox-cli
 ---
 
-# 抖音内容发布（Phase 3.2 浏览器模拟方案）
+# 抖音内容发布
 
-> **Phase 3.2 改版（2026-07-04）**：从原开放平台 H5 Schema 路径改为 **浏览器模拟方案**。
->
 > **核心原因**：抖音开放平台发布能力申请被驳回（主体资质不满足）→ 改走浏览器模拟，绕过资质限制。
 >
-> **形态**：仿 `crews/main/skills/wechat-channels-publish`（视频号浏览器模拟）。用 camoufox-cli 启 headless 会话 + login-manager 拿 cookie + 创作者中心填表上传 + 发布 + 取链接。
+> **形态**：用 camoufox-cli 启 headless 会话 + login-manager 拿 cookie + 创作者中心填表上传 + 发布 + 取链接。
 
 ---
 
@@ -84,7 +82,7 @@ login-manager.sh qr-headless douyin
 login-manager.sh qr-confirm douyin --session <s> --timeout 180
 ```
 
-`login-manager` 平台 key：`douyin`（已在 Phase 4.5.2 加进 VALID_PLATFORMS）。
+`login-manager` 平台 key：`douyin`。
 
 ---
 
@@ -95,7 +93,7 @@ login-manager.sh qr-confirm douyin --session <s> --timeout 180
 | URL | `channels.weixin.qq.com/platform/post/create` | `creator.douyin.com/creator-micro/content/upload` |
 | 微前端 | wujie + shadow DOM | 普通 React DOM（无 shadow） |
 | 登录 | 微信扫码 | 抖音创作者中心扫码（手机号+验证码） |
-| 浏览器方案 | camoufox-cli 主推（Phase 4.5+） | camoufox-cli 主推（Phase 4.5+） |
+| 浏览器方案 | camoufox-cli 主推 | camoufox-cli 主推 |
 | 凭据 | login-manager `wechat-channels` | login-manager `douyin` |
 | 视频发布后 | 链接 `weixin.qq.com/sph/xxx` | 链接 `douyin.com/video/xxx` |
 
@@ -105,7 +103,7 @@ login-manager.sh qr-confirm douyin --session <s> --timeout 180
 
 - 6 个子命令：login / upload / fill / publish / get-link / cleanup
 - run 命令一键跑全流程
-- camoufox 启 headless + persistent 会话（每任务一 session，D18）
+- camoufox 启 headless + persistent 会话（每任务一 session）
 - 上传走 `DataTransfer` + `File` 对象注入（绕过 CDP setFileInput 在某些 DOM 下的限制）
 - 等待页面状态变化（轮询 `body.innerText`）
 - 失败模式：DOM 改版 / 按钮找不到 / 转码超时
@@ -168,17 +166,16 @@ login-manager.sh qr-confirm douyin --session <s> --timeout 180
 
 ---
 
-## 与 D1 / D12 决策的关系
+## 凭据
 
-- **D1**：抖音发布**不走** xhs/bilibili 的"全 proxy" 模式（**例外**：因为开放平台资质不满足）。改走浏览器模拟 = **client 端操作，不需 server 代理**
-- **D12**：视频生成（server 统购）vs 抖音发布（client 端浏览器模拟）是**两个独立环节**。视频生成本轮已撤回 video relay（用户 2026-07-04 决定）
-- **客户端凭据**：本 skill 只需要 `login-manager` 中央 cookie（session token，容器内闭环），不持任何抖音官方 API 凭据
+- 本 skill 只需要 `login-manager` 中央 cookie（session token，容器内闭环），不持任何抖音官方 API 凭据
+- 抖音发布走浏览器模拟（client 端操作，不经 relay 代理）
 
 ---
 
 ## Notes
 
-- 必须 D19 内 crew 配合：Docker 内 `command-tier=T3` full（无 allowlist 限制）
+- Docker 内 `command-tier=T3` full（无 allowlist 限制）
 - 限频建议：单抖音号每 24h ≤ 5 条发布；触发风控立即降级
 - 失败回退：浏览器模拟失败 → 维持现状（让用户自己手动发）
 - 抖音创作者中心 DOM 改版频繁：selector 需 spike 验证

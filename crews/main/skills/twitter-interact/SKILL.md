@@ -1,8 +1,7 @@
 ---
 name: twitter-interact
-description: Twitter/X 互动操作技能。Phase 2026.7 借鉴 AiToEarn v2.4 (2026-05-21)
-  "Twitter/X 能力增强"——支持点赞 / 取消点赞 / 转推 / 取消转推 / 收藏 / 取消收藏 /
-  关注 / 取关。camoufox-cli 主推路径 + login-manager 中央 cookie + 频率限制。
+description: Twitter/X 互动操作技能——支持点赞 / 取消点赞 / 转推 / 取消转推 / 收藏 /
+  取消收藏 / 关注 / 取关。camoufox-cli 主推路径 + login-manager 中央 cookie + 频率限制。
 metadata:
   openclaw:
     emoji: 💬
@@ -14,10 +13,6 @@ metadata:
 
 # Twitter/X 互动操作（twitter-interact）
 
-> **Phase 2026.7 新建**：借鉴 [AiToEarn v2.4 (2026-05-21)](https://github.com/yikart/AiToEarn/releases) "Twitter/X 能力增强——支持回复、引用、点赞、转推、收藏等互动操作"。
->
-> **架构**：形态仿 `crews/main/skills/douyin-publish`（Phase 3.2 浏览器模拟）—— camoufox-cli 主推 + login-manager 中央 cookie + 每任务一 session（D18 + 4.5.5）。
->
 > **Reply / Quote** 不在本 skill（属于 `twitter-post` 的 Quote Tweet / Reply to Tweet 流程）。
 
 ---
@@ -34,7 +29,7 @@ metadata:
 
 ## 8 个子命令
 
-| 子命令 | 目标 | 频率限制（v2.4）|
+| 子命令 | 目标 | 频率限制 |
 |--------|------|----------------|
 | `like <tweet>` | 点赞 | 1 min / 200 / 日 |
 | `unlike <tweet>` | 取消点赞 | 1 min / 200 / 日 |
@@ -47,7 +42,7 @@ metadata:
 | `run` | 一键跑（全流程：login + 操作 + cleanup）| — |
 | `cleanup <session>` | 关闭 camoufox session | — |
 
-> **频率限制来源**：AiToEarn 文档 + dev plan Phase 4.5 anti-automation limit + 经验值（30 min 风险窗口 / reply 27x like 权重）。如触发风控 → 24h 静默。
+> **频率限制**：平台 anti-automation 阈值 + 经验值（30 min 风险窗口 / reply 27x like 权重）。如触发风控 → 24h 静默。
 
 ---
 
@@ -227,13 +222,10 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 
 ---
 
-## 借鉴源
+## 相关 skill
 
-- [AiToEarn v2.4 (2026-05-21)](https://github.com/yikart/AiToEarn/releases) — "Twitter/X 能力增强：探索控制台 + 互动操作（回复/引用/点赞/转推/收藏）"
-- [AiToEarn v2.5 (2026-06-23)](https://github.com/yikart/AiToEarn/releases) — Twitter APIs: richer interaction
-- 本仓参考：[`docs/ai-catchup-2026-07-twitter-and-search.md`](../../docs/ai-catchup-2026-07-twitter-and-search.md) §一
-- 本仓 `crews/main/skills/douyin-publish`（Phase 3.2 浏览器模拟方案形态仿本）
-- 本仓 `crews/main/skills/twitter-post`（Quote / Reply / Long post 在那边）
+- `twitter-post`（Quote / Reply / Long post 在那边）
+- `login-manager`（cookie 中央存储 + camoufox session）
 
 ---
 

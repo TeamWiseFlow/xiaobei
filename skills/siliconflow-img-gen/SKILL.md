@@ -2,8 +2,8 @@
 name: siliconflow-img-gen
 description: Generate or edit images via 火山方舟 (Volcengine Ark) Seedream API.
   Text-to-image default model doubao-seedream-4-0-250828; image-edit supported
-  via 1-3 reference images. Uses user's AWK_API_KEY (Phase 5, D13: client-side
-  only, never sent to server).
+  via 1-3 reference images. Uses user's AWK_API_KEY (client-side only, never sent
+  to server).
 metadata:
   openclaw:
     emoji: 🖼️
@@ -16,9 +16,8 @@ metadata:
     homepage: https://www.volcengine.com/docs/82379/1541523
 ---
 
-# 火山方舟 Seedream 图像生成（Phase 5）
+# 火山方舟 Seedream 图像生成
 
-> **Phase 5 改版**：从 SiliconFlow (Qwen) 切到火山方舟 (Seedream)。原因：D13 决策 + 火山生图质量 + 多模型可选 + 国产化。
 > **凭据**：用户自带 `AWK_API_KEY`（纯客户端，不入 server）。
 
 Generate or edit images using 火山方舟 (Volcengine Ark) Seedream API.
@@ -101,7 +100,7 @@ python3 .../gen.py --prompt "blend these photos" \
 | `--model` | auto | Model ID；按模式自动选 4.0；可选 5.0 lite / 3.0 t2i |
 | `--image-size` | `2048x2048` | 文生图尺寸。方式 1: `2K`/`3K`/`4K`；方式 2: `WxH`（如 2048x2048） |
 | `--seed` | — | 随机种子 |
-| `--watermark` | `false` | 是否加水印（wiseflow 默认不加，避免后续 image 工具处理） |
+| `--watermark` | `false` | 是否加水印（xiaobei 默认不加，避免后续 image 工具处理） |
 | `--response-format` | `url` | `url`（链接 24h 有效）/ `b64_json` |
 | `--image` | — | 源图 URL 或 Base64（启用 image-edit 模式） |
 | `--image2` | — | 第二张参考图（image-edit） |
@@ -168,7 +167,7 @@ python3 .../gen.py --prompt "blend these photos" \
 
 ### 3. 可选设置
 
-- `--watermark false`：必加（wiseflow 默认）
+- `--watermark false`：必加（xiaobei 默认）
 - `--seed N`：需要可复现时设固定值
 - `--response-format b64_json`：避免依赖 URL 24h 失效（脚本默认 url）
 
@@ -249,7 +248,7 @@ python3 /abs/path/to/skills/siliconflow-img-gen/scripts/gen.py \
 | 维度 | 旧（SiliconFlow Qwen） | 新（火山方舟 Seedream） |
 |------|---------------------|---------------------|
 | API URL | `/v1/images/generations` | `/v3/images/generations`（非 `/coding/v3`） |
-| Auth | Bearer + `SILICONFLOW_API_KEY` | Bearer + `AWK_API_KEY`（D13 客户端 key） |
+| Auth | Bearer + `SILICONFLOW_API_KEY` | Bearer + `AWK_API_KEY`（客户端 key） |
 | 默认 model | Qwen/Qwen-Image | doubao-seedream-4-0-250828 |
 | 文生图 size | 1328x1328 等 7 个 | `2K/3K/4K` 或 `WxH`（总像素 ≥ 2560x1440） |
 | 图生图 | Qwen/Qwen-Image-Edit-2509 | 4.0+ 火山 image 字段（1-3 张 URL / Base64） |

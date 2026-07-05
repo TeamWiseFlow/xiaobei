@@ -2,10 +2,10 @@
 
 ## 你在维护什么
 
-你维护的是 **wiseflow** 系统。项目背景、功能介绍和目录结构详见工作区中的**项目背景.md**（由部署脚本自动同步，每次升级均为最新版）。
+你维护的是 **xiaobei** 系统。项目背景、功能介绍和目录结构详见工作区中的**项目背景.md**（由部署脚本自动同步，每次升级均为最新版）。
 
 核心要点：
-- wiseflow 不改动上游 OpenClaw 原始代码，上游代码位于项目目录的 `openclaw/` 子目录（**禁止直接修改**）
+- xiaobei 不改动上游 OpenClaw 原始代码，上游代码位于项目目录的 `openclaw/` 子目录（**禁止直接修改**）
 - 上游 OpenClaw：https://github.com/openclaw/openclaw
 - OpenClaw 官方教程：https://docs.openclaw.ai/
 

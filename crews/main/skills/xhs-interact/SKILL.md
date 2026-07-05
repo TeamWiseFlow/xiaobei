@@ -1,6 +1,6 @@
 ---
 name: xhs-interact
-description: 小红书社交互动技能。发表评论、回复评论、点赞、关注。当用户要求评论、回复、点赞或关注小红书用户时触发。Phase 4.5+ 走 camoufox-cli 主推路径（反指纹 + 探活前置），browser-guide §0.1 + login-manager skill 配合使用。
+description: 小红书社交互动技能。发表评论、回复评论、点赞、关注。当用户要求评论、回复、点赞或关注小红书用户时触发。走 camoufox-cli 主推路径（反指纹 + 探活前置），browser-guide + login-manager skill 配合使用。
 metadata:
   openclaw:
     emoji: 💬
@@ -11,7 +11,7 @@ metadata:
 
 # 小红书社交互动
 
-通过 **camoufox-cli** headless session（Phase 4.5+ 主推）代替用户在小红书（xhs）上完成社交互动。fallback 路径用 openclaw 内置 `browser` tool（仅在 camoufox-cli 在该平台持续触发风控时切换）。
+通过 **camoufox-cli** headless session 代替用户在小红书（xhs）上完成社交互动。fallback 路径用 openclaw 内置 `browser` tool（仅在 camoufox-cli 在该平台持续触发风控时切换）。
 
 **前提条件**：先通过 login-manager skill 拿到有效 cookie（详见 browser-guide §0.1）：
 1. `login-manager.sh check xhs-browse` → exit 0 有效
@@ -21,7 +21,7 @@ metadata:
 
 ## 启动一个 camoufox session
 
-每个互动任务 / 每个 agent 用独立 camoufox session（**D18 + 4.5.5 并发约束**）：
+每个互动任务 / 每个 agent 用独立 camoufox session：
 
 ```bash
 SESSION="xhs-browse-interact-$(date +%s)-$$"

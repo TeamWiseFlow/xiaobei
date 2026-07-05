@@ -300,7 +300,7 @@ const OUTPUT_NAME = 'demo-FEATURE.webm';
       fs.copyFileSync(src, dest);
       console.log('Video saved:', dest);
     }
-    // 不调用 browser.close() — Chrome 由 wiseflow 管理
+    // 不调用 browser.close() — Chrome 由 xiaobei 管理
   }
 })();
 ```
@@ -389,7 +389,7 @@ const OUTPUT_NAME = 'demo-FEATURE.webm';
   } finally {
     await page.screencast.stop();
     await context.close();
-    // 不调用 browser.close() — Chrome 由 wiseflow 管理
+    // 不调用 browser.close() — Chrome 由 xiaobei 管理
   }
 })();
 ```

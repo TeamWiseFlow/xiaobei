@@ -127,7 +127,7 @@
 
 **建议动作**：
 - 在 `skills/smart-search/SKILL.md` 加 "Per-Category Source Guides" 章节
-- 8 分类 + 分类下推荐源（基于 wiseflow 业务场景，不是 OpenCLI 全套）：
+- 8 分类 + 分类下推荐源（基于 xiaobei 业务场景，不是 OpenCLI 全套）：
   - **AI**：openai.com / anthropic.com / huggingface.co / paperswithcode.com
   - **info**：reuters.com / bbc.com / 36kr.com（国内）/ 新浪财经
   - **media**：youtube.com / bilibili.com / pexels-footage（已搬入）/ pixabay-footage（已搬入）

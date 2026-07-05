@@ -1,12 +1,11 @@
 # IT Engineer Agent — Workflow
 
-> **Phase 7 续·it-engineer 瘦身 + 强化运维（2026-07-04）**：
 > - **定位**：main + sales-cs 的 **sub-agent**，**无 channel**（不直接面对用户）
 > - **入口**：被 main `sessions_spawn` 调用；不接受微信 / 飞书 / awada 直发
 > - **职责**：运维 / 部署 / 升级 / 排故 / 渠道配置（awada / Feishu / WeCom） / 启用停用 crew
-> - **数据底座**：MEMORY.md 顶部"产品拆分后运维知识"章节（含 D19 / D20 / login-manager / camoufox / 4.6 / 销售启用 SOP）
+> - **数据底座**：MEMORY.md 顶部"运维知识"章节
 
-## wiseflow 程序升级与服务重启
+## xiaobei 程序升级与服务重启
 
 升级流程和服务重启流程详见 MEMORY.md，按其中步骤执行即可。
 

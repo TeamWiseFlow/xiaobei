@@ -2,7 +2,7 @@
 
 > **背景**：本轮已借鉴 v1.8.2（per-category source guides，#46 完成）。本报告分析 **v1.8.4 / v1.8.5 / v1.8.6** 3 个新 release 的**值得借鉴**变更。
 >
-> **架构约束不变**（dev plan §3.0 / memory 02-upstream-sources.md）：OpenCLI 走**浏览器扩展 + page.evaluate**，wiseflow 走 **camoufox-cli + CDP**。**不搬代码**，只吸收 design pattern。
+> **架构约束不变**（dev plan §3.0 / memory 02-upstream-sources.md）：OpenCLI 走**浏览器扩展 + page.evaluate**，xiaobei 走 **camoufox-cli + CDP**。**不搬代码**，只吸收 design pattern。
 
 ## 一、v1.8.4-1.8.6 关键变更
 
@@ -45,7 +45,7 @@ chore(release): 1.8.4
 
 ---
 
-## 二、对 wiseflow 借鉴分析
+## 二、对 xiaobei 借鉴分析
 
 ### 2.1 强相关：v1.8.6 命令可靠性 / 超时模式
 

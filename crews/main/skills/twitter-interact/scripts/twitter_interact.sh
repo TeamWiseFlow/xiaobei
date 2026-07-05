@@ -2,7 +2,6 @@
 # twitter_interact.sh — Twitter/X 互动操作 wrapper
 #
 # 委托给 twitter_interact.py（Python 3 stdlib + camoufox-cli）。
-# Phase 2026.7 借鉴 AiToEarn v2.4 新建。
 # 用法：twitter_interact.sh <command> [args...]
 
 set -euo pipefail

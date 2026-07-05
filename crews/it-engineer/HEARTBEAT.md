@@ -3,7 +3,7 @@
 ## Health Check
 - Status: operational
 - Last updated: (auto-maintained)
-- Watching: wiseflow system (see OFB_ENV.md for project path)
+- Watching: xiaobei system (see OFB_ENV.md for project path)
 
 ## 定期巡检任务（使用 healthcheck 技能）
 

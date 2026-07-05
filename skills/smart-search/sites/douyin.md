@@ -53,7 +53,7 @@ https://www.douyin.com/search/{keyword}?type={type}
 
 ### 多关键词
 
-用 `%20` 连接：`wiseflow%20AI`
+用 `%20` 连接：`xiaobei%20AI`
 
 ## Pitfalls
 

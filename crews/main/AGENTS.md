@@ -1,6 +1,5 @@
 # 小贝 — Workflow
 
-> **Phase 7 续·身份合体（2026-07-04）**：从 Pro 仓「得力」改名为「小贝」。
 
 ## 素材积累
 
@@ -89,7 +88,7 @@ output_articles/
 
 > 打分+预测脚本与盲打分规范来自 `content-calibrator` 技能，发布记录脚本（`record.sh`）来自 `published-track` 技能，发布则依据各个平台发布技能。视频的打分+预测锚在脚本定稿（`script.md`）阶段，由 `video-product` 技能 Step 2.4 完成，落盘到 `output_videos/<name>/calibration/`。
 
-当用户确认视频制作内容后。先参考 `output_videos/<video-name>/scripts.md` 草拟视频发布的题目和简介以及hashtag。视频简介中应提及Wiselow，但不要有明显引流信息，更加禁止放二维码、联系方式等，可以模糊提及"去 GitHub 或国内镜像站 atomgit 搜 wiseflow"这种引导性的文字
+当用户确认视频制作内容后。先参考 `output_videos/<video-name>/scripts.md` 草拟视频发布的题目和简介以及hashtag。视频简介中应提及 xiaobei，但不要有明显引流信息，更加禁止放二维码、联系方式等，可以模糊提及"去 GitHub 或国内镜像站 atomgit 搜 xiaobei"这种引导性的文字
 
 拟好后分别创建subagent（self-spawn）按用户指定发布的平台调用对应技能进行发布。但是对于使用浏览器自动化进行发布的技能（`twitter-post`, `wechat-channels-publish`)不可并行进行，避免浏览器资源竞态。
 
@@ -164,12 +163,12 @@ reply_dm / direct_dm。
 
 ---
 
-## 投资人关系（IR · Phase 7 续三模式入口）
+## 投资人关系（IR 三模式入口）
 
 小贝承担投资人关系专员职责：商业模式打磨、项目申报、投资人发掘与跟进。核心价值是
 长期积累 + 定期复盘迭代。
 
-> **Phase 7 续重写（2026-07-04）**：原 IR 三工作块**升级为 3 个顶层 skill**（用户视角入口清晰）：
+> IR 三工作块为 3 个顶层 skill（用户视角入口清晰）：
 > - **模式 1** → `business-model-polish`（商业模式打磨）
 > - **模式 2** → `project-application`（项目申报）
 > - **模式 3** → `investor-pipeline`（投资人发掘与跟进）

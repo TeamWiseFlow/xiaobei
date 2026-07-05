@@ -18,6 +18,7 @@ import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { load as loadHtml } from "cheerio";
+import { downloadImages, rewriteMarkdownImages } from "./download_images.ts";
 type CookieMap = Record<string, string>;
 type JsonMap = Record<string, unknown>;
 
@@ -670,7 +671,7 @@ function htmlToMarkdown(html: string): string {
   return md;
 }
 
-async function cmdFetch(url: string, includeHtml: boolean): Promise<void> {
+async function cmdFetch(url: string, includeHtml: boolean, outputDir = "", downloadImgs = false): Promise<void> {
   const session = await requireSession();
   const cookieJar: CookieMap = { ...session.cookies };
 
@@ -807,7 +808,9 @@ async function main(): Promise<void> {
       const url = args[0];
       if (!url || url.startsWith("--")) errExit("缺少参数: url");
       const includeHtml = args.includes("--html");
-      await cmdFetch(url, includeHtml);
+      const outputDir = readStringFlag(args, "--output-dir", "");
+      const downloadImgs = args.includes("--download-images");
+      await cmdFetch(url, includeHtml, outputDir, downloadImgs);
       break;
     }
     default: {

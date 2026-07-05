@@ -52,11 +52,9 @@ metadata:
 | 国务院 | `sites/gov.md` | 政策文件 |
 | Amazon | `sites/shopping.md` | 购物 |
 
-### Per-Category Source Guides（**新，借鉴 OpenCLI v1.8.2**）
+### Per-Category Source Guides
 
-> **2026-07 借鉴**：[OpenCLI v1.8.2 (2026-06-03)](https://github.com/jackwener/opencli/blob/main/CHANGELOG.md) "smart-search — restored as a skill with **per-category source guides (AI / info / media / shopping / social / tech / travel / other)**"。
->
-> 本节**适配本仓业务**（main 知识 / BD 客户 / IR 投资人）—— 不是 OpenCLI 全套。
+> 本节**适配本仓业务**（main 知识 / BD 客户 / IR 投资人）。
 
 每个分类列出**推荐源** + **典型用途** + **数据特征**：
 
@@ -82,7 +80,7 @@ metadata:
 - 源 guides 是"按分类 → 列备选"（**多了** 1 步选平台的灵活性）
 - 推荐组合：先看路由表选定首选 → 源 guides 给备选 → 1 个站不够时切换
 
-**参考 OpenCLI v1.8.2 Site Maps Hub**（长期借鉴方向）：本节是"per-category source guides"——最小可行实现。完整 Site Maps Hub（`sitemaps/<site>/` per-site navigation knowledge）超出本轮范围，**不**做。
+本节是"per-category source guides"——最小可行实现。完整 Site Maps Hub（`sitemaps/<site>/` per-site navigation knowledge）超出范围，**不**做。
 
 ### 用户未指定平台时
 

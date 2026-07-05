@@ -19,7 +19,7 @@ metadata:
 示例：
 
 ```bash
-/home/wukong/wiseflow-pro/crews/content-producer/skills/init-workspace/scripts/init.sh wiseflow-5-launch-poster
+/home/wukong/wiseflow-pro/crews/content-producer/skills/init-workspace/scripts/init.sh xiaobei-launch-poster
 ```
 
 ## 产出

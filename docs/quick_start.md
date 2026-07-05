@@ -2,7 +2,7 @@
 
 ## 初次安装后的入口
 
-wiseflow 默认只保证一个入口即可最小化使用：
+xiaobei 默认只保证一个入口即可最小化使用：
 
 ```text
 openclaw-weixin -> Main Agent
@@ -26,12 +26,12 @@ openclaw pairing approve openclaw-weixin <id>
 
 ```text
 你（微信私聊 Main Agent）：
-我刚完成 wiseflow 安装，帮我完成初始化。我的公司/品牌是 <名称>，主营 <业务>，我希望先解决 <第一个目标>。
+我刚完成 xiaobei 安装，帮我完成初始化。我的公司/品牌是 <名称>，主营 <业务>，我希望先解决 <第一个目标>。
 ```
 
 Main Agent 会：
 
-- 介绍 wiseflow team 的使用方式；
+- 介绍 xiaobei team 的使用方式；
 - 记录业务/品牌背景；
 - 判断是否需要招募对内 crew；
 - 在必要时引导配置 Feishu 或 WeCom 工作 channel。
@@ -119,7 +119,7 @@ IT Engineer 无默认 direct channel，通过 Main Agent 调用：
 
 ```text
 # 初始 onboard
-你：我刚完成安装，帮我完成 wiseflow 初始化。
+你：我刚完成安装，帮我完成 xiaobei 初始化。
 
 # 招募对内 crew
 你：帮我招募一个新媒体小编，用 main 模板。

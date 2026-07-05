@@ -51,7 +51,7 @@ description: >
 邀请消息是 awada 控制消息，不是自然语言：
 
 ```text
-/invite//<user_external_id>//风暴眼（wiseflow情报小站）
+/invite//<user_external_id>//风暴眼（xiaobei情报小站）
 ```
 
 awada-channel 会将其转为拉群动作。
@@ -61,4 +61,4 @@ awada-channel 会将其转为拉群动作。
 - 已邀请过且未指定 --force：输出 `ALREADY_INVITED`，并以非 0 状态退出
 
 ## 当前体验群名称
-- `风暴眼（wiseflow情报小站）`
+- `风暴眼（xiaobei情报小站）`

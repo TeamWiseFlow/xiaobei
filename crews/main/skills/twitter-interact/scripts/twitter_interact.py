@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""twitter-interact — Twitter/X 互动操作技能（Phase 2026.7 借鉴 AiToEarn v2.4）
+"""twitter-interact — Twitter/X 互动操作技能
 
-形态仿 `crews/main/skills/douyin-publish`（Phase 3.2 浏览器模拟方案）：
-- camoufox-cli 主推（与 Phase 4.5 一致）
-- login-manager 中央 cookie（与 Phase 4.5.2 一致）
-- 每任务一 session（D18）
+架构：
+- camoufox-cli 主推（反指纹 headless Firefox）
+- login-manager 中央 cookie
+- 每任务一 session
 - run 一键跑全流程
 
 子命令：
@@ -19,8 +19,6 @@
   run        --tweet-url <url> --action <like|retweet|bookmark|follow>
                                     一键跑（脚本化主流程）
   cleanup    <session>                 关闭 camoufox session
-
-借鉴源：yikart/AiToEarn v2.4 (2026-05-21) "Twitter/X 能力增强 / 互动操作"。
 
 依赖：
 - camoufox-cli（npm 全局）
@@ -52,7 +50,7 @@ LOGIN_MANAGER_BIN = os.environ.get(
 CAMOUFOX_BIN = os.environ.get("CAMOUFOX_CLI", "camoufox-cli")
 LOGIN_MANAGER_PLATFORM = "twitter"
 
-# 频率限制（v2.4/v2.5 文档综合；dev plan Phase 4.5 anti-automation 强化）
+# 频率限制（平台 anti-automation 阈值 + 经验值）
 FREQ_LIMITS = {
     "like":      {"min_interval_s": 60,  "daily_max": 200},   # 1 min, 200/day
     "retweet":   {"min_interval_s": 300, "daily_max": 50},    # 5 min, 50/day
@@ -84,7 +82,7 @@ def login_manager_check() -> bool:
 
 
 def session_name(purpose: str = "interact") -> str:
-    """生成 camoufox session 名（D18 + 4.5.5 并发约束：每任务一 session）。"""
+    """生成 camoufox session 名（每任务一 session，避免并发复用）。"""
     return f"twitter-{purpose}-{secrets.token_hex(4)}"
 
 
@@ -591,7 +589,7 @@ def cmd_cleanup(session: str) -> None:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="twitter_interact",
-        description="Twitter/X 互动操作（Phase 2026.7 借鉴 AiToEarn v2.4）",
+        description="Twitter/X 互动操作",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 

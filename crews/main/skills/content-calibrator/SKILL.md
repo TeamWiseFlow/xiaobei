@@ -207,7 +207,7 @@ Agent 在复盘或发布时，发现对应平台未启用 calibration，**不得
 - **rubric 路径**：统一 rubric 只在根级 `calibration/rubric_notes.md`。`calibration/<platform>/` 下**没有独立 rubric**，只有 `audience.md`/`benchmark.md`/`.platform-state.json`（平台目录里的 `rubric_notes.md` 是指向根级的软链，读它等于读根级）。主 agent spawn 时应把根级 rubric 路径或内容显式喂给 subagent，不要让 subagent 自己去平台目录找。
 - **硬禁读**：`rubric-memo.md`、`.cheat-state.json`、各 `<work>/calibration/`、`audience.md`、`benchmark.md`、对话历史
 - **输出**：严格 JSON = 7 维分（各 0-5）+ per-dim confidence + 盲预测草稿
-- Bump Phase 2 校准池重打分**强制** blind sub-agent，不接受 fallback
+- 校准池重打分**强制** blind sub-agent，不接受 fallback
 
 ### 盲预测的"盲"与落盘分工
 

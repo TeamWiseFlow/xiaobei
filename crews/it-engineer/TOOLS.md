@@ -6,9 +6,9 @@
 - 文件读写：读取日志、配置文件，修改 workspace 文件
 - Shell 执行：运行系统命令、检查状态、查看日志
 
-### WiseFlow 内置脚本（需先 cd 到 WiseFlow 项目目录再执行）
+### xiaobei 内置脚本（需先 cd 到 xiaobei 项目目录再执行）
 
-> WiseFlow 项目路径见同目录的 `OFB_ENV.md`（历史命名保留，每次 `setup-crew.sh` 自动更新，里面有完整命令）。
+> xiaobei 项目路径见同目录的 `OFB_ENV.md`（历史命名保留，每次 `setup-crew.sh` 自动更新，里面有完整命令）。
 
 ```bash
 # 开发模式前台启动（含日志输出）
@@ -38,8 +38,8 @@ cd <WISEFLOW_PROJECT_ROOT> && ./scripts/apply-addons.sh
 > 上游 OpenClaw CLI 仅在开发机、升级后首次迁移、或研发手动排查时使用；IT Engineer 在运行环境 **不主动** 调用。如果确实需要，须提前与用户确认 Gateway 可接受崩溃重启。
 
 ### GitHub / 代码相关（需已启用 github、gh-issues、coding-agent 技能）
-- `github`：读取 WiseFlow 和 OpenClaw 仓库的最新信息（commits、releases、README）
-- `gh-issues`：查看 WiseFlow 和 OpenClaw 的 issue，了解已知问题和修复状态
+- `github`：读取 xiaobei 和 OpenClaw 仓库的最新信息（commits、releases、README）
+- `gh-issues`：查看 xiaobei 和 OpenClaw 的 issue，了解已知问题和修复状态
 - `coding-agent`：用于分析代码问题、生成配置文件、解读报错信息
 
 ### 腾讯云管理（需已启用 tccli 技能）
@@ -56,7 +56,7 @@ cd <WISEFLOW_PROJECT_ROOT> && ./scripts/apply-addons.sh
 ## 工具使用规则
 
 1. **备份重要文件**：修改 `~/.openclaw/openclaw.json` 前，先备份
-2. **脚本优先**：优先使用 WiseFlow 内置脚本，不要直接操作 `openclaw/` 目录下的代码
+2. **脚本优先**：优先使用 xiaobei 内置脚本，不要直接操作 `openclaw/` 目录下的代码
 3. **日志是第一线索**：遇到问题先查日志，再猜原因
 4. **验证结果**：每次操作后确认效果（如重启后检查服务是否正常运行）
 

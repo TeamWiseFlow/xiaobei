@@ -29,7 +29,7 @@ Use this skill when:
 2. **等待服务器响应**：每次执行脚本命令后，必须等待脚本返回 JSON 结果。若结果需要时间，**先向用户说明"正在请求服务器，请稍候……"**，然后等待。
 3. **严禁提前假设结果**：不得在脚本输出 JSON 之前就根据假设继续后续步骤。
 4. **批量前必须小样本验证**：批量抓全文前，必须先 `check-session`，再选 1 篇文章 `fetch` 验证链路成功；成功后才能批量。
-5. **本技能是全局技能**：文中所有 `./scripts/` 路径均相对于本技能所在目录（即 `<skill>` 标签 `location` 属性所指目录），**不是**工作区（workspace）目录。执行时必须按本技能的实际安装路径拼接，不得从工作区 CWD 出发拼接。
+5. **路径规则**：文中所有 `./scripts/` 路径均相对于本技能所在目录（即 `<skill>` 标签 `location` 属性所指目录），**不是**工作区（workspace）目录。执行时必须按本技能的实际安装路径拼接，不得从工作区 CWD 出发拼接。
 
 ---
 
@@ -278,6 +278,8 @@ http://mp.weixin.qq.com/mp/homepage?...
 |--------|-------------|
 | `url` | 文章链接（`mp.weixin.qq.com`） |
 | `--html` | 同时返回正文原始 HTML |
+| `--download-images` | 把正文图片下载到本地，`content_markdown` 中的图片 URL 替换为本地相对路径 |
+| `--output-dir <dir>` | 图片下载目标目录（配合 `--download-images`；默认当前目录） |
 
 输出示例：
 ```json
@@ -298,8 +300,16 @@ http://mp.weixin.qq.com/mp/homepage?...
 | 字段 | 说明 |
 |------|------|
 | `content_text` | 纯文本正文（去除所有 HTML 标签） |
-| `content_markdown` | Markdown 格式正文，图片以内联 `![](url)` 放在原文位置，保留加粗/斜体/链接 |
-| `images` | 正文所有图片 CDN 链接（从 `data-src` 解析，可直接下载） |
+| `content_markdown` | Markdown 格式正文，图片以内联 `![](url)` 放在原文位置，保留加粗/斜体/链接；`--download-images` 时 URL 替换为 `images/<hash>.<ext>` 本地相对路径 |
+| `images` | 正文所有图片 CDN 链接（从 `data-src` 解析） |
+
+### 图片本地化
+
+加 `--download-images --output-dir <dir>` 后，脚本并发下载（默认 4 并发、单图 ≤5MB、总量 ≤100MB、单图失败重试 1 次）到 `<dir>/images/<hash>.<ext>`，并把 `content_markdown` 里的图片 URL 替换为本地相对路径，便于离线阅读 / 二次加工 / 转存。仅依赖 Node 18+ stdlib，无 npm 依赖。
+
+```
+./scripts/wx-mp-hunter.sh fetch <url> --html --download-images --output-dir ./article-out
+```
 
 ---
 

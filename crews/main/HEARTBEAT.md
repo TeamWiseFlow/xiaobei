@@ -41,7 +41,7 @@
 
 ---
 
-### IR 模式 3 巡检（Phase 7 续新增，2026-07-04）
+### IR 模式 3 巡检
 
 > 投资人跟进状态机：`new → contacted → bp_sent → meeting → dd → ts → invested/passed`
 >
@@ -80,7 +80,7 @@
 
 ---
 
-### BD 三能力巡检（Phase 7 续新增，2026-07-04）
+### BD 三能力巡检
 
 > 配合 `lead-hunting` / `comment-engagement` / `intel-gathering`（已搬入 main/skills）+ `bd-record` / `info-record` 数据层。
 >

@@ -10,7 +10,6 @@ metadata:
 
 # 项目申报（IR 模式 2）
 
-> **Phase 7 续·IR 三模式抽三 skill（2026-07-04）**：从原 IR crew AGENTS 抽三模式。
 > **模式 2 = 项目申报**（本 skill）；模式 1 = `business-model-polish`；模式 3 = `investor-pipeline`。
 
 帮用户准备、跟踪各类外部申报项目。

@@ -10,7 +10,6 @@ metadata:
 
 # 投资人流水线（IR 模式 3）
 
-> **Phase 7 续·IR 三模式抽三 skill（2026-07-04）**：从原 IR crew AGENTS 抽三模式。
 > **模式 3 = 投资人发掘与跟进**（本 skill）；模式 1 = `business-model-polish`；模式 2 = `project-application`。
 
 完整的融资沟通流水线：从"找谁"到"投没投"全流程跟踪。

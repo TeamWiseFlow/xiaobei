@@ -93,9 +93,9 @@ agent 应在 `AGENTS.md` 中明确记录此约定：
 
 ---
 
-## 六、wiseflow 扩展文件（非 openclaw 原生）
+## 六、xiaobei 扩展文件（非 openclaw 原生）
 
-以下文件是 wiseflow 的约定扩展，**openclaw 框架不会自动处理**，由脚本或 agent 按需读取后写入 `openclaw.json`。
+以下文件是 xiaobei 的约定扩展，**openclaw 框架不会自动处理**，由脚本或 agent 按需读取后写入 `openclaw.json`。
 
 ### 6.1 DECLARED_SKILLS — 外部 crew 技能白名单
 

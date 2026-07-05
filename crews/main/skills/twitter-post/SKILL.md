@@ -2,21 +2,13 @@
 name: twitter-post
 description: Compose and publish a post (text, image, or video) to Twitter/X using
   the browser. Supports single posts, threads, quote tweets, reply tweets, and
-  long posts (Premium/Blue up to 25,000 chars). Phase 2026.7 借鉴 AiToEarn v2.4/v2.5
-  增强 typed publish + richer response。
+  long posts (Premium/Blue up to 25,000 chars).
 metadata:
   openclaw:
     emoji: 🐦
 ---
 
 # Twitter/X 发布技能
-
-> **2026-07 更新**：借鉴 AiToEarn v2.4（typed publish / 互动操作）/ v2.5（richer posting + response 解析）增强：
-> - 新增 **Quote Tweet** 流程
-> - 新增 **Reply to Tweet** 流程
-> - 新增 **Long post**（Premium/Blue 25,000 字符）路径
-> - 新增 **Post 后解析 stats**（v2.5 richer response）
-> - 强化 **Anti-automation limit**（15 min → 30 min hard + 频次跟踪）
 
 Use this skill when:
 - The user wants to post text, images, or video to Twitter/X
@@ -45,9 +37,9 @@ Use this skill when:
 - 标准 280 字符限制（普通账号）
 - Premium/Blue 25,000 字符（"long post"，URL bar 显示"Post all"而非"Post"）
 
-### Anti-automation limit（v2.4/v2.5 借鉴）
+### Anti-automation limit
 
-- 单条帖 ≥ 30 min 间隔（**不是** 15 min——AiToEarn 文档明确 30 min 风险阈值）
+- 单条帖 ≥ 30 min 间隔（**不是** 15 min——30 min 是平台风险阈值）
 - 单日 ≤ 50 帖（含 reply / quote / retweet / 长帖）
 - 单周 ≤ 200 帖
 - 触发风控后 24h 静默
@@ -80,7 +72,7 @@ Use this skill when:
 5. **立即点击 "Post" 按钮——不要等待用户确认！**
 6. Wait for success confirmation (URL changes or "Your post was sent" toast)
 7. Extract and report the post URL
-8. **Parse stats（v2.5 richer response）**：
+8. **Parse stats**：
    - snapshot eval: `JSON.stringify({
        retweet: document.querySelector('[data-testid="retweet"]')?.innerText,
        like: document.querySelector('[data-testid="like"]')?.innerText,
@@ -157,7 +149,7 @@ await page.locator('[data-testid="tweetTextarea_0"]').drop({
 
 ---
 
-## Workflow: Quote Tweet（**新，借鉴 v2.4**）
+## Workflow: Quote Tweet
 
 **场景**：引用别人的推 + 自己的评论（BD / 互动 / 营销场景强）
 
@@ -182,7 +174,7 @@ await page.locator('[data-testid="tweetTextarea_0"]').drop({
 
 ---
 
-## Workflow: Reply to Tweet（**新，借鉴 v2.4**）
+## Workflow: Reply to Tweet
 
 **场景**：BD 监控 mentions → 智能回复（也可作 twitter-interact skill 的入口）
 
@@ -205,7 +197,7 @@ await page.locator('[data-testid="tweetTextarea_0"]').drop({
 
 ---
 
-## Workflow: Long Post（**新，借鉴 v2.5 richer posting**）
+## Workflow: Long Post
 
 **前置**：用户是 **Premium / Blue** 订阅（X 蓝标）。普通账号本工作流**不适用**。
 
@@ -235,9 +227,9 @@ snapshot eval: document.querySelector('[data-testid="icon-verified"]') !== null
 
 ---
 
-## Workflow: Post Parse Stats（**新，借鉴 v2.5 richer response**）
+## Workflow: Post Parse Stats
 
-> **背景**：AiToEarn v2.5 "stronger response definitions" — post 后立即拿 stats（view / reply / retweet / like），用于复盘。
+> post 后立即拿 stats（view / reply / retweet / like），用于复盘。
 
 ```
 1. After post success (any workflow ending with "Wait for confirmation")
@@ -253,9 +245,6 @@ snapshot eval: document.querySelector('[data-testid="icon-verified"]') !== null
      permalink: window.location.href
    })
 5. Output: { ok, permalink, stats: { retweet, like, reply, view, bookmark } }
-6. (Optional) Compare with v1.5/v2.5 algorithm:
-   - v1.5 模式：engagement velocity 30 min（fail if 慢）
-   - v2.5 模式：reply weighted 27x like（focus conversations）
 ```
 
 **注意**：
@@ -325,16 +314,13 @@ snapshot eval: document.querySelector('[data-testid="icon-verified"]') !== null
 - Do NOT mention internal tool names or errors in any post
 - All post content must comply with X's terms of service
 - If posting on behalf of company: verify the content tone matches the company voice in MEMORY.md
-- **v2.5 richer response 抓 stats**：仅在 post 成功页有效；不要在 compose 页面（还没有 stats）
-- **v2.4 typed publish**：Quote / Reply 都要先**确认是哪种按钮**（X UI 把 "Repost" 和 "Quote" 放一起）
-- 频率统计：**v2.5 算法变化**（reply weighted 27x like），但本 skill 不做 stats 评分，只采集
+- 抓 stats 仅在 post 成功页有效；不要在 compose 页面（还没有 stats）
+- Quote / Reply 都要先**确认是哪种按钮**（X UI 把 "Repost" 和 "Quote" 放一起）
+- 频率统计：本 skill 只采集 stats，不做评分
 
 ---
 
-## 借鉴源
+## 参考
 
-- [AiToEarn v2.4 (2026-05-21)](https://github.com/yikart/AiToEarn/releases) — Twitter/X 能力增强：探索控制台 + 互动操作
-- [AiToEarn v2.5 (2026-06-23)](https://github.com/yikart/AiToEarn/releases) — Twitter APIs: richer posting + interaction + typed publishing + stronger response
 - [X Help: Types of Posts](https://help.x.com/en/using-x/types-of-posts) — Reply / Quote / Long post 定义
 - [X Algorithm 2026](https://www.teract.ai/resources/twitter-algorithm-2026) — reply weighted 27x like, 30 min 关键窗口
-- 本仓参考：[`docs/ai-catchup-2026-07-twitter-and-search.md`](../../docs/ai-catchup-2026-07-twitter-and-search.md) §一
