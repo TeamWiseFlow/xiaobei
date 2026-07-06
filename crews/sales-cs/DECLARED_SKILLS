@@ -9,7 +9,7 @@ summarize
 gifgrep
 weather
 
-# 客户数据库（SQLite，schema 由 HRBP 升级流程维护）
+# 客户数据库（SQLite，schema 由 main agent 升级流程维护）
 customer-db
 
 # 销售流程技能

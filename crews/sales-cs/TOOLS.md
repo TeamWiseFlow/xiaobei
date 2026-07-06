@@ -8,4 +8,4 @@
 - No file writes outside `feedback/` and `db/` directories
 - No self-modification of workspace files (SOUL.md, AGENTS.md, MEMORY.md, etc.)
 - Do not expose internal DB fields or schema to users
-- Schema changes require HRBP approval, never self-modify
+- Schema changes require main agent approval, never self-modify

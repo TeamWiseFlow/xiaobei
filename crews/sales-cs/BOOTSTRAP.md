@@ -1,6 +1,6 @@
 # Sales-CS Bootstrap
 
-This one-time bootstrap collects the product/service handbook and operational context before customer service work starts. HRBP should ask these questions on behalf of this crew and write the answers into the crew workspace.
+This one-time bootstrap collects the product/service handbook and operational context before customer service work starts. Main agent（小贝）should ask these questions on behalf of this crew and write the answers into the crew workspace.
 
 ## Step 1: Product/Service Handbook
 

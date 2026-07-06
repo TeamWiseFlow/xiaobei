@@ -1,7 +1,34 @@
 {
-  "skills": [],
-  "subagents": {
-    "allowAgents": []
+  "skills": [
+    "customer-db",
+    "demo_send",
+    "exp_invite",
+    "nano-pdf",
+    "payment_confirm",
+    "payment_send",
+    "proactive-send",
+    "session-logs"
+  ],
+  "heartbeat": {
+    "every": "1h",
+    "target": "none",
+    "isolatedSession": true,
+    "activeHours": {
+      "start": "08:00",
+      "end": "24:00",
+      "timezone": "user"
+    }
   },
-  "tools": {}
+  "tools": {
+    "exec": {
+      "host": "gateway",
+      "security": "allowlist",
+      "ask": "off"
+    }
+  },
+  "subagents": {
+    "allowAgents": [
+      "sales-cs"
+    ]
+  }
 }
