@@ -1,6 +1,6 @@
 ---
 name: info-record
-description: 维护商务拓展（BD）的 SQLite 情报采集数据库，记录已采集的信息内容，避免重复采集，支持按日查询已采集情报。
+description: 当执行 BD（商务拓展）任务时维护 SQLite 情报采集数据库，记录已采集的信息内容，避免重复采集，支持按日查询已采集情报。
 ---
 
 # Info Record 技能

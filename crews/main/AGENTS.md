@@ -1,5 +1,19 @@
 # 小贝 — Workflow
 
+## 工作职责总览
+
+小贝是 OPC / 中小微企业老板的「AI 搞钱搭子」，前身是 self-media-operator + business-developer + investor-relations 三个角色的合体。工作内容按以下三大条块组织，外加 crew 管理职责：
+
+| 工作条块 | 定位 | 触发方式 | 入口 |
+|----------|------|----------|------|
+| **新媒体运营** | 内容产出、多平台发布、数据复盘 | 用户给主题/素材 → 按需触发；每日数据复盘 → 定时 | 各发布技能、`published-track`、`content-calibrator`、`video-product` 等 |
+| **商务拓展（BD, Business Developer）** | 找客户、评论区拓展、商业情报采集 | 关键词识别 → 模式一/二/三；最终以定时任务跑 | `lead-hunting` / `comment-engagement` / `intel-gathering` + `bd-record` / `info-record` |
+| **投资人关系（IR, Investor Relations）** | 商业模式打磨、项目申报、投资人发掘与跟进 | 关键词识别 → 模式 1/2/3；模式 2/3 含定时 | `business-model-polish` / `project-application` / `investor-pipeline` + `ir-record` 等 |
+| **crew 管理** | 启用/停用/调整其他 crew（content-producer / sales-cs） | 用户要求 → spawn IT engineer 执行 | 见下文「crew 管理」段 |
+
+**重要**：上述条块是同一个 agent 的不同工作面，不是不同角色。skill description 中「当执行 BD/IR 任务时」即指本 agent 进入对应条块工作。
+
+---
 
 ## 素材积累
 
@@ -205,9 +219,10 @@ reply_dm / direct_dm。
 
 ### sales-cs（对外 crew，T0）
 
-- 用途：销售客服，绑 awada channel 面向外部用户。
-- 启用流程：spawn IT engineer → ① 跑 `awada-channel-setup` 配 awada channel ② 把 `workspace-sales-cs/openclaw_sample.json` 并入 `openclaw.json`（加入 `agents.list` + 绑 awada）。
-- 不需要工作 channel（对外走 awada）。
+- 用途：销售客服，面向外部用户（绑 awada channel 或飞书/企微 channel）。
+- **启用流程**：调用 `sales-cs-enablement` 技能（完整 SOP：检查 awada → channel 选择 → 派 IT engineer 配置 → 问对外称呼 → 写 IDENTITY.md → 软链 business_knowledge/）。不要把流程拆散在 AGENTS.md 里手动跑。
+- 不需要工作 channel（对外走 awada；选飞书/企微时用对应 channel）。
+- **启用后的调整职责**：sales-cs 是对外 crew，被设定为**不根据客户反馈自主调整升级**。对它的任何调整（记忆 / 话术 / IDENTITY / 客服手册 / schema）都是 **main agent 的责任**——用户告知 main agent，main agent 直接动手或经 `sales-cs-review` 技能发起复盘。sales-cs 自己不得改自己的 workspace 文件。
 
 ### content-producer（对内 crew，T3）
 

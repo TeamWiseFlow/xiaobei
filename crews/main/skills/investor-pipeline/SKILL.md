@@ -1,6 +1,6 @@
 ---
 name: investor-pipeline
-description: IR 模式 3 · 投资人发掘与跟进。完整的融资沟通流水线：发掘潜在投资人
+description: 当执行 IR（投资人关系）任务·模式 3 时使用。完整的融资沟通流水线：发掘潜在投资人
   → 准备触达材料 → 发起接触 → 跟踪反馈 → 状态机推进。状态：new→contacted→
   bp_sent→meeting→dd→ts→invested/passed。
 metadata:

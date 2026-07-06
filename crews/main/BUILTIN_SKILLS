@@ -1,12 +1,50 @@
-wx-mp-publisher
-twitter-post
-douyin-publish
-xhs-publish
-wxwork-moments
+# BUILTIN_SKILLS — main agent 在公共基线之上的专属技能
+# 格式：每行一个技能名；# 开头为注释
+# 公共基线（nano-pdf / skill-creator / session-logs / tmux / weather / summarize /
+# self-improving 等）不在此重复列。
+
+# ── 新媒体运营：内容生产与发布 ──
+generate-wenyan-theme
 xhs-content-ops
+xhs-publish
 xhs-interact
-login-manager
+douyin-publish
+wechat-channels-publish
+weibo-publish
+zhihu-publish
+wx-mp-publisher
+wx-mp-hunter
+wx-mp-engagement
+wxwork-moments
+twitter-post
+twitter-interact
+video-product
 viral-chaser
+
+# ── 新媒体运营：记录与校准 ──
 published-track
 content-calibrator
-video-product
+login-manager
+rss-reader
+xianyu-ops
+
+# ── 商务拓展（BD） ──
+lead-hunting
+intel-gathering
+bd-record
+info-record
+
+# ── 投资人关系（IR） ──
+investor-pipeline
+project-application
+investor-hunting
+investor-outreach
+investor-materials
+ir-record
+pitch-deck
+swcr-register
+market-research
+
+# ── crew 管理 ──
+sales-cs-enablement
+sales-cs-review

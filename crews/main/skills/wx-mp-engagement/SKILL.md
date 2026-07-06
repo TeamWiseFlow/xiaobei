@@ -15,11 +15,16 @@ metadata:
 
 # 微信公众号 Engagement 抓取
 
-> ⚠️ **骨架实现**：本 skill 当前为骨架，**未做真机 spike 验证**。selector / 抓取路径 / 风控行为均基于公开信息推测。部署后需用真实公众号账号跑 spike checklist（见 `docs/wechat-mp-engagement-design.md` §七）。
+> ⚠️ **可试跑，selector 待真机 spike 校准**：方案 A（浏览器直接拿）已完整实现，
+> 提供 `probe` 子命令 dump DOM/截图供 spike 调 selector。selector / 列表页 URL 基于
+> 公开信息推测，真机跑 `probe` 后按 `02_list.html` 校准 `fetch_engagement.py` 顶部
+> `LIST_ROW_SELECTORS` / `TITLE_SELECTORS` / `CREATOR_CENTER_LIST_URL` 即可。
 >
 > **限制**：仅支持用户**自己有后台权限的号**（创作者中心用公众号账号登录）。竞品号拿不到——这是产品约束，不是技术约束。
 
-通过 **camoufox-cli + login-manager 拿 cookie + 创作者中心爬虫** 替换 published-track `MANUAL_PLATFORMS` 中 `wx_mp` 的"手动填"。**不碰 relay**（凭据是会话 token，relay 持有无益）。
+通过 **camoufox-cli + login-manager 拿 cookie + 创作者中心列表页爬虫** 替换 published-track `MANUAL_PLATFORMS` 中 `wx_mp` 的"手动填"。**不碰 relay**（凭据是会话 token，relay 持有无益）。
+
+**思路**：创作者中心后台的「内容管理」列表页本身就把每篇已发布文章的阅读/点赞/评论/分享/收藏列在行内，所以走「列表页 → 按标题匹配 → 提行内数字」，不必打开单篇分析页。
 
 ---
 
@@ -54,9 +59,15 @@ ls ~/.openclaw/workspace-main/db/published_track.db
 ## CLI
 
 ```bash
-# 抓取单篇
+# spike 第一步：dump 创作者中心 DOM + 截图 + 解析出的文章列表 JSON
+wx-mp-engagement.sh probe
+# 产物落在 ./wx-mp-engagement-probe/：01_center.png / 02_list.png / 02_list.html / 03_articles.json
+
+# 列出后台所有文章 + 行内 metrics（spike 验证 selector + 日常自查）
+wx-mp-engagement.sh list
+
+# 抓单篇（按 row.title 在列表页匹配）
 wx-mp-engagement.sh fetch --row-id <pub_wx_mp.id>
-wx-mp-engagement.sh fetch --source-folder <folder>   # 待 spike 验证
 
 # 批量抓取最近 N 天未更新（reads=0）的所有 wx_mp 记录
 wx-mp-engagement.sh fetch-all --days 7
@@ -64,25 +75,34 @@ wx-mp-engagement.sh fetch-all --days 7
 
 退出码：
 - `0` 成功
-- `1` 通用错误（参数错 / row 找不到）
+- `1` 通用错误（参数错 / row 找不到 / 标题未匹配）
 - `2` cookie 失效（与 login-manager / fetch-and-update-metrics 契约一致）
+
+### spike 调 selector 流程
+
+1. `wx-mp-engagement.sh probe` → 看 `02_list.html` 确认列表页真实结构
+2. 若 `03_articles.json` 为空 → selector 没命中，改 `fetch_engagement.py` 顶部
+   `LIST_ROW_SELECTORS` / `TITLE_SELECTORS` 至命中
+3. 若列表页 URL 不对（`02_list.png` 是登录页/空白）→ 改 `CREATOR_CENTER_LIST_URL`
+4. 重跑 `list` 确认 `articles` 非空且 metrics 合理 → 再跑 `fetch` / `fetch-all`
 
 ---
 
-## 工作流程
+## 工作流程（fetch）
 
 ```
 1. login-manager.sh check wx-mp
    ├─ exit 2 → 退出（调用方触发 qr-headless + qr-confirm）
    └─ exit 0 → 继续
-2. lookup_published_row(row_id) → 拿 publish_url / publish_date / source_folder
-3. session_name() → 生成 wx-mp-engagement-{nonce} 独立 session
-4. login-manager.sh cookie-import wx-mp <session>  → 中央 cookie 注 camoufox session
-5. camoufox-cli --session <s> --persistent --headless open <创作者中心>
-6. camoufox-cli ... eval document.documentElement.outerHTML  → 拿 HTML
-7. parse_dom_metrics(html)  → 标准 metrics dict
-8. update-metrics.sh --platform wx_mp --id <row_id> --reads N ...  → 写 pub_wx_mp
-9. finally: login-manager.sh session-cleanup wx-mp <session>  → 释放 daemon
+2. lookup_published_row(row_id) → 拿 title / publish_url
+3. session_name() → wx-mp-engagement-{nonce} 独立 session
+4. login-manager.sh cookie-import wx-mp <session>
+5. camoufox open <CREATOR_CENTER_LIST_URL>  → 列表页
+6. camoufox eval <列表解析 JS>  → [{title, text}, ...]
+7. match_article(rows, row.title)  → 按标题归一化匹配
+8. parse_metrics_from_text(row.text)  → 行内提 reads/likes/comments/shares/favorites
+9. update-metrics.sh --platform wx_mp --id <row_id> ...  → 写 pub_wx_mp
+10. finally: login-manager.sh session-cleanup wx-mp <session>
 ```
 
 ---

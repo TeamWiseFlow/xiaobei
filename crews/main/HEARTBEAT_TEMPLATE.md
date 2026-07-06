@@ -4,6 +4,8 @@
 
 **原则**：只写入用户实际启用的模式，不要预填未启用的模式。
 
+> 本模板覆盖的是 main agent（小贝本人）的 BD / IR 两个工作条块的定时模式。新媒体运营的「每日平台数据复盘」不在此模板内——它默认已在 HEARTBEAT.md 中，由 IT engineer 设 cron 调 `published-track` 的 `update-metrics.sh` / `fetch-and-update-metrics.sh` 执行。BD / IR 模式从本模板复制到 HEARTBEAT.md 后，同样需 spawn IT engineer 设 cron。所有已启用的定时任务应在 MEMORY.md「已启用的定时任务」段登记。
+
 ---
 
 ## 商务拓展（BD）

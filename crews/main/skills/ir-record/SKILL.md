@@ -1,6 +1,6 @@
 ---
 name: ir-record
-description: 维护 IR 的 SQLite 追踪数据库，记录投资人档案、接触历史和项目申报，避免重复，跟踪进展。
+description: 当执行 IR（投资人关系）任务时维护 SQLite 追踪数据库，记录投资人档案、接触历史和项目申报，避免重复，跟踪进展。
 ---
 
 # IR Record 技能

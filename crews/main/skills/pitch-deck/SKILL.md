@@ -1,6 +1,6 @@
 ---
 name: pitch-deck
-description: 为商业拓展/投资人关系建立场景创建精美的 HTML 演示文稿——路演 PPT、合作提案、客户 Demo、产品介绍。零依赖单文件输出，可直接通过邮件/微信发送或浏览器演示。
+description: 当执行 BD/IR 任务需要对外演示材料时创建精美的 HTML 演示文稿——路演 PPT、合作提案、客户 Demo、产品介绍。零依赖单文件输出，可直接通过邮件/微信发送或浏览器演示。
 metadata:
   openclaw:
     emoji: 🎯
