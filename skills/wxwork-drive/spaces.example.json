@@ -1,0 +1,10 @@
+{
+  "default_space": "main",
+  "spaces": [
+    {
+      "alias": "main",
+      "spaceid": "s.wwxxxxxxxxxxxx.xxxxxxxxxxxxx",
+      "default_folderid": "fid_xxxxxxxxxxxxx"
+    }
+  ]
+}

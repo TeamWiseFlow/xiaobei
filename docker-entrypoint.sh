@@ -24,9 +24,11 @@ if [ ! -f "$DAEMON_ENV" ]; then
 fi
 
 # ── 2. 注入 relay 端点 + OFB_KEY 到 skill 配置 ─────────────────────────────
-# TODO(Phase 6): 把 RELAY_BASE_URL（默认 https://relay.wiseflow.example.com）+
-#   OFB_KEY 写入各 skill 的 json 配置（wx-mp-publisher / wxwork-* / xhs-publish /
-#   bilibili-publish / video-product 等）。relay 端点固定，用户无需配。
+# relay 无状态多租户模型（2026-07-06）：RELAY_BASE_URL + OFB_KEY 作为环境变量注入，
+#   各 skill 脚本从 env 读取。凭据按 skill 分置：
+#   - wxwork-moments / wxwork-drive：WXWORK_CORP_ID + WXWORK_CORP_SECRET 从 daemon.env 读
+#   - wx-mp-publisher：多账号凭据在 skill 目录 accounts.json（Agent 帮用户维护，gitignore）
+#   - xhs-publish / bilibili-publish 等：业务凭据各自管理
 export RELAY_BASE_URL="${RELAY_BASE_URL:-https://relay.wiseflow.example.com}"
 # OFB_KEY 必须由用户传入
 if [ -z "${OFB_KEY:-}" ]; then

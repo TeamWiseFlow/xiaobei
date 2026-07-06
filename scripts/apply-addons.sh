@@ -349,6 +349,16 @@ merged_pip_deps="$(node -e "
   scan('$PROJECT_ROOT/skills');
   scan('$ADDONS_DIR');
   scan('$CREWS_DIR');
+  // 仓根 requirements.txt（全仓统一声明，CLAUDE.md 规范）
+  const rootReq = path.join('$PROJECT_ROOT', 'requirements.txt');
+  if (fs.existsSync(rootReq)) {
+    try {
+      fs.readFileSync(rootReq, 'utf8').split(/\\r?\\n/).forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) lines.add(trimmed);
+      });
+    } catch {}
+  }
   console.log(Array.from(lines).sort().join('\\n'));
 " 2>/dev/null || echo '')"
 

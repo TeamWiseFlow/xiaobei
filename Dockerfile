@@ -47,6 +47,13 @@ RUN mkdir -p /root/.openclaw
 #   无需 OFB_ENV.md。源码部署仍由 setup-crew.sh 生成 OFB_ENV.md（路径可变）。
 # TODO(Phase 7): skills 公共/私有拆分后 COPY skills/ → /root/.openclaw/skills
 COPY config/openclaw.json /root/.openclaw/openclaw.json
+# 全仓 Python 依赖（Docker 不跑 apply-addons.sh，需在此 bake）
+# 与 scripts/apply-addons.sh 同源（仓根 requirements.txt），使用 aliyun 镜像保持一致
+COPY requirements.txt /tmp/wiseflow-requirements.txt
+RUN pip3 install --break-system-packages --quiet --no-warn-script-location \
+      -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com \
+      -r /tmp/wiseflow-requirements.txt \
+    && rm -f /tmp/wiseflow-requirements.txt
 # awada channel 插件：COPY 源码 + 预装 ioredis 依赖（awada/src 仍走 ioredis 直连，
 # Phase 4 改 HTTP/WS 后此步可移除）。awada 自己的 node_modules 解析 ioredis，
 # 不走 ~/.openclaw/node_modules，故必须装在 awada/ 局部。

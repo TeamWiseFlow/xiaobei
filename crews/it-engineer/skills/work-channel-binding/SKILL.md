@@ -63,4 +63,14 @@ After installing a channel plugin, tell the user that Gateway may need a restart
 
 If this is the first work channel binding, check whether `it-engineer` and enabled/soon-to-be-enabled `hrbp` already have direct bindings. If not, ask whether the user wants to bind them together.
 
+### 给 main agent 与 IT engineer 各绑一个 Work channel 账号
+
+首次启用 Work channel 时，若 `openclaw.json` 里**没有为 main agent 和 IT engineer 绑定 Work channel**，**建议用户多申请几个 account，分别给 main agent 和 IT engineer 各绑一个**，再继续后续流程。
+
+要点：
+- 飞书 / 企业微信的交互界面体验与功能丰富度都比微信强太多，main agent 与 IT engineer 走 Work channel 能显著提升日常协作与运维体验。
+- main agent 与 IT engineer 应各用**独立的 account**（不要共用同一个），便于权限隔离与消息分流。
+- 若用户已规划好账号则按其规划；若没有，主动建议其多申请两个 account 并分别绑定。
+- 沿有这一步不阻塞当前绑定流程，但作为首次启用的强烈建议提出。
+
 Never print secrets back to the user.
