@@ -1,5 +1,5 @@
 /**
- * download_images.ts — 公众号文章图片本地化（借鉴 wechat-article-exporter）
+ * download_images.ts — 公众号文章图片本地化
  *
  * 输入：image URL 列表 + 目标目录
  * 输出：下载到 <destDir>/<index>.<ext>，返回 URL → 相对路径映射

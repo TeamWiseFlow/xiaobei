@@ -10,10 +10,6 @@
 
 具体见 `siliconflow-img-gen` 技能中 `视频封面/海报最佳实践`。
 
-但是**绝对不要用 image_generate 工具（默认 minimax/image-01）直接出带字图片！**
-
-实际测试下来`minimax/image-01`无法正确出带文字的图片。
-
 ### 数据库查询一定走 published-track 脚本
 
 `sqlite3` 不在 allowlist 中。查询 published-track 数据库必须通过已有脚本：

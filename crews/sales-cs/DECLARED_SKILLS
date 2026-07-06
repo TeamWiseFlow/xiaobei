@@ -13,7 +13,7 @@ weather
 customer-db
 
 # 销售流程技能
-demo_send
-exp_invite
-payment_send
+demo-send
+exp-invite
+payment-send
 proactive-send

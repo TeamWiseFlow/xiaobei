@@ -211,7 +211,7 @@ reply_dm / direct_dm。
 
 ### content-producer（对内 crew，T3）
 
-- 用途：内容制作者（视频/视觉），对内 sub-agent，不直接面对用户。
+- 用途：内容制作者（视频/视觉），对内 sub-agent，需要直接面对用户。
 - 启用流程：
   1. **先判断** `openclaw.json` 的 `channels` 段是否已配置飞书 channel 或企业微信 channel。
   2. **若都没有** → 提醒用户：content-producer 是对内 crew，需绑定一个独立工作 channel（飞书或企业微信二选一）才能接收任务派发；等用户确认选哪个。
