@@ -60,9 +60,11 @@ it-engineer MEMORY「binding routing 坑 2」）：
 
 > 重启会断所有 session，**执行前必须告知用户并征得同意**。
 
-```bash
-systemctl --user restart openclaw-gateway.service
-```
+按部署方式二选一：
+
+- **Docker 部署**（容器内 IT engineer 检测到 `/.dockerenv` 存在）：告知宿主用户执行
+  `docker restart <容器名>`（容器内无法自重启自身）。
+- **源码部署**（systemd）：`systemctl --user restart openclaw-gateway.service`。
 
 ### 4. 验证
 

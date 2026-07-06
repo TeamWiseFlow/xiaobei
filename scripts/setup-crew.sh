@@ -720,6 +720,9 @@ else
 fi
 
 # ─── 5. 写入 OFB_ENV.md（同时为 it-engineer 和 hrbp 写入） ──────
+# 仅源码部署需要：路径随机器可变，故记录成文件供 AGENTS.md 读取。
+# Docker 部署不跑 setup-crew.sh，路径固定（/opt/openclaw + /root/.openclaw），
+# AGENTS.md 已环境自感知，无需 OFB_ENV.md。
 generate_ofb_env_md() {
   local workspace_dir="$1"
   local agent_label="$2"

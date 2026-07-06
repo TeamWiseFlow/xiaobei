@@ -42,6 +42,9 @@ RUN pnpm build
 FROM build AS wiseflow-layer
 RUN mkdir -p /root/.openclaw
 # TODO(Phase 7): crews 扁平化后 COPY crews/ → /root/.openclaw/workspace-*/
+#   注意：Docker 不跑 setup-crew.sh，故不生成 OFB_ENV.md。AGENTS.md 已改为环境
+#   自感知（检测 /.dockerenv → 用固定路径 /opt/openclaw + /root/.openclaw），
+#   无需 OFB_ENV.md。源码部署仍由 setup-crew.sh 生成 OFB_ENV.md（路径可变）。
 # TODO(Phase 7): skills 公共/私有拆分后 COPY skills/ → /root/.openclaw/skills
 COPY config/openclaw.json /root/.openclaw/openclaw.json
 # awada channel 插件：COPY 源码 + 预装 ioredis 依赖（awada/src 仍走 ioredis 直连，

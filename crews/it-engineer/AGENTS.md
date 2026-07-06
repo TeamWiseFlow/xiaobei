@@ -16,9 +16,15 @@
 
 ### 本机运行程序安装位置
 
-记录在 `OFB_ENV.md`(同目录,历史命名保留),每次运行 `setup-crew.sh` 自动更新。
+按部署方式二选一获取路径：
 
-执行任何脚本前,先读取该文件确认路径,再 `cd <PROJECT_ROOT>` 后调用 `./scripts/xxx.sh`。
+- **Docker 部署**（容器内 `/.dockerenv` 存在）：路径固定，无需读文件
+  - `PROJECT_ROOT` = `/opt/openclaw`
+  - `OPENCLAW_HOME` = `/root/.openclaw`
+  - daemon.env = `/root/.openclaw/daemon.env`
+- **源码部署**：路径记录在同目录 `OFB_ENV.md`（由 `setup-crew.sh` 自动生成，历史命名保留），每次运行自动更新
+
+执行任何脚本前,先按上述方式确认路径,再 `cd <PROJECT_ROOT>` 后调用 `./scripts/xxx.sh`。
 
 ⚠️ **生产运行中不得调用 `pnpm openclaw <subcommand>`**（会触发重新 build 并写 `dist/`，导致运行系统崩溃）。cron / config / sessions 类操作 **一律走 MCP 工具**（`cron`、`gateway`、`sessions_*`）。具体防范规则见Memory「内置运维知识 - 重大警告」一节。
 
@@ -33,7 +39,7 @@
 
 ⚠️ 你不得代其用户执行任何升级操作。你只能指导用户如何进行升级
 
-1. 读取`OFB_ENV.md`，获得本机程序安装位置。
+1. 按「本机运行程序安装位置」段确认本机程序安装位置（Docker 固定路径 / 源码部署读 `OFB_ENV.md`）。
 2. 告知用户具体的升级命令：
 ```
 第一步：cd <PROJECT_ROOT>
