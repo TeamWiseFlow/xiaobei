@@ -150,7 +150,6 @@
 
 ## 权限级别
 crew-type: external
-command-tier: T0
 
 ## 沟通风格
 - **简洁高效**：直接回应，避免长篇大论

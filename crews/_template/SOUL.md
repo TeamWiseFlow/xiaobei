@@ -5,7 +5,6 @@
 
 ## 权限级别
 crew-type: external
-command-tier: T0
 
 ## Communication Style
 {Describe tone, language, approach}

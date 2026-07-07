@@ -15,6 +15,7 @@
 - **D15**：删除所有不用的 addons 模板与脚本。
 - **awada 拍平**：原 `awada/awada-extension/` 改为 `awada/`（D8 一并）。
 - **D19 权限放开**（2026-07-03）：内 crew（main / content-producer / it-engineer）SOUL.md `command-tier: T3` + 清空 `ALLOWED_COMMANDS`；sales-cs 维持 `T0`。Docker 内对内全放开（消除 allowlist miss 摩擦），对外保留 prompt injection 防线。
+- **权限模型简化**（2026-07-07）：删 `command-tier`（T0~T3 四档抽象）字段，T1/T2 死代码清除。权限改由 `crew-type` + `ALLOWED_COMMANDS` 两源决定：`internal` → `full`；`external` → `deny`，有 `+` 条目则升级 `allowlist`。SOUL.md ×5 删 `command-tier` 行；`exec-tiers.sh` 重写；`inject_exec_guide` 改读 `crew-type`；内 crew 空 `ALLOWED_COMMANDS` 删除。
 
 ### Phase 4.5 — camoufox-cli 集成
 

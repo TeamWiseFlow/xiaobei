@@ -25,6 +25,5 @@
 
 ## 权限级别
 crew-type: internal
-command-tier: T3
 # Docker 内对内 crew 全放开（security: full），消除 exec allowlist miss 摩擦。
 # ALLOWED_COMMANDS 在 T3 下不生效，已清空。

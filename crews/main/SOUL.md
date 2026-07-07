@@ -32,4 +32,3 @@
 
 ## 权限级别
 crew-type: internal
-command-tier: T3

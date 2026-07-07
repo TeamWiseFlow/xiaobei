@@ -476,21 +476,29 @@ inject_exec_guide() {
   [ -f "$tools_md" ] || return 0
   grep -q "## exec 命令规范" "$tools_md" && return 0
 
-  # D19：按 SOUL.md 的 command-tier 分发。
-  #   T3 (full)  → 无白名单，短提示即可
-  #   T1/T2      → allowlist 模式，注入完整白名单规范
-  #   T0 (deny)  → 无 shell 执行权限，不注入
-  local tier=""
+  # 按 SOUL.md 的 crew-type 分发（2026-07-07 简化，删 T0~T3 抽象）：
+  #   internal              → 无白名单，短提示即可
+  #   external + ALLOWED_COMMANDS 有 + 条目 → allowlist 模式，注入完整白名单规范
+  #   external 无 + 条目     → deny，无 shell 执行权限，不注入
   local soul="${workspace_dir:-}/SOUL.md"
-  if [ -f "$soul" ]; then
-    tier=$(grep -E "^command-tier:" "$soul" | head -1 | sed -E "s/^command-tier:[[:space:]]*//; s/[[:space:]]*#.*//; s/^[[:space:]]+//; s/[[:space:]]+$//")
-  fi
+  local crew_type=""
+  [ -f "$soul" ] && crew_type="$(resolve_crew_type "$soul")"
   local ws="${workspace_dir:-<workspace>}"
 
-  if [ "$tier" = "T1" ] || [ "$tier" = "T2" ]; then
+  # external crew 是否有 ALLOWED_COMMANDS + 条目（决定 deny 还是 allowlist）
+  local ext_has_allowlist="false"
+  if [ "$crew_type" = "external" ] && [ -f "${workspace_dir:-}/ALLOWED_COMMANDS" ]; then
+    if grep -qE '^[[:space:]]*\+' "${workspace_dir:-}/ALLOWED_COMMANDS"; then
+      ext_has_allowlist="true"
+    fi
+  fi
+
+  if [ "$crew_type" = "external" ] && [ "$ext_has_allowlist" = "true" ]; then
     cat >> "$tools_md" << 'GUIDE'
 
 ## exec 命令规范
+
+本 crew 为**对外 crew**，exec 走 **allowlist**——只允许 `ALLOWED_COMMANDS` 里 `+` 声明的命令/脚本，其余一律拒绝（prompt injection 防线）。
 
 exec allowlist 会解析管道、`&&`、`||`、`;` 和常见重定向，并逐段检查实际执行的命令是否都在白名单中。
 
@@ -531,7 +539,7 @@ cat file.txt | grep keyword
 GUIDE
     # sed -i 在 BSD（macOS）会把脚本串当成备份后缀吞掉；-i.bak 两端都支持，再清掉 .bak。
     sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
-  elif [ "$tier" = "T3" ]; then
+  elif [ "$crew_type" = "internal" ]; then
     cat >> "$tools_md" << 'GUIDE'
 
 ## exec 命令规范
@@ -542,7 +550,7 @@ GUIDE
 GUIDE
     sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
   fi
-  # 对外 crew（deny）或其他：不注入（无 shell 执行权限）
+  # external 无 + 条目（deny）或未知 crew-type：不注入（无 shell 执行权限）
 }
 
 inject_python_exec_guide() {

@@ -195,7 +195,7 @@ fetch-and-update-metrics.sh --platform wx_mp --id 42
 
 ## Notes
 
-- Docker 内运行需 `command-tier=T3` full（内 crew 放开，**不需要**在 ALLOWED_COMMANDS 白名单）
+- Docker 内对内 crew exec full（放开，**不需要**在 ALLOWED_COMMANDS 白名单）
 - **限频建议**：单公众号每 24h 全量 ≤ 1 次；单篇分析按需触发
 - **失败兜底**：本 skill 跑不通时回退到 manual update（`update-metrics.sh --reads ... --likes ... --comments ...` 手动填）
 - **依赖版本**：camoufox-cli@0.6.2（Dockerfile 阶段 1 锁定）

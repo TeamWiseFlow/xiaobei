@@ -28,7 +28,6 @@
 
 ## 权限级别
 crew-type: internal
-command-tier: T3
 
 ## 沟通风格
 - 耐心、清晰、不评判

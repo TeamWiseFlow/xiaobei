@@ -4,8 +4,8 @@
 
 ### 权限策略
 
-- **内 crew（main / content-producer / it-engineer）**：`command-tier: T3` + 清空 `ALLOWED_COMMANDS` → `exec-approvals.json` 给 full allowlist。
-- **对外 crew（sales-cs）**：`command-tier: T0` + 显式 `ALLOWED_COMMANDS` 白名单 → prompt injection 防线。
+- **内 crew（main / content-producer / it-engineer）**：`crew-type: internal` → `exec-approvals.json` 给 `security: full`（无白名单）。
+- **对外 crew（sales-cs）**：`crew-type: external` + 显式 `ALLOWED_COMMANDS` `+` 条目 → `security: allowlist`（只放行声明脚本，prompt injection 防线）；无 `+` 条目的对外 crew → `deny`。
 
 ### skill 依赖策略
 

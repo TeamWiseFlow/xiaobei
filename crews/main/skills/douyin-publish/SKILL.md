@@ -174,7 +174,7 @@ login-manager.sh qr-confirm douyin --session <s> --timeout 180
 
 ## Notes
 
-- Docker 内 `command-tier=T3` full（无 allowlist 限制）
+- Docker 内对内 crew exec full（无 allowlist 限制）
 - 限频建议：单抖音号每 24h ≤ 5 条发布；触发风控立即降级
 - 失败回退：浏览器模拟失败 → 维持现状（让用户自己手动发）
 - 抖音创作者中心 DOM 改版频繁：selector 需 spike 验证

@@ -1,5 +1,5 @@
 # customer-service ALLOWED_COMMANDS
-# 在 T0 基础上精确放行声明式技能所需脚本
+# 对外 crew 默认 deny，本文件用 + 条目精确放行声明式技能所需脚本（在 deny 上凿洞）
 # 格式：+<command> 追加允许（相对于 workspace 根目录）
 # customer-db 具名操作脚本（无原子 SQL 访问权限）
 +./skills/customer-db/scripts/cs-update.sh
