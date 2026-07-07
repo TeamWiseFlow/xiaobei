@@ -26,8 +26,8 @@
             "input": [
               "text"
             ],
-            "contextWindow": 1000000,
-            "maxTokens": 128000,
+            "contextWindow": 1024000,
+            "maxTokens": 65536,
             "compat": {
               "supportsReasoningEffort": true,
               "supportsUsageInStreaming": true,
@@ -42,8 +42,8 @@
             "input": [
               "text"
             ],
-            "contextWindow": 1000000,
-            "maxTokens": 131072,
+            "contextWindow": 1024000,
+            "maxTokens": 65536,
             "compat": {
               "supportsReasoningEffort": true,
               "supportsUsageInStreaming": true,
@@ -53,29 +53,12 @@
           },
           {
             "id": "deepseek-v4-pro",
-            "name": "DeepSeek V4 Pro",
-            "reasoning": true,
+            "name": "deepseek-v4-pro",
             "input": [
               "text"
             ],
-            "contextWindow": 1000000,
-            "maxTokens": 128000,
-            "compat": {
-              "supportsReasoningEffort": true,
-              "supportsUsageInStreaming": true,
-              "maxTokensField": "max_tokens"
-            },
-            "api": "openai-completions"
-          },
-          {
-            "id": "minimax-m3",
-            "name": "MiniMax M3",
-            "reasoning": true,
-            "input": [
-              "text"
-            ],
-            "contextWindow": 1000000,
-            "maxTokens": 128000,
+            "contextWindow": 1024000,
+            "maxTokens": 65536,
             "compat": {
               "supportsReasoningEffort": true,
               "supportsUsageInStreaming": true,
@@ -104,7 +87,7 @@
         "primary": "awk/glm-latest",
         "fallbacks": [
           "awk/deepseek-v4-pro",
-          "awk/minimax-m3"
+          "awk/deepseek-v4-flash"
         ]
       },
       "imageModel": {
@@ -119,9 +102,6 @@
         },
         "awk/deepseek-v4-pro": {
           "alias": "awk/ds-v4-pro"
-        },
-        "awk/minimax-m3": {
-          "alias": "awk/m3"
         },
         "awk/doubao-seed-2.0-lite": {
           "alias": "awk/seed-2-lite"
