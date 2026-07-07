@@ -417,7 +417,8 @@ if [ -f "$CONFIG_PATH" ]; then
         default: prev.default ?? true,
         name: prev.name || 'Main Agent',
         workspace: prev.workspace || openclawHome + '/workspace-main',
-        thinkingDefault: 'high',
+        // thinkingDefault 不显式设——main 继承 agents.defaults.thinkingDefault（medium）；
+        // 若用户在 openclaw.json 手动给 main 设过则 prev 保留（...prev 已带）。
         reasoningDefault: 'off',
         subagents: {
           ...(prev.subagents || {}),

@@ -150,7 +150,6 @@
           "target": "none",
           "isolatedSession": true
         },
-        "thinkingDefault": "high",
         "reasoningDefault": "off"
       },
       {
