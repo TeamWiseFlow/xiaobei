@@ -51,7 +51,7 @@
 
 ### 1. 获取代码
 
-至 [Releases](https://github.com/TeamWiseFlow/wiseflow/releases) 下载最新版压缩包并解压；
+至 [Releases](https://github.com/TeamWiseFlow/xiaobei/releases) 下载最新版压缩包并解压；
 
 ### 2. 一键安装
 
@@ -238,7 +238,7 @@ wiseflow/
 
 ## 📬 联系方式
 
-有任何问题或建议，欢迎通过 [issue](https://github.com/TeamWiseFlow/wiseflow/issues) 留言。
+有任何问题或建议，欢迎通过 [issue](https://github.com/TeamWiseFlow/xiaobei/issues) 留言。
 
 商务合作专属邮箱：`zm.zhao # foxmail.com` (发送时将 # 替换为 @)
 
@@ -261,11 +261,11 @@ wiseflow/
 
 ```
 Author：Wiseflow Team
-https://github.com/TeamWiseFlow/wiseflow
+https://github.com/TeamWiseFlow/xiaobei
 ```
 
 ![star](https://atomgit.com/wiseflow/wiseflow/star/badge.svg) 国内托管地址：[https://atomgit.com/wiseflow/wiseflow](https://atomgit.com/wiseflow/wiseflow)
 
 ## 友情链接
 
-[<img src="https://github.com/TeamWiseFlow/wiseflow/raw/4.x/docs/logos/tianqibao.png" alt="tianqibao" height="60">](https://baotianqi.cn/)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://resource.aihubmix.com/logo.png" alt="aihubmix" height="60">](https://aihubmix.com/?aff=Gp54)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://github.com/TeamWiseFlow/wiseflow/raw/4.x/docs/logos/SiliconFlow.png" alt="siliconflow" height="40">](https://cloud.siliconflow.cn/i/WNLYbBpi)
+[<img src="https://github.com/TeamWiseFlow/xiaobei/raw/4.x/docs/logos/tianqibao.png" alt="tianqibao" height="60">](https://baotianqi.cn/)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://resource.aihubmix.com/logo.png" alt="aihubmix" height="60">](https://aihubmix.com/?aff=Gp54)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[<img src="https://github.com/TeamWiseFlow/xiaobei/raw/4.x/docs/logos/SiliconFlow.png" alt="siliconflow" height="40">](https://cloud.siliconflow.cn/i/WNLYbBpi)

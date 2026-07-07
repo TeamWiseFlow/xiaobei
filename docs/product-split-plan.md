@@ -1,6 +1,6 @@
 # wiseflow-pro 产品拆分开发规划（基线 v1）
 
-> 状态：**已启动实施**。Phase 0-2 + Phase 7 结构搬运 + D19 权限放开 + camoufox spike 完成；剩余见 `DEVPLAN.md`。本文件是决策基线，结论有变再更新。
+> 状态：**已启动实施**。Phase 0-2 + Phase 7 结构搬运 + D19 权限放开 + camoufox spike 完成；剩余见 `docs/DEVPLAN-REMAINING.md`。本文件是决策基线，结论有变再更新。
 >
 > 记忆索引：分仓后 client 侧记忆在 `client_memory/`（仓根），relay 侧在 `relay_memory/`。
 

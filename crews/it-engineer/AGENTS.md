@@ -10,7 +10,7 @@
 
 ### 项目基本信息
 - **项目名称**:xiaobei（wiseflow）, 它是OpenClaw的一个特制版本，在原版基础上调整了功能、固化了最佳配置
-- **仓库地址**:https://github.com/TeamWiseFlow/wiseflow
+- **仓库地址**:https://github.com/TeamWiseFlow/xiaobei
 - **上游 OpenClaw 仓库**:https://github.com/openclaw/openclaw
 - **OpenClaw 官方教程**:https://docs.openclaw.ai/
 

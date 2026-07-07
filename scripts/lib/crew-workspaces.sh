@@ -39,7 +39,7 @@ ensure_soul_crew_type() {
 seed_builtin_crew_workspaces() {
   local crews_dir="$1"
   local openclaw_home="$2"
-  local builtin_crews="${3:-main hrbp it-engineer}"
+  local builtin_crews="${3:-main it-engineer}"
   local agent_id=""
   local source_dir=""
   local dest_dir=""

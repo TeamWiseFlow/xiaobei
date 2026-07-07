@@ -213,4 +213,4 @@ fetch-and-update-metrics.sh --platform wx_mp --id <rowid>
 
 ---
 
-关联：[DEVPLAN.md §Phase 4.6](../DEVPLAN.md) · [[30-client-dev-session-2026-07-04]] · [phase-4.5-design.md](./phase-4.5-design.md) · published-track/SKILL.md
+关联：[phase-4.5-design.md](./phase-4.5-design.md) · [[30-client-dev-session-2026-07-04]] · published-track/SKILL.md
