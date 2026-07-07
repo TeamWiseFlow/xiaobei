@@ -35,29 +35,3 @@ ensure_soul_crew_type() {
     printf '\ncrew-type: %s\n' "$crew_type" >> "$soul_file"
   fi
 }
-
-seed_builtin_crew_workspaces() {
-  local crews_dir="$1"
-  local openclaw_home="$2"
-  local builtin_crews="${3:-main it-engineer}"
-  local agent_id=""
-  local source_dir=""
-  local dest_dir=""
-
-  mkdir -p "$openclaw_home"
-
-  for agent_id in $builtin_crews; do
-    source_dir="$crews_dir/$agent_id"
-    dest_dir="$openclaw_home/workspace-$agent_id"
-
-    [ -d "$source_dir" ] || continue
-
-    if [ -d "$dest_dir" ]; then
-      echo "  ⚠️  workspace-$agent_id already exists, skipping template bootstrap"
-      continue
-    fi
-
-    copy_crew_template_contents "$source_dir" "$dest_dir"
-    echo "  ✅ workspace-$agent_id bootstrapped from built-in template"
-  done
-}

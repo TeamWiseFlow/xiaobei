@@ -12,10 +12,9 @@ OPENCLAW_HOME="$HOME/.openclaw"
 CONFIG_PATH="$OPENCLAW_HOME/openclaw.json"
 FORCE=false
 
-# 内置 Crew 列表（全局唯一，不可删除，不可多实例）
-# 这些都是对内 Crew（crew-type: internal）
-BUILTIN_CREWS="main it-engineer"
-
+# 内置 Crew（main / it-engineer）在 §4 中强制注册进 openclaw.json agents.list；
+# 其余 crew（content-producer / sales-cs / ...）的 workspace 在 §1 预建，
+# 运行时由 main agent 招募时注册。
 source "$SCRIPT_DIR/lib/agent-skills.sh"
 source "$SCRIPT_DIR/lib/exec-tiers.sh"
 source "$SCRIPT_DIR/lib/crew-workspaces.sh"
@@ -247,10 +246,18 @@ fi
 
 echo "📦 Setting up Agent System (crews)..."
 
-# ─── 1. 安装内置 Crew workspace（main / it-engineer） ──────────
-for agent_id in $BUILTIN_CREWS; do
-  agent_dir="$CREWS_DIR/$agent_id"
+# ─── 1. 部署所有 Crew workspace（扫 crews/ 顶层，幂等） ──────────
+# D8 扁平化后不再经 crew_templates/hrbp_templates 中转，直接把 crews/<id>/ 同步到
+# ~/.openclaw/workspace-<id>/。已存在则跳过（保留用户编辑），仅做幂等 guide 注入。
+# main / it-engineer 在 §4 中额外强制注册进 openclaw.json；content-producer / sales-cs
+# 等其他 crew 的 workspace 在此预建，运行时由 main agent 招募时注册进 openclaw.json。
+for agent_dir in "$CREWS_DIR"/*/; do
   [ -d "$agent_dir" ] || continue
+  agent_dir="${agent_dir%/}"
+  agent_id="$(basename "$agent_dir")"
+  # 跳过脚手架模板与非合法目录
+  [ "$agent_id" = "_template" ] && continue
+  [ -f "$agent_dir/SOUL.md" ] || continue
   dest="$OPENCLAW_HOME/workspace-$agent_id"
 
   if [ -d "$dest" ] && [ "$FORCE" != "true" ]; then
@@ -761,5 +768,5 @@ echo ""
 echo "✅ Agent System installed!"
 echo ""
 echo "Installed locations:"
-echo "  Workspaces:          $OPENCLAW_HOME/workspace-main/, workspace-it-engineer/"
+echo "  Workspaces:          $OPENCLAW_HOME/workspace-<crew-id>/ (one per crews/*, _template 除外)"
 echo "  Config:              $CONFIG_PATH"

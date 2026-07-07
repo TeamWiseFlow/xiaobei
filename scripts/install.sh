@@ -327,7 +327,8 @@ echo ""
 # ─── 8. 环境变量收集 + daemon 安装 ─────────────────────────
 
 # 需要询问用户的 API Key（若已在目标文件中存在则跳过）
-_USER_PROMPT_KEYS="AWK_API_KEY SILICONFLOW_API_KEY"
+# 5.5.3 起主力 + 视觉 + 替补统一走 AWK（火山方舟 Coding Plan），不再收集 SILICONFLOW_API_KEY
+_USER_PROMPT_KEYS="AWK_API_KEY"
 
 # 固定默认值（硬编码，不询问，已存在则跳过）
 _HARDCODED_DEFAULTS="OPENCLAW_BROWSER_TIMEOUT_MS=90000 OPENCLAW_DISABLE_BONJOUR=true"
@@ -381,6 +382,9 @@ _write_missing_env() {
       _val="${_sv:-}"
       [ -z "$_val" ] && echo "⚠️  Missing ${_key} in non-interactive mode; leaving it unset."
     fi
+    # 清洗：去除所有空白字符。API key 是不透明 token，绝不含空白；
+    # 防止粘贴/环境变量带入前导换行或空格导致 daemon.env 出现 `KEY=\nvalue` 错行。
+    _val="$(printf '%s' "$_val" | tr -d '[:space:]')"
     if [ -n "$_val" ]; then
       if [ "$format" = "export" ]; then
         printf "export %s='%s'\n" "$_key" "${_val//\'/\'\\\'\'}" >> "$env_file"
