@@ -51,7 +51,7 @@ description: >
 邀请消息是 awada 控制消息，不是自然语言：
 
 ```text
-/invite//<user_external_id>//风暴眼（xiaobei情报小站）
+/invite//<user-id-external>//风暴眼（xiaobei情报小站）
 ```
 
 awada-channel 会将其转为拉群动作。

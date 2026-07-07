@@ -52,7 +52,7 @@ def load_env() -> tuple[str, str, str, str]:
             "    再由 IT engineer 写入 daemon.env 并重启实例。"
         )
     if not ofb_key:
-        die("OFB_KEY 未配置（daemon.env）。请让 IT engineer 配置后重启实例。")
+        die("OFB_KEY 未配置。OFB_KEY 是 VIP Club 会员凭证，由 ofb 掌柜签发——请向 ofb 掌柜索取该 key，交由 IT engineer 写入 daemon.env 后重启实例。")
     return corp_id, corp_secret, relay, ofb_key
 
 

@@ -46,7 +46,11 @@ def require_env() -> tuple[str, str]:
         sys.stderr.write("[bilibili-publish] ERROR: RELAY_BASE_URL not set\n")
         sys.exit(2)
     if not ofb_key:
-        sys.stderr.write("[bilibili-publish] ERROR: OFB_KEY not set\n")
+        sys.stderr.write(
+            "[bilibili-publish] ERROR: OFB_KEY 未配置。OFB_KEY 是 VIP Club 会员凭证，"
+            "由 ofb 掌柜签发——请向 ofb 掌柜索取该 key，交由 IT engineer 写入 "
+            "daemon.env 后重启实例。\n"
+        )
         sys.exit(2)
     return relay, ofb_key
 

@@ -536,13 +536,13 @@ GUIDE
 
 ## exec 命令规范
 
-本 crew `command-tier=T3`（`security: full`），exec **无白名单限制**——管道、`&&`、`||`、`;`、`cd` 前缀、相对路径、`bash`/`sh` 前缀等均不触发 allowlist miss，可直接执行。
+本 crew 为**对内 crew**，exec **无白名单限制**——管道、`&&`、`||`、`;`、`cd` 前缀、相对路径、`bash`/`sh` 前缀等均不触发 allowlist miss，可直接执行。
 
 脚本调用仍建议用绝对路径（如 `python3 @@WS@@/skills/xxx/scripts/yyy.py`），仅为跨环境/跨 workspace 稳定，非安全约束。
 GUIDE
     sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
   fi
-  # T0（deny）或其他：不注入（无 shell 执行权限）
+  # 对外 crew（deny）或其他：不注入（无 shell 执行权限）
 }
 
 inject_python_exec_guide() {

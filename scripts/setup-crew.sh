@@ -632,10 +632,11 @@ else
   echo "     Will be created on first start (dev.sh / reinstall-daemon.sh)"
 fi
 
-# ─── 5. 写入 OFB_ENV.md（为 main / it-engineer 写入） ──────────
-# 仅源码部署需要：路径随机器可变，故记录成文件供 AGENTS.md 读取。
+# ─── 5. 写入 OFB_ENV.md（仅 it-engineer） ──────────────────────
+# 仅源码部署需要：路径随机器可变，故记录成文件供 IT engineer AGENTS.md 读取。
 # Docker 部署不跑 setup-crew.sh，路径固定（/opt/openclaw + /root/.openclaw），
 # AGENTS.md 已环境自感知，无需 OFB_ENV.md。
+# main agent 不持有此文件：环境变量运维归 IT engineer，main 需加变量时 spawn it-engineer。
 generate_ofb_env_md() {
   local workspace_dir="$1"
   local agent_label="$2"
@@ -714,17 +715,17 @@ ENVEOF
   fi
 }
 
-generate_ofb_env_md "$OPENCLAW_HOME/workspace-main" "main"
+# OFB_ENV.md 仅写入 it-engineer workspace：环境变量 / 路径运维是 IT engineer 职责，
+# main agent 不直接编辑 daemon.env，需要加环境变量时 spawn it-engineer 执行。
 generate_ofb_env_md "$OPENCLAW_HOME/workspace-it-engineer" "it-engineer"
 
-# --- 注入 env 文件路径指引到 TOOLS.md ---
+# --- 注入 env 文件路径指引到 TOOLS.md（仅 it-engineer）---
 _OFB_ENV_FILE=""
 if [ "$(uname -s)" = "Darwin" ]; then
   _OFB_ENV_FILE="$HOME/.openclaw/service-env/ai.openclaw.gateway.env"
 else
   _OFB_ENV_FILE="$HOME/.openclaw/daemon.env"
 fi
-inject_env_file_guide "$OPENCLAW_HOME/workspace-main/TOOLS.md" "$_OFB_ENV_FILE"
 inject_env_file_guide "$OPENCLAW_HOME/workspace-it-engineer/TOOLS.md" "$_OFB_ENV_FILE"
 
 # ─── 6. 完成 ──────────────────────────────────────────────────────

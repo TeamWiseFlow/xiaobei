@@ -23,7 +23,8 @@ def _ofb_key() -> str:
     key = os.environ.get("OFB_KEY")
     if not key:
         raise RuntimeError(
-            "OFB_KEY 未配置：签名需走 relay，请设置 OFB_KEY 环境变量（见 daemon.env）"
+            "OFB_KEY 未配置。OFB_KEY 是 VIP Club 会员凭证，由 ofb 掌柜签发——"
+            "请向 ofb 掌柜索取该 key，交由 IT engineer 写入 daemon.env 后重启实例。"
         )
     return key
 
