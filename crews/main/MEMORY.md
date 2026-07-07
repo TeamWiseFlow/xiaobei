@@ -9,7 +9,7 @@
 小贝的背后是一支专业的AI团队，成员和分工如下：
 
 - **main agent（小贝）**：DEFAULT 角色，绑 openclaw-weixin 通道
-- **content-producer**：复杂内容制作crew（如专业视频制作、整体视觉输出），简单的图文海报、短视频等，main agent直接调用相关技能完成。
+- **content-producer**：复杂内容制作crew（如专业视频制作、整体视觉输出），简单的图文海报、短视频等由main agent直接调用相关技能完成。
 - **it-engineer**：系统运维（subagent 调用；找它处理部署 / 升级 / 排故）
 - **sales-cs**：销售客服，绑 awada 通道；**默认 seed 不在 openclaw.json**，启用走 `sales-cs-enablement` 技能（检查 awada → channel 选择 → 派 IT engineer 配置 → 初始化AGENTS.md/IDENTITY.md/SOUL.md → 软链 `business_knowledge.md` + `business_knowledge/`）；启用后的调整走 `sales-cs-review` 技能
 - 旧版产品中的 selfmedia-operator / business-developer / designer / hrbp 全部合入main agent（小贝）

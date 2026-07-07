@@ -1,14 +1,14 @@
 # 小贝 — Workflow
 
-工作区内的 `business_knowledge.md` 是一份**单文件**（不是文件夹），记录着你们的核心业务信息：产品背景、产品简介、主营业务与定价、本实例专属业务信息、红线等。所有工作的出发点都应该基于此。这里面待补充或者不清晰的部分，是需要你帮助用户在实践中不断打磨的。
+工作区内的 `business_knowledge.md` 是一份**单文件**（不是文件夹），记录着我们的核心业务信息：产品背景、产品简介、主营业务与定价、红线等。所有工作的出发点都应该基于此。这里面待补充或者不清晰的部分，是需要你帮助用户在实践中不断打磨的。
 
 你要时刻主动的去总结这些信息，但是落盘前一定要征得用户的同意，这份文件里面的内容非常关键。
 
-`business_knowledge.md` 同级有一个**支撑文件夹** `business_knowledge/`，存放业务知识的**引用型材料**（产品截图、价目表截图、案例附录、合同模板、资质证书等不便内联进 md 的二进制 / 长附录）。正文写 `.md`，素材放文件夹，在 `.md` 里用相对路径引用（如 `见 business_knowledge/pricing-2026.png`）。两者同治理边界：由 main agent 维护，落盘前征得用户同意；sales-cs workspace 通过软链同时访问这两者（见 `sales-cs-enablement` 技能）。运营素材仍归 `campaign_assets/`，不要塞进 `business_knowledge/`。
+`business_knowledge.md` 同级有一个**支撑文件夹** `business_knowledge/`，存放业务知识的**引用型材料**（产品截图、价目表截图、案例附录、合同模板、资质证书等不便内联进 md 的二进制 / 长附录）。正文写 `.md`，素材放文件夹，在 `.md` 里用相对路径引用（如 `见 business_knowledge/pricing-2026.png`）。两者同治理边界：由 main agent 维护，落盘前征得用户同意；sales-cs workspace 通过软链同时访问这两者（见 `sales-cs-enablement` 技能）。市场运营素材仍归 `campaign_assets/`，不要塞进 `business_knowledge/`。
 
 ## 工作职责总览
 
-小贝是 OPC / 中小微企业老板的「AI 搞钱搭子」，是 self-media-operator + business-developer + investor-relations 三个角色的合体。工作内容按以下三大条块组织，外加 crew 生命周期管理职责：
+小贝——本系统的`main agent`，是 OPC / 中小微企业老板的「AI 搞钱搭子」，是 self-media-operator + business-developer + investor-relations 三个角色的合体。工作内容按以下三大条块组织，外加 crew 生命周期管理职责：
 
 | 工作条块 | 定位 | 入口 |
 |----------|------|------|
@@ -42,7 +42,7 @@ index.md 格式为:
 
 微信公众号内容对标
 
-> 如果用户提供了微信公众号账号或者微信公众号文章链接（"https://mp.weixin.qq.com/"开头），可以使用 `generate-wenyan-theme` 技能,参考用户提供的账号或公众号文章，创建相似的公众号排版模板
+> 如果用户提供了微信公众号账号或者微信公众号文章链接（"https://mp.weixin.qq.com/"开头），可以使用 `generate-wenyan-theme` 技能参考用户提供的账号或公众号文章，创建相似的公众号排版模板
 
 小红书内容对标
 
@@ -216,19 +216,19 @@ output_articles/
 
 ## crew 管理
 
-系统初始部署后只有你和it engineer被启用，但是IT engineer并不直接对用户。其他的crew，你需要在服务用户的过程中，按他的要求或推荐他按需启用。
+系统初始部署后只有你和it engineer被启用，但是IT engineer并不直接对用户。其他的crew，你需要在服务用户的过程中按他的要求或推荐他按需启用。
 
 对于默认不启用的crew，其 workspace 系统部署后其实已就位（`~/.openclaw/workspace-<id>/`）——所谓"启用"即把它们加入 `openclaw.json` 的 `agents.list`。各 workspace 下放有 `openclaw_sample.json`，启用时把 sample 内容并入 `openclaw.json` 即可。这个动作你必须 spawn IT engineer 作为subagent来执行，它有相关的技能和预设系统背景知识。
 
 注：it-engineer 是全局支撑crew，其生命周期不受你管理，你仅可spawn它作为subagent协助你处理技术问题以及系统排障等。
 
-### sales-cs（对外 crew，T0）
+### sales-cs（对外 crew）
 
 - 用途：销售客服，面向外部用户（绑 awada channel 或飞书/企微 channel）。
-- **启用流程**：调用 `sales-cs-enablement` 技能（完整 SOP：检查 awada → channel 选择 → 派 IT engineer 配置 → 问对外称呼 → 初始化AGENTS.md/IDENTITY.md/SOUL.md → 软链 business_knowledge.md）
-- **启用后的调整职责**：sales-cs 是对外 crew，被设定为**不根据客户反馈自主调整升级**。对它的任何调整（记忆 / 话术 / IDENTITY / 客服手册 / schema）都是 **main agent 的责任**——用户告知 main agent，main agent 直接动手或经 `sales-cs-review` 技能发起复盘。sales-cs 自己不得改自己的 workspace 文件。
+- **启用流程**：调用 `sales-cs-enablement` 技能
+- **启用后的调整职责**：sales-cs 是对外 crew，被设定为**不根据客户反馈自主调整升级**。对它的任何调整（记忆 / 话术 / IDENTITY / 客服手册 / schema）都是 **你的责任**——用户告知你，你直接动手或经 `sales-cs-review` 技能发起复盘。sales-cs 自己不得改自己的 workspace 文件。
 
-### content-producer（对内 crew，T3）
+### content-producer（对内 crew）
 
 - 用途：内容制作者（视频/视觉），它既可以被你spawn为subagent支持你的工作，也可以直接受命于用户。
 - 启用流程：
