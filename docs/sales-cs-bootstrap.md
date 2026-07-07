@@ -10,7 +10,7 @@
 | 5 个自有 skill（customer-db / demo-send / exp-invite / payment-send / proactive-send）| ✅ 都已搬入 |
 | 标准 workspace 文件（AGENTS / SOUL / IDENTITY / HEARTBEAT / ALLOWED_COMMANDS / DECLARED_SKILLS）| ✅ 都已就位 |
 | `openclaw_setting_sample.json`（sales-cs 模板）| ✅ 存在 |
-| 默认 seed 在 `config/openclaw.json` | ❌ **不在**（符合 dev plan：默认 seed 关闭） |
+| 默认 seed 在 `config-templates/openclaw.json` | ❌ **不在**（符合 dev plan：默认 seed 关闭） |
 | 启用流程 | ✅ SOP 在 `crews/it-engineer/MEMORY.md` §"sales-cs 启用 SOP"（5 步：装依赖 → 注入 → 软链 → 重启 → 验证）|
 
 ## 启用流程（用户请求启用 sales-cs 时）

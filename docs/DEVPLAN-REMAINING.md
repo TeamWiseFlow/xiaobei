@@ -13,7 +13,7 @@
 > 按 2026-07-04 约束"源码部署优先，Docker 后做"推迟。源码部署验证通过后再推进。
 
 - [ ] **wiseflow-layer 阶段组织**
-  - 做：COPY `skills/` → `/root/.openclaw/skills`；COPY `crews/` → `/root/.openclaw/workspace-*`；COPY `config/openclaw.json` → `/root/.openclaw/openclaw.json`；`daemon.env.template` 占位。
+  - 做：COPY `skills/` → `/root/.openclaw/skills`；COPY `crews/` → `/root/.openclaw/workspace-*`；COPY `config-templates/openclaw.json` → `/root/.openclaw/openclaw.json`（与源码部署同源）；`daemon.env.template` 占位。
 - [ ] **依赖统一装**：`requirements.txt` / `package.json` 一次性 npm/pip install。
 - [ ] **D20① 镜像预装常用依赖**：按 `skills/`+`crews/` 实际 import 清单（requests/Pillow/xhshow/python-pptx/reportlab/tccli/google-api-python-client/google-auth-oauthlib 等）pip 装进镜像 site-packages，免小白用户运行期 pip。
 - [ ] **img-gen 编译**：火山 gen.py 编译/打包。

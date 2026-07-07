@@ -125,7 +125,7 @@ wiseflow-client/
 
 1. **workspace-deps**: Node24 + pnpm + python3 + **camoufox Firefox 二进制 + camoufox-cli(npm 全局)**（不 bake chromium；patchright-core 仅作 npm 依赖留给 fallback connectOverCDP 驱动，attach 的是用户本机 Chrome）
 2. **build**: COPY openclaw + apply patches(含 patchright override + 005/006，供 fallback) + pnpm install + pnpm build + ui:build
-3. **wiseflow-layer**: COPY skills/crews/config → 组织成 `/root/.openclaw/` 运行态（skills→`/root/.openclaw/skills`；crews→`/root/.openclaw/workspace-*`；config/openclaw.json→`/root/.openclaw/openclaw.json`；daemon.env.template 占位）+ 统一 npm/pip install + 编译改火山的 img-gen gen.py + 生成 camoufox 冻结指纹模板(`~/.camoufox-cli/profiles/_template`)
+3. **wiseflow-layer**: COPY skills/crews/config → 组织成 `/root/.openclaw/` 运行态（skills→`/root/.openclaw/skills`；crews→`/root/.openclaw/workspace-*`；config-templates/openclaw.json→`/root/.openclaw/openclaw.json`，与源码部署同源；daemon.env.template 占位）+ 统一 npm/pip install + 编译改火山的 img-gen gen.py + 生成 camoufox 冻结指纹模板(`~/.camoufox-cli/profiles/_template`)
 4. **runtime**: 复制产物 + 装 openclaw-weixin 插件(tgz) + ENTRYPOINT
 
 **entrypoint 运行期**：读 env 渲染 daemon.env → 注入 OFB_KEY/relay 端点到各 skill 配置 → `node openclaw.mjs gateway`（非 systemd）→ 检测 weixin 未绑 → `qrcode-terminal` 输出 stdout + UI 兜底。volume: `/root/.openclaw`。

@@ -154,7 +154,8 @@
         ],
         "subagents": {
           "allowAgents": [
-            "it-engineer"
+            "it-engineer",
+            "content-producer"
           ]
         },
         "tools": {
@@ -194,6 +195,31 @@
           "exec": {
             "host": "gateway",
             "security": "full",
+            "ask": "off"
+          }
+        },
+        "thinkingDefault": "high",
+        "reasoningDefault": "off"
+      },
+      {
+        "id": "content-producer",
+        "name": "producer",
+        "workspace": "~/.openclaw/workspace-content-producer",
+        "skills": [
+          "smart-search",
+          "browser-guide",
+          "session-logs",
+          "tmux"
+        ],
+        "subagents": {
+          "allowAgents": [
+            "it-engineer"
+          ]
+        },
+        "tools": {
+          "exec": {
+            "host": "gateway",
+            "security": "allowlist",
             "ask": "off"
           }
         },

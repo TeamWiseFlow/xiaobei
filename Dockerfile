@@ -46,7 +46,10 @@ RUN mkdir -p /root/.openclaw
 #   自感知（检测 /.dockerenv → 用固定路径 /opt/openclaw + /root/.openclaw），
 #   无需 OFB_ENV.md。源码部署仍由 setup-crew.sh 生成 OFB_ENV.md（路径可变）。
 # TODO(Phase 7): skills 公共/私有拆分后 COPY skills/ → /root/.openclaw/skills
-COPY config/openclaw.json /root/.openclaw/openclaw.json
+# Docker 与源码部署同源：均从 config-templates/openclaw.json 派生（单源）。
+# 源码部署由 setup-crew.sh §4 在此基础上合并 skills 过滤 / 路径规范化；
+# Docker 不跑 setup-crew.sh，直接用模板（content-producer 已在模板 agents.list 预注册）。
+COPY config-templates/openclaw.json /root/.openclaw/openclaw.json
 # 全仓 Python 依赖（Docker 不跑 apply-addons.sh，需在此 bake）
 # 与 scripts/apply-addons.sh 同源（仓根 requirements.txt），使用 aliyun 镜像保持一致
 COPY requirements.txt /tmp/wiseflow-requirements.txt

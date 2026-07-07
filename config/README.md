@@ -1,6 +1,11 @@
-# config/ — wiseflow-client 运行态配置
+# config/ — wiseflow-client 运行态配置（Docker 专用辅助文件）
 
-build 期由 Dockerfile 阶段 3（wiseflow-layer）把这里的 `openclaw.json` 放到
+> **openclaw.json 已单源化**：Docker 与源码部署均从 `config-templates/openclaw.json` 派生
+> （Dockerfile 阶段 3 直接 COPY 该文件）。本目录不再放 `openclaw.json`，避免双份漂移。
+> 源码部署由 `setup-crew.sh §4` 在模板基础上合并 skills 过滤 / 路径规范化；
+> Docker 不跑 setup-crew.sh，直接用模板（content-producer 已在模板 agents.list 预注册）。
+
+build 期由 Dockerfile 阶段 3（wiseflow-layer）把 `config-templates/openclaw.json` 放到
 `/root/.openclaw/openclaw.json`，`daemon.env.template` 由 entrypoint 渲染成
 `/root/.openclaw/daemon.env`，`workspace-skeleton/` 复制到各 crew workspace。
 
@@ -8,15 +13,14 @@ build 期由 Dockerfile 阶段 3（wiseflow-layer）把这里的 `openclaw.json`
 
 | 文件 | 说明 | 状态 |
 |------|------|------|
-| `openclaw.json` | openclaw 主配置（crew list / addons / models / channels） | 🟡 seed（复制自 `config-templates/openclaw.json`），Phase 7 改成 3-crew client 目标态 |
 | `daemon.env.template` | daemon 环境变量模板，entrypoint 渲染 | ✅ 占位就位（AWK_API_KEY / OFB_KEY / RELAY_BASE_URL / SMTP_*） |
 | `workspace-skeleton/` | 通用 workspace 骨架 | ✅ 结构就位，运行期内容不进镜像 |
 
 ## openclaw.json 目标态（Phase 7）
 
-seed 现在是现仓的全量配置。Phase 7 改成 client 目标：
+`config-templates/openclaw.json` 是现仓的全量配置，Docker 与源码部署共用。Phase 7 改成 client 目标：
 
-- **crew list**：`main`（DEFAULT，绑 openclaw-weixin）+ `it-engineer`；`sales-cs` 默认 seed 但**不在 list**（D10，启用由 IT engineer 操作）
+- **crew list**：`main`（DEFAULT，绑 openclaw-weixin）+ `it-engineer` + `content-producer`；`sales-cs` 默认 seed 但**不在 list**（D10，启用由 IT engineer 操作）
 - **addons**：删 `officials` / `official-plus`（D8 扁平化后无 addon 结构）；保留 `openclaw-weixin`
 - **awada**：`enabled: false`（D10）
 - **models**：保留 awk provider（用户 AWK_API_KEY）；视频生成模型走 relay（不直配上游 key，D12）

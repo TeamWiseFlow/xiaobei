@@ -27,7 +27,7 @@
 | `docker-entrypoint.sh` | 入口流程：渲染 daemon.env → 注入 OFB_KEY/relay 端点 → `node openclaw.mjs gateway` → weixin QR。步骤 1/2/4 渲染待 Phase 6 |
 | `.dockerignore` | 排除 relay/、docs、node_modules、openclaw/.git 等 |
 | `scripts/build-image.sh` | 按 `openclaw.version` 检出引擎 → docker build |
-| `config/openclaw.json` | seed 已改 3-crew 目标态：default = main + it-engineer；sales-cs 不在 list（D5）；binding → main |
+| `config-templates/openclaw.json` | 单源主配置（Docker 与源码部署同源）：default = main + it-engineer + content-producer；sales-cs 不在 list（D5）；binding → main |
 | `config/daemon.env.template` | key 占位（AWK_API_KEY / OFB_KEY / RELAY_BASE_URL / SMTP_*） |
 | `config/workspace-skeleton/` | credentials/ + business_knowledge/ + logins/ 骨架 |
 | `openclaw.version` / `openclaw-weixin.version.json` / `patches/` | 已存在，client 直接用 |
