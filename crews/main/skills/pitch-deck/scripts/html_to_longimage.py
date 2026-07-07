@@ -58,6 +58,10 @@ document.querySelectorAll('[data-animate], .animate, .reveal, .fade-in').forEach
 # (pitch-deck uses transition: opacity 0.6s ease, so 700ms is safe)
 _TRANSITION_SETTLE_MS = 700
 
+# 等待 CDN 资源（字体/图片）加载的最长时间（ms）。超时则放弃等待（资源被墙/慢），
+# 用已加载状态继续截图——避免 networkidle 在 CDN 不通时挂死连接超时。
+_RESOURCE_LOAD_TIMEOUT_MS = 8000
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -101,7 +105,7 @@ def _render_slides(
     Returns a list of PNG image bytes, one per slide.
     Raises RuntimeError on browser/render failures.
     """
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
     abs_html = os.path.realpath(html_path)
     file_url = f"file://{abs_html}"
@@ -116,7 +120,14 @@ def _render_slides(
                 device_scale_factor=scale,
             )
             page = context.new_page()
-            page.goto(file_url, wait_until="networkidle")
+            # 本地 file:// HTML：先等 DOM 解析（必成功），再给 CDN 资源（字体/图片）
+            # 最多 _RESOURCE_LOAD_TIMEOUT_MS 加载窗口——加载完则保真，超时（字体被墙/慢）
+            # 则放弃等待用已加载状态继续。原 networkidle 在字体 CDN 不通时会等到连接超时挂死。
+            page.goto(file_url, wait_until="domcontentloaded")
+            try:
+                page.wait_for_load_state("load", timeout=_RESOURCE_LOAD_TIMEOUT_MS)
+            except PlaywrightTimeoutError:
+                pass  # CDN 资源慢/不通；用当前已加载状态继续截图
 
             # Find the best selector that matches slides
             selector = _SLIDE_SELECTORS[0]
