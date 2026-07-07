@@ -54,9 +54,8 @@ RUN pip3 install --break-system-packages --quiet --no-warn-script-location \
       -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com \
       -r /tmp/wiseflow-requirements.txt \
     && rm -f /tmp/wiseflow-requirements.txt
-# awada channel 插件：COPY 源码 + 预装 ioredis 依赖（awada/src 仍走 ioredis 直连，
-# Phase 4 改 HTTP/WS 后此步可移除）。awada 自己的 node_modules 解析 ioredis，
-# 不走 ~/.openclaw/node_modules，故必须装在 awada/ 局部。
+# awada channel 插件：COPY 源码 + 预装 ws/zod 运行时依赖（awada 走 relay 网关 HTTP/WS 传输）。
+# awada 自己的 node_modules 解析这些依赖，不走 ~/.openclaw/node_modules，故必须装在 awada/ 局部。
 COPY awada/ /opt/openclaw/awada/
 RUN cd /opt/openclaw/awada && npm install --omit=dev --no-audit --no-fund --loglevel=warn
 # 把 awada 插件路径注入 openclaw.json（Docker 不跑 apply-addons.sh，需在此 bake）

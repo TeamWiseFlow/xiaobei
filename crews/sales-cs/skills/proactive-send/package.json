@@ -1,10 +1,7 @@
 {
   "name": "@sales-cs/proactive-send",
-  "version": "1.0.0",
-  "description": "Proactive message sender for awada channel — used by heartbeat follow-up workflow",
+  "version": "1.1.0",
+  "description": "Proactive message sender for awada channel — HTTP gateway transport (no Redis)",
   "type": "module",
-  "private": true,
-  "dependencies": {
-    "ioredis": "^5.3.2"
-  }
+  "private": true
 }

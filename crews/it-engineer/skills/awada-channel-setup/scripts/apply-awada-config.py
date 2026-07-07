@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """apply-awada-config.py — 把 awada channel + customerDB hook 合并进运行中的 openclaw.json。
 
-读同目录 ../openclaw-awada-sample.json 作模板，提示输入 redisUrl/lane/platform，
+读同目录 ../openclaw-awada-sample.json 作模板，提示输入 relayBaseUrl/ofbKey/lane/platform，
 合并进 ~/.openclaw/openclaw.json 的 channels.awada 与 plugins，原子写回（先备份）。
 不重启 Gateway（由调用方人工确认后执行）。
 """
@@ -46,12 +46,14 @@ def main() -> int:
 
     sample = json.loads(SAMPLE.read_text(encoding="utf-8"))
 
-    redis_url = prompt("redisUrl", "redis://:PASSWORD@HOST:PORT/DB")
+    relay_base_url = prompt("relayBaseUrl", "https://relay.wiseflow.example.com")
+    ofb_key = prompt("ofbKey", "<OFB_KEY>")
     lane = prompt("lane", "user")
     platform = prompt("platform", "wecom")
 
     sample.setdefault("channels", {}).setdefault("awada", {})
-    sample["channels"]["awada"]["redisUrl"] = redis_url
+    sample["channels"]["awada"]["relayBaseUrl"] = relay_base_url
+    sample["channels"]["awada"]["ofbKey"] = ofb_key
     sample["channels"]["awada"]["lane"] = lane
     sample["channels"]["awada"]["platform"] = platform
 

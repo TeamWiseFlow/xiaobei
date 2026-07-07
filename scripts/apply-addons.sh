@@ -227,16 +227,16 @@ if [ -d "$AWADA_EXT" ] && [ -f "$AWADA_EXT/openclaw.plugin.json" ]; then
   fi
 fi
 
-# ─── 安装 awada 插件依赖（ioredis）──────────────────────────────
-# awada/src 仍走 ioredis 直连（Phase 4 改 HTTP/WS 后此步可移除）。
-# awada 自己的 node_modules 解析 ioredis，不走 ~/.openclaw/node_modules，
+# ─── 安装 awada 插件依赖（ws + zod）─────────────────────────────
+# awada 走 relay 网关 HTTP/WS 传输，运行时依赖 ws + zod（见 awada/package.json）。
+# awada 自己的 node_modules 解析这些依赖，不走 ~/.openclaw/node_modules，
 # 故必须装在 awada/ 局部。内容哈希守卫避免重复 install。
 AWADA_PKG_HASH_FILE="$OPENCLAW_HOME/.awada-pkg-hash"
 if [ -d "$AWADA_EXT" ] && [ -f "$AWADA_EXT/package.json" ]; then
   awada_hash="$(md5sum "$AWADA_EXT/package.json" | cut -d' ' -f1)"
   awada_stored="$(cat "$AWADA_PKG_HASH_FILE" 2>/dev/null || echo '')"
   if [ "$awada_hash" != "$awada_stored" ] || [ ! -d "$AWADA_EXT/node_modules" ]; then
-    echo "📦 Installing awada plugin dependencies (ioredis)..."
+    echo "📦 Installing awada plugin dependencies (ws + zod)..."
     (cd "$AWADA_EXT" && npm install --omit=dev --no-audit --no-fund --loglevel=warn) \
       && echo "$awada_hash" > "$AWADA_PKG_HASH_FILE" \
       && echo "✅ awada dependencies installed" \

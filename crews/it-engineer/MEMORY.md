@@ -13,13 +13,13 @@
 
 内置技能所需依赖已经在部署环境中。
 
-#### awada 插件依赖（ioredis）
+#### awada 插件依赖（ws + zod）
 
-- **Docker 部署**：Dockerfile wiseflow-layer 阶段 `COPY awada/ + npm install --omit=dev`，ioredis 烘进 `/opt/openclaw/awada/node_modules`。
+- **Docker 部署**：Dockerfile wiseflow-layer 阶段 `COPY awada/ + npm install --omit=dev`，ws+zod 烘进 `/opt/openclaw/awada/node_modules`。
 - **源码部署**：`apply-addons.sh` 自动 `cd awada && npm install --omit=dev`（哈希守卫 `.awada-pkg-hash`，幂等）。
-- **关键点**：awada 插件运行时从自身 `awada/node_modules` 解析 ioredis，**不**走 `~/.openclaw/node_modules`（不在向上解析链），故必须装在 awada 局部，不能靠统一依赖扫描。
-- **Phase 4 后**：awada 改 HTTP/WS transport 调 relay，ioredis 从 deps 移除，此预装步骤可一并删除。
-- **IT engineer 介入时机**：仅当日志报 `Cannot find module 'ioredis'`（plugin=awada）且上述预装漏跑时，按 `awada-channel-setup` SKILL 步骤 1 手动补装。
+- **关键点**：awada 插件运行时从自身 `awada/node_modules` 解析 ws/zod，**不**走 `~/.openclaw/node_modules`（不在向上解析链），故必须装在 awada 局部，不能靠统一依赖扫描。
+- **Phase 4 已完成**（2026-07-07）：awada 改 HTTP/WS transport 调 relay 网关，ioredis 已从 deps 移除，预装步骤改装 ws+zod。proactive-send skill 同步迁 HTTP 网关，不再依赖 ioredis。
+- **IT engineer 介入时机**：仅当日志报 `Cannot find module 'ws'`（plugin=awada）且上述预装漏跑时，按 `awada-channel-setup` SKILL 步骤 1 手动补装。
 
 #### volume 扩展
 

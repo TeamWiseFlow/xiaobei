@@ -41,7 +41,7 @@
 - **crew 内容合写**（Phase 7 续）：main 身份文件仍是原 self-media-operator 原样，未合入 AI 搞钱搭子「小贝」定位（SOUL/IDENTITY/MEMORY/HEARTBEAT）；IR 三模式未抽成 business-model-polish/project-application/investor-pipeline 三 skill（源 AGENTS 在 git 历史 `97bad4d^` 可恢复）；business-developer 三能力（lead-hunting/comment-engagement/intel-gathering）已搬入 main/skills 但未写入 AGENTS/HEARTBEAT；content-producer 未合入 designer 能力；it-engineer 未瘦身/强化运维；sales-cs 未做 sample + 软链；shared/ 未内化进 it-engineer。
 - **apply-addons.sh 精简**（Phase 6/7 续）：addons 扫描循环（~260 行起）现为死代码，待整体删除；crew 安装已由 setup-crew.sh 单独负责。
 - **skill 改 relay 调用**（Phase 2-3）：**sign 已完成**（viral-chaser/xhs-content-ops/xhs-publish/published-track 全部改走 relay services/sign，D1 落地）；publish-relay / video-relay 改造待 Phase 3（relay 侧服务未实现）。
-- **awada 改 HTTP/WS transport**（Phase 4）：awada-server 已迁出至 relay（D4），awada/README.md 已改 client 视角；awada 源码仍走 ioredis/redisUrl，待 Phase 4 改 relayBaseUrl+ofbKey 调 relay。
+- **awada 改 HTTP/WS transport**（Phase 4 ✅）：awada-server 已迁出至 relay（D4），awada-extension 走 relay 网关 `WS /inbound` + `POST /outbound`（relayBaseUrl+ofbKey+lane），不再直连 Redis；ioredis 已从 deps 移除，预装步骤改装 ws+zod。proactive-send skill 同步迁 HTTP 网关。
 - **camoufox 集成**（Phase 4.5）：spike 已过（见 `camoufox-spike-2026-07.md`），实现未做（browser-guide 改写、login-manager 重写、浏览器类 skill 改 camoufox-cli）。
 - **img-gen 改火山**（Phase 5）：未做。
 - **Dockerfile 阶段 3-4 填实**（Phase 6）：wiseflow-layer 组织 / img-gen 编译 / 指纹模板 bake / openclaw-weixin 插件安装 / entrypoint 渲染逻辑。

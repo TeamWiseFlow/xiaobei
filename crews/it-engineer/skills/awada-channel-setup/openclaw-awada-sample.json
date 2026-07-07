@@ -2,11 +2,10 @@
   "channels": {
     "awada": {
       "enabled": true,
-      "redisUrl": "redis://:PASSWORD@HOST:PORT/DB",
+      "relayBaseUrl": "https://relay.wiseflow.example.com",
+      "ofbKey": "<OFB_KEY>",
       "lane": "user",
       "platform": "wecom",
-      "consumerGroup": "openclaw",
-      "consumerName": "openclaw-1",
       "perMsgMaxLen": 1800
     }
   },

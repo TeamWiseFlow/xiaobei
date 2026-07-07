@@ -56,6 +56,8 @@
 >
 > 如未来真有需求（多客户端 / 跨网络 / 鉴权重构），再启新 Phase 评估。
 
+> **2026-07-07 更新**：relay 侧已重构出 HTTP/WS 网关（`services/awada-server/`，契约见 `docs/AWADA-CLIENT-TRANSPORT.md`），上述取消理由中的"双方都要动 / 收益不明确"已不成立——网关侧已就位，客户端改造是顺势对接唯一耦合面。本轮已落地：awada-extension 改 `WS /inbound` + `POST /outbound`（relayBaseUrl+ofbKey+lane），ioredis 从 deps 移除，proactive-send skill 同步迁 HTTP 网关。Phase 4 标记为完成。
+
 ## Phase 4.5 — camoufox 集成（已完成，2026-07-04）
 
 - [x] **browser-guide 改写**：`browser act` → camoufox-cli 调用指导。
