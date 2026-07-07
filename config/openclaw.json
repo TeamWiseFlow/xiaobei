@@ -50,18 +50,11 @@
               "maxTokensField": "max_tokens"
             },
             "api": "openai-completions"
-          }
-        ]
-      },
-      "siliconflow": {
-        "baseUrl": "https://api.siliconflow.cn/v1",
-        "apiKey": "${SILICONFLOW_API_KEY}",
-        "api": "openai-completions",
-        "models": [
+          },
           {
-            "id": "zai-org/GLM-5.2",
-            "name": "zai-org/GLM-5.2",
-            "reasoning": false,
+            "id": "deepseek-v4-pro",
+            "name": "DeepSeek V4 Pro",
+            "reasoning": true,
             "input": [
               "text"
             ],
@@ -75,14 +68,14 @@
             "api": "openai-completions"
           },
           {
-            "id": "deepseek-ai/DeepSeek-V4-Flash",
-            "name": "deepseek-ai/DeepSeek-V4-Flash",
+            "id": "minimax-m3",
+            "name": "MiniMax M3",
             "reasoning": true,
             "input": [
               "text"
             ],
             "contextWindow": 1000000,
-            "maxTokens": 131072,
+            "maxTokens": 128000,
             "compat": {
               "supportsReasoningEffort": true,
               "supportsUsageInStreaming": true,
@@ -91,15 +84,15 @@
             "api": "openai-completions"
           },
           {
-            "id": "Qwen/Qwen3.6-27B",
-            "name": "Qwen/Qwen3.6-27B",
-            "reasoning": false,
-            "input": [
-              "image",
-              "text"
-            ],
+            "id": "doubao-seed-2.0-lite",
+            "name": "doubao-seed-2.0-lite",
             "contextWindow": 256000,
-            "maxTokens": 8192
+            "maxTokens": 65536,
+            "input": [
+              "text",
+              "image"
+            ],
+            "api": "openai-completions"
           }
         ]
       }
@@ -110,11 +103,12 @@
       "model": {
         "primary": "awk/glm-latest",
         "fallbacks": [
-          "siliconflow/zai-org/GLM-5.2"
+          "awk/deepseek-v4-pro",
+          "awk/minimax-m3"
         ]
       },
       "imageModel": {
-        "primary": "siliconflow/Qwen/Qwen3.6-27B"
+        "primary": "awk/doubao-seed-2.0-lite"
       },
       "models": {
         "awk/glm-latest": {
@@ -123,14 +117,14 @@
         "awk/deepseek-v4-flash": {
           "alias": "awk/ds-v4-flash"
         },
-        "siliconflow/zai-org/GLM-5.2": {
-          "alias": "sf/zai-org/GLM-5.2"
+        "awk/deepseek-v4-pro": {
+          "alias": "awk/ds-v4-pro"
         },
-        "siliconflow/deepseek-ai/DeepSeek-V4-Flash": {
-          "alias": "sf/deepseek-ai/DeepSeek-V4-Flash"
+        "awk/minimax-m3": {
+          "alias": "awk/m3"
         },
-        "siliconflow/Qwen/Qwen3.6-27B": {
-          "alias": "sf/qwen3.6-27b"
+        "awk/doubao-seed-2.0-lite": {
+          "alias": "awk/seed-2-lite"
         }
       },
       "compaction": {

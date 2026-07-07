@@ -8,9 +8,9 @@
 API key 走用户自带 `AWK_API_KEY` 环境变量（纯客户端，不入 server）。
 
 支持模型：
-  - doubao-seedream-4-0-250828（默认，4.0 平衡性能 / 稳定性）
-  - doubao-seedream-5-0-lite-xxxxx（5.0 lite，最新，文生图 + 图生图 + 组图）
-  - doubao-seedream-3-0-t2i-250415（3.0 旧版，纯文生图）
+  - doubao-seedream-4.5（默认，主力）
+  - doubao-seedream-5.0-lite（fallback：主力不可用时自动切换）
+  - doubao-seedream-3-0-t2i-250415（3.0 旧版，纯文生图，需 --model 显式指定）
 
 参考：https://www.volcengine.com/docs/82379/1541523
 """
@@ -29,9 +29,13 @@ from typing import Optional
 
 API_URL = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
 
-# 火山方舟支持的 model 列表（4.0 默认；3.0 仅 t2i；5.0 lite 最新）
-DEFAULT_GEN_MODEL = "doubao-seedream-4-0-250828"
-DEFAULT_EDIT_MODEL = "doubao-seedream-4-0-250828"  # 4.0+ 支持 image edit
+# 火山方舟支持的 model 列表
+# 主力 doubao-seedream-4.5；fallback doubao-seedream-5.0-lite（主力不可用时自动切换）
+DEFAULT_GEN_MODEL = "doubao-seedream-4.5"
+DEFAULT_EDIT_MODEL = "doubao-seedream-4.5"  # 4.5 支持 image edit
+FALLBACK_MODEL = "doubao-seedream-5.0-lite"
+# 触发 fallback 的 HTTP 状态码（模型未开通 / 未找到 / 配额不足等模型层错误）
+MODEL_UNAVAILABLE_CODES = {400, 403, 404}
 DEFAULT_SIZE = "2048x2048"  # 火山默认 1:1
 
 # 火山 size 校验（方式 2：宽x高）
@@ -113,11 +117,9 @@ def _print_size_error(size_str: str, reason: str) -> None:
 
 # ── Payload 构造 ─────────────────────────────────────────────────────────────
 
-def build_payload(args: argparse.Namespace) -> dict:
-    """构造火山方舟 images/generations 请求体。"""
+def build_payload(args: argparse.Namespace, model: str) -> dict:
+    """构造火山方舟 images/generations 请求体（model 由调用方传入，便于 fallback）。"""
     is_edit_mode = bool(args.image)
-    model = args.model or (DEFAULT_EDIT_MODEL if is_edit_mode else DEFAULT_GEN_MODEL)
-
     payload: dict = {
         "model": model,
         "prompt": args.prompt,
@@ -150,8 +152,20 @@ def build_payload(args: argparse.Namespace) -> dict:
 
 # ── API 调用 ────────────────────────────────────────────────────────────────
 
+class ImgGenHTTPError(Exception):
+    """火山端 HTTP 错误（携带状态码与响应体，供 main 做 fallback 决策）。"""
+
+    def __init__(self, code: int, body: str) -> None:
+        super().__init__(f"HTTP {code}: {body}")
+        self.code = code
+        self.body = body
+
+
 def api_request(payload: dict, api_key: str) -> dict:
-    """调火山方舟 images/generations；返回解析后的 JSON。"""
+    """调火山方舟 images/generations；返回解析后的 JSON。
+
+    失败时抛 ImgGenHTTPError（由 main 决定是否 fallback 到备用模型）。
+    """
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         API_URL,
@@ -170,7 +184,7 @@ def api_request(payload: dict, api_key: str) -> dict:
         print(f"[error] HTTP {e.code}: {body}", file=sys.stderr)
         if e.code in RETRYABLE_STATUS_CODES:
             print(f"[hint] 火山端暂时不可用 (HTTP {e.code})，稍后重试", file=sys.stderr)
-        sys.exit(1)
+        raise ImgGenHTTPError(e.code, body)
 
 
 # ── 图像下载 ────────────────────────────────────────────────────────────────
@@ -182,6 +196,20 @@ def download_image(url: str, dest_path: Path) -> None:
         dest_path.write_bytes(resp.read())
 
 
+def _print_enable_guide(failed_model: str) -> None:
+    """主力 + fallback 模型都不可用时，输出火山后台开通指引（供 Agent 转告用户）。"""
+    print("", file=sys.stderr)
+    print(f"[error] 图像生成模型 {failed_model} 不可用。已尝试主力 + fallback 均失败。", file=sys.stderr)
+    print("[guide] 请到火山引擎后台开通视觉模型：", file=sys.stderr)
+    print("  1. 打开 https://console.volcengine.com/ark/", file=sys.stderr)
+    print("  2. 左侧「系统管理」→「开通管理」→「视觉模型」", file=sys.stderr)
+    print("  3. 列表中找到 doubao-seedream-4.5 和 doubao-seedream-5.0-lite，点右侧「开通服务」", file=sys.stderr)
+    print("[guide] 开通页面上方有 CodePlan 免费资源包活动：", file=sys.stderr)
+    print("  doubao-seedream-4.5 送 200 张图，doubao-seedream-5.0-lite 送 50 张图。", file=sys.stderr)
+    print("  ⚠️ 免费额度用光后，除非手动关闭服务，否则进入付费模式（额外付费）。", file=sys.stderr)
+    print("  收费标准参见视觉模型页面。请提醒用户知悉。", file=sys.stderr)
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -191,7 +219,8 @@ def main() -> None:
     parser.add_argument("--prompt", required=True, help="图像描述（≤300 汉字 / 600 英文）")
     parser.add_argument(
         "--model", default=None,
-        help="Model ID（默认按模式自动选 4.0；可选 5.0 lite / 3.0 t2i）",
+        help="Model ID（默认 doubao-seedream-4.5，主力不可用时自动 fallback 到 doubao-seedream-5.0-lite；"
+             "显式指定时不 fallback）",
     )
     parser.add_argument(
         "--image-size", default=None, dest="image_size",
@@ -226,11 +255,39 @@ def main() -> None:
     out_dir = Path(args.out_dir) if args.out_dir else Path(f"./tmp/awk-img-{ts}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    payload = build_payload(args)
-    mode = "image-edit" if args.image else "text-to-image"
-    print(f"[info] Mode={mode} model={payload['model']} size={payload.get('size', '-')}", file=sys.stderr)
+    # 候选模型：用户显式 --model 时不 fallback；否则主力 → fallback
+    is_edit_mode = bool(args.image)
+    if args.model:
+        candidates = [args.model]
+    else:
+        default_model = DEFAULT_EDIT_MODEL if is_edit_mode else DEFAULT_GEN_MODEL
+        candidates = [default_model, FALLBACK_MODEL] if default_model != FALLBACK_MODEL else [default_model]
 
-    result = api_request(payload, api_key)
+    mode = "image-edit" if is_edit_mode else "text-to-image"
+
+    result: Optional[dict] = None
+    last_code: Optional[int] = None
+    for idx, cand_model in enumerate(candidates):
+        payload = build_payload(args, cand_model)
+        print(f"[info] Mode={mode} model={cand_model} size={payload.get('size', '-')}", file=sys.stderr)
+        try:
+            result = api_request(payload, api_key)
+            break
+        except ImgGenHTTPError as e:
+            last_code = e.code
+            is_last = idx == len(candidates) - 1
+            if e.code in MODEL_UNAVAILABLE_CODES and not is_last:
+                print(f"[warn] model {cand_model} 不可用 (HTTP {e.code})，切换 fallback...", file=sys.stderr)
+                continue
+            # 非模型层错误（5xx/429）或已是最后一个候选：直接失败
+            if e.code in MODEL_UNAVAILABLE_CODES:
+                _print_enable_guide(cand_model)
+            sys.exit(1)
+
+    if result is None:
+        # 所有候选都失败（理论上上面 sys.exit 已退出，保险）
+        _print_enable_guide(candidates[-1])
+        sys.exit(1)
 
     # 火山响应：{ created, data: [{url, b64_json, size}], usage, ... }
     data = result.get("data", [])

@@ -4,7 +4,7 @@
 Covers:
 - API key env var: AWK_API_KEY (not SILICONFLOW_API_KEY)
 - Endpoint: https://ark.cn-beijing.volces.com/api/v3/images/generations
-- Default model: doubao-seedream-4-0-250828
+- Default model: doubao-seedream-4.5 (fallback doubao-seedream-5.0-lite)
 - size validation (方式 1: 2K/3K/4K; 方式 2: WxH with total pixels + aspect ratio constraints)
 - Payload construction (text-to-image vs image-edit)
 - API request shape (Bearer token, JSON body, response_format, watermark)
@@ -120,7 +120,7 @@ class TestPayloadConstruction(unittest.TestCase):
             prompt="a cat", model=None, image=None, image2=None, image3=None,
             image_size=None, seed=None, watermark=False, response_format="url",
         )
-        payload = gen.build_payload(args)
+        payload = gen.build_payload(args, gen.DEFAULT_GEN_MODEL)
         self.assertEqual(payload["model"], gen.DEFAULT_GEN_MODEL)
         self.assertEqual(payload["prompt"], "a cat")
         # Default size is 2048x2048
@@ -134,7 +134,7 @@ class TestPayloadConstruction(unittest.TestCase):
             prompt="mountains", model=None, image=None, image2=None, image3=None,
             image_size="1664x2496", seed=None, watermark=False, response_format="url",
         )
-        payload = gen.build_payload(args)
+        payload = gen.build_payload(args, gen.DEFAULT_GEN_MODEL)
         # 1664x2496 = 4153344, ratio 0.667 — within 2K
         self.assertEqual(payload["size"], "1664x2496")
 
@@ -143,7 +143,7 @@ class TestPayloadConstruction(unittest.TestCase):
             prompt="x", model=None, image=None, image2=None, image3=None,
             image_size="4K", seed=None, watermark=False, response_format="url",
         )
-        payload = gen.build_payload(args)
+        payload = gen.build_payload(args, gen.DEFAULT_GEN_MODEL)
         self.assertEqual(payload["size"], "4K")
 
     def test_image_edit_single_source(self):
@@ -152,7 +152,7 @@ class TestPayloadConstruction(unittest.TestCase):
             image="https://example.com/a.jpg", image2=None, image3=None,
             image_size=None, seed=None, watermark=False, response_format="url",
         )
-        payload = gen.build_payload(args)
+        payload = gen.build_payload(args, gen.DEFAULT_EDIT_MODEL)
         self.assertEqual(payload["model"], gen.DEFAULT_EDIT_MODEL)
         # 单图是字符串（不是数组）
         self.assertEqual(payload["image"], "https://example.com/a.jpg")
@@ -167,26 +167,26 @@ class TestPayloadConstruction(unittest.TestCase):
             image3="https://example.com/c.jpg",
             image_size=None, seed=None, watermark=False, response_format="url",
         )
-        payload = gen.build_payload(args)
+        payload = gen.build_payload(args, gen.DEFAULT_EDIT_MODEL)
         # 多图用数组（火山 image 字段支持 array）
         self.assertIsInstance(payload["image"], list)
         self.assertEqual(len(payload["image"]), 3)
 
     def test_explicit_model_overrides_default(self):
         args = mock.Mock(
-            prompt="x", model="doubao-seedream-5-0-lite-250428",
+            prompt="x", model=gen.FALLBACK_MODEL,
             image=None, image2=None, image3=None,
             image_size=None, seed=None, watermark=False, response_format="url",
         )
-        payload = gen.build_payload(args)
-        self.assertEqual(payload["model"], "doubao-seedream-5-0-lite-250428")
+        payload = gen.build_payload(args, gen.FALLBACK_MODEL)
+        self.assertEqual(payload["model"], gen.FALLBACK_MODEL)
 
     def test_seed_included_when_provided(self):
         args = mock.Mock(
             prompt="x", model=None, image=None, image2=None, image3=None,
             image_size=None, seed=42, watermark=False, response_format="url",
         )
-        payload = gen.build_payload(args)
+        payload = gen.build_payload(args, gen.DEFAULT_GEN_MODEL)
         self.assertEqual(payload["seed"], 42)
 
 
@@ -198,7 +198,7 @@ class TestApiRequest(unittest.TestCase):
             "usage": {"generated_images": 1},
         }).encode("utf-8")
 
-        payload = {"model": "doubao-seedream-4-0-250828", "prompt": "x", "size": "2048x2048"}
+        payload = {"model": "doubao-seedream-4.5", "prompt": "x", "size": "2048x2048"}
         gen.api_request(payload, "test-key-abc")
 
         args, _ = mock_urlopen.call_args

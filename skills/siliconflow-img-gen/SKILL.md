@@ -1,9 +1,9 @@
 ---
 name: siliconflow-img-gen
 description: Generate or edit images via 火山方舟 (Volcengine Ark) Seedream API.
-  Text-to-image default model doubao-seedream-4-0-250828; image-edit supported
-  via 1-3 reference images. Uses user's AWK_API_KEY (client-side only, never sent
-  to server).
+  Text-to-image default model doubao-seedream-4.5（fallback doubao-seedream-5.0-lite）;
+  image-edit supported via 1-3 reference images. Uses user's AWK_API_KEY
+  (client-side only, never sent to server).
 metadata:
   openclaw:
     emoji: 🖼️
@@ -25,8 +25,8 @@ Generate or edit images using 火山方舟 (Volcengine Ark) Seedream API.
 Endpoint: `POST https://ark.cn-beijing.volces.com/api/v3/images/generations`
 
 Two modes:
-- **Text-to-image** — default model `doubao-seedream-4-0-250828`
-- **Image-edit** — `--image` 触发；4.0+ 支持多图参考（1-3 张）
+- **Text-to-image** — default model `doubao-seedream-4.5`（主力不可用时自动 fallback 到 `doubao-seedream-5.0-lite`）
+- **Image-edit** — `--image` 触发；4.5+ 支持多图参考（1-3 张）
 
 参考文档：<https://www.volcengine.com/docs/82379/1541523>
 
@@ -43,11 +43,11 @@ Note: Image generation can take 10–60 seconds. Set a higher timeout when invok
 **Do NOT set env vars inline** (e.g., `AWK_API_KEY=... python3 ...`). The env var is already in the system environment; inline assignments break the exec permission check.
 
 ```bash
-# Text-to-image (default model: doubao-seedream-4-0-250828)
+# Text-to-image (default model: doubao-seedream-4.5，失败自动 fallback doubao-seedream-5.0-lite)
 python3 /abs/path/to/skills/siliconflow-img-gen/scripts/gen.py --prompt "your prompt here"
 
-# 指定其他 model（5.0 lite / 3.0 t2i）
-python3 .../gen.py --prompt "your prompt" --model "doubao-seedream-5-0-lite-250428"
+# 指定其他 model（显式指定时不 fallback）
+python3 .../gen.py --prompt "your prompt" --model "doubao-seedream-5.0-lite"
 python3 .../gen.py --prompt "your prompt" --model "doubao-seedream-3-0-t2i-250415"
 
 # Image-edit（1-3 张参考图）
@@ -97,7 +97,7 @@ python3 .../gen.py --prompt "blend these photos" \
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--prompt` | required | 图像描述（≤300 汉字 / 600 英文） |
-| `--model` | auto | Model ID；按模式自动选 4.0；可选 5.0 lite / 3.0 t2i |
+| `--model` | auto | Model ID；默认 `doubao-seedream-4.5`（主力不可用自动 fallback `doubao-seedream-5.0-lite`）；显式指定时不 fallback |
 | `--image-size` | `2048x2048` | 文生图尺寸。方式 1: `2K`/`3K`/`4K`；方式 2: `WxH`（如 2048x2048） |
 | `--seed` | — | 随机种子 |
 | `--watermark` | `false` | 是否加水印（xiaobei 默认不加，避免后续 image 工具处理） |
@@ -146,7 +146,7 @@ python3 .../gen.py --prompt "blend these photos" \
 
 | 参数 | 推荐值 | 原因 |
 |------|--------|------|
-| `--model` | `doubao-seedream-4-0-250828` | 4.0 在文字渲染 / 中文支持上稳定 |
+| `--model` | `doubao-seedream-4.5` | 4.5 在文字渲染 / 中文支持上稳定 |
 | `--image-size` | `2K` 或 `4K` | 高分辨率给文字留细节空间 |
 | 比例 | 9:16 / 16:9 / 1:1 按平台选 | 火山 way 2 任意合法比例 |
 
@@ -182,7 +182,7 @@ python3 .../gen.py --prompt "blend these photos" \
 
 ### 5. 输出格式
 
-- 脚本默认 **JPG**（火山 4.0 默认 jpeg；5.0 lite 可选 png）
+- 脚本默认 **JPG**（火山 4.5 默认 jpeg；5.0 lite 可选 png）
 - 如果目标平台需要 **PNG**（如透明背景场景），调 `--response-format b64_json` + 后续转码
 - 任何格式转换都用 PIL，**不做任何像素修改**
 
@@ -213,9 +213,37 @@ python3 /abs/path/to/skills/siliconflow-img-gen/scripts/gen.py \
 
 | Model | 适用场景 | 备注 |
 |-------|---------|------|
-| `doubao-seedream-4-0-250828` | 默认 / 通用 | 文字渲染稳，多图融合支持 |
-| `doubao-seedream-5-0-lite-250428` | 最新，组图 / 工具调用 | 5.0 lite 起支持 tools/web_search |
-| `doubao-seedream-3-0-t2i-250415` | 纯文生图（无 image edit） | 3.0 旧版，仅 t2i |
+| `doubao-seedream-4.5` | 默认 / 通用（主力） | 文字渲染稳，多图融合支持；不可用时脚本自动 fallback |
+| `doubao-seedream-5.0-lite` | fallback / 组图 / 工具调用 | 主力失败时自动切换；5.0 lite 起支持 tools/web_search |
+| `doubao-seedream-3-0-t2i-250415` | 纯文生图（无 image edit） | 3.0 旧版，仅 t2i，需 `--model` 显式指定 |
+
+---
+
+## 🔧 模型开通指引（主力 + fallback 都失败时反馈给用户）
+
+当 `doubao-seedream-4.5`（主力）与 `doubao-seedream-5.0-lite`（fallback）**都无法使用**时（典型表现：HTTP 400/403/404，或脚本 stderr 输出 `[guide] 请到火山引擎后台开通视觉模型`），说明用户的火山方舟账号尚未开通这两个视觉模型。**Agent 应主动把下面的开通步骤反馈给用户**，不要静默失败或反复重试。
+
+### 开通步骤
+
+1. 打开火山引擎方舟后台：<https://console.volcengine.com/ark/>
+2. 左侧「**系统管理**」→「**开通管理**」→「**视觉模型**」
+3. 在列表中找到 **`doubao-seedream-4.5`** 和 **`doubao-seedream-5.0-lite`** 两项，分别点右侧「**开通服务**」
+
+### ⚠️ 免费额度与付费提醒（务必告知用户）
+
+目前火山方舟 CodePlan 有活动：在上述视觉模型开通页面上方可参加**领取免费资源包**活动。
+
+| 模型 | 免费额度 |
+|------|---------|
+| `doubao-seedream-4.5` | 送 200 张图 |
+| `doubao-seedream-5.0-lite` | 送 50 张图 |
+
+**重要提醒（必须告诉用户）**：
+
+- 免费额度用光之后，**除非手动关闭服务**，否则将**自动进入付费模式**，产生额外费用。
+- 这部分图像生成费用**不在 CodePlan 套餐内**，需额外付费。
+- 具体收费标准参见视觉模型页面上的定价说明。
+- 建议用户按需开通，并在免费额度即将用尽时评估是否继续使用付费模式。
 
 ---
 
