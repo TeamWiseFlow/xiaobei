@@ -529,7 +529,8 @@ cat file.txt | grep keyword
 - ✅ `mkdir -p notes images`（逐一直写目录名，不用花括号展开）
 - ✅ 逐个调用 `ls dir1/`、`ls dir2/` …（替代 `for` 循环），或写 python 脚本批量处理
 GUIDE
-    sed -i "s|@@WS@@|$ws|g" "$tools_md"
+    # sed -i 在 BSD（macOS）会把脚本串当成备份后缀吞掉；-i.bak 两端都支持，再清掉 .bak。
+    sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
   elif [ "$tier" = "T3" ]; then
     cat >> "$tools_md" << 'GUIDE'
 
@@ -539,7 +540,7 @@ GUIDE
 
 脚本调用仍建议用绝对路径（如 `python3 @@WS@@/skills/xxx/scripts/yyy.py`），仅为跨环境/跨 workspace 稳定，非安全约束。
 GUIDE
-    sed -i "s|@@WS@@|$ws|g" "$tools_md"
+    sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
   fi
   # T0（deny）或其他：不注入（无 shell 执行权限）
 }

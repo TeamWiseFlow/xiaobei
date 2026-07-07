@@ -18,6 +18,18 @@ TIER_T1_COMMANDS="cat ls grep find xargs ps date echo pwd env which head tail wc
 TIER_T2_EXTRA="git npm npx pnpm bun node python python3 pip pip3 ffmpeg perl cp mv mkdir rmdir rm touch chmod sleep test"
 # T3: full access（无需白名单）
 
+# ── 便携 readlink -f ──────────────────────────────────
+# macOS 自带 BSD readlink 不支持 -f（静默失败），GNU readlink 才支持。
+# 优先 readlink -f；失败则用 python3 os.path.realpath 兜底（python3 是 openclaw 硬依赖）；
+# 再失败原样返回，由调用方决定是否接受非 realpath。
+_resolve_realpath() {
+  local p="$1" r
+  r="$(readlink -f "$p" 2>/dev/null || true)"
+  if [ -n "$r" ]; then echo "$r"; return; fi
+  r="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$p" 2>/dev/null || true)"
+  echo "${r:-$p}"
+}
+
 # ── 从 SOUL.md 解析 command-tier ──────────────────────
 resolve_command_tier() {
   local soul_file="$1"
@@ -128,7 +140,7 @@ resolve_binary_path() {
       # 因此 allowlist 条目必须用 realpath 而非 symlink 路径，
       # 否则 /usr/bin/python3 → /usr/bin/python3.12 的 symlink 会导致 allowlist miss。
       local real
-      real="$(readlink -f "$cmd" 2>/dev/null || true)"
+      real="$(_resolve_realpath "$cmd")"
       echo "${real:-$cmd}"
       return
       ;;
@@ -139,7 +151,7 @@ resolve_binary_path() {
   case "$resolved" in
     /*)
       local real
-      real="$(readlink -f "$resolved" 2>/dev/null || true)"
+      real="$(_resolve_realpath "$resolved")"
       echo "${real:-$resolved}"
       return
       ;;
@@ -149,7 +161,7 @@ resolve_binary_path() {
   case "$resolved" in
     /*)
       local real
-      real="$(readlink -f "$resolved" 2>/dev/null || true)"
+      real="$(_resolve_realpath "$resolved")"
       echo "${real:-$resolved}"
       return
       ;;
@@ -159,7 +171,7 @@ resolve_binary_path() {
   for dir in /usr/bin /bin /usr/local/bin; do
     if [ -x "$dir/$cmd" ]; then
       local real
-      real="$(readlink -f "$dir/$cmd" 2>/dev/null || true)"
+      real="$(_resolve_realpath "$dir/$cmd")"
       echo "${real:-$dir/$cmd}"
       return
     fi

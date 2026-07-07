@@ -55,6 +55,13 @@ done
 
 source "$PROJECT_ROOT/scripts/lib/crew-workspaces.sh"
 
+# 便携 md5：读 stdin 输出裸 hash。
+# Linux md5sum / macOS md5 命令名不同，且 macOS 无 md5sum（set -e 下会 abort）。
+# python3 是 openclaw 硬依赖，hashlib 跨平台最稳。
+_md5() {
+  python3 -c 'import hashlib,sys; print(hashlib.md5(sys.stdin.buffer.read()).hexdigest())'
+}
+
 GLOBAL_SHARED_SKILLS_RAW=""
 append_global_shared_skill() {
   local skill_name="$1"
@@ -233,7 +240,7 @@ fi
 # 故必须装在 awada/ 局部。内容哈希守卫避免重复 install。
 AWADA_PKG_HASH_FILE="$OPENCLAW_HOME/.awada-pkg-hash"
 if [ -d "$AWADA_EXT" ] && [ -f "$AWADA_EXT/package.json" ]; then
-  awada_hash="$(md5sum "$AWADA_EXT/package.json" | cut -d' ' -f1)"
+  awada_hash="$(_md5 < "$AWADA_EXT/package.json")"
   awada_stored="$(cat "$AWADA_PKG_HASH_FILE" 2>/dev/null || echo '')"
   if [ "$awada_hash" != "$awada_stored" ] || [ ! -d "$AWADA_EXT/node_modules" ]; then
     echo "📦 Installing awada plugin dependencies (ws + zod)..."
@@ -255,7 +262,7 @@ if [ -d "$PROJECT_ROOT/skills" ]; then
     if [ -f "${skill_dir}SKILL.md" ]; then
       skill_name="$(basename "$skill_dir")"
       rm -rf "$OPENCLAW_HOME/skills/$skill_name"
-      cp -r "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
+      cp -R "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
       GLOBAL_SKILL_COUNT=$((GLOBAL_SKILL_COUNT + 1))
       append_global_shared_skill "$skill_name"
     fi
@@ -297,7 +304,7 @@ merged_deps_json="$(node -e "
   console.log(JSON.stringify(sorted));
 " 2>/dev/null || echo '{}')"
 
-current_pkg_hash="$(echo "$merged_deps_json" | md5sum | cut -d' ' -f1)"
+current_pkg_hash="$(printf '%s' "$merged_deps_json" | _md5)"
 stored_pkg_hash="$(cat "$SKILL_PKG_HASH_FILE" 2>/dev/null || echo '')"
 
 if [ "$current_pkg_hash" != "$stored_pkg_hash" ] || [ ! -d "$OPENCLAW_HOME/node_modules" ]; then
@@ -360,7 +367,7 @@ merged_pip_deps="$(node -e "
   console.log(Array.from(lines).sort().join('\\n'));
 " 2>/dev/null || echo '')"
 
-current_pip_hash="$(echo "$merged_pip_deps" | md5sum | cut -d' ' -f1)"
+current_pip_hash="$(printf '%s' "$merged_pip_deps" | _md5)"
 stored_pip_hash="$(cat "$PIP_HASH_FILE" 2>/dev/null || echo '')"
 
 if [ -n "$merged_pip_deps" ] && { [ "$current_pip_hash" != "$stored_pip_hash" ] || [ ! -f "$PIP_HASH_FILE" ]; }; then

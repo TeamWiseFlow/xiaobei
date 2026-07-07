@@ -229,6 +229,23 @@ sync_agent_skill_filter() {
   "
 }
 
+# 输出 openclaw.json 中所有 agent 的 "id<TAB>workspace" 行（workspace 解析 ~ → $HOME）。
+# 供 §4b/4b.5/4d/4e/4f 的 while 循环消费——原同一 node -e 块在此处之前重复了 5 次。
+list_agent_workspaces() {
+  node -e "
+    const fs = require('fs');
+    const home = process.env.HOME || '';
+    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
+    for (const a of (c.agents?.list || [])) {
+      if (!a?.id) continue;
+      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
+        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
+        .replace(/^~(?=\/|\$)/, home);
+      console.log(a.id + '\t' + ws);
+    }
+  " 2>/dev/null
+}
+
 if [ ! -d "$CREWS_DIR" ]; then
   echo "❌ crews/ directory not found at $CREWS_DIR"
   exit 1
@@ -517,18 +534,7 @@ if [ -f "$CONFIG_PATH" ]; then
         grep -qxF "$line" "$workspace_ac" || echo "$line" >> "$workspace_ac"
       done < "$template_ac"
     fi
-  done < <(node -e "
-    const fs = require('fs');
-    const home = process.env.HOME || '';
-    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
-    for (const a of (c.agents?.list || [])) {
-      if (!a?.id) continue;
-      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
-        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
-        .replace(/^~(?=\/|\$)/, home);
-      console.log(a.id + '\t' + ws);
-    }
-  " 2>/dev/null)
+  done < <(list_agent_workspaces)
 
   # ─── 4b.5. 自动注入 skill scripts → ALLOWED_COMMANDS（幂等）──
   # 扫描每个 agent 的 skill 列表，将带 scripts/ 的技能脚本路径追加到 ALLOWED_COMMANDS。
@@ -580,18 +586,7 @@ if [ -f "$CONFIG_PATH" ]; then
     done <<< "$script_entries"
 
     [ "$added_count" -gt 0 ] && echo "    ✅ $a_id: +${added_count} script entries injected"
-  done < <(node -e "
-    const fs = require('fs');
-    const home = process.env.HOME || '';
-    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
-    for (const a of (c.agents?.list || [])) {
-      if (!a?.id) continue;
-      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
-        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
-        .replace(/^~(?=\/|\$)/, home);
-      console.log(a.id + '\t' + ws);
-    }
-  " 2>/dev/null)
+  done < <(list_agent_workspaces)
   echo "  ✅ Skill script commands synced to ALLOWED_COMMANDS"
 
   # ─── 4c. 应用 Command Tier → exec-approvals + tools.exec ──────
@@ -609,18 +604,7 @@ if [ -f "$CONFIG_PATH" ]; then
     inject_file_edit_guide "$a_ws/TOOLS.md"
     inject_exec_guide "$a_ws/TOOLS.md" "$a_ws"
     inject_python_exec_guide "$a_ws/TOOLS.md"
-  done < <(node -e "
-    const fs = require('fs');
-    const home = process.env.HOME || '';
-    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
-    for (const a of (c.agents?.list || [])) {
-      if (!a?.id) continue;
-      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
-        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
-        .replace(/^~(?=\/|\$)/, home);
-      console.log(a.id + '\t' + ws);
-    }
-  " 2>/dev/null)
+  done < <(list_agent_workspaces)
   echo "  ✅ Channel reply rules synced to deployed external crew workspaces"
 
   # ─── 4e. 注入标准 AGENTS.md sections 到已部署的对内 crew workspaces ──
@@ -632,18 +616,7 @@ if [ -f "$CONFIG_PATH" ]; then
     inject_file_edit_guide "$a_ws/TOOLS.md"
     inject_exec_guide "$a_ws/TOOLS.md" "$a_ws"
     inject_python_exec_guide "$a_ws/TOOLS.md"
-  done < <(node -e "
-    const fs = require('fs');
-    const home = process.env.HOME || '';
-    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
-    for (const a of (c.agents?.list || [])) {
-      if (!a?.id) continue;
-      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
-        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
-        .replace(/^~(?=\/|\$)/, home);
-      console.log(a.id + '\t' + ws);
-    }
-  " 2>/dev/null)
+  done < <(list_agent_workspaces)
   echo "  ✅ Standard AGENTS.md sections synced to all deployed workspaces"
 
   # ─── 4f. 确保所有 skill 脚本有执行权限 ──────────────────────────
@@ -652,18 +625,7 @@ if [ -f "$CONFIG_PATH" ]; then
     [ -d "$a_ws/skills" ] || continue
     chmod_count="$(find "$a_ws/skills" -name '*.sh' -not -executable -exec chmod +x {} + -print | wc -l)"
     [ "$chmod_count" -gt 0 ] && echo "    ✅ $a_id: chmod +x on $chmod_count scripts"
-  done < <(node -e "
-    const fs = require('fs');
-    const home = process.env.HOME || '';
-    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
-    for (const a of (c.agents?.list || [])) {
-      if (!a?.id) continue;
-      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
-        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
-        .replace(/^~(?=\/|\$)/, home);
-      console.log(a.id + '\t' + ws);
-    }
-  " 2>/dev/null)
+  done < <(list_agent_workspaces)
   echo "  ✅ Skill scripts ensured executable"
 else
   echo "  ⚠️  openclaw.json not found at $CONFIG_PATH"
