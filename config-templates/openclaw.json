@@ -93,6 +93,9 @@
       "imageModel": {
         "primary": "awk/doubao-seed-2.0-lite"
       },
+      "memorySearch": {
+        "provider": "none"
+      },
       "models": {
         "awk/glm-latest": {
           "alias": "awk/glm-5.2"
@@ -370,7 +373,7 @@
         "enabled": true,
         "config": {
           "dreaming": {
-            "enabled": true
+            "enabled": false
           }
         }
       },

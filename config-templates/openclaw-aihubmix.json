@@ -68,6 +68,9 @@
       "imageModel": {
         "primary": "aihubmix/gpt-5.5"
       },
+      "memorySearch": {
+        "provider": "none"
+      },
       "models": {
         "aihubmix/gpt-5.5": {
           "alias": "default"
@@ -409,7 +412,7 @@
         "enabled": true,
         "config": {
           "dreaming": {
-            "enabled": true
+            "enabled": false
           }
         }
       },
