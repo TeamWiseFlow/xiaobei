@@ -283,7 +283,6 @@ for agent_dir in "$CREWS_DIR"/*/; do
     # 仅做幂等注入（有标记则跳过，不覆盖用户编辑的内容）
     inject_file_edit_guide "$dest/TOOLS.md"
     inject_exec_guide "$dest/TOOLS.md" "$dest"
-    inject_python_exec_guide "$dest/TOOLS.md"
     inject_agents_md_sections "$dest/AGENTS.md"
     inject_feishu_media_guide "$dest/USER.md"
     continue
@@ -302,7 +301,6 @@ for agent_dir in "$CREWS_DIR"/*/; do
   echo "  ✅ workspace-$agent_id installed"
   inject_file_edit_guide "$dest/TOOLS.md"
   inject_exec_guide "$dest/TOOLS.md" "$dest"
-  inject_python_exec_guide "$dest/TOOLS.md"
   inject_agents_md_sections "$dest/AGENTS.md"
   inject_feishu_media_guide "$dest/USER.md"
 done
@@ -603,7 +601,6 @@ if [ -f "$CONFIG_PATH" ]; then
     inject_agents_md_sections "$a_ws/AGENTS.md"
     inject_file_edit_guide "$a_ws/TOOLS.md"
     inject_exec_guide "$a_ws/TOOLS.md" "$a_ws"
-    inject_python_exec_guide "$a_ws/TOOLS.md"
   done < <(list_agent_workspaces)
   echo "  ✅ Channel reply rules synced to deployed external crew workspaces"
 
@@ -615,7 +612,6 @@ if [ -f "$CONFIG_PATH" ]; then
     inject_feishu_media_guide "$a_ws/USER.md"
     inject_file_edit_guide "$a_ws/TOOLS.md"
     inject_exec_guide "$a_ws/TOOLS.md" "$a_ws"
-    inject_python_exec_guide "$a_ws/TOOLS.md"
   done < <(list_agent_workspaces)
   echo "  ✅ Standard AGENTS.md sections synced to all deployed workspaces"
 

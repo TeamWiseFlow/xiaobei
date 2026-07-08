@@ -536,28 +536,6 @@ cat file.txt | grep keyword
 - ✅ `python3 /tmp/check_env.py`（探查环境变量：脚本内容 `import os; print(bool(os.environ.get("PEXELS_API_KEY")))`）
 - ✅ `mkdir -p notes images`（逐一直写目录名，不用花括号展开）
 - ✅ 逐个调用 `ls dir1/`、`ls dir2/` …（替代 `for` 循环），或写 python 脚本批量处理
-GUIDE
-    # sed -i 在 BSD（macOS）会把脚本串当成备份后缀吞掉；-i.bak 两端都支持，再清掉 .bak。
-    sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
-  elif [ "$crew_type" = "internal" ]; then
-    cat >> "$tools_md" << 'GUIDE'
-
-## exec 命令规范
-
-本 crew 为**对内 crew**，exec **无白名单限制**——管道、`&&`、`||`、`;`、`cd` 前缀、相对路径、`bash`/`sh` 前缀等均不触发 allowlist miss，可直接执行。
-
-脚本调用仍建议用绝对路径（如 `python3 @@WS@@/skills/xxx/scripts/yyy.py`），仅为跨环境/跨 workspace 稳定，非安全约束。
-GUIDE
-    sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
-  fi
-  # external 无 + 条目（deny）或未知 crew-type：不注入（无 shell 执行权限）
-}
-
-inject_python_exec_guide() {
-  local tools_md="$1"
-  [ -f "$tools_md" ] || return 0
-  grep -qF "## Python 调用规范" "$tools_md" && return 0
-  cat >> "$tools_md" << 'GUIDE'
 
 ## Python 调用规范
 
@@ -579,6 +557,20 @@ python3 /tmp/my_script.py
 
 临时脚本统一写到 `/tmp/` 下，执行后可删除。
 GUIDE
+    # sed -i 在 BSD（macOS）会把脚本串当成备份后缀吞掉；-i.bak 两端都支持，再清掉 .bak。
+    sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
+  elif [ "$crew_type" = "internal" ]; then
+    cat >> "$tools_md" << 'GUIDE'
+
+## exec 命令规范
+
+本 crew 为**对内 crew**，exec **无白名单限制**——管道、`&&`、`||`、`;`、`cd` 前缀、相对路径、`bash`/`sh` 前缀等均不触发 allowlist miss，可直接执行。
+
+脚本调用仍建议用绝对路径（如 `python3 @@WS@@/skills/xxx/scripts/yyy.py`），仅为跨环境/跨 workspace 稳定，非安全约束。
+GUIDE
+    sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
+  fi
+  # external 无 + 条目（deny）或未知 crew-type：不注入（无 shell 执行权限）
 }
 
 inject_env_file_guide() {
