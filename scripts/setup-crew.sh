@@ -715,15 +715,6 @@ ENVEOF
 # main agent 不直接编辑 daemon.env，需要加环境变量时 spawn it-engineer 执行。
 generate_ofb_env_md "$OPENCLAW_HOME/workspace-it-engineer" "it-engineer"
 
-# --- 注入 env 文件路径指引到 TOOLS.md（仅 it-engineer）---
-_OFB_ENV_FILE=""
-if [ "$(uname -s)" = "Darwin" ]; then
-  _OFB_ENV_FILE="$HOME/.openclaw/service-env/ai.openclaw.gateway.env"
-else
-  _OFB_ENV_FILE="$HOME/.openclaw/daemon.env"
-fi
-inject_env_file_guide "$OPENCLAW_HOME/workspace-it-engineer/TOOLS.md" "$_OFB_ENV_FILE"
-
 # ─── 6. 完成 ──────────────────────────────────────────────────────
 echo ""
 echo "✅ Agent System installed!"
