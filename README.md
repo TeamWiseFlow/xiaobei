@@ -32,7 +32,13 @@
 ## 🚀 **v5.6.0 更新**
 
 - 产品重大重构,更简洁、更易上手、更精炼！
-- 重新认识你的main agent——小贝：
+- **重新认识你的 main agent——小贝**：这一版的小贝不再是单一职能的运营助手，而是把此前分散的几个 agent 融合成了一个"AI 搞钱搭子"——
+  - **三角色一体**：新媒体运营（self-media-operator）+ 商务拓展（BD, business-developer）+ 投资人关系（IR, investor-relations）合体，外加 crew 生命周期管理。一个微信入口，从内容产出、找客户、到融资材料全包。
+  - **新媒体运营面**：多平台发布（公众号/小红书/视频号/抖音/微博/知乎/Twitter/YouTube）、`viral-chaser` 追爆仿写、`content-calibrator` 盲打分+预测、`published-track` 数据复盘、`video-product` 短视频全流程、`de-mouth`/`highlight-clipper` 视频精剪。
+  - **商务拓展面**：`lead-hunting` 潜客探索、`comment-engagement` 评论区拓展、`intel-gathering` 情报采集，配 `bd-record`/`info-record` 数据层。
+  - **投资人关系面**：`business-model-polish` 商业模式打磨、`project-application` 项目申报（含软著 `swcr-register`）、`investor-pipeline` 投资人发掘与跟进，配 `ir-record` 数据层。
+  - **本轮新增起号知识库**：内置 `channels-account-launch-expert`，覆盖抖音、Twitter/X、微信视频号、微信公众号、小红书 5 个平台从 0 起号的运营思路与账号对标——没账号、思路乱，先问小贝。
+  - **自主协作**：遇到自己搞不定的技术问题（token 过期、登录失效、配置缺失）不喊用户、不停活，自主 spawn IT 工程师修完继续干；按需招募 content-producer / sales-cs 两个 crew。
 - 全面集成 camoufox-cli：无头胜有头，资源占用更少，速度更快，反侦测能力依然在线。
 - 适配 openclaw 2026-6-11 版本（近两个月最稳定版本）、openclaw-weixin 2.4.6 版本。
 - **主力 + 视觉 + 替补模型统一走火山方舟 Coding Plan**：一个套餐覆盖 GLM-5.2、Kimi-K2.7、MiniMax-M3、DeepSeek-V4、Doubao-Seed-2.0 等主流模型，**工具不限**。安装时只需一个 `AWK_API_KEY`，**不再需要 SiliconFlow**（视觉/替补也走 AWK）。
@@ -255,6 +261,9 @@ wiseflow/
 - Feedparser（Parse feeds in Python） https://github.com/kurtmckee/feedparser
 - SearXNG（a free internet metasearch engine which aggregates results from various search services and databases） https://github.com/searxng/searxng
 - opencli（A CLI for social media & web platforms — smart-search skill 借鉴了其搜索 URL 模式与平台适配方案） https://github.com/jackwener/opencli
+- AiToEarn（多平台自媒体发布工具 — `published-track` 的 18 平台文本/媒体限制规则表与内容校验、twitter 互动操作模式借鉴自此） https://github.com/yikart/AiToEarn
+- wechat-article-exporter（微信公众号文章导出 — `wx-mp-hunter` 的公众号搜索/文章列表/正文抽取能力整合自此项目） https://github.com/wechat-article/wechat-article-exporter
+- Spider_XHS（小红书爬虫 — `xhs-content-ops` 的搜索/笔记详情/用户笔记列表/QR 登录/发布指南整合自此项目） https://github.com/cv-cat/Spider_XHS
 - 文颜(Markdown文章排版美化工具，支持微信公众号、今日头条、知乎等平台。) https://github.com/caol64/wenyan
 - Everything Claude Code（Claude Code 全局 skill / rule / agent 集合，wiseflow 的 complex-task 等编排 skill 借鉴了其 blueprint 和 gan-style-harness 的设计思路） https://github.com/affaan-m/everything-claude-code
 - awesome-design-md（A curated collection of design systems in markdown format — Designer 内置设计系统库参考了此项目的设计系统结构） https://github.com/VoltAgent/awesome-design-md
