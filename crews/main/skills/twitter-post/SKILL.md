@@ -1,8 +1,9 @@
 ---
 name: twitter-post
 description: Compose and publish a post (text, image, or video) to Twitter/X using
-  the browser. Supports single posts, threads, quote tweets, reply tweets, and
-  long posts (Premium/Blue up to 25,000 chars).
+  camoufox-cli (headless browser automation; built-in browser tool only as fallback).
+  Supports single posts, threads, quote tweets, reply tweets, and long posts
+  (Premium/Blue up to 25,000 chars).
 metadata:
   openclaw:
     emoji: 🐦
@@ -18,16 +19,24 @@ Use this skill when:
 - You need to **reply** to a specific tweet (engagement use case)
 - You have a Premium/Blue account and need **long post** (up to 25,000 chars)
 
-**Prerequisites**: The browser session must be logged in to x.com. Warm up with a homepage visit if session is cold.
+**Prerequisites**: camoufox-cli session 已登录 x.com（登录态持久化在 session profile 里）。冷会话先访问一次首页预热。login-manager 非必需——Twitter 发布/互动是纯浏览器操作，只有当想把 cookie 导出给 API 用时才走 login-manager。
+
+---
+
+## 浏览器方案（重要）
+
+**优先 camoufox-cli**：headless persistent session（登录态存 session profile）+ DataTransfer/File 注入上传。camoufox-cli 无头即可完成 x.com 登录与发布，反侦测能力强、资源占用低。操作要点：`snapshot` 拿 ref → `fill`/`click` 按 ref 操作，别自己 hack selector。
+
+**fallback**：仅当 camoufox-cli 在 X 上持续触发风控时，切换到 openclaw 内置 `browser` tool（见 `browser-guide` §1-B）。下面的 workflow 步骤（Navigate / Click / snapshot eval / upload）是通用浏览器自动化语义，**默认用 camoufox-cli 执行**，不要因为措辞里有"snapshot/eval"就改用内置 browser tool。
 
 ---
 
 ## 通用约束
 
-- 文件上传前必须先复制到 `/tmp/openclaw/uploads/`（browser 工具沙箱限制）
-- `browser upload` 工具可能返回「超时错误」，但这**不代表上传失败**！上传后用 snapshot 检查页面状态（缩略图是否出现）
+- 文件上传用 camoufox-cli 的 DataTransfer/File 注入（参考 `douyin-publish`）；若走 fallback 内置 browser tool，需先把文件复制到 `/tmp/openclaw/uploads/`（沙箱限制）
+- 上传可能返回「超时错误」，但这**不代表上传失败**！上传后检查页面状态（缩略图是否出现）
 - **不要通过检查 `input.files.length` 是否为 0 判定上传是否失败！** `input.files.length == 0` 不代表上传失败。
-- 遇到 `browser failed: timed out. Restart the OpenClaw gateway ...` 错误时，**不需要重启、不需要报错**！等待 30 秒后在原页面继续操作即可。若仍无法操作，再等 30 秒；若还不行，尝试关闭浏览器后重开；只有关闭重开后仍报错才是真的出错，需停止并反馈用户。
+- 遇到 `timed out. Restart the OpenClaw gateway ...` 错误时，**不需要重启、不需要报错**！等待 30 秒后在原页面继续操作即可。若仍无法操作，再等 30 秒；若还不行，尝试关闭浏览器后重开；只有关闭重开后仍报错才是真的出错，需停止并反馈用户。
 - 正文输入使用 `type` + `slowly: true`，不要用 `fill()`
 
 ### 字符计数规则（X 平台特殊）
