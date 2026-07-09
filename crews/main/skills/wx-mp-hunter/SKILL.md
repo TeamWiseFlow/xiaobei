@@ -133,11 +133,11 @@ Session TTL：**4 天**（到期自动触发重登）
   └─ fetch <url>             → 获取正文
 
 流程 1c：专题页/主页目录链接采集（mp/homepage）
-  └─ browser 完整滚动页面和分类 → 提取 mp.weixin.qq.com/s 文章链接 → 如需全文再逐篇 fetch
+  └─ camoufox-cli 完整滚动页面和分类 → 提取 mp.weixin.qq.com/s 文章链接 → 如需全文再逐篇 fetch
 ```
 
 > 当用户直接提供 `mp.weixin.qq.com` 文章链接时，**直接走流程 1b**，无需经过 search / account-posts。
-> 当用户提供的是 `mp.weixin.qq.com/mp/homepage` 专题页/主页链接时，当前 CLI 不支持直接列出该页面全部文章；必须按“专题页抓取流程”使用 browser 完整采集目录，再对单篇链接使用 `fetch`。
+> 当用户提供的是 `mp.weixin.qq.com/mp/homepage` 专题页/主页链接时，当前 CLI 不支持直接列出该页面全部文章；必须按“专题页抓取流程”使用 camoufox-cli 完整采集目录，再对单篇链接使用 `fetch`。
 
 ---
 
@@ -153,7 +153,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 ### 目录采集
 
 1. **不要直接承诺“已抓完全部文章”**。先说明该页面是微信动态专题页，需要完整滚动加载后统计。
-2. 使用 browser 打开专题页。
+2. 使用 camoufox-cli 打开专题页（headless session，操作要点：snapshot 拿 ref → eval 滚动/提取，别自己 hack selector）。
 3. 先执行整页滚动到底，直到 `document.documentElement.scrollHeight` 连续多次稳定。
 4. 查找分类 tab（常见 class：`.jsCate`）。对每个分类逐个执行：
    - 点击分类；
@@ -175,7 +175,7 @@ http://mp.weixin.qq.com/mp/homepage?...
    ./scripts/wx-mp-hunter.sh fetch <article_link> --html
    ```
 4. 只有样本返回 `content_text` / `content_markdown` / `content_html` 后，才允许批量抓全文。
-5. 如果样本返回 `未找到文章正文 (#js_content)`，用 browser 打开该文章验证页面内容：
+5. 如果样本返回 `未找到文章正文 (#js_content)`，用 camoufox-cli 打开该文章验证页面内容：
    - 如果出现“环境异常”“拖动下方滑块完成拼图”等验证页，**不得尝试绕过验证码或自动拖滑块**；告知用户需要人工完成微信环境验证后再继续。
    - 如果是文章已删除、私有或付费，跳过该文章并记录失败原因。
 6. 批量抓取时每篇间隔 1–2 秒；连续失败 3 篇以上时停止批量，先检查错误，不要继续跑完整列表。
