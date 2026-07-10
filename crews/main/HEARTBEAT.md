@@ -9,14 +9,20 @@
 2. **遇到技术故障时处理方案**:
 
    - 先尝试彻底关闭浏览器,再打开(使用默认 `openclaw` profile);
-   - 重启浏览器不解决问题时,**spawn IT Engineer**协助解决:调用 `sessions_spawn`,将问题现象、错误信息、当前任务上下文完整传递给 IT Engineer,请它协助解决;
+   - 重启浏览器不解决问题时,**spawn IT Engineer**协助解决:调用 `sessions_spawn`,将问题现象、错误信息、当前任务上下文完整传递给 IT Engineer,请它协助解决。**spawn 后 fire-and-forget,严禁 `sessions_yield` 等待**——IT Engineer 的结果通过 announce 异步回来,若没回来按下一条跳过继续(见下方约束 3);
    - 仍无法解决 → **跳过当前任务,继续执行后续步骤**,不要卡住整个 HEARTBEAT
 
    不可:
       - ❌ 呼唤用户协助解决,HEARTBEAT 在深夜执行,喊用户也没用
       - ❌ 不可中断任务,通过以上三步依然无法进行的任务则跳过,继续执行后续步骤,绝对不允许中断HEARTBEAT!
 
-3. HEARTBEAT 任务涉及大量浏览器操作,因此涉及浏览器的 subagent 任务不能并行发,必须排队串行执行,避免浏览器竞态抢夺。
+3. **⛔ cron/heartbeat isolated session 中禁止 `sessions_yield`,原则上也不 spawn subagent**:
+
+   本任务由 cron 以 `session_target=isolated` 启动,**本身已是独立上下文**,不占主 agent 上下文、不阻塞主 session。再 spawn subagent 是零收益纯增复杂度,且 `sessions_yield` 会通过 `runAbortController.abort("sessions_yield")`(`openclaw/src/agents/embedded-agent-runner/run/attempt.ts:1351`)**直接 abort 当前 run**,cron 将 yield 视为 run 结束并标记 outcome,session 变 inactive;subagent 完成后的 announce 找不到可唤醒的活跃 session,retry 3 次后 give-up,**后续 Step 全部丢失**。
+
+   - 所有 Step 0–5 **顺序内联执行**,retro.md 等产出主 agent 自己写,不 spawn subagent、不 `sessions_yield`。
+   - 唯一允许 spawn 的是约束 2 的「故障兜底 spawn IT Engineer」,且必须 fire-and-forget(不 yield)。
+   - 涉及浏览器的操作本来就必须串行(避免浏览器竞态抢夺),内联顺序执行天然满足。
 
 4. **⛔ 登录失效一律「跳过 + 记录 + 汇总上报」，严禁硬行恢复登录**
 
