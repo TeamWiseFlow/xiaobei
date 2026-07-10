@@ -23,8 +23,8 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 DB="$ROOT/db/published_track.db"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# login-manager 脚本路径（同 crew 专属技能）
-LOGIN_MANAGER="$SCRIPT_DIR/../../login-manager/scripts/login_manager.ts"
+# login-manager 脚本路径（同 crew 专属技能，login-manager.sh 委托 login_manager.py）
+LOGIN_MANAGER="$SCRIPT_DIR/../../login-manager/scripts/login-manager.sh"
 
 # ─── 辅助函数 ──────────────────────────────────────────────────────────────
 
@@ -173,7 +173,7 @@ if [ "$NEEDS_COOKIE" = true ]; then
     LM_PLATFORM="xhs-browse"
   fi
 
-  CHECK_RESULT=$(node "$LOGIN_MANAGER" check "$LM_PLATFORM" 2>/dev/null) || CHECK_EXIT=$?
+  CHECK_RESULT=$("$LOGIN_MANAGER" check "$LM_PLATFORM" 2>/dev/null) || CHECK_EXIT=$?
   CHECK_EXIT=${CHECK_EXIT:-0}
 
   if [ "$CHECK_EXIT" -eq 2 ]; then
