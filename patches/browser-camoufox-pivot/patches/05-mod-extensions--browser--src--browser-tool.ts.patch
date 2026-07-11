@@ -1,5 +1,5 @@
 diff --git a/extensions/browser/src/browser-tool.ts b/extensions/browser/src/browser-tool.ts
-index 330a0b6f3c..749aab545a 100644
+index 330a0b6f3c..dddc28a317 100644
 --- a/extensions/browser/src/browser-tool.ts
 +++ b/extensions/browser/src/browser-tool.ts
 @@ -57,6 +57,7 @@ import { DEFAULT_BROWSER_SCREENSHOT_TIMEOUT_MS } from "./browser/constants.js";
@@ -99,7 +99,7 @@ index 330a0b6f3c..749aab545a 100644
        'For stable, self-resolving refs across calls, use snapshot with refs="aria" (Playwright aria-ref ids). Default refs="role" are role+name-based.',
        "Use snapshot+act for UI automation. Avoid act:wait by default; use only in exceptional cases when no reliable UI state exists.",
 -      `target selects browser location (sandbox|host|node). Default: ${targetDefault}.`,
-+      'target selects browser location (host|node|camoufox). Default: host.',
++      'target selects browser location (camoufox|host|node). Default: camoufox (forked camoufox-cli, anti-detect Firefox via unix-socket). Use target="host" for existing-session real Chrome (profile="user"), or target="node" for a remote browser node.',
        hostHint,
      ].join(" "),
      parameters: BrowserToolSchema,
@@ -116,29 +116,53 @@ index 330a0b6f3c..749aab545a 100644
        const configuredNode = browserToolDeps
          .getRuntimeConfig()
          .gateway?.nodes?.browser?.node?.trim();
-@@ -520,23 +528,19 @@ export function createBrowserTool(opts?: {
+@@ -520,15 +528,39 @@ export function createBrowserTool(opts?: {
        if (requestedNode && target && target !== "node") {
          throw new Error('node is only supported with target="node".');
        }
 -      // existing-session profiles can attach through the selected host or browser node,
 -      // but they must never fall back into the sandbox browser.
--      const isUserBrowserProfile = shouldPreferHostForProfile(profile);
++      // existing-session profiles attach through the host or a browser node (线 2).
+       const isUserBrowserProfile = shouldPreferHostForProfile(profile);
 -      if (isUserBrowserProfile) {
 -        if (target === "sandbox") {
 -          throw new Error(
 -            `profile="${profile}" cannot use the sandbox browser; use target="host" or omit target.`,
--          );
--        }
-+      // camoufox: forked camoufox-cli daemon via unix-socket (spec §11 阶段一 step 3a).
-+      // 完全旁路 baseUrl/proxy 流程——adapter 自己管 daemon 生命周期。
-+      if (target === "camoufox") {
++      // camoufox is the default daily driver (线 1, spec §11 阶段一 step 3a).
++      // Route to the forked camoufox-cli adapter (unix-socket, 旁路 baseUrl/proxy)
++      // when explicitly requested, or when target/node are omitted AND no existing-session
++      // profile (real Chrome with logins → host) AND no node configured as operator default.
++      // 3b 删了 local-managed 分支，故无 target 无 profile 的旧默认路径已死——camoufox 接管。
++      const isCamoufoxRoute =
++        target === "camoufox" ||
++        (!target && !requestedNode && !configuredNode && !isUserBrowserProfile);
++      if (isCamoufoxRoute) {
++        // upload 路径校验是安全边界（仅允许 uploads/ + inbound media 目录），
++        // 原本在 host action switch 里，camoufox 早返回会绕过——这里前置对 camoufox 路径
++        // 也生效（host 路径仍由 switch 内的同一调用兜底，幂等）。
++        if (action === "upload") {
++          const uploadPaths = Array.isArray(params.paths)
++            ? params.paths.map((p) => String(p))
++            : [];
++          if (uploadPaths.length === 0) {
++            throw new Error("paths required");
++          }
++          const uploadResolved = await resolveExistingUploadPaths({
++            requestedPaths: uploadPaths,
++          });
++          if (!uploadResolved.ok) {
++            throw new Error(uploadResolved.error);
++          }
++          return await executeCamoufoxCliAction(
++            { ...params, paths: uploadResolved.paths },
++            resolveCamoufoxSessionConfig(opts),
+           );
+         }
 +        return await executeCamoufoxCliAction(params, resolveCamoufoxSessionConfig(opts));
        }
-+      // existing-session profiles can attach through the selected host or browser node.
-+      const isUserBrowserProfile = shouldPreferHostForProfile(profile);
  
        let nodeTarget: BrowserNodeTarget | null = null;
-       try {
+@@ -536,7 +568,6 @@ export function createBrowserTool(opts?: {
          nodeTarget = await resolveBrowserNodeTarget({
            requestedNode: requestedNode ?? undefined,
            target,
@@ -146,7 +170,7 @@ index 330a0b6f3c..749aab545a 100644
          });
        } catch (error) {
          // Keep the logged-in user browser usable on the host when auto-discovery
-@@ -554,7 +558,6 @@ export function createBrowserTool(opts?: {
+@@ -554,7 +585,6 @@ export function createBrowserTool(opts?: {
          ? undefined
          : resolveBrowserBaseUrl({
              target: resolvedTarget,
