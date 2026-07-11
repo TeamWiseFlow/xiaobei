@@ -76,11 +76,29 @@ class TestExtractUserHandle(unittest.TestCase):
 
 
 class TestSessionNaming(unittest.TestCase):
-    def test_session_format(self):
-        name = twitter_interact.session_name("like")
-        self.assertTrue(name.startswith("twitter-like-"))
-        suffix = name[len("twitter-like-"):]
-        self.assertEqual(len(suffix), 8)  # secrets.token_hex(4) → 8 chars
+    def test_session_is_constant_twitter(self):
+        # 原则 1：每平台一个且只一个持久化 session。purpose 参数仅标注意图，不影响 session 名。
+        self.assertEqual(twitter_interact.session_name("like"), "twitter")
+        self.assertEqual(twitter_interact.session_name("retweet"), "twitter")
+        self.assertEqual(twitter_interact.TWITTER_SESSION, "twitter")
+
+
+class TestFailFirstQueue(unittest.TestCase):
+    """forked cli fail-first 队列（spec §1.1）：session 正忙时抛 SessionBusyError，
+    twitter_session 透传 exit 3 且不 close（避免 tear down 正在跑的另一个操作）。"""
+
+    @mock.patch("twitter_interact.camoufox_close")
+    @mock.patch("twitter_interact.camoufox_eval")
+    @mock.patch("twitter_interact.camoufox_open")
+    def test_busy_raises_exit3_no_close(self, mock_open, mock_eval, mock_close):
+        mock_open.side_effect = twitter_interact.SessionBusyError(
+            "session twitter 正忙，请等待当前操作完成后再试"
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            twitter_interact.cmd_like("https://x.com/u/status/123")
+        self.assertEqual(ctx.exception.code, 3)
+        # 关键：busy 时不能 close（会 tear down 正在跑的另一个操作）
+        mock_close.assert_not_called()
 
 
 class TestFrequencyLimits(unittest.TestCase):

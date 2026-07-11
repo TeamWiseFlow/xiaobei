@@ -187,6 +187,12 @@ spike 文档 L30-33 已设计：
 
 当前 twitter-interact 已经是 camoufox-cli + login-manager 中央 cookie 架构（SKILL.md 已写），主要是对齐 forked cli 的 upload/identity export 新命令 + 跟上游模式。
 
+**落地（2026-07-12）**：
+1. AiToEarn clone 正好在 catchup commit `74e884f0`（v2.4.0），之后无新提交，无 HEAD 差异要追。上游 twitter 互动走 **Twitter API v2 + OAuth**（`POST /users/{id}/likes` 等），按记忆「AiToEarn 只吸收知识不搬架构」+ spec 要求 camoufox-cli，吸收操作语义（子命令结构 + 频率纪律），执行仍走 camoufox-cli。
+2. `twitter_interact.py` 改造：单一持久化 session `twitter`（原则 1，去掉 per-task nonce）+ fail-first 队列检测（`SessionBusyError` → exit 3，busy 时不 close 避免 tear down 正在跑的操作）+ 登录错误消息改成有头（原则 3）。
+3. SKILL.md 同步：前置条件改有头登录、并发约束改 fail-first、Pitfalls 更新、Notes 记 forked cli 新命令 + AiToEarn 参考。
+4. 测试：`TestSessionNaming` 改断言常量 `twitter`，加 `TestFailFirstQueue` 验证 busy → exit 3 + 不 close。28/28 通过。
+
 ---
 
 ## 8. profile 丢失处理

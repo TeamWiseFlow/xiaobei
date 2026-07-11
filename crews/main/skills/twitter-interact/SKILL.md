@@ -48,25 +48,34 @@ metadata:
 
 ## 前置条件
 
-### 1. login-manager 中央 cookie
+### 1. login-manager 中央 cookie + 有头登录（原则 3）
 
 ```bash
 # 探活（exit 0 = 有效）
 login-manager.sh check twitter
 
-# 失效后：camoufox 扫码登录
-login-manager.sh qr-headless twitter
-# → 发 QR PNG 给用户
-login-manager.sh qr-confirm twitter --session <s> --timeout 180
+# 失效后：有头登录（twitter 必须有头，原则 3——不无头截图 QR）
+login-manager.sh login-headed twitter
+# → camoufox-cli --session twitter --persistent --headed open https://x.com
+# → 用户在弹出的 Firefox 窗口完成登录
+# → login-manager 导出 cookie + UA（forked cli identity export）
+#   到 ~/.openclaw/logins/twitter.json + twitter.ua.json
+# → close
 ```
 
-### 2. camoufox-cli 已安装
+> twitter 不走无头 QR 流程（与 wechat-channel / wx-mp 不同）。原因：X 登录风控对无头 + QR 识别严格，有头人工登录最稳。
 
-`camoufox-cli@0.6.2` 全局（Dockerfile 阶段 1 / 本机通过 npm install -g）。
+### 2. camoufox-cli（forked）已安装
+
+本仓 `patches/camoufox-cli/` 的 fork（基线上游 `camoufox-cli@0.6.2` + upload + fail-first 队列 + identity export）。`patches/camoufox-cli/build.sh` 全局安装替换 `$PATH` 上的上游版。
 
 ### 3. 频率跟踪文件（首次自动创建）
 
 `~/.openclaw/agents/main/sessions/twitter-interact-frequency.json` —— 每次成功操作后自动 append。
+
+### 4. 单一持久化 session `twitter`（原则 1）
+
+所有互动操作共享同一个 `--persistent` session `twitter`（指纹冻结 + cookie 留 profile）。并发调用由 forked cli 的 **fail-first 队列**串行拒绝——脚本不自动排队、不自动等待，读到 `session twitter 正忙` 文本时 exit 3，调用方（agent）应等待当前操作完成后再试。
 
 ---
 
@@ -95,11 +104,12 @@ twitter_interact run --tweet-url <url> --action <like|retweet|bookmark>
 twitter_interact run --user <handle> --action <follow|unfollow>
 ```
 
-### 自定义 session 名（多任务并行）
+### 并发约束（fail-first，不并行）
 
 ```bash
-# 脚本化并行：每条用独立 session（不传 session，脚本自动生成）
-# 主流程结束必须 cleanup（run 自动 cleanup）
+# 原则 1：单一 session twitter，并发调用由 forked cli fail-first 队列拒绝
+# 脚本读到 "session twitter 正忙" → exit 3，agent 应等待重试（不自动排队）
+# 串行使用：上一次操作 close 后再发下一次
 ```
 
 ---
@@ -111,9 +121,10 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 ```
 1. login-manager.sh check twitter
    ├─ exit 0 → 继续
-   └─ exit 2 → 走 qr-headless + qr-confirm
-2. camoufox-cli --session twitter-like-<nonce> --persistent --headless open https://x.com/i/web/status/<id>
-3. camoufox-cli --session ... eval "
+   └─ exit 2 → 提示走 login-headed（原则 3，有头登录）
+2. camoufox-cli --session twitter --persistent --headless open https://x.com/i/web/status/<id>
+   └─ 若 session 正忙 → forked cli 返回 fail-first 文本 → 脚本 exit 3（不 close，不排队）
+3. camoufox-cli --session twitter --json eval "
      document.querySelector('[data-testid=\"like\"]').click();
      'clicked';
    "
@@ -183,7 +194,8 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 
 | 情况 | 处理 |
 |------|------|
-| Cookie 失效（login-manager exit 2）| 走 qr-headless + qr-confirm |
+| Cookie 失效（login-manager exit 2）| 提示走 login-headed（原则 3，有头登录）|
+| session 正忙（forked cli fail-first）| exit 3 + 透传 busy 文本，**不 close**（避免 tear down 正在跑的另一个操作），agent 等待重试 |
 | Tweet ID / Handle 解析失败 | exit 1（提示格式错）|
 | 频率限制触发 | exit 1（提示等待时间）|
 | 按钮已点（like 已是 pressed / already following）| 输出 `note: 已...` + exit 0 |
@@ -210,10 +222,10 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 - **症状**：连发点赞 / 转推 → X 触发 "This request looks like it might be automated"
 - **workaround**：check_freq_limit 在每次操作前校验，**强制** wait
 
-### pitfall: 跨任务 session 复用
+### pitfall: 并发调用撞 fail-first 队列
 
-- **症状**：同一 session 名被两个 task 共用 → cookie state 污染
-- **workaround**：**每任务用新 session name**（`secrets.token_hex(4)` nonce 唯一保证）
+- **症状**：两个 twitter-interact 调用同时跑 → 第二个收到 `session twitter 正忙` → exit 3
+- **workaround**：这是**预期行为**（原则 1 + forked cli fail-first）。agent 读到 exit 3 应等待当前操作完成再重试，**不**自动排队、**不**自动 close session（close 会 tear down 正在跑的那个操作）
 
 ### pitfall: X UI 改版 → selector 失效
 
@@ -224,8 +236,8 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 
 ## 相关 skill
 
-- `twitter-post`（Quote / Reply / Long post 在那边）
-- `login-manager`（cookie 中央存储 + camoufox session）
+- `twitter-post`（Quote / Reply / Long post 在那边，用 forked cli `upload` 命令传媒体）
+- `login-manager`（cookie + UA 中央存储；登录走 `login-headed twitter`，导出用 forked cli `identity export`）
 
 ---
 
@@ -236,3 +248,5 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 - **不**与 published-track 共享频率统计（本 skill 自有 FREQ_TRACKER_PATH）
 - **BD 场景主推**：关注目标用户（follow）+ 点赞目标推（like）+ 收藏（bookmark）— 这三个是 BD 自动化常用组合
 - **风控告警阈值**：日累计 50% 上限时输出 warning（不是 hard block）
+- **forked cli 新命令**：`upload`（本 skill 不用，无媒体）/ `identity export`（login-manager 登录时导出 UA）/ fail-first 队列（本 skill 依赖，串行化并发）
+- **AiToEarn 上游参考**（`yikart/AiToEarn` v2.4.0 `74e884f0`）：twitter 互动走 Twitter API v2 + OAuth（`POST /users/{id}/likes` 等），本 skill 不搬 API 架构（spec 要求 camoufox-cli），只吸收操作语义（like/unlike/retweet/follow 子命令结构 + 频率纪律）。如未来配齐 X OAuth 凭证，可加 API 路径作为更快/更稳的 fallback。

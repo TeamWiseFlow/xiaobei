@@ -29,10 +29,10 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
-import secrets
 import subprocess
 import sys
 import time
@@ -49,6 +49,14 @@ LOGIN_MANAGER_BIN = os.environ.get(
 )
 CAMOUFOX_BIN = os.environ.get("CAMOUFOX_CLI", "camoufox-cli")
 LOGIN_MANAGER_PLATFORM = "twitter"
+
+# 原则 1：每平台一个且只一个持久化 session，顺次使用（forked cli fail-first 队列串行）。
+# 不再每任务生成 nonce session——并发调用由 forked cli 的 fail-first 队列拒绝，脚本透传给调用方。
+TWITTER_SESSION = os.environ.get("TWITTER_SESSION", "twitter")
+
+
+class SessionBusyError(Exception):
+    """forked cli fail-first 队列拒绝：session 正忙。调用方应等待重试，不自动排队。"""
 
 # 频率限制（平台 anti-automation 阈值 + 经验值）
 FREQ_LIMITS = {
@@ -82,28 +90,47 @@ def login_manager_check() -> bool:
 
 
 def session_name(purpose: str = "interact") -> str:
-    """生成 camoufox session 名（每任务一 session，避免并发复用）。"""
-    return f"twitter-{purpose}-{secrets.token_hex(4)}"
+    """返回 twitter 持久化 session 名（原则 1：单一 session）。
+
+    保留 purpose 参数仅为向后兼容（调用方可标注意图），实际忽略——所有操作共享
+    同一个 `twitter` session，由 forked cli fail-first 队列串行。
+    """
+    return TWITTER_SESSION
+
+
+def _camoufox_json(cmd: list[str], timeout: int) -> dict:
+    """跑 camoufox-cli 命令，解析 --json 信封。session 正忙时抛 SessionBusyError。"""
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+    stdout = result.stdout.strip()
+    if not stdout:
+        if result.returncode != 0:
+            raise RuntimeError(f"camoufox-cli 退出码 {result.returncode}: {result.stderr.strip()}")
+        return {}
+    try:
+        env = json.loads(stdout)
+    except json.JSONDecodeError:
+        return {"data": stdout}
+    # fail-first 队列拒绝（spec §1.1）
+    if isinstance(env, dict) and env.get("success") is False:
+        err = str(env.get("error", ""))
+        if "正忙" in err:
+            raise SessionBusyError(err)
+        raise RuntimeError(f"camoufox-cli error: {err}")
+    return env if isinstance(env, dict) else {"data": env}
 
 
 def camoufox_open(session: str, url: str) -> None:
     """启 headless + persistent 会话 + 打开 URL。"""
     cmd = [CAMOUFOX_BIN, "--session", session, "--persistent", "--headless", "--json", "open", url]
-    subprocess.run(cmd, capture_output=True, text=True, timeout=CAMOUFOX_TIMEOUT_S, check=False)
+    _camoufox_json(cmd, CAMOUFOX_TIMEOUT_S)
 
 
 def camoufox_eval(session: str, js: str, timeout: int = 30) -> Optional[str]:
     """在 session 内 eval JS，返回 data 字段。"""
     cmd = [CAMOUFOX_BIN, "--session", session, "--json", "eval", js]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    try:
-        env = json.loads(result.stdout)
-        data = env.get("data")
-        return data if isinstance(data, str) else json.dumps(data)
-    except json.JSONDecodeError:
-        return result.stdout
+    env = _camoufox_json(cmd, timeout)
+    data = env.get("data")
+    return data if isinstance(data, str) else json.dumps(data)
 
 
 def camoufox_close(session: str) -> None:
@@ -112,6 +139,29 @@ def camoufox_close(session: str) -> None:
         [LOGIN_MANAGER_BIN, "session-cleanup", LOGIN_MANAGER_PLATFORM, session],
         capture_output=True, text=True, timeout=10, check=False,
     )
+
+
+@contextlib.contextmanager
+def twitter_session():
+    """单一持久化 session `twitter` 的生命周期（原则 1）。
+
+    - 正常退出：close session（daemon 退出，profile 留盘）
+    - SessionBusyError：**不 close**（close 会 tear down 正在跑的另一个操作），透传 exit 3
+    """
+    session = TWITTER_SESSION
+    busy = False
+    try:
+        yield session
+    except SessionBusyError as e:
+        busy = True
+        sys.stderr.write(
+            f"error: session {session} 正忙 — {e}\n"
+            f"  forked cli fail-first 队列拒绝。请等待当前操作完成后再试。\n"
+        )
+        raise SystemExit(3)
+    finally:
+        if not busy:
+            camoufox_close(session)
 
 
 # ── URL 解析 ───────────────────────────────────────────────────────────────
@@ -221,8 +271,7 @@ def cmd_like(tweet: str) -> None:
         sys.stderr.write(f"error: 频率限制 — {reason}\n")
         sys.exit(1)
 
-    session = session_name("like")
-    try:
+    with twitter_session() as session:
         _open_tweet(session, tid)
         # click like 按钮
         js = """
@@ -248,8 +297,6 @@ def cmd_like(tweet: str) -> None:
             sys.stderr.write(f"error: like 失败（result={result}）\n")
             sys.exit(1)
         sys.stdout.write("\n")
-    finally:
-        camoufox_close(session)
 
 
 def cmd_unlike(tweet: str) -> None:
@@ -258,8 +305,7 @@ def cmd_unlike(tweet: str) -> None:
     if not tid:
         sys.stderr.write(f"error: 无法从 '{tweet}' 提取 tweet ID\n")
         sys.exit(1)
-    session = session_name("unlike")
-    try:
+    with twitter_session() as session:
         _open_tweet(session, tid)
         js = """
         (function() {
@@ -279,8 +325,6 @@ def cmd_unlike(tweet: str) -> None:
             sys.stderr.write(f"error: unlike 失败（result={result}）\n")
             sys.exit(1)
         sys.stdout.write("\n")
-    finally:
-        camoufox_close(session)
 
 
 def cmd_retweet(tweet: str) -> None:
@@ -294,8 +338,7 @@ def cmd_retweet(tweet: str) -> None:
         sys.stderr.write(f"error: 频率限制 — {reason}\n")
         sys.exit(1)
 
-    session = session_name("retweet")
-    try:
+    with twitter_session() as session:
         _open_tweet(session, tid)
         # click retweet → confirm（不 quote，单纯转推）
         js = """
@@ -338,8 +381,6 @@ def cmd_retweet(tweet: str) -> None:
             sys.stderr.write(f"error: retweet 失败（result={result}）\n")
             sys.exit(1)
         sys.stdout.write("\n")
-    finally:
-        camoufox_close(session)
 
 
 def cmd_unretweet(tweet: str) -> None:
@@ -348,8 +389,7 @@ def cmd_unretweet(tweet: str) -> None:
     if not tid:
         sys.stderr.write(f"error: 无法从 '{tweet}' 提取 tweet ID\n")
         sys.exit(1)
-    session = session_name("unretweet")
-    try:
+    with twitter_session() as session:
         _open_tweet(session, tid)
         js = """
         (function() {
@@ -384,8 +424,6 @@ def cmd_unretweet(tweet: str) -> None:
             sys.stderr.write(f"error: unretweet 失败（result={result}）\n")
             sys.exit(1)
         sys.stdout.write("\n")
-    finally:
-        camoufox_close(session)
 
 
 def cmd_bookmark(tweet: str) -> None:
@@ -399,8 +437,7 @@ def cmd_bookmark(tweet: str) -> None:
         sys.stderr.write(f"error: 频率限制 — {reason}\n")
         sys.exit(1)
 
-    session = session_name("bookmark")
-    try:
+    with twitter_session() as session:
         _open_tweet(session, tid)
         js = """
         (function() {
@@ -421,8 +458,6 @@ def cmd_bookmark(tweet: str) -> None:
             sys.stderr.write(f"error: bookmark 失败（result={result}）\n")
             sys.exit(1)
         sys.stdout.write("\n")
-    finally:
-        camoufox_close(session)
 
 
 def cmd_unbookmark(tweet: str) -> None:
@@ -431,8 +466,7 @@ def cmd_unbookmark(tweet: str) -> None:
     if not tid:
         sys.stderr.write(f"error: 无法从 '{tweet}' 提取 tweet ID\n")
         sys.exit(1)
-    session = session_name("unbookmark")
-    try:
+    with twitter_session() as session:
         _open_tweet(session, tid)
         js = """
         (function() {
@@ -449,8 +483,6 @@ def cmd_unbookmark(tweet: str) -> None:
             sys.stderr.write(f"error: unbookmark 失败（result={result}）\n")
             sys.exit(1)
         sys.stdout.write("\n")
-    finally:
-        camoufox_close(session)
 
 
 def cmd_follow(user: str) -> None:
@@ -464,8 +496,7 @@ def cmd_follow(user: str) -> None:
         sys.stderr.write(f"error: 频率限制 — {reason}\n")
         sys.exit(1)
 
-    session = session_name("follow")
-    try:
+    with twitter_session() as session:
         camoufox_open(session, f"https://x.com/{handle}")
         js = """
         (function() {
@@ -495,8 +526,6 @@ def cmd_follow(user: str) -> None:
             sys.stderr.write(f"error: follow 失败（result={result}）\n")
             sys.exit(1)
         sys.stdout.write("\n")
-    finally:
-        camoufox_close(session)
 
 
 def cmd_unfollow(user: str) -> None:
@@ -505,8 +534,7 @@ def cmd_unfollow(user: str) -> None:
     if not handle:
         sys.stderr.write(f"error: 无法从 '{user}' 提取 username\n")
         sys.exit(1)
-    session = session_name("unfollow")
-    try:
+    with twitter_session() as session:
         camoufox_open(session, f"https://x.com/{handle}")
         js = """
         (function() {
@@ -550,14 +578,16 @@ def cmd_unfollow(user: str) -> None:
             sys.stderr.write(f"error: unfollow 失败（result={result}）\n")
             sys.exit(1)
         sys.stdout.write("\n")
-    finally:
-        camoufox_close(session)
 
 
 def cmd_run(*, tweet_url: str = "", action: str = "like", user: str = "") -> None:
     """一键跑（脚本化主流程）。"""
     if not login_manager_check():
-        sys.stderr.write(f"error: {LOGIN_MANAGER_PLATFORM} cookie 失效；先走 login-manager qr-headless + qr-confirm\n")
+        sys.stderr.write(
+            f"error: {LOGIN_MANAGER_PLATFORM} cookie 失效；先走 login-manager 有头登录\n"
+            f"  原则 3：twitter 登录必须 有头模式（camoufox-cli --headed），不无头截图 QR。\n"
+            f"  流程：login-manager.sh login-headed twitter → 用户在浏览器完成登录 → close。\n"
+        )
         sys.exit(2)
 
     if tweet_url:
