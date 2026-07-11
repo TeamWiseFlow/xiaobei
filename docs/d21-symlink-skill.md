@@ -183,4 +183,4 @@ dev plan §Phase 7 续 写"验收"：
 
 按 dev plan §Phase 7 续"D21 全局技能软链化 + wrapper 覆盖审计"——本任务**文档化完成**；实施待部署阶段。
 
-关联：`DEVPLAN.md` §Phase 7 续 · `docs/camoufox-spike-2026-07.md` · `crews/it-engineer/MEMORY.md` D20
+关联：`docs/browser-stack-replacement-spec-2026-07.md` §11 · `crews/it-engineer/MEMORY.md` D20

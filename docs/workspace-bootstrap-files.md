@@ -141,7 +141,7 @@ agent 应在 `AGENTS.md` 中明确记录此约定：
 
 ## 七、各 Crew 文件配置速查
 
-> **2026-07-04 修订（D8 扁平化 + D19 权限放开）**：从 Pro 仓 addons 层级结构改为 client 仓扁平结构。原 `hrbp` / `selfmedia-operator` / `business-developer` / `designer` 全部合入 `main`（AI 搞钱搭子「小贝」）。`main` / `content-producer` / `it-engineer` 升为 T3 full，`sales-cs` 维持 T0。详见 `DEVPLAN.md` 与 `docs/product-split-plan.md`。
+> **2026-07-04 修订（D8 扁平化 + D19 权限放开）**：从 Pro 仓 addons 层级结构改为 client 仓扁平结构。原 `hrbp` / `selfmedia-operator` / `business-developer` / `designer` 全部合入 `main`（AI 搞钱搭子「小贝」）。`main` / `content-producer` / `it-engineer` 升为 T3 full，`sales-cs` 维持 T0。（产品拆分决策已落地，历史规划文档已清理，可从 git 历史恢复。）
 
 ### 内置 Crew（对内，T3 full — D19 已落）
 

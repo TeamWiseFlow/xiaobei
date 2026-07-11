@@ -1,7 +1,7 @@
 # wiseflow-client buildout
 
 > 本仓为wiseflow-pro拆分后的 **wiseflow-client（Docker 部署态）** 代码仓，将作为 Teamwiseflow/xiaobei 开源项目。
-> 本文记录 client 侧 buildout 状态与待办。全局规划见 [`product-split-plan.md`](product-split-plan.md)。
+> 本文记录 client 侧 buildout 状态与待办。当前活跃规划见 [`browser-stack-replacement-spec-2026-07.md`](browser-stack-replacement-spec-2026-07.md)（浏览器栈转向）；产品拆分决策已落地，历史规划可从 git 历史恢复。
 >
 > 中转服务（relay）已拆为独立仓 `git-server:repos/wiseflow-relay.git`，交接文档在其仓内 `docs/HANDOVER.md`。
 
@@ -42,7 +42,7 @@
 - **apply-addons.sh 精简**（Phase 6/7 续）：addons 扫描循环（~260 行起）现为死代码，待整体删除；crew 安装已由 setup-crew.sh 单独负责。
 - **skill 改 relay 调用**（Phase 2-3）：**sign 已完成**（viral-chaser/xhs-content-ops/xhs-publish/published-track 全部改走 relay services/sign，D1 落地）；publish-relay / video-relay 改造待 Phase 3（relay 侧服务未实现）。
 - **awada 改 HTTP/WS transport**（Phase 4 ✅）：awada-server 已迁出至 relay（D4），awada-extension 走 relay 网关 `WS /inbound` + `POST /outbound`（relayBaseUrl+ofbKey+lane），不再直连 Redis；ioredis 已从 deps 移除，预装步骤改装 ws+zod。proactive-send skill 同步迁 HTTP 网关。
-- **camoufox 集成**（Phase 4.5）：spike 已过（见 `camoufox-spike-2026-07.md`），实现未做（browser-guide 改写、login-manager 重写、浏览器类 skill 改 camoufox-cli）。
+- **camoufox 集成**（Phase 4.5）：调研已完成（见 `browser-extension-replacement-research.md` §12），双线转向已定（删 sandbox + fork camoufox-cli 走 `target=camoufox` 旁路 + 保留 host/node fallback），落地顺序见 `browser-stack-replacement-spec-2026-07.md` §11。
 - **img-gen 改火山**（Phase 5）：未做。
 - **Dockerfile 阶段 3-4 填实**（Phase 6）：wiseflow-layer 组织 / img-gen 编译 / 指纹模板 bake / openclaw-weixin 插件安装 / entrypoint 渲染逻辑。
 - **文档收尾**：docs/workspace-bootstrap-files.md 的 skill 表、CHANGELOG 旧条目仍含旧 crew 名，待内容合写时一并更新。

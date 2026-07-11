@@ -466,6 +466,17 @@ elif [ "$NEEDS_INSTALL" = "true" ]; then
   echo "✅ Build complete"
 fi
 
+# ─── camoufox-cli 浏览器二进制（反指纹 Firefox，browser-guide 主推） ──────
+# camoufox-cli install 自带幂等：已装版本 === 当前版本时打印 "already up to date" 并返回
+# （camoufox-cli/dist/install.js:118）。首次下载 ~557MB；仅当 camoufox-cli npm 包升级
+# 导致版本漂移时才重下。用户电脑已有则无害跳过。
+if command -v camoufox-cli >/dev/null 2>&1; then
+  echo "🌐 Ensuring camoufox browser binary (idempotent)..."
+  camoufox-cli install || echo "  ⚠️  camoufox-cli install failed (可后续手动 camoufox-cli install)"
+else
+  echo "  ⚠️  camoufox-cli not on PATH; skip browser binary. 全局装: npm i -g camoufox-cli"
+fi
+
 # ─── 重启 gateway service（如果正在运行） ─────────────────────────
 if [ "$NO_RESTART" = "true" ]; then
   echo "⏭️  Skipping gateway restart (--no-restart)"

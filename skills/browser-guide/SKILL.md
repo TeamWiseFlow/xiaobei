@@ -54,17 +54,24 @@ metadata:
 
 ## 3. 内置 `browser` tool 使用要点（**fallback 而已**）
 
-### 3.1 什么场景用
+> 浏览器转向后（spec `browser-stack-replacement-spec-2026-07.md`），内置 `browser` tool 的 target 取值收敛为：
+> - `target=camoufox`：**主力**，走 forked camoufox-cli（见 §2，本 skill 默认即此）
+> - `target=host`：fallback，走真机 Chrome（`existing-session` + chrome-mcp relay）；`local-managed` 分支已 patch 删掉（不再额外下 Chromium）
+> - `target=node`：fallback，走远端 Chrome（`remote-cdp`）
+> - `target=sandbox`：**已删**（sandbox 整条路移除，由 `target=camoufox` 替代）
+
+### 3.1 什么场景用 target=host / node
 - §1 列的 4 种"兜底场景"：**用户实时操作 / camoufox 风控 / 用户明确要求 / 调试**
+- 这些场景才显式传 `target=host`（或 `node` 走远端），其余一律 `target=camoufox`（或不传，默认 camoufox）
 
 ### 3.2 默认配置（用户已配）
-- `browser.headless: false`（有头模式）
+- `browser.headless: false`（有头模式，仅 host 路径生效）
 - `browser.attachOnly: false`
 - `browser.defaultProfile: openclaw`
 
 ### 3.3 注意事项
 - **不**主动改 `openclaw.json` 的 browser 配置（即使 camoufox 不灵）
-- cookie 不走中央存储（browser tool 用内置 Chrome profile）—— 跟 camoufox 路径隔离
+- cookie 不走中央存储（host/node 路径用真机/远端 Chrome 自带 profile）—— 跟 camoufox 路径隔离
 - 调试 / 排错可临时改 `headless: true`，但**必须告知用户**，并完成后恢复
 
 ---
