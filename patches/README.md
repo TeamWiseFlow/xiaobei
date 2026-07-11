@@ -19,7 +19,7 @@ wiseflow 针对原版 openclaw 提供的非侵入式补丁与依赖覆盖，由 
 
 ### 1b. browser-camoufox-pivot per-file 补丁（`browser-camoufox-pivot/patches/`）
 
-浏览器栈转向 step 3（3a 增量 + 3b 减法 + doc）的 35 个**单文件 patch**，按「一个 patch 只改一个上游文件」拆分（原 001 monolith 35 文件合一失效面太大，上游漂一个文件就挂整条）。命名 `NN-{mod|del}-<path--with--dashes>.patch`，按文件名 sort 顺序应用；各 patch 改不同文件、彼此独立。内容：3a 加 `camoufox` target + adapter 早返回；3b 删 sandbox target + 删 host `local-managed` 分支 + 删 `src/agents/sandbox/browser*.ts` + bridge-server sandbox 桥 + `plugin-sdk/browser-bridge.*` facade + `--browser` CLI flag + `/sandbox/novnc` route；`docs/tools/browser.md` 改双线模型。线 2（host/node + existing-session/remote-cdp）保留。`apply-addons.sh` 在基础 patch 循环后应用此子目录。
+浏览器栈转向 step 3（3a 增量 + 3b 减法 + doc）的 35 个**单文件 patch**，按「一个 patch 只改一个上游文件」拆分（原 001 monolith 35 文件合一失效面太大，上游漂一个文件就挂整条）。命名 `NN-{mod|del}-<path--with--dashes>.patch`，按文件名 sort 顺序应用；各 patch 改不同文件、彼此独立。内容：3a 加 `camoufox` target + adapter 早返回 + **default 改成 camoufox**（`browser-tool.ts`：无 target 无 node 无 existing-session profile 时走 camoufox，3b 删了 local-managed 故旧默认路径已死；description 同步成 `Default: camoufox`；upload 路径校验前置到 camoufox 早返回前，闭合 camoufox+upload 绕过 `resolveExistingUploadPaths` 的安全缺口）；3b 删 sandbox target + 删 host `local-managed` 分支 + 删 `src/agents/sandbox/browser*.ts` + bridge-server sandbox 桥 + `plugin-sdk/browser-bridge.*` facade + `--browser` CLI flag + `/sandbox/novnc` route；`docs/tools/browser.md` 改双线模型。线 2（host/node + existing-session/remote-cdp）保留，测试里测 host 行为的 case 显式 `target: "host"`。`apply-addons.sh` 在基础 patch 循环后应用此子目录。
 
 ### 1c. browser-camoufox-pivot 新增文件（`browser-camoufox-pivot/files/`）
 
