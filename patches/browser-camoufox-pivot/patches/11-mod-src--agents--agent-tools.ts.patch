@@ -1,0 +1,20 @@
+diff --git a/src/agents/agent-tools.ts b/src/agents/agent-tools.ts
+index ea94f258a7..acfda325ab 100644
+--- a/src/agents/agent-tools.ts
++++ b/src/agents/agent-tools.ts
+@@ -947,7 +947,6 @@ export function createOpenClawCodingTools(options?: {
+             requesterSenderId: options?.senderId,
+             sessionId: options?.sessionId,
+             oneShotCliRun: options?.oneShotCliRun,
+-            sandboxBrowserBridgeUrl: sandbox?.browser?.bridgeUrl,
+             allowHostBrowserControl: sandbox ? sandbox.browserAllowHostControl : true,
+             sandboxed: Boolean(sandbox),
+             pluginToolAllowlist,
+@@ -1013,7 +1012,6 @@ export function createOpenClawCodingTools(options?: {
+     ...(includeChannelTools ? listChannelAgentTools({ cfg: options?.config }) : []),
+     ...(includeOpenClawTools
+       ? createOpenClawTools({
+-          sandboxBrowserBridgeUrl: sandbox?.browser?.bridgeUrl,
+           allowHostBrowserControl: sandbox ? sandbox.browserAllowHostControl : true,
+           agentSessionKey: options?.sessionKey,
+           runId: options?.runId,

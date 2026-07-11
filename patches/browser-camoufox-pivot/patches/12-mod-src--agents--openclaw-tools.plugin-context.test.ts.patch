@@ -1,0 +1,18 @@
+diff --git a/src/agents/openclaw-tools.plugin-context.test.ts b/src/agents/openclaw-tools.plugin-context.test.ts
+index 33998fea38..dc3a268912 100644
+--- a/src/agents/openclaw-tools.plugin-context.test.ts
++++ b/src/agents/openclaw-tools.plugin-context.test.ts
+@@ -151,13 +151,11 @@ describe("openclaw plugin tool context", () => {
+     const result = resolveOpenClawPluginToolInputs({
+       options: {
+         config: {} as never,
+-        sandboxBrowserBridgeUrl: "http://127.0.0.1:9999",
+         allowHostBrowserControl: true,
+       },
+     });
+ 
+     expect(result.context.browser).toStrictEqual({
+-      sandboxBridgeUrl: "http://127.0.0.1:9999",
+       allowHostControl: true,
+     });
+   });

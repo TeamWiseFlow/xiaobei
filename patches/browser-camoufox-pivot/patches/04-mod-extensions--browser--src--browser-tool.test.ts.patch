@@ -1,0 +1,54 @@
+diff --git a/extensions/browser/src/browser-tool.test.ts b/extensions/browser/src/browser-tool.test.ts
+index a612e45485..58f82ca0aa 100644
+--- a/extensions/browser/src/browser-tool.test.ts
++++ b/extensions/browser/src/browser-tool.test.ts
+@@ -792,7 +792,7 @@ describe("browser tool snapshot maxChars", () => {
+     setResolvedBrowserProfiles({
+       user: { driver: "existing-session", attachOnly: true, color: "#00AA00" },
+     });
+-    const tool = createBrowserTool({ sandboxBridgeUrl: "http://127.0.0.1:9999" });
++    const tool = createBrowserTool({});
+     await tool.execute?.("call-1", {
+       action: "snapshot",
+       target: "host",
+@@ -808,7 +808,7 @@ describe("browser tool snapshot maxChars", () => {
+     setResolvedBrowserProfiles({
+       "chrome-live": { driver: "existing-session", attachOnly: true, color: "#00AA00" },
+     });
+-    const tool = createBrowserTool({ sandboxBridgeUrl: "http://127.0.0.1:9999" });
++    const tool = createBrowserTool({});
+     await tool.execute?.("call-1", {
+       action: "snapshot",
+       target: "host",
+@@ -820,22 +820,6 @@ describe("browser tool snapshot maxChars", () => {
+     expect(opts.profile).toBe("chrome-live");
+   });
+ 
+-  it('rejects profile="user" with target="sandbox"', async () => {
+-    setResolvedBrowserProfiles({
+-      user: { driver: "existing-session", attachOnly: true, color: "#00AA00" },
+-    });
+-    const tool = createBrowserTool({ sandboxBridgeUrl: "http://127.0.0.1:9999" });
+-
+-    await expect(
+-      tool.execute?.("call-1", {
+-        action: "snapshot",
+-        profile: "user",
+-        target: "sandbox",
+-        snapshotFormat: "ai",
+-      }),
+-    ).rejects.toThrow(/profile="user" cannot use the sandbox browser/i);
+-  });
+-
+   it("lets the server choose snapshot format when the user does not request one", async () => {
+     const tool = createBrowserTool();
+     await tool.execute?.("call-1", { action: "snapshot", target: "host", profile: "user" });
+@@ -1173,7 +1157,7 @@ describe("browser tool snapshot maxChars", () => {
+ 
+   it("keeps sandbox bridge url when node proxy is available", async () => {
+     mockSingleBrowserProxyNode();
+-    const tool = createBrowserTool({ sandboxBridgeUrl: "http://127.0.0.1:9999" });
++    const tool = createBrowserTool({});
+     await tool.execute?.("call-1", { action: "status" });
+ 
+     const bridgeUrl = lastMockCallArg<string>(browserClientMocks.browserStatus, 0);

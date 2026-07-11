@@ -1,0 +1,29 @@
+diff --git a/src/agents/sandbox/docker-backend.ts b/src/agents/sandbox/docker-backend.ts
+index 4aa4518de1..d57e5f3d6a 100644
+--- a/src/agents/sandbox/docker-backend.ts
++++ b/src/agents/sandbox/docker-backend.ts
+@@ -21,15 +21,9 @@ import {
+ function resolveConfiguredDockerRuntimeImage(params: {
+   config: CreateSandboxBackendParams["cfg"] | import("../../config/config.js").OpenClawConfig;
+   agentId?: string;
+-  configLabelKind?: string;
+ }): string {
+   const sandboxCfg = resolveSandboxConfigForAgent(params.config, params.agentId);
+-  switch (params.configLabelKind) {
+-    case "BrowserImage":
+-      return sandboxCfg.browser.image;
+-    default:
+-      return sandboxCfg.docker.image;
+-  }
++  return sandboxCfg.docker.image;
+ }
+ 
+ export async function createDockerSandboxBackend(
+@@ -136,7 +130,6 @@ export const dockerSandboxBackendManager: SandboxBackendManager = {
+     const configuredImage = resolveConfiguredDockerRuntimeImage({
+       config,
+       agentId,
+-      configLabelKind: entry.configLabelKind,
+     });
+     return {
+       running: state.running,

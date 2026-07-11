@@ -439,7 +439,7 @@ browser tool execute(target)
 
 1. ✅ **fork camoufox-cli**（spec §1）——独立分支，不碰 extension。
 2. ✅ **写 `camoufox-cli.adapter.ts`**：17 action → camoufox-cli 命令翻译 + JSON-over-unix-socket 通信。这是本路线唯一的新 extension 代码。
-3. ✅ **patch extension**（一次性）：
+3. ✅ **patch extension**（一次性，拆成 35 个单文件 patch 在 `browser-camoufox-pivot/patches/`，按「一个 patch 只改一个上游文件」降低失效面）：
    - `browser-tool.schema.ts`：`BROWSER_TARGETS` 删 `sandbox`、加 `camoufox`；
    - `browser-tool.ts`：删 sandbox 分发分支，加 camoufox 分支调 adapter；
    - `profile-capabilities.ts` / `chrome.ts` / `ensureBrowserAvailable`：删 `local-managed` 分支及 Chromium 下载逻辑；

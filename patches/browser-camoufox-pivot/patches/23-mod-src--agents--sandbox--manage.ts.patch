@@ -1,0 +1,106 @@
+diff --git a/src/agents/sandbox/manage.ts b/src/agents/sandbox/manage.ts
+index 1b1088e29a..aa7a7ffe23 100644
+--- a/src/agents/sandbox/manage.ts
++++ b/src/agents/sandbox/manage.ts
+@@ -1,19 +1,17 @@
+ /**
+  * CLI-facing sandbox management helpers.
+  *
+- * Lists and removes registered runtime and browser containers using backend manager status.
++ * Lists and removes registered runtime containers using backend manager status.
++ *
++ * Browser sandbox container management was removed (camoufox-cli pivot, see
++ * docs/browser-extension-replacement-research.md §12). Browser tooling now runs
++ * out-of-band via the browser extension; sandbox backends handle only filesystem + exec.
+  */
+ import { getRuntimeConfig } from "../../config/config.js";
+-import { stopBrowserBridgeServer } from "../../plugin-sdk/browser-bridge.js";
+ import { getSandboxBackendManager } from "./backend.js";
+-import { BROWSER_BRIDGES } from "./browser-bridges.js";
+-import { dockerSandboxBackendManager } from "./docker-backend.js";
+ import {
+-  readBrowserRegistry,
+   readRegistry,
+-  removeBrowserRegistryEntry,
+   removeRegistryEntry,
+-  type SandboxBrowserRegistryEntry,
+   type SandboxRegistryEntry,
+ } from "./registry.js";
+ import { resolveSandboxAgentId } from "./shared.js";
+@@ -23,20 +21,6 @@ export type SandboxContainerInfo = SandboxRegistryEntry & {
+   imageMatch: boolean;
+ };
+ 
+-export type SandboxBrowserInfo = SandboxBrowserRegistryEntry & {
+-  running: boolean;
+-  imageMatch: boolean;
+-};
+-
+-function toBrowserDockerRuntimeEntry(entry: SandboxBrowserRegistryEntry): SandboxRegistryEntry {
+-  return {
+-    ...entry,
+-    backendId: "docker",
+-    runtimeLabel: entry.containerName,
+-    configLabelKind: "BrowserImage",
+-  };
+-}
+-
+ /** Lists registered sandbox containers with live backend status and config-label match state. */
+ export async function listSandboxContainers(): Promise<SandboxContainerInfo[]> {
+   const config = getRuntimeConfig();
+@@ -71,30 +55,6 @@ export async function listSandboxContainers(): Promise<SandboxContainerInfo[]> {
+   return results;
+ }
+ 
+-/** Lists registered browser sandbox containers with live Docker status. */
+-export async function listSandboxBrowsers(): Promise<SandboxBrowserInfo[]> {
+-  const config = getRuntimeConfig();
+-  const registry = await readBrowserRegistry();
+-  const results: SandboxBrowserInfo[] = [];
+-
+-  for (const entry of registry.entries) {
+-    const agentId = resolveSandboxAgentId(entry.sessionKey);
+-    const runtime = await dockerSandboxBackendManager.describeRuntime({
+-      entry: toBrowserDockerRuntimeEntry(entry),
+-      config,
+-      agentId,
+-    });
+-    results.push({
+-      ...entry,
+-      image: runtime.actualConfigLabel ?? entry.image,
+-      running: runtime.running,
+-      imageMatch: runtime.configLabelMatch,
+-    });
+-  }
+-
+-  return results;
+-}
+-
+ /** Removes one sandbox container from its backend and registry. */
+ export async function removeSandboxContainer(containerName: string): Promise<void> {
+   const config = getRuntimeConfig();
+@@ -110,24 +70,3 @@ export async function removeSandboxContainer(containerName: string): Promise<voi
+   }
+   await removeRegistryEntry(containerName);
+ }
+-
+-/** Removes one browser sandbox container, registry entry, and any in-process bridge server. */
+-export async function removeSandboxBrowserContainer(containerName: string): Promise<void> {
+-  const config = getRuntimeConfig();
+-  const registry = await readBrowserRegistry();
+-  const entry = registry.entries.find((item) => item.containerName === containerName);
+-  if (entry) {
+-    await dockerSandboxBackendManager.removeRuntime({
+-      entry: toBrowserDockerRuntimeEntry(entry),
+-      config,
+-    });
+-  }
+-  await removeBrowserRegistryEntry(containerName);
+-
+-  for (const [sessionKey, bridge] of BROWSER_BRIDGES.entries()) {
+-    if (bridge.containerName === containerName) {
+-      await stopBrowserBridgeServer(bridge.bridge.server).catch(() => undefined);
+-      BROWSER_BRIDGES.delete(sessionKey);
+-    }
+-  }
+-}

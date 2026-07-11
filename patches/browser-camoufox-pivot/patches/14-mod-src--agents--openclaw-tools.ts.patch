@@ -1,0 +1,12 @@
+diff --git a/src/agents/openclaw-tools.ts b/src/agents/openclaw-tools.ts
+index 195643799f..e469866cee 100644
+--- a/src/agents/openclaw-tools.ts
++++ b/src/agents/openclaw-tools.ts
+@@ -84,7 +84,6 @@ let openClawToolsDeps: OpenClawToolsDeps = defaultOpenClawToolsDeps;
+ 
+ export function createOpenClawTools(
+   options?: {
+-    sandboxBrowserBridgeUrl?: string;
+     allowHostBrowserControl?: boolean;
+     agentSessionKey?: string;
+     /**

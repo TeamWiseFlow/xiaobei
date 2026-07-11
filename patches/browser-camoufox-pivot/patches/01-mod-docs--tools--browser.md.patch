@@ -1,0 +1,89 @@
+diff --git a/docs/tools/browser.md b/docs/tools/browser.md
+index fe4ba5731a..022977b505 100644
+--- a/docs/tools/browser.md
++++ b/docs/tools/browser.md
+@@ -1,35 +1,54 @@
+ ---
+-summary: "Integrated browser control service + action commands"
++summary: "Integrated browser control service + action commands (dual-line: camoufox daily driver + host/node for existing-session/remote-cdp)"
+ read_when:
+   - Adding agent-controlled browser automation
+   - Debugging why openclaw is interfering with your own Chrome
+   - Implementing browser settings + lifecycle in the macOS app
+-title: "Browser (OpenClaw-managed)"
++title: "Browser (dual-line: camoufox + host/node)"
+ ---
+ 
+-OpenClaw can run a **dedicated Chrome/Brave/Edge/Chromium profile** that the agent controls.
+-It is isolated from your personal browser and is managed through a small local
+-control service inside the Gateway (loopback only).
++OpenClaw's `browser` tool runs on a **dual-line** model:
++
++- **Line 1 — daily driver (`target: "camoufox"`)**: a forked `camoufox-cli`
++  (anti-fingerprint Firefox) daemon, driven over JSON-on-unix-socket. No
++  container, no CDP, no Chromium download. Persistent profile lives on the host
++  filesystem. This is the default for general agent automation and the strongest
++  anti-detection path.
++- **Line 2 — special cases (`target: "host"` / `target: "node"`)**: reuse a
++  real signed-in Chrome via Chrome MCP (`existing-session`), or attach to a
++  remote Chromium over CDP (`remote-cdp`). Use these when you need existing
++  login state or a remote browser; they go through the loopback control service
++  inside the Gateway (loopback only).
++
++The sandboxed Docker browser target and the OpenClaw-launched local-managed
++Chrome profile have been **removed**. There is no `target: "sandbox"` and no
++`openclaw` managed-profile launch; `openclaw browser start` for a managed
++profile no longer applies. Use `target: "camoufox"` for an isolated agent
++browser, or `target: "host"` with an `existing-session`/`remote-cdp` profile
++for Line 2.
+ 
+ Beginner view:
+ 
+-- Think of it as a **separate, agent-only browser**.
+-- The `openclaw` profile does **not** touch your personal browser profile.
+-- The agent can **open tabs, read pages, click, and type** in a safe lane.
+-- The built-in `user` profile attaches to your real signed-in Chrome session via Chrome MCP.
++- For most agent browser work, use **`target: "camoufox"`** — an isolated,
++  anti-detection Firefox the agent drives directly.
++- Use **`target: "host"`** with `profile: "user"` (or a custom `existing-session`
++  profile) when you need the user's real signed-in Chrome session.
++- Use **`target: "host"`** / **`target: "node"`** with a `remote-cdp` profile
++  to attach to a remote Chromium.
+ 
+ ## What you get
+ 
+-- A separate browser profile named **openclaw** (orange accent by default).
++- A camoufox-cli daemon (Line 1) for isolated, anti-detection agent automation.
++- Existing-session Chrome MCP attach and remote-cdp attach (Line 2).
+ - Deterministic tab control (list/open/focus/close).
+ - Agent actions (click/type/drag/select), snapshots, screenshots, PDFs.
+ - A bundled `browser-automation` skill that teaches agents the snapshot,
+   stable-tab, stale-ref, and manual-blocker recovery loop when the browser
+   plugin is enabled.
+-- Optional multi-profile support (`openclaw`, `work`, `remote`, ...).
++- Optional multi-profile support for Line 2 (`user`, `work`, `remote`, ...).
+ 
+-This browser is **not** your daily driver. It is a safe, isolated surface for
+-agent automation and verification.
++The camoufox Line 1 browser is the default daily driver. Line 2 is for when you
++specifically need existing login state or a remote browser.
+ 
+ ## Quick start
+ 
+@@ -851,10 +870,12 @@ How it maps:
+ - `browser screenshot` captures pixels (full page, element, or labeled refs).
+ - `browser doctor` checks Gateway, plugin, profile, browser, and tab readiness.
+ - `browser` accepts:
+-  - `profile` to choose a named browser profile (openclaw, chrome, or remote CDP).
+-  - `target` (`sandbox` | `host` | `node`) to select where the browser lives.
+-  - In sandboxed sessions, `target: "host"` requires `agents.defaults.sandbox.browser.allowHostControl=true`.
+-  - If `target` is omitted: sandboxed sessions default to `sandbox`, non-sandbox sessions default to `host`.
++  - `profile` to choose a named browser profile (e.g. `user`, a custom `existing-session` profile, or a `remote-cdp` profile).
++  - `target` (`camoufox` | `host` | `node`) to select where the browser lives.
++  - `target: "camoufox"` (Line 1) drives the forked camoufox-cli daemon — the default daily driver, no container/CDP/Chromium.
++  - `target: "host"` (Line 2) uses an `existing-session` or `remote-cdp` profile through the local loopback control service.
++  - `target: "node"` (Line 2) proxies browser actions to a connected node host that has the browser.
++  - If `target` is omitted, the tool defaults to `camoufox` (Line 1 daily driver).
+   - If a browser-capable node is connected, the tool may auto-route to it unless you pin `target="host"` or `target="node"`.
+ 
+ This keeps the agent deterministic and avoids brittle selectors.

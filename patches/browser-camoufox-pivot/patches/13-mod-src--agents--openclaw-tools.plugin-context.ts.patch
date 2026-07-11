@@ -1,0 +1,20 @@
+diff --git a/src/agents/openclaw-tools.plugin-context.ts b/src/agents/openclaw-tools.plugin-context.ts
+index 9f46ecd404..de1b8c2609 100644
+--- a/src/agents/openclaw-tools.plugin-context.ts
++++ b/src/agents/openclaw-tools.plugin-context.ts
+@@ -32,7 +32,6 @@ export type OpenClawPluginToolOptions = {
+    * resources alive after emitting their result.
+    */
+   oneShotCliRun?: boolean;
+-  sandboxBrowserBridgeUrl?: string;
+   allowHostBrowserControl?: boolean;
+   sandboxed?: boolean;
+   allowGatewaySubagentBinding?: boolean;
+@@ -88,7 +87,6 @@ export function resolveOpenClawPluginToolInputs(params: {
+       sessionId: options?.sessionId,
+       activeModel,
+       browser: {
+-        sandboxBridgeUrl: options?.sandboxBrowserBridgeUrl,
+         allowHostControl: options?.allowHostBrowserControl,
+       },
+       messageChannel: options?.agentChannel,

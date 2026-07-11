@@ -1,0 +1,15 @@
+diff --git a/extensions/browser/src/browser-tool.schema.ts b/extensions/browser/src/browser-tool.schema.ts
+index 31bb35ad73..a8fd435776 100644
+--- a/extensions/browser/src/browser-tool.schema.ts
++++ b/extensions/browser/src/browser-tool.schema.ts
+@@ -49,7 +49,9 @@ const BROWSER_TOOL_ACTIONS = [
+   "act",
+ ] as const;
+ 
+-const BROWSER_TARGETS = ["sandbox", "host", "node"] as const;
++// camoufox: forked camoufox-cli daemon via unix-socket (spec §11 阶段一 step 3a).
++// sandbox removed in 3b (camoufox-cli pivot): only host/node/camoufox remain.
++const BROWSER_TARGETS = ["host", "node", "camoufox"] as const;
+ 
+ const BROWSER_SNAPSHOT_FORMATS = ["aria", "ai"] as const;
+ const BROWSER_SNAPSHOT_MODES = ["efficient"] as const;
