@@ -1,12 +1,7 @@
 {
   "browser": {
     "enabled": true,
-    "headless": false,
-    "defaultProfile": "openclaw",
-    "extraArgs": [
-      "--window-size=1920,1080",
-      "--window-position=0,0"
-    ],
+    "headless": true,
     "ssrfPolicy": {
       "dangerouslyAllowPrivateNetwork": true
     }

@@ -297,6 +297,8 @@ fi
 
 
 # ─── 安装全局共享技能（项目根目录 skills/） ──────────────────────
+# 软链而非拷贝：skill 在仓里改完即生效，运行实例无需重跑 setup。
+# openclaw skill loader 跟随软链（local-loader.ts readdirSync isDirectory + realpathSync）。
 GLOBAL_SKILL_COUNT=0
 if [ -d "$PROJECT_ROOT/skills" ]; then
   mkdir -p "$OPENCLAW_HOME/skills"
@@ -304,7 +306,7 @@ if [ -d "$PROJECT_ROOT/skills" ]; then
     if [ -f "${skill_dir}SKILL.md" ]; then
       skill_name="$(basename "$skill_dir")"
       rm -rf "$OPENCLAW_HOME/skills/$skill_name"
-      cp -R "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
+      ln -s "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
       GLOBAL_SKILL_COUNT=$((GLOBAL_SKILL_COUNT + 1))
       append_global_shared_skill "$skill_name"
     fi
@@ -315,53 +317,60 @@ if [ "$GLOBAL_SKILL_COUNT" -gt 0 ]; then
 fi
 
 
-# ─── 安装全仓统一 Node.js 依赖到 ~/.openclaw/node_modules ──────────
-# 扫描 skills/ 和 addons/ 下所有 package.json，合并 dependencies。
-# 内容哈希守卫：仅当依赖集发生变化（或 node_modules 不存在）时才执行 npm install。
-# Node.js 从 ~/.openclaw/skills/**  或 ~/.openclaw/workspace-**/skills/** 运行脚本时，
-# 向上解析模块会自然命中 ~/.openclaw/node_modules，无需 NODE_PATH 也无需改脚本。
+# ─── 安装各 skill 的 Node.js 依赖（per-skill，写进仓内 skill 目录）─────
+# skill 走软链部署后，Node 从脚本 realpath（仓内 skill 目录）向上解析模块，
+# 命中 skill 自己的 node_modules。故对每个含 package.json 的 skill 单独
+# npm install --omit=dev，node_modules 落在仓内 skill 目录（.gitignore 已覆盖
+# node_modules/ 与 package-lock.json），不污染 ~/.openclaw。
+# 内容哈希守卫：仅当任一 skill 的 package.json 发生变化时才重装。
 SKILL_PKG_HASH_FILE="$OPENCLAW_HOME/.skill-pkg-hash"
 
-merged_deps_json="$(node -e "
+# 收集所有含 package.json + SKILL.md 的 skill 目录（skills/ + crews/*/skills/）
+skill_pkg_dirs=()
+while IFS= read -r line; do
+  [ -n "$line" ] && skill_pkg_dirs+=("$line")
+done < <(node -e "
   const fs = require('fs');
   const path = require('path');
-  const deps = {};
+  const roots = ['$PROJECT_ROOT/skills', '$CREWS_DIR'];
+  const out = [];
   function scan(dir) {
     if (!fs.existsSync(dir)) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (entry.name === 'node_modules' || entry.name === '.git') continue;
+      if (!entry.isDirectory()) continue;
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        scan(full);
-      } else if (entry.name === 'package.json') {
-        try {
-          const pkg = JSON.parse(fs.readFileSync(full, 'utf8'));
-          Object.assign(deps, pkg.dependencies || {});
-        } catch {}
+      if (fs.existsSync(path.join(full, 'SKILL.md')) && fs.existsSync(path.join(full, 'package.json'))) {
+        out.push(full);
       }
+      scan(full);
     }
   }
-  scan('$PROJECT_ROOT/skills');
-  const sorted = Object.fromEntries(Object.entries(deps).sort());
-  console.log(JSON.stringify(sorted));
-" 2>/dev/null || echo '{}')"
+  for (const r of roots) scan(r);
+  console.log(out.join('\n'));
+" 2>/dev/null)
 
-current_pkg_hash="$(printf '%s' "$merged_deps_json" | _md5)"
+# 哈希所有 skill package.json 内容，作为重装判据
+current_pkg_hash=""
+for d in "${skill_pkg_dirs[@]}"; do
+  current_pkg_hash="$current_pkg_hash$(_md5 < "$d/package.json")"
+done
+current_pkg_hash="$(printf '%s' "$current_pkg_hash" | _md5)"
 stored_pkg_hash="$(cat "$SKILL_PKG_HASH_FILE" 2>/dev/null || echo '')"
 
-if [ "$current_pkg_hash" != "$stored_pkg_hash" ] || [ ! -d "$OPENCLAW_HOME/node_modules" ]; then
-  echo "📦 Installing skill Node.js dependencies to ~/.openclaw/..."
-  MERGED_DEPS="$merged_deps_json" SKILL_OPENCLAW_HOME="$OPENCLAW_HOME" node -e "
-    const deps = JSON.parse(process.env.MERGED_DEPS);
-    const pkg = { name: 'openclaw-skills', version: '1.0.0', private: true, dependencies: deps };
-    require('fs').writeFileSync(
-      require('path').join(process.env.SKILL_OPENCLAW_HOME, 'package.json'),
-      JSON.stringify(pkg, null, 2) + '\n'
-    );
-  "
-  npm install --prefix "$OPENCLAW_HOME" --no-audit --no-fund --loglevel=warn
-  echo "$current_pkg_hash" > "$SKILL_PKG_HASH_FILE"
-  echo "✅ Skill dependencies installed (hash: ${current_pkg_hash:0:8})"
+if [ "$current_pkg_hash" != "$stored_pkg_hash" ]; then
+  if [ ${#skill_pkg_dirs[@]} -gt 0 ]; then
+    echo "📦 Installing per-skill Node.js dependencies..."
+    for d in "${skill_pkg_dirs[@]}"; do
+      echo "  → ${d#$PROJECT_ROOT/}"
+      (cd "$d" && npm install --omit=dev --no-audit --no-fund --loglevel=warn) \
+        || echo "  ⚠️  npm install failed in $d" >&2
+    done
+    echo "$current_pkg_hash" > "$SKILL_PKG_HASH_FILE"
+    echo "✅ Skill dependencies installed (hash: ${current_pkg_hash:0:8})"
+  else
+    echo "✅ No skill package.json found"
+  fi
 else
   echo "✅ Skill dependencies up to date (hash: ${current_pkg_hash:0:8})"
 fi

@@ -24,7 +24,7 @@ build 期由 Dockerfile 阶段 3（wiseflow-layer）把 `config-templates/opencl
 - **addons**：删 `officials` / `official-plus`（D8 扁平化后无 addon 结构）；保留 `openclaw-weixin`
 - **awada**：`enabled: false`（D10）
 - **models**：保留 awk provider（用户 AWK_API_KEY）；视频生成模型走 relay（不直配上游 key，D12）
-- **browser**：headless=true（D18 camoufox 主）；保留 patchright override 供 fallback
+- **browser**：`headless=true`（D18 camoufox 主力无头省资源，这是浏览器栈转向的主因）；需手动登录/过风控（滑块等）的平台由 login-manager 指导显式 `camoufox-cli --headed`（走直接 exec，不经 browser tool，不受此全局开关约束）；patchright 已整体去掉（补充 C），线 2 fallback（host existing-session 真机 Chrome / node remote-cdp）走原版 playwright-core，不预设，按需启用
 
 ## relay 端点注入
 

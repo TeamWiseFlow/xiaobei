@@ -18,11 +18,14 @@ copy_crew_template_contents() {
 #   src_crew：仓库 crews/<id>/
 #   dest_ws：~/.openclaw/workspace-<id>/
 # 语义：
-#   - 对仓库里每个合法 skill（含 SKILL.md），rm -rf + cp -R 覆盖到 dest_ws/skills/<name>/
+#   - 对仓库里每个合法 skill（含 SKILL.md），rm -rf + ln -s 软链到 dest_ws/skills/<name>/
 #   - 不删除 dest_ws/skills/ 里仓库没有的 skill（保留部署实例自定义 skill）
 #   - 不碰 dest_ws 下的 AGENTS.md / TOOLS.md / Memory 等（保留用户编辑）
-#   - 对带 package.json 的 skill 跑 npm install --production
-# 幂等：每次调用都把仓库 skill 当前内容刷下去，供 skill 更新传播到已部署 workspace。
+#   - node 依赖不在此装：由 apply-addons.sh per-skill npm install 写进仓内 skill 目录，
+#     Node 从脚本 realpath 向上解析命中 skill 自己的 node_modules
+# 软链而非拷贝：skill 在仓里改完即生效，运行实例无需重跑 setup。
+# openclaw skill loader 跟随软链（local-loader.ts readdirSync isDirectory + realpathSync）。
+# 幂等：dest 若是旧拷贝留下的真目录，rm -rf 清掉再 ln -s；已是正确软链则重建无害。
 sync_crew_skills() {
   local src_crew="$1"
   local dest_ws="$2"
@@ -40,19 +43,8 @@ sync_crew_skills() {
     [ -f "${skill_dir}SKILL.md" ] || continue
     skill_name="$(basename "$skill_dir")"
     rm -rf "$dest_skills/$skill_name"
-    cp -R "${skill_dir%/}" "$dest_skills/$skill_name"
+    ln -s "${skill_dir%/}" "$dest_skills/$skill_name"
     synced=$((synced + 1))
-  done
-
-  # 安装带 package.json 的 skill 依赖
-  local skill_pkg=""
-  for skill_pkg in "$dest_skills"/*/package.json; do
-    [ -f "$skill_pkg" ] || continue
-    skill_dir="$(dirname "$skill_pkg")"
-    skill_name="$(basename "$skill_dir")"
-    echo "  📦 installing deps for skill: $skill_name"
-    (cd "$skill_dir" && npm install --production --silent 2>/dev/null) || \
-      echo "  ⚠️  npm install failed for skill: $skill_name" >&2
   done
 
   [ "$synced" -gt 0 ] && echo "  ✅ synced $synced crew skill(s) → $(basename "$dest_ws")"

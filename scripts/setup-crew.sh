@@ -375,7 +375,7 @@ if [ -f "$CONFIG_PATH" ]; then
     "$PROJECT_ROOT" \
     "$OPENCLAW_HOME")"
 
-  MAIN_SKILLS_RESULT="$MAIN_SKILLS_RESULT" IT_SKILLS_RESULT="$IT_SKILLS_RESULT" OPENCLAW_HOME="$OPENCLAW_HOME" node -e "
+  MAIN_SKILLS_RESULT="$MAIN_SKILLS_RESULT" IT_SKILLS_RESULT="$IT_SKILLS_RESULT" OPENCLAW_HOME="$OPENCLAW_HOME" PROJECT_ROOT="$PROJECT_ROOT" node -e "
     const fs = require('fs');
     const path = require('path');
     const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
@@ -496,6 +496,27 @@ if [ -f "$CONFIG_PATH" ]; then
       c.bindings.push(
         { agentId: 'main', comment: 'openclaw-weixin -> Main Agent onboarding entry', match: { channel: 'openclaw-weixin' } }
       );
+    }
+
+    // 注入 skill 软链 target 白名单（软链方案，spec §2.3 演进）
+    // crew skills 软链到 ~/.openclaw/workspace-<id>/skills/，source="openclaw-workspace"
+    // 走 containment gate（shouldEnforceConfiguredSkillRootContainment=true），
+    // 软链 target（仓路径）必须在 allowSymlinkTargets 里才不被拒（否则 warn escaped skill path）。
+    // managed skills（~/.openclaw/skills）走 "openclaw-managed" 无 gate，不需要，但加上无害且未来对齐。
+    // 仅源码部署生效（Docker 不跑 setup-crew.sh，Docker 用 COPY 不软链）。
+    const projectRoot = process.env.PROJECT_ROOT;
+    if (projectRoot) {
+      const targets = [
+        path.join(projectRoot, 'crews'),
+        path.join(projectRoot, 'skills'),
+      ].map((d) => { try { return fs.realpathSync(d); } catch { return null; } })
+        .filter((d) => typeof d === 'string');
+      if (targets.length) {
+        if (!c.skills) c.skills = {};
+        if (!c.skills.load) c.skills.load = {};
+        const existing = Array.isArray(c.skills.load.allowSymlinkTargets) ? c.skills.load.allowSymlinkTargets : [];
+        c.skills.load.allowSymlinkTargets = [...new Set([...existing, ...targets])];
+      }
     }
 
     fs.writeFileSync('$CONFIG_PATH', JSON.stringify(c, null, 2) + '\\n');
