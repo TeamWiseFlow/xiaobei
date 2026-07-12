@@ -13,7 +13,7 @@ Follow these rules whenever you drive a browser against web pages.
 
 ## 0. 浏览器后端选择（先读这一节）
 
-本 skill 默认主力路径是 **`target=camoufox`**——即 wiseflow fork 的 `camoufox-cli`（vendored 在 `patches/camoufox-cli/`，build 后全局可用的 `camoufox-cli` 命令）。**下方所有操作命令、示例、selector 都只针对 `target=camoufox`** 写。
+本 skill 默认主力路径是 **`target=camoufox`**——即全局可用的 `camoufox-cli` 命令。**下方所有操作命令、示例、selector 都只针对 `target=camoufox`** 写。
 
 如果你当前是 **`target=host`**（existing-session 真机 Chrome + chrome-mcp relay）或 **`target=node`**（remote-cdp 远端 Chrome）：
 
@@ -31,7 +31,7 @@ camoufox-cli --session <name> [--persistent] [--headed|--headless] [--json] <com
 - **`--persistent`**：冻结指纹到 `~/.camoufox-cli/profiles/<name>/camoufox-cli.json`（首次生成后冻结）。持久化平台 session 必带；临时性 session（新闻等不登录站点）**不带**——走默认临时 profile，每次随机指纹，关闭自清。
 - **`--headed` / `--headless`**：有头 / 无头。**需要用户配合过验证码、扫码、收短信的，必须 `--headed`**（原则 2）。
 - **`--json`**：命令输出走 JSON 信封（`{ok, ...}` / `{error, ...}`），agent 解析稳定，推荐常带。
-- 命令集（fork 对比上游加了 `upload` / `identity export`，详见 `patches/camoufox-cli/README.md`）：
+- 命令集（含 `upload` / `identity export`）：
   `open / back / forward / reload / url / title / close / snapshot / click / fill / type / select / check / hover / press / text / eval / screenshot / pdf / scroll / wait / tabs / switch / close-tab / sessions / cookies / install / upload / identity`
 
 **fail-first 队列**：同一 session 已有命令在跑时，新命令**直接 fail**，返回文本：

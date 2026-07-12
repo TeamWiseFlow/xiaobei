@@ -12,7 +12,7 @@ metadata:
 
 **依赖技能**：`browser-guide`（浏览器操作最佳实践）
 
-> **主力后端 = `target=camoufox`**（forked `camoufox-cli`，vendored 在 `patches/camoufox-cli/`）。下方「§3 浏览器填报」的命令 / 示例 / 控件填写方法只针对 `target=camoufox`。
+> **主力后端 = `target=camoufox`**（`camoufox-cli`）。下方「§3 浏览器填报」的命令 / 示例 / 控件填写方法只针对 `target=camoufox`。
 > **`target=host` / `target=node`**：§1 信息搜集 / §2 字段清单 / §4 提交前确认 这些后端无关的步骤照本 skill 执行；§3 浏览器填报只按「流程 + 提示事项」走，不要照搬 `camoufox-cli ...` 命令——用你当前后端自带的浏览器工具语义调用即可。「逐字 type」「切页必暂存」「提交由人」这些约定是后端无关的，照本 skill 执行。
 
 ---

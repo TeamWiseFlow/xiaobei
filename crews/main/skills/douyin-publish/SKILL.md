@@ -1,6 +1,6 @@
 ---
 name: douyin-publish
-description: 通过浏览器自动化发布视频到抖音创作者中心（camoufox-cli 主推）。绕过抖音开放平台资质限制。
+description: 通过浏览器自动化发布视频到抖音创作者中心（camoufox-cli 主推）。
 metadata:
   openclaw:
     emoji: 🎤
@@ -29,7 +29,7 @@ metadata:
 3. 视频文件准备好（mp4）
 4. 抖音创作者中心已实名认证（必须，本人手机号 + 身份证）
 
-> **同时导入 cookie 和 UA**（原则 4，spec §4.2）：抖音设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。本 skill 脚本走持久化 session `douyin`（登录态 + 指纹冻结在 session profile 里），中央存储的 cookie/UA 仅用于探活与备份。
+> **同时导出 cookie 和 UA**（原则 4，spec §4.2）：抖音设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。本 skill 脚本走持久化 session `douyin`（登录态 + 指纹冻结在 session profile 里），**自身运行不读中央 cookie 文件**——探活也是 `open + snapshot` 看跳登录页，不走中央存储。导出 cookie+UA 落中央存储仅为**备份**（session profile 损坏时作重建起点）+ 与 login-manager 6 平台统一步骤保持一致。
 
 ---
 
@@ -110,8 +110,8 @@ camoufox-cli --session douyin --json close
 
 - 6 个子命令：login / upload / fill / publish / get-link / cleanup
 - run 命令一键跑全流程
-- 走 forked cli 持久化 session `douyin`（登录态 + 指纹冻结在 session profile 里）
-- 上传走 forked cli `upload` 命令（底层 Playwright `setInputFiles`，穿透 shadow DOM）
+- 走持久化 session `douyin`（登录态 + 指纹冻结在 session profile 里）
+- 上传走 `camoufox-cli upload` 命令（底层 Playwright `setInputFiles`，穿透 shadow DOM）
 - 等待页面状态变化（轮询 `body.innerText`）
 - 失败模式：DOM 改版 / 按钮找不到 / 转码超时
 
@@ -141,7 +141,7 @@ camoufox-cli --session douyin --json close
 
 - **触发**：抖音创作者中心前端改版
 - **症状**：selector 找不到（input / button 位置变化）
-- **workaround**：spike 验证后更新 selector；本轮交付 selector 是公开推测
+- **workaround**：部署后真机验证更新 selector（见 `docs/post-deploy-verification.md`）；首轮交付 selector 是公开推测
 
 ### pitfall: rate_limit_after_burst_publish
 
@@ -157,22 +157,6 @@ camoufox-cli --session douyin --json close
 
 ---
 
-## Spike 验证 checklist（部署后真机测试）
-
-> 跟 wechat-channels-publish 一样的 8 个 selector 需 spike 验证：
-> - 上传 input 元素（`input[type="file"][accept*="video"]`）
-> - 标题输入（`input[placeholder*="标题"]`）
-> - 描述 contenteditable（`div[contenteditable][data-placeholder*="描述"]`）
-> - 发布按钮（`button:has-text("发布")`）
-> - 上传成功文本（"上传成功"）
-> - 发布成功提示（"发布成功"）
-> - 视频管理页第一条 selector（`[class*="content-item"]:first-child`）
-> - 视频链接 selector（`a[href*="/video/"]` 或 data-aweme-id）
-
-**验收**：跑通一条真实视频从 upload 到 get-link 全流程。
-
----
-
 ## 凭据
 
 - 本 skill 只需要 `login-manager` 中央 cookie（session token，容器内闭环），不持任何抖音官方 API 凭据
@@ -185,4 +169,4 @@ camoufox-cli --session douyin --json close
 - Docker 内对内 crew exec full（无 allowlist 限制）
 - 限频建议：单抖音号每 24h ≤ 5 条发布；触发风控立即降级
 - 失败回退：浏览器模拟失败 → 维持现状（让用户自己手动发）
-- 抖音创作者中心 DOM 改版频繁：selector 需 spike 验证
+- 抖音创作者中心 DOM 改版频繁：selector 需部署后真机验证（见 `docs/post-deploy-verification.md`）

@@ -253,7 +253,7 @@ snapshot eval: document.querySelector('[data-testid="icon-verified"]') !== null
 **注意**：
 - view 数 Premium 账号可见；普通账号无
 - 30 min 后 stats 才稳定（X 算法）
-- 嵌入 evaluate 走 `document.querySelector('selector')?.innerText` —— selector 可能因 X UI 改版变，spike 验证
+- 嵌入 evaluate 走 `document.querySelector('selector')?.innerText` —— selector 可能因 X UI 改版变，部署后真机验证（见 `docs/post-deploy-verification.md`）
 
 ---
 

@@ -11,7 +11,7 @@ metadata:
 
 # 小红书社交互动
 
-通过 **camoufox-cli** 持久化 session（`xhs`，一个且只有一个持久化 session，fail-first 队列见 `patches/camoufox-cli/README.md`）代替用户在小红书（xhs）上完成社交互动。
+通过 **camoufox-cli** 持久化 session（`xhs`，一个且只有一个持久化 session，fail-first 队列：同 session 已有命令在跑时新命令直接 fail）代替用户在小红书（xhs）上完成社交互动。
 
 **前提条件**：先通过 login-manager skill 拿到有效 cookie + UA（详见 login-manager SKILL.md）：
 1. 开持久化 session `xhs-browse` 探活：`camoufox-cli --session xhs-browse --persistent --headless --json open "https://www.xiaohongshu.com/"` + `snapshot` 看是否跳登录页

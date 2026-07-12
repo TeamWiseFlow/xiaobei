@@ -23,7 +23,7 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 DB="$ROOT/db/published_track.db"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# camoufox-cli 路径（forked，vendored 在 patches/camoufox-cli/，build 后全局可用）
+# camoufox-cli 路径（全局可用）
 CAMOUFOX_CLI="${CAMOUFOX_CLI:-camoufox-cli}"
 
 # published-track 平台名 → 持久化 session 名映射
@@ -176,7 +176,7 @@ done
 
 if [ "$NEEDS_COOKIE" = true ]; then
   if ! command -v "$CAMOUFOX_CLI" >/dev/null 2>&1; then
-    echo "{\"ok\":false,\"error\":\"CAMOUFOX_CLI_NOT_FOUND\",\"platform\":\"$PLATFORM\",\"hint\":\"camoufox-cli 未找到，请确认 patches/camoufox-cli/ 已 build 并全局可用\"}"
+    echo "{\"ok\":false,\"error\":\"CAMOUFOX_CLI_NOT_FOUND\",\"platform\":\"$PLATFORM\",\"hint\":\"camoufox-cli 未找到，请确认已全局可用\"}"
     exit 1
   fi
 

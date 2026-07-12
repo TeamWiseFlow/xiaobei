@@ -2,7 +2,6 @@
 """douyin-publish — 抖音内容发布（浏览器模拟方案，forked camoufox-cli）
 
 改走浏览器模拟（forked camoufox-cli 持久化 session `douyin` + upload 命令）：
-- 不再依赖开放平台 H5 Schema / scope / 签名 / 中转页
 - 登录 https://creator.douyin.com/creator-micro/content/upload?enter_from=dou_web
 - 在创作者中心页面填表 + 上传视频 + 发布
 - 走 login-manager 中央 cookie + UA（spec §4 原则 4，同时导入）
@@ -17,7 +16,7 @@
   cleanup <session>       关闭 camoufox session
 
 依赖：
-- camoufox-cli（forked，vendored 在 patches/camoufox-cli/，build 后全局可用）
+- camoufox-cli（全局可用）
 - login-manager skill（cookie + UA 中央存储，平台 key: `douyin`，有头手动登录）
 
 参考：
@@ -186,7 +185,7 @@ def cmd_login() -> None:
 
 def cmd_upload(*, video: str, session: Optional[str] = None) -> None:
     """上传视频到创作者中心。session 默认走持久化 `douyin`（登录态在持久化 session 里，spec §5）。
-    同 session 已有命令在跑时，新命令 fail-first（见 patches/camoufox-cli/README.md）——agent 等当前操作完成再重试。"""
+    同 session 已有命令在跑时，新命令 fail-first（同 session 已有命令在跑时新命令直接 fail）——agent 等当前操作完成再重试。"""
     if not session:
         session = PERSISTENT_SESSION
     video_path = Path(video).resolve()

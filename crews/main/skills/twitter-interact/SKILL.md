@@ -230,7 +230,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 ### pitfall: X UI 改版 → selector 失效
 
 - **症状**：`[data-testid="like"]` 等找不到
-- **workaround**：本 skill selector 是公开推测，spike 验证后更新；当前 main agent 看到 exit 1 时**应**触发 selector 检查
+- **workaround**：本 skill selector 是公开推测，部署后真机验证更新（见 `docs/post-deploy-verification.md`）；当前 main agent 看到 exit 1 时**应**触发 selector 检查
 
 ---
 

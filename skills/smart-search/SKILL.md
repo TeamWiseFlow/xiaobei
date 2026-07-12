@@ -135,7 +135,7 @@ metadata:
 
 ## 浏览器操作最佳实践
 
-> **主力后端 = `target=camoufox`**（forked `camoufox-cli`，vendored 在 `patches/camoufox-cli/`）。下方命令 / 示例只针对 `target=camoufox`。
+> **主力后端 = `target=camoufox`**（`camoufox-cli`）。下方命令 / 示例只针对 `target=camoufox`。
 > **`target=host` / `target=node`**：只按本节「流程 + 提示事项」走，不要照搬 `camoufox-cli ...` 命令——用你当前后端自带的浏览器工具语义调用即可。页面加载等待、超时处理、登录墙 / CAPTCHA 处理约定是**后端无关**的，照本节执行。
 
 ### 临时性 session（推荐）
