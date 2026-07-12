@@ -1,7 +1,5 @@
 # v5.6.0 (2026-07-12)
 
-> **本版本聚焦产品拆分（client + relay 双仓）后的 client 侧改版**。所有变更与 `docs/product-split-plan.md` 对齐；openclaw 上游基线仍 v2026.6.10（与 v5.5.2 一致，本版本未做 openclaw 升级）。
-
 ### 浏览器栈整体替换（双线栈，spec `docs/browser-stack-replacement-spec-2026-07.md`）
 
 > 2026-07-11 ~ 07-12 落地。调研结论见 `docs/browser-extension-replacement-research.md` §12（架构转向，优先级最高）。

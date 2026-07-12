@@ -1,6 +1,12 @@
 #!/bin/bash
 # crew-workspaces.sh - shared helpers for deploying crew template directories
 
+# skill-wrappers.sh 提供 expose_skill_wrappers（D21 wrapper 暴露到 ~/.openclaw/bin）
+# 用 lazy source 避免循环依赖：仅在 sync_crew_skills 调用时确保已加载
+_skill_wrappers_sourced() {
+  type expose_skill_wrappers &>/dev/null
+}
+
 copy_crew_template_contents() {
   local source_dir="$1"
   local dest_dir="$2"
@@ -48,6 +54,15 @@ sync_crew_skills() {
   done
 
   [ "$synced" -gt 0 ] && echo "  ✅ synced $synced crew skill(s) → $(basename "$dest_ws")"
+
+  # D21 wrapper 暴露：把 src_skills 下顶层 wrapper 暴露到 ~/.openclaw/bin/
+  # （不走 dest_ws/skills，因 dest 是软链、链回 src；扫描 src 直接命中真 wrapper 文件）
+  if ! _skill_wrappers_sourced; then
+    local _script_dir
+    _script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    [ -f "$_script_dir/skill-wrappers.sh" ] && source "$_script_dir/skill-wrappers.sh"
+  fi
+  type expose_skill_wrappers &>/dev/null && expose_skill_wrappers "$src_skills"
 }
 
 ensure_soul_crew_type() {

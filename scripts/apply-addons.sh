@@ -54,6 +54,7 @@ while [ $# -gt 0 ]; do
 done
 
 source "$PROJECT_ROOT/scripts/lib/crew-workspaces.sh"
+source "$PROJECT_ROOT/scripts/lib/skill-wrappers.sh"
 
 # 便携 md5：读 stdin 输出裸 hash。
 # Linux md5sum / macOS md5 命令名不同，且 macOS 无 md5sum（set -e 下会 abort）。
@@ -315,6 +316,13 @@ fi
 if [ "$GLOBAL_SKILL_COUNT" -gt 0 ]; then
   echo "📦 Global skills installed ($GLOBAL_SKILL_COUNT)"
 fi
+
+# ─── 暴露公共 skill 顶层 wrapper → ~/.openclaw/bin/（PATH 友好） ───
+# D21 wrapper 覆盖：每个含 <skill>/<skill>.sh 的 skill 建一条 symlink 到
+# ~/.openclaw/bin/<skill>，agent 调 `<skill> <cmd>` 零路径拼接。
+# 同时把 ~/.openclaw/bin 注入 shell rc 的 PATH（幂等）。
+expose_skill_wrappers "$PROJECT_ROOT/skills"
+ensure_openclaw_bin_in_path
 
 
 # ─── 安装各 skill 的 Node.js 依赖（per-skill，写进仓内 skill 目录）─────

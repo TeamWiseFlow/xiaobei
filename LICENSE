@@ -1,22 +1,22 @@
 # Open Source License
 
-wiseflow is licensed under a modified version of MIT, with the following additional conditions:
+xiaobei is licensed under a modified version of MIT, with the following additional conditions:
 
-1. Wiseflow may be utilized commercially. Should the conditions below be met, a commercial license must be obtained from the producer:
+1. xiaobei may be utilized commercially. Should the conditions below be met, a commercial license must be obtained from the producer:
 
-a. Multi-tenant service: Unless explicitly authorized by Wiseflow in writing, you may not use the Wiseflow source code to operate a multi-tenant environment.
-    - Tenant Definition: Within the context of Wiseflow, one tenant corresponds to one workspace.
+a. Multi-tenant service: Unless explicitly authorized by xiaobei in writing, you may not use the xiaobei source code to operate a multi-tenant environment.
+    - Tenant Definition: Within the context of xiaobei, one tenant corresponds to one workspace.
  The workspace provides a separated area for each tenant's data and configurations.
 
-b. LOGO and copyright information: In the process of using Wiseflow's frontend, you may not remove or modify the LOGO or copyright information in the Wiseflow console or applications. This restriction is inapplicable to uses of Wiseflow that do not involve its frontend.
+b. LOGO and copyright information: In the process of using xiaobei's frontend, you may not remove or modify the LOGO or copyright information in the xiaobei console or applications. This restriction is inapplicable to uses of xiaobei that do not involve its frontend.
 
-    - Frontend Definition: For the purposes of this license, the "frontend" of Wiseflow includes all components located in the `web/` directory when running Wiseflow from the raw source code, or the "web" image when running Wiseflow with Docker.
+    - Frontend Definition: For the purposes of this license, the "frontend" of xiaobei includes all components located in the `web/` directory when running xiaobei from the raw source code, or the "web" image when running xiaobei with Docker.
 
-c. Prohibited usage: Using Wiseflow for commercial web crawling or data harvesting operations.
+c. Prohibited usage: Using xiaobei for commercial web crawling or data harvesting operations.
 
-d. Prohibited usage: Using Wiseflow for any unlawful or unauthorized scraping, including activities that violate applicable laws, website terms of service, or robots exclusion directives.
+d. Prohibited usage: Using xiaobei for any unlawful or unauthorized scraping, including activities that violate applicable laws, website terms of service, or robots exclusion directives.
 
-e. Prohibited usage: Using Wiseflow to obtain, copy, or distribute content from media platforms and trading platforms or other materials protected by third-party intellectual property rights, unless you have obtained prior explicit authorization from the rights holder.
+e. Prohibited usage: Using xiaobei to obtain, copy, or distribute content from media platforms and trading platforms or other materials protected by third-party intellectual property rights, unless you have obtained prior explicit authorization from the rights holder.
 
 2. As a contributor, you should agree that:
 
