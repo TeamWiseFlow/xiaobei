@@ -28,7 +28,7 @@ Use this skill when:
 1. **严格按本 SKILL.md 的步骤执行**，不得在服务器结果未返回时自行编排下一步。
 2. **等待服务器响应**：每次执行脚本命令后，必须等待脚本返回 JSON 结果。若结果需要时间，**先向用户说明"正在请求服务器，请稍候……"**，然后等待。
 3. **严禁提前假设结果**：不得在脚本输出 JSON 之前就根据假设继续后续步骤。
-4. **批量前必须小样本验证**：批量抓全文前，必须先探活（走 login-manager `camoufox-cli --session wx-mp --persistent --headless open` + snapshot），再选 1 篇文章 `fetch` 验证链路成功；成功后才能批量。
+4. **批量前必须小样本验证**：批量抓全文前，必须先 `check-session`，再选 1 篇文章 `fetch` 验证链路成功；成功后才能批量。
 5. **路径规则**：文中所有 `./scripts/` 路径均相对于本技能所在目录（即 `<skill>` 标签 `location` 属性所指目录），**不是**工作区（workspace）目录。执行时必须按本技能的实际安装路径拼接，不得从工作区 CWD 出发拼接。
 
 ---
@@ -43,47 +43,53 @@ Wrapper 脚本路径：`./scripts/wx-mp-hunter.sh`
 ./scripts/wx-mp-hunter.sh <command> [args...]
 ```
 
-Session 存储路径：`~/.openclaw/logins/wx_mp.json`（cookie）+ `~/.openclaw/logins/wx_mp.ua.json`（UA，login-manager 统一落盘）
-Session TTL：**4 天**（到期自动触发重登，走 login-manager 无头截图 QR 流）
+Session 存储路径：`~/.openclaw/logins/wx_mp.json`（可通过 `WX_SESSION_FILE` 覆盖）
+Session TTL：**4 天**（到期自动触发重登）
 
 ---
 
 ## Step 0 — 登录探活
 
-> **登录走 login-manager 统一流程**（spec §6 收编）：wx-mp 无头截图 QR，cookie 落 `~/.openclaw/logins/wx_mp.json` + UA 落 `~/.openclaw/logins/wx_mp.ua.json`。本 skill 不再自管登录——下方脚本内置的 `login-qr` / `login-confirm` 命令已退役，登录流走 login-manager SKILL.md。
-
-**每次使用前可选地检查 session 是否有效**：
+**每次使用前可选地检查 session 是否有效：**
 
 ```bash
-# 走 login-manager 探活：开持久化 session wx-mp open 公众号后台首页 snapshot 看是否跳登录页
-camoufox-cli --session wx-mp --persistent --headless --json open "https://mp.weixin.qq.com/"
-sleep 3
-camoufox-cli --session wx-mp --json eval "window.location.href"
-camoufox-cli --session wx-mp --json close
+./scripts/wx-mp-hunter.sh check-session
 ```
 
 | 返回值 | 含义 |
 |--------|------|
-| URL 不含 `login` | session 有效，可直接使用 |
-| URL 含 `login` | 需要重新登录（走下方流程） |
+| `{"ok": true}` | session 有效，可直接使用 |
+| `{"ok": false, "error": "SESSION_EXPIRED"}` (exit 2) | 需要重新登录 |
 
 ---
 
 ## 自动重新登录流程（Session 过期时触发）
 
-> 走 login-manager **无头截图 QR** 统一流程（原则 3：wx-mp 无头截图 QR）。cookie + UA 同时导出落中央存储。
+**触发条件**：任意命令返回 `"error": "SESSION_EXPIRED"`（exit code 2），或首次使用无 session 文件。
 
-### 第 1 步 — 启 headless session + 截图 QR
+### 第 1 步 — 生成二维码
 
 ```bash
-camoufox-cli --session wx-mp --persistent --headless --json open "https://mp.weixin.qq.com/"
-sleep 3
-camoufox-cli --session wx-mp --json screenshot /tmp/qr-wx-mp.png
+./scripts/wx-mp-hunter.sh login-qr
 ```
+
+等待脚本输出 JSON（**不要提前进入下一步**）：
+
+```json
+{
+  "ok": true,
+  "qr_path": "/tmp/wx_mp_qr.png",
+  "qr_base64": "<base64 PNG>",
+  "message": "二维码已保存，请用微信（公众号管理员账号）扫码，完成后运行 login-confirm"
+}
+```
+
+> **注意**：二维码图片已自动保存到 `/tmp/wx_mp_qr.png`，脚本**不会**尝试打开它，也**不需要**手动打开。
 
 ### 第 2 步 — 将二维码发给用户
 
-使用 openclaw 飞书 plugin 能力，将二维码图片（路径 `/tmp/qr-wx-mp.png`）直接发送给用户。**不要**只发本地文件路径。
+使用 openclaw 飞书 plugin 能力，将二维码图片（路径 `/tmp/wx_mp_qr.png`）直接发送给用户。  
+**不要**只发本地文件路径——用户在飞书客户端中无法访问 agent 本地文件系统。
 
 同时告知用户：
 > "公众号 Cookie 已失效，请用微信（公众号管理员账号）扫描以下二维码重新授权。扫码并点击确认登录后，回复"已扫码"。"
@@ -92,19 +98,22 @@ camoufox-cli --session wx-mp --json screenshot /tmp/qr-wx-mp.png
 
 **停止执行，等待用户回复。** 用户回复"已扫码"、"好了"、"扫完了"或类似确认语即可继续。
 
-### 第 4 步 — 同时导出 cookie + UA 落中央存储
+### 第 4 步 — 确认登录
 
 ```bash
-camoufox-cli --session wx-mp --persistent --json cookies export ~/.openclaw/logins/wx_mp.json
-camoufox-cli --session wx-mp --persistent --json identity export ~/.openclaw/logins/wx_mp.ua.json
-camoufox-cli --session wx-mp --json close
+./scripts/wx-mp-hunter.sh login-confirm [--timeout 300]
 ```
 
-两个文件都写成功后，登录流程结束，可继续执行原被中断的任务。
+等待脚本返回结果（脚本内部轮询，**agent 只需等待输出，不要中途中断**）：
 
-> **同时导入 cookie 和 UA**（原则 4，spec §4.2）：微信设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。本 skill 走持久化 session `wx-mp`（登录态 + 指纹冻结在 session profile 里），中央存储的 cookie/UA 仅用于探活与备份。
+```json
+{"ok": true, "message": "登录成功，session 已保存"}
+```
 
-> ⚠️ 脚本内置的 `login-qr` / `login-confirm` 命令已退役（保留仅为向后兼容，不再推荐使用）。登录流统一走 login-manager SKILL.md。
+| 情况 | 处理 |
+|------|------|
+| `{"ok": true}` | 继续执行原来被中断的任务 |
+| `ret != 0` 或超时 | 重新从第 1 步开始，告知用户二维码已过期 |
 
 ---
 
@@ -114,7 +123,7 @@ camoufox-cli --session wx-mp --json close
 
 ```
 流程 0：登录探活（每次使用前可选）
-  └ login-manager 探活（camoufox-cli --session wx-mp --persistent --headless open + snapshot 看是否跳登录页）
+  └─ check-session
 
 流程 1a：搜索账号 → 获取最新发布列表
   ├─ search <keyword>        → 获取 fakeid
@@ -156,15 +165,11 @@ http://mp.weixin.qq.com/mp/homepage?...
 
 ### 全文采集
 
-1. 批量抓全文前，必须先探活（走 login-manager）：
+1. 批量抓全文前，必须先运行：
    ```bash
-   camoufox-cli --session wx-mp --persistent --headless --json open "https://mp.weixin.qq.com/"
-   sleep 3
-   camoufox-cli --session wx-mp --json eval "window.location.href"
-   camoufox-cli --session wx-mp --json close
+   ./scripts/wx-mp-hunter.sh check-session
    ```
-   URL 含 `login` = 失效，走自动重新登录流程。
-2. 失效后走 login-manager 无头截图 QR 登录流，cookie + UA 同时导出落中央存储。
+2. 如果返回 `SESSION_EXPIRED`，先执行自动重新登录流程。
 3. 登录有效后，只选 1 篇样本运行：
    ```bash
    ./scripts/wx-mp-hunter.sh fetch <article_link> --html
@@ -312,7 +317,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 
 **场景 A：监控某账号最新文章**
 ```
-1. login-manager 探活      → 确认登录态
+1. check-session            → 探活
 2. search "公众号名"         → 得到 fakeid
 3. account-posts <fakeid>   → 得到文章列表（第 1 页）
 4. fetch <article_link>     → 获取感兴趣文章的正文
@@ -320,7 +325,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 
 **场景 B：直接抓取已知 URL 的文章**
 ```
-1. login-manager 探活      → 确认登录态
+1. check-session            → 探活
 2. fetch <url>              → 直接获取正文
 ```
 
