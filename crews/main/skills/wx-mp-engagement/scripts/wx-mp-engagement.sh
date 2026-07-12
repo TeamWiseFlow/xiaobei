@@ -10,14 +10,14 @@
 #   fetch-all --days <N>
 #
 # 依赖：
-#   - login-manager skill（同 crew 私有，用于 cookie 探活 + cookie-import）
+#   - wx-mp-hunter skill（同 crew 私有，用于 wx_mp session 探活 + 登录 + 中央存储）
 #   - published-track skill（同 crew 私有，用于 DB 读写）
 #   - camoufox-cli（npm 全局）
 #
 # 退出码：
 #   0  成功
 #   1  通用错误
-#   2  cookie 失效 → 触发 login-manager qr-headless + qr-confirm
+#   2  session 失效 → 触发 wx-mp-hunter login + login-confirm
 
 set -euo pipefail
 

@@ -19,7 +19,7 @@ Use this skill when:
 - You need to **reply** to a specific tweet (engagement use case)
 - You have a Premium/Blue account and need **long post** (up to 25,000 chars)
 
-**Prerequisites**: camoufox-cli session 已登录 x.com（登录态持久化在 session profile 里）。冷会话先访问一次首页预热。login-manager 非必需——Twitter 发布/互动是纯浏览器操作，只有当想把 cookie 导出给 API 用时才走 login-manager。
+**Prerequisites**: camoufox-cli session 已登录 x.com（登录态持久化在 session profile 里）。冷会话先访问一次首页预热。本 skill 与 login-manager **完全无关**——Twitter 发布是纯浏览器操作，走持久化 session `twitter`（与 `twitter-interact` 共用），登录态在 session profile 里闭环，不导出 cookie/UA 落中央存储。
 
 ---
 

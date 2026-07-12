@@ -12,7 +12,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
 import { homedir } from "os"
 import { join, dirname } from "path"
 
-export type Platform = "douyin" | "bilibili" | "xhs" | "xhs-browse"
+export type Platform = "douyin" | "bilibili" | "kuaishou" | "xhs" | "xhs-browse"
 
 export interface CookieRecord { name: string; value: string; domain?: string }
 

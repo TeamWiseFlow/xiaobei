@@ -180,13 +180,14 @@ if [ "$NEEDS_COOKIE" = true ]; then
     exit 1
   fi
 
-  # 探活：开持久化 session open 平台首页，eval window.location.href 看是否跳 login
+  # 探活：开持久化 session open 平台首页 + snapshot 看是否跳登录页（spec §11-6，对齐 login-manager 步骤 0）
   "$CAMOUFOX_CLI" --session "$LM_PLATFORM" --persistent --headless --json open "$PLATFORM_HOME" >/dev/null 2>&1 || true
   sleep 3
-  CHECK_URL=$("$CAMOUFOX_CLI" --session "$LM_PLATFORM" --json eval "window.location.href" 2>/dev/null || echo "")
+  SNAP=$("$CAMOUFOX_CLI" --session "$LM_PLATFORM" --json snapshot 2>/dev/null || echo "")
   "$CAMOUFOX_CLI" --session "$LM_PLATFORM" --json close >/dev/null 2>&1 || true
 
-  if echo "$CHECK_URL" | grep -q "login"; then
+  # snapshot 输出含登录标志 = 失效（跳登录页 / 出登录按钮 / 「请登录」文案）
+  if echo "$SNAP" | grep -qE "login|登录|扫码|请登录|sign ?in"; then
     echo "{\"ok\":false,\"error\":\"SESSION_EXPIRED\",\"platform\":\"$PLATFORM\",\"login_platform\":\"$LM_PLATFORM\",\"method\":\"script\",\"hint\":\"Cookie 已失效，请使用 login-manager 技能引导用户重新登录 $LM_PLATFORM（camoufox-cli --session $LM_PLATFORM --persistent --headed open $PLATFORM_HOME → 用户手动登录 → cookies export + identity export 落中央存储）\"}"
     exit 2
   fi

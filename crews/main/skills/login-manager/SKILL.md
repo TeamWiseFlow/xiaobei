@@ -1,6 +1,6 @@
 ---
 name: login-manager
-description: 平台登录态管理指导文件。约定各平台登录流程、何时有头/何时无头截图 QR、探活规则、中央 cookie+UA 存储路径约定。实际 cookie/UA 导出由 camoufox-cli 的 cookies export + identity export 完成，本 skill 无脚本。
+description: 平台登录态管理指导文件。约定各平台登录流程（强制有头手动登录）、探活规则、中央 cookie+UA 存储路径约定。仅管 5 个平台（douyin/kuaishou/bilibili/xhs-publish/xhs-browse），其他平台完全不涉及。实际 cookie/UA 导出由 camoufox-cli 的 cookies export + identity export 完成，本 skill 无脚本。
 metadata:
   openclaw:
     emoji: 🔑
@@ -10,14 +10,14 @@ metadata:
 
 本 skill 是**纯 SKILL.md 指导文件**，无脚本。cookie / UA 的导出/导入由 **camoufox-cli** 的 `cookies export` / `cookies import` / `identity export` 命令完成（全局可用的 `camoufox-cli` 命令）。
 
-在任何需要平台 cookie 的 skill（xhs-content-ops / xhs-publish / xhs-interact / douyin-publish / weibo-publish / zhihu-publish / wechat-channels-publish / viral-chaser / wx-mp-hunter 等）调用前，先用本 skill 的流程把登录态就绪。
+在任何需要平台 cookie 的 skill（xhs-content-ops / xhs-publish / douyin-publish / viral-chaser / published-track 等）调用前，先用本 skill 的流程把登录态就绪。
 
 > **主力后端 = `target=camoufox`**。下方命令 / 示例只针对 `target=camoufox`。
-> **`target=host` / `target=node`**：只按本 skill 的「流程 + 提示事项」走——何时有头 / 何时无头 / 探活节奏 / 中央存储路径约定是**后端无关**的，照本 skill 执行。不要照搬 `camoufox-cli ...` 命令，用你当前后端自带的浏览器工具语义登录 + 导出 cookie/UA 即可。
+> **`target=host` / `target=node`**：只按本 skill 的「流程 + 提示事项」走——何时有头 / 探活节奏 / 中央存储路径约定是**后端无关**的，照本 skill 执行。不要照搬 `camoufox-cli ...` 命令，用你当前后端自带的浏览器工具语义登录 + 导出 cookie/UA 即可。
 
 ---
 
-## 支持的平台（仅这 6 个）
+## 支持的平台（仅这 5 个）
 
 | 平台 key | 登录模式 | 中央存储文件 |
 |----------|---------|---------|
@@ -26,18 +26,19 @@ metadata:
 | `kuaishou` | **有头手动** | `~/.openclaw/logins/kuaishou.json` + `~/.openclaw/logins/kuaishou.ua.json` |
 | `xhs-publish` | **有头手动**（创作者域 `creator.xiaohongshu.com`） | `~/.openclaw/logins/xhs-publish.json` + `~/.openclaw/logins/xhs-publish.ua.json` |
 | `xhs-browse` | **有头手动**（消费者域 `www.xiaohongshu.com`） | `~/.openclaw/logins/xhs-browse.json` + `~/.openclaw/logins/xhs-browse.ua.json` |
-| `wx-mp` | **无头截图 QR** | `~/.openclaw/logins/wx-mp.json` + `~/.openclaw/logins/wx-mp.ua.json` |
 
-> **不在这 6 个之内的平台**（twitter / weibo / zhihu / xianyu / reddit / youtube / wechat-channel 等）的登录态管理**不走本 skill**——各平台专属 skill 自管登录（持久化 session 内闭环，见各 skill SKILL.md）。本 skill 不为它们落中央 cookie。
+> **不在这 5 个之内的平台**（twitter / weibo / zhihu / xianyu / weixin-channel / wx_mp 等）的登录态管理**不走本 skill**——各平台专属 skill 自管登录（持久化 session 内闭环，见各 skill SKILL.md）。本 skill 不为它们落中央 cookie。
+>
+> **wx_mp（公众号）特例**：wx_mp 不归本 skill 管，自己一套独立的探活/登录/导出体系，由 `wx-mp-hunter` + `wx-mp-engagement` 两技能共用（走 camoufox-cli + 无头截 QR）。导出的 `wx_mp.json` + `wx_mp.ua.json` 依然落 `~/.openclaw/logins/` 同目录，只是管理自管、本 skill 不沾。详见 `docs/platform-login-and-browser-spec.md` §4。
 
 > **xhs 双平台说明**：小红书的浏览/互动和发布使用不同的 cookie 域，因此拆为两个独立平台：
 > - `xhs-publish`：创作者平台（`creator.xiaohongshu.com`），用于发布笔记/视频
 > - `xhs-browse`：消费者端（`www.xiaohongshu.com`），用于搜索、浏览、互动
 
-### 登录模式约定（原则 3）
+### 登录模式约定（强制统一有头）
 
-- **无头截图 QR**：`wx-mp`——启 `--headless` session 打开登录页，`screenshot` 截 QR PNG 发用户，用户手机扫码确认。
-- **有头手动**：`douyin` / `bilibili` / `kuaishou` / `xhs-publish` / `xhs-browse`——必须 `--headed` 启 session，用户在浏览器里手动扫码 / 短信 / 账号密码完成登录。agent 不主动触发登录动作，只开浏览器等用户。
+- **有头手动**：所有 5 个平台一律 `--headed` 启 session，用户在浏览器里手动扫码 / 短信 / 账号密码完成登录。agent 不主动触发登录动作，只开浏览器等用户。
+- 本 skill **不再有无头特例**——历史上 wx_mp 曾用无头截图 QR，现 wx_mp 已移出本 skill 自管，本 skill 内全部平台强制有头。
 
 ---
 
@@ -105,25 +106,19 @@ camoufox-cli --session "$SESSION" --json snapshot
 camoufox-cli --session "$SESSION" --json close
 ```
 
-### 步骤 1：启 session 打开登录页（按平台模式选有头/无头）
+### 步骤 1：启 session 打开登录页（强制有头手动）
 
 ```bash
-# wx-mp：无头截图 QR
-camoufox-cli --session wx-mp --persistent --headless --json open "https://mp.weixin.qq.com/"
-sleep 3
-camoufox-cli --session wx-mp --json screenshot /tmp/qr-wx-mp.png
-
-# douyin / bilibili / kuaishou / xhs-publish / xhs-browse：有头手动
+# 所有 5 平台一律有头
 camoufox-cli --session <platform> --persistent --headed --json open "<平台登录页 URL>"
 # 有头窗口弹出后，告知用户在浏览器里手动登录（扫码 / 短信 / 账号密码）
 ```
 
-**持久化 session 命名约定**：session 名 = 平台 key（`douyin` / `bilibili` / `kuaishou` / `xhs-publish` / `xhs-browse` / `wx-mp`）。每个平台**一个且只有一个持久化 session**（原则 1，fail-first 队列：同 session 已有命令在跑时新命令直接 fail）。
+**持久化 session 命名约定**：session 名 = 平台 key（`douyin` / `bilibili` / `kuaishou` / `xhs-publish` / `xhs-browse`）。每个平台**一个且只有一个持久化 session**（原则 1，fail-first 队列：同 session 已有命令在跑时新命令直接 fail）。
 
 ### 步骤 2：等用户完成登录
 
-- **无头 QR**（wx-mp）：把 `/tmp/qr-<platform>.png` 用 image 工具加载发用户（**不要发本地路径**），告知「**[平台]** 登录已失效，请用微信扫码确认，完成后回复"已扫码"」。等用户回复后 `snapshot` 验页面已跳走 / QR 消失。
-- **有头手动**：告知用户「**[平台]** 浏览器已打开，请在窗口里手动完成登录，完成后告诉我」。等用户回复后 `snapshot` 验登录态就位。
+告知用户「**[平台]** 浏览器已打开，请在窗口里手动完成登录，完成后告诉我」。等用户回复后 `snapshot` 验登录态就位。
 
 **Stop and wait**，不要盲轮询。3 分钟内无回复发超时提示「扫码超时，将继续处理当前可访问的内容」并退出。
 
@@ -182,7 +177,6 @@ camoufox-cli --session "$SESSION" --persistent --json cookies import ~/.openclaw
 ## Notes
 
 - **Do not retry login more than once automatically** — frequent retries risk account suspension (per browser-guide guidelines)
-- **QR code login is preferred** for `wx-mp` — 无头截图 QR 发用户扫码即可
 - **Bilibili** public video access often works without cookies; only request login if video is unavailable
 - **Never store cookies in code or logs** — the session files are stored only in `~/.openclaw/logins/`
 - **camoufox 探活失败时不要盲试**：`open + snapshot` 现场检查 session 内页面状态，再决定是否触发重登

@@ -2,19 +2,23 @@
 /**
  * wx_mp_hunter.ts — WeChat Official Account Hunter CLI (TypeScript)
  *
- * Login flow (requires user scan):
- *   Step 1: node --experimental-strip-types wx_mp_hunter.ts login-qr
- *   Step 2: node --experimental-strip-types wx_mp_hunter.ts login-confirm
+ * 探活/登录走 camoufox-cli + 持久化 session `wx_mp`（无头截 QR 登录），
+ * 登录就位后导出 cookie + UA + token 落中央存储 `~/.openclaw/logins/wx_mp.json`
+ * + `wx_mp.ua.json`，业务命令（search/account-posts/fetch）走 mpFetch 纯 HTTP，
+ * cookie + token + UA 从中央存储读。
  *
- * Other commands (after login):
- *   node --experimental-strip-types wx_mp_hunter.ts search <keyword>
- *   node --experimental-strip-types wx_mp_hunter.ts account-posts <fakeid>
- *   node --experimental-strip-types wx_mp_hunter.ts fetch <url>
+ * Commands:
+ *   check                          探活（camoufox open + snapshot 看跳登录页）
+ *   login                          无头截 QR 登录 → 导出 cookie+UA+token 落中央存储
+ *   search <keyword>               搜索公众号
+ *   account-posts <fakeid>         拉账号最新文章列表
+ *   fetch <url>                    抓文章全文
  */
 
-import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { load as loadHtml } from "cheerio";
@@ -22,16 +26,16 @@ import { downloadImages, rewriteMarkdownImages } from "./download_images.ts";
 type CookieMap = Record<string, string>;
 type JsonMap = Record<string, unknown>;
 
+/** 中央存储 session 文件格式（camoufox-cli cookies export 原生输出 + 扩展 token/ua） */
 interface SessionData {
+  platform: "wx_mp";
+  /** camoufox-cli cookies export 原生输出 = Playwright add_cookies 格式 */
+  cookies?: Array<{ name: string; value: string; domain?: string; path?: string }>;
+  /** 公众号后台会话 token（登录后从 redirect_url 提取，业务命令调 API 必带） */
   token: string;
-  cookies: CookieMap;
-  created_at: string;
-}
-
-interface PendingData {
-  sid: string;
-  cookies: CookieMap;
-  created_at: string;
+  /** UA（来自 wx_mp.ua.json 的 userAgent，同步注入 mpFetch 避免指纹错配） */
+  ua?: string;
+  updated_at?: string;
 }
 
 interface AccountEntry {
@@ -48,16 +52,15 @@ interface AccountsCache {
   by_fakeid: Record<string, AccountEntry>;
 }
 
-const USER_AGENT =
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
-  "AppleWebKit/537.36 (KHTML, like Gecko) " +
-  "Chrome/117.0.0.0 Safari/537.36 WAE/1.0";
 const MP_BASE = "https://mp.weixin.qq.com";
 const LOGINS_DIR = join(homedir(), ".openclaw", "logins");
 const SESSION_FILE = process.env.WX_SESSION_FILE ?? join(LOGINS_DIR, "wx_mp.json");
+const UA_FILE = process.env.WX_UA_FILE ?? join(LOGINS_DIR, "wx_mp.ua.json");
 const ACCOUNTS_CACHE_FILE = process.env.WX_ACCOUNTS_CACHE_FILE ?? `${homedir()}/.wx_mp_hunter_accounts.json`;
-const PENDING_FILE = "/tmp/wx_mp_hunter_pending.json";
-const QR_FILE = "/tmp/wx_mp_qr.png";
+const QR_FILE = "/tmp/qr-wx-mp.png";
+const CAMOUFOX_CLI = process.env.CAMOUFOX_CLI ?? "camoufox-cli";
+const SESSION_NAME = "wx_mp";
+const execFileAsync = promisify(execFile);
 
 function timestampLocal(): string {
   const d = new Date();
@@ -74,8 +77,6 @@ function sleep(ms: number): Promise<void> {
 function printJson(data: unknown): void {
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 }
-
-const SESSION_TTL_MS = 4 * 24 * 60 * 60 * 1000; // 4 days
 
 function errExit(msg: string, code = 1): never {
   printJson({ ok: false, error: msg });
@@ -142,9 +143,15 @@ function cookieHeaderValue(cookieJar: CookieMap): string {
     .join("; ");
 }
 
+/** UA 默认值；requireSession 后被 session.ua 覆盖（同步指纹，避免错配风控） */
+let CURRENT_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+  "AppleWebKit/537.36 (KHTML, like Gecko) " +
+  "Chrome/117.0.0.0 Safari/537.36";
+
 function defaultHeaders(): Record<string, string> {
   return {
-    "User-Agent": USER_AGENT,
+    "User-Agent": CURRENT_UA,
     Referer: "https://mp.weixin.qq.com/",
     Origin: "https://mp.weixin.qq.com",
     "Accept-Encoding": "identity",
@@ -198,24 +205,28 @@ async function loadSession(): Promise<SessionData | null> {
   return readJsonFile<SessionData>(SESSION_FILE);
 }
 
-async function saveSession(token: string, cookies: CookieMap): Promise<void> {
-  await writeJsonFile(SESSION_FILE, {
-    token,
-    cookies,
-    created_at: timestampLocal(),
-  } satisfies SessionData);
+/** 读 UA 文件（camoufox-cli identity export 输出）；不存在回空串 */
+async function loadUa(): Promise<string> {
+  try {
+    const data = await readJsonFile<{ userAgent?: string }>(UA_FILE);
+    return data?.userAgent ?? "";
+  } catch {
+    return "";
+  }
 }
 
-async function loadPending(): Promise<PendingData | null> {
-  return readJsonFile<PendingData>(PENDING_FILE);
-}
-
-async function savePending(sid: string, cookies: CookieMap): Promise<void> {
-  await writeJsonFile(PENDING_FILE, {
-    sid,
-    cookies,
-    created_at: timestampLocal(),
-  } satisfies PendingData);
+/** cookies 数组（camoufox-cli 原生格式）→ dict；兼容旧字符串格式 */
+function cookieDictFromSession(data: SessionData): CookieMap {
+  const dict: CookieMap = {};
+  const raw = data.cookies;
+  if (Array.isArray(raw)) {
+    for (const c of raw) {
+      if (c && typeof c.name === "string" && typeof c.value === "string") {
+        dict[c.name] = c.value;
+      }
+    }
+  }
+  return dict;
 }
 
 // ── Accounts cache ─────────────────────────────────────────────────────────────
@@ -246,77 +257,37 @@ async function mergeAccountsToCache(
   await saveAccountsCache(cache);
 }
 
-async function cmdLoginQr(): Promise<void> {
-  const cookieJar: CookieMap = {};
-  const sid = randomUUID().replace(/-/g, "");
+// ── camoufox-cli 辅助 ──────────────────────────────────────────────────────────
+//
+// 探活/登录走 camoufox-cli + 持久化 session `wx_mp`（无头模式）。
+// 业务命令（search/account-posts/fetch）仍走 mpFetch 纯 HTTP，cookie + token + UA
+// 从中央存储 SESSION_FILE / UA_FILE 读。
 
-  const startResp = await mpFetch({
-    method: "POST",
-    endpoint: `${MP_BASE}/cgi-bin/bizlogin`,
-    query: { action: "startlogin" },
-    form: {
-      userlang: "zh_CN",
-      redirect_url: "",
-      login_type: 3,
-      sessionid: sid,
-      token: "",
-      lang: "zh_CN",
-      f: "json",
-      ajax: 1,
-    },
-    cookieJar,
-    timeoutMs: 15000,
-  });
-
-  let startBody: JsonMap = {};
+/** camoufox-cli 调用封装：固定 --session wx_mp --persistent --json --headless */
+async function camoufox(...args: string[]): Promise<JsonMap> {
+  const { stdout } = await execFileAsync(CAMOUFOX_CLI, [
+    "--session", SESSION_NAME,
+    "--persistent",
+    "--headless",
+    "--json",
+    ...args,
+  ]);
   try {
-    startBody = (await startResp.json()) as JsonMap;
+    return JSON.parse(stdout) as JsonMap;
   } catch {
-    errExit(`startlogin 响应解析失败 (HTTP ${startResp.status})`);
+    errExit(`camoufox-cli 输出解析失败: ${stdout.slice(0, 200)}`);
   }
+}
 
-  const startRet = Number((startBody.base_resp as JsonMap | undefined)?.ret ?? 0);
-  if (startRet !== 0) {
-    const msg = String((startBody.base_resp as JsonMap | undefined)?.err_msg ?? "未知错误");
-    errExit(`startlogin 失败 (ret=${startRet}): ${msg}`);
-  }
-
-  const qrResp = await mpFetch({
-    method: "GET",
-    endpoint: `${MP_BASE}/cgi-bin/scanloginqrcode`,
-    query: {
-      action: "getqrcode",
-      random: Date.now(),
-    },
-    cookieJar,
-    timeoutMs: 15000,
-  });
-
-  if (!qrResp.ok) {
-    errExit(`获取二维码失败 (HTTP ${qrResp.status})`);
-  }
-
-  const qrBuffer = Buffer.from(await qrResp.arrayBuffer());
-  if (qrBuffer.length === 0) {
-    const logicRet = qrResp.headers.get("logicret") ?? qrResp.headers.get("LogicRet") ?? "unknown";
-    errExit(`二维码内容为空 (logicret=${logicRet})`);
-  }
-
-  await writeFile(QR_FILE, qrBuffer);
-  await savePending(sid, cookieJar);
-
-  // 不自动打开图片，agent 通过 qr_path / qr_base64 传递给用户
-  printJson({
-    ok: true,
-    qr_path: QR_FILE,
-    qr_base64: qrBuffer.toString("base64"),
-    message: "二维码已保存，请用微信（公众号管理员账号）扫码，完成后运行 login-confirm",
-  });
+/** camoufox-cli snapshot 拿页面 URL，看是否跳 login */
+async function camoufoxCurrentUrl(): Promise<string> {
+  const r = await camoufox("eval", "window.location.href");
+  return String(r.result ?? "");
 }
 
 function checkRet(data: JsonMap): void {
   const baseResp = (data.base_resp as JsonMap | undefined) ?? {};
-  const ret = Number(baseResp.ret ?? 0);
+  const ret = Number(baseResp0 ?? 0);
   if (ret === 200003) {
     authExit("SESSION_EXPIRED");
   }
@@ -326,134 +297,120 @@ function checkRet(data: JsonMap): void {
   }
 }
 
-async function cmdLoginConfirm(timeoutSeconds: number): Promise<void> {
-  const pending = await loadPending();
-  if (!pending) {
-    errExit("未找到待确认的登录状态，请先运行 login-qr");
+/**
+ * 探活：camoufox-cli open 公众号首页 + eval window.location.href 看是否跳 login。
+ * 不验 SESSION_FILE TTL——camoufox session profile 自管登录态生命周期。
+ * exit 0 = 有效；exit 2 = 失效（camoufox session 跳登录页 / SESSION_FILE 不存在）
+ */
+async function cmdCheck(): Promise<void> {
+  // 先验 SESSION_FILE 存在（业务命令要 token + cookies）
+  const data = await loadSession();
+  if (!data || !data.token) {
+    authExit("SESSION_EXPIRED");
   }
 
-  const cookieJar: CookieMap = { ...pending.cookies };
-  const deadline = Date.now() + timeoutSeconds * 1000;
-  let lastStatus = -1;
-
-  process.stderr.write("[INFO] 等待扫码...\n");
-
-  while (Date.now() < deadline) {
-    const askResp = await mpFetch({
-      method: "GET",
-      endpoint: `${MP_BASE}/cgi-bin/scanloginqrcode`,
-      query: {
-        action: "ask",
-        token: "",
-        lang: "zh_CN",
-        f: "json",
-        ajax: 1,
-      },
-      cookieJar,
-      timeoutMs: 10000,
-    });
-
-    let askBody: JsonMap = {};
-    try {
-      askBody = (await askResp.json()) as JsonMap;
-    } catch {
-      errExit(`轮询响应解析失败 (HTTP ${askResp.status})`);
-    }
-
-    const askRet = Number(((askBody.base_resp as JsonMap | undefined) ?? {}).ret ?? 0);
-    if (askRet !== 0) {
-      const msg = String(((askBody.base_resp as JsonMap | undefined) ?? {}).err_msg ?? "");
-      errExit(`轮询失败 (ret=${askRet}): ${msg}`);
-    }
-
-    const status = Number(askBody.status ?? 0);
-    if (status === 1) {
-      process.stderr.write("[INFO] 已确认，正在完成登录...\n");
-      break;
-    }
-    if ((status === 4 || status === 6) && lastStatus !== status) {
-      process.stderr.write("[INFO] 已扫码，请在手机上点击确认...\n");
-    }
-    if (status === 2 || status === 3) {
-      errExit("二维码已过期，请重新运行 login-qr");
-    }
-    if (status === 5) {
-      errExit("该账号尚未绑定邮箱，无法扫码登录");
-    }
-
-    lastStatus = status;
-    await sleep(2000);
-  }
-
-  if (Date.now() >= deadline) {
-    errExit(`等待超时（${timeoutSeconds}s），请重新运行 login-qr`);
-  }
-
-  const loginResp = await mpFetch({
-    method: "POST",
-    endpoint: `${MP_BASE}/cgi-bin/bizlogin`,
-    query: { action: "login" },
-    form: {
-      userlang: "zh_CN",
-      redirect_url: "",
-      cookie_forbidden: 0,
-      cookie_cleaned: 0,
-      plugin_used: 0,
-      login_type: 3,
-      token: "",
-      lang: "zh_CN",
-      f: "json",
-      ajax: 1,
-    },
-    cookieJar,
-    timeoutMs: 15000,
-  });
-
-  let loginBody: JsonMap = {};
+  // 再验 camoufox session 内登录态是否真就位
   try {
-    loginBody = (await loginResp.json()) as JsonMap;
-  } catch {
-    errExit(`登录响应解析失败 (HTTP ${loginResp.status})`);
+    await camoufox("open", `${MP_BASE}/`);
+    await sleep(3000);
+    const url = await camoufoxCurrentUrl();
+    await camoufox("close").catch(() => undefined);
+    if (url.includes("login") || url.includes("scanloginqrcode")) {
+      authExit("SESSION_EXPIRED");
+    }
+    printJson({ ok: true, message: "session 有效", url });
+  } catch (e: any) {
+    // camoufox-cli 调用失败（命令不可用 / session 卡死等）——视为失效让调用方重登
+    authExit("SESSION_EXPIRED");
   }
-
-  const redirectUrl = String(loginBody.redirect_url ?? "");
-  if (!redirectUrl) {
-    errExit(`登录失败，未获取到 redirect_url: ${JSON.stringify(loginBody)}`);
-  }
-
-  const token = new URL(redirectUrl, "https://mp.weixin.qq.com").searchParams.get("token");
-  if (!token) {
-    errExit(`无法从 redirect_url 提取 token: ${redirectUrl}`);
-  }
-
-  await saveSession(token, cookieJar);
-  await unlink(PENDING_FILE).catch(() => undefined);
-
-  printJson({ ok: true, message: "登录成功，session 已保存" });
 }
 
+/**
+ * 无头截 QR 登录流：camoufox-cli open 公众号首页 → screenshot 截 QR PNG。
+ * agent 拿 QR_FILE 用 image 工具发用户扫码，用户回复「已扫码」后再调 cmdLoginConfirm。
+ */
+async function cmdLoginQr(): Promise<void> {
+  try {
+    await camoufox("open", `${MP_BASE}/`);
+    await sleep(3000);
+    await camoufox("screenshot", QR_FILE);
+    // 不 close session——留着给 cmdLoginConfirm 继续用
+    printJson({
+      ok: true,
+      qr_path: QR_FILE,
+      message: "二维码已截，请用微信（公众号管理员账号）扫码，完成后运行 login-confirm",
+    });
+  } catch (e: any) {
+    errExit(`camoufox-cli 截 QR 失败: ${e?.message ?? String(e)}`);
+  }
+}
+
+/**
+ * 登录确认：用户扫码完成后调此命令。
+ * 验 camoufox session 内登录态就位 → eval window.location.href 拿 redirect URL 提 token
+ * → cookies export + identity export 落中央存储 → 写 SESSION_FILE（含 token）
+ */
+async function cmdLoginConfirm(): Promise<void> {
+  try {
+    // 验登录态就位：open 首页应跳到 /cgi-bin/home?token=xxx
+    await camoufox("open", `${MP_BASE}/`);
+    await sleep(3000);
+    const url = await camoufoxCurrentUrl();
+    if (url.includes("login") || url.includes("scanloginqrcode")) {
+      errExit("登录态未就位——用户可能还没扫码确认，请告知用户完成手机端确认后重试");
+    }
+
+    // 提 token
+    const token = new URL(url, MP_BASE).searchParams.get("token");
+    if (!token) {
+      errExit(`无法从 redirect URL 提取 token: ${url}`);
+    }
+
+    // 导出 cookies + UA 落中央存储
+    await camoufox("cookies", "export", SESSION_FILE);
+    await camoufox("identity", "export", UA_FILE);
+
+    // 读导出的 cookies 文件 + token，写回 SESSION_FILE（扩展加 token 字段）
+    const exported = await readJsonFile<{ cookies: SessionData["cookies"]; updated_at?: string }>(SESSION_FILE);
+    const ua = await loadUa();
+    const sessionData: SessionData = {
+      platform: "wx_mp",
+      cookies: exported?.cookies ?? [],
+      token,
+      ua: ua || undefined,
+      updated_at: timestampLocal(),
+    };
+    await writeJsonFile(SESSION_FILE, sessionData);
+    await camoufox("close").catch(() => undefined);
+
+    printJson({ ok: true, message: "登录成功，cookie + UA + token 已落中央存储", token });
+  } catch (e: any) {
+    errExit(`camoufox-cli 登录确认失败: ${e?.message ?? String(e)}`);
+  }
+}
+
+/**
+ * 读中央存储 session：cookie + token + UA。
+ * UA 同步注入 CURRENT_UA（mpFetch defaultHeaders 用），避免指纹错配风控。
+ * 不验 TTL——camoufox session 自管生命周期，token 失效由 API ret=200003 标记。
+ * exit 2 = SESSION_FILE 不存在 / 缺 token → 调用方触发 cmdLoginQr 重登。
+ */
 async function requireSession(): Promise<SessionData> {
   const data = await loadSession();
-  if (!data) {
+  if (!data || !data.token) {
     authExit("SESSION_EXPIRED");
   }
-  const age = Date.now() - new Date(data.created_at).getTime();
-  if (age > SESSION_TTL_MS) {
-    authExit("SESSION_EXPIRED");
+  // UA 同步注入（中央存储 → 全局变量 → defaultHeaders → mpFetch）
+  const ua = data.ua ?? await loadUa();
+  if (ua) {
+    CURRENT_UA = ua;
   }
   return data;
 }
 
-async function cmdCheckSession(): Promise<void> {
-  const data = await loadSession();
-  if (!data) {
-    authExit("SESSION_EXPIRED");
-  }
-  const age = Date.now() - new Date(data.created_at).getTime();
-  if (age > SESSION_TTL_MS) {
-    authExit("SESSION_EXPIRED");
-  }
-  printJson({ ok: true, message: "session 有效" });
+/** cookies 数组 → CookieMap（给 mpFetch cookieJar 用） */
+function sessionCookieJar(data: SessionData): CookieMap {
+  return cookieDictFromSession(data);
 }
 
 async function cmdSearch(keyword: string, begin: number, size: number): Promise<void> {
@@ -468,7 +425,7 @@ async function cmdSearch(keyword: string, begin: number, size: number): Promise<
   }
 
   const session = await requireSession();
-  const cookieJar: CookieMap = { ...session.cookies };
+  const cookieJar: CookieMap = sessionCookieJar(session);
 
   const resp = await mpFetch({
     method: "GET",
@@ -513,7 +470,7 @@ async function cmdSearch(keyword: string, begin: number, size: number): Promise<
 
 async function cmdArticles(fakeid: string, begin: number, size: number, keyword: string): Promise<void> {
   const session = await requireSession();
-  const cookieJar: CookieMap = { ...session.cookies };
+  const cookieJar: CookieMap = sessionCookieJar(session);
   const isSearch = Boolean(keyword);
 
   const resp = await mpFetch({
@@ -673,7 +630,7 @@ function htmlToMarkdown(html: string): string {
 
 async function cmdFetch(url: string, includeHtml: boolean, outputDir = "", downloadImgs = false): Promise<void> {
   const session = await requireSession();
-  const cookieJar: CookieMap = { ...session.cookies };
+  const cookieJar: CookieMap = sessionCookieJar(session);
 
   const resp = await mpFetch({
     method: "GET",
@@ -741,12 +698,22 @@ function usage(): void {
   const lines = [
     "WeChat Official Account Hunter — 微信公众号内容获取工具",
     "",
+    "探活/登录走 camoufox-cli + �持久化 session `wx_mp`（无头截 QR），",
+    "登录就位后导出 cookie + UA + token 落 ~/.openclaw/logins/wx_mp.{json,ua.json}。",
+    "",
     "Usage:",
-    "  node --experimental-strip-types wx_mp_hunter.ts login-qr",
-    "  node --experimental-strip-types wx_mp_hunter.ts login-confirm [--timeout 300]",
+    "  node --experimental-strip-types wx_mp_hunter.ts check",
+    "    探活（camoufox open + snapshot 看跳登录页）；exit 0=有效 / 2=失效",
+    "  node --experimental-strip-types wx_mp_hunter.ts login",
+    "    无头截 QR 登录 → 导出 cookie+UA+token 落中央存储",
+    "    （agent 拿 /tmp/qr-wx-mp.png 发用户扫码，用户回复「已扫码」后再 login-confirm）",
+    "  node --experimental-strip-types wx_mp_hunter.ts login-confirm",
+    "    验登录态就位 → 导出 cookie+UA+token 落中央存储",
+    "  node --experimental-strip-types wx_mp_hunter.ts logout",
+    "    拆 session（camoufox close）；不动中央存储文件",
     "  node --experimental-strip-types wx_mp_hunter.ts search <keyword> [--begin 0] [--size 10]",
     "  node --experimental-strip-types wx_mp_hunter.ts account-posts <fakeid> [--begin 0] [--size 20] [--keyword xxx]",
-    "  node --experimental-strip-types wx_mp_hunter.ts fetch <url> [--html]",
+    "  node --experimental-strip-types wx_mp_hunter.ts fetch <url> [--html] [--download-images --output-dir <dir>]",
   ];
   process.stdout.write(`${lines.join("\n")}\n`);
 }
@@ -773,17 +740,25 @@ async function main(): Promise<void> {
   }
 
   switch (command) {
-    case "check-session": {
-      await cmdCheckSession();
+    case "check": {
+      await cmdCheck();
       break;
     }
-    case "login-qr": {
+    case "login": {
       await cmdLoginQr();
       break;
     }
     case "login-confirm": {
-      const timeout = readNumberFlag(args, "--timeout", 300);
-      await cmdLoginConfirm(timeout);
+      await cmdLoginConfirm();
+      break;
+    }
+    case "logout": {
+      try {
+        await camoufox("close");
+        printJson({ ok: true, message: "session 已关闭（中央存储文件未动）" });
+      } catch (e: any) {
+        errExit(`camoufox close 失败: ${e?.message ?? String(e)}`);
+      }
       break;
     }
     case "search": {

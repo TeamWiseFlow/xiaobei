@@ -1,12 +1,12 @@
 # 小贝（xiaobei）
 
-小贝（xiaobei）是wiseflow团队为OPC/中小微企业老板们量身打造的"AI搞钱搭子"，它基于 [openclaw](https://github.com/openclaw/openclaw)，在原版基础上增加了诸多面向真实创业场景的实用技能（同时也做了很多精简和源码级增强），目前它能帮你：
+小贝（xiaobei）是为OPC/中小微企业量身打造的自媒体获客AI Agent，底层架构基于 [openclaw](https://github.com/openclaw/openclaw)，目前它能帮你：
 
 - 微信公众号文章写作、排版与推送
 - 小红书/小绿书图文创作与发布
 - 图文海报生成
 - 短视频生成与多平台分发（支持视频号、抖音、小红书）
-- Twitter/X、微博、知乎等平台运营
+- Twitter/X、微博、知乎等平台发文
 - 爆款视频追爆分析、仿写与再创作（支持抖音、B站和小红书视频链接）
 - 已发布作品数据监控与每日定时复盘
 - 内置小红书、抖音、twitter/x、公众号、视频号平台起号方法论
@@ -20,34 +20,32 @@
 - 闲鱼运营、企业微信朋友圈触达
 - ……
 
-并且你只需通过手机上的微信与他沟通，即可实现全部功能！
+并且你只需通过手机上的微信与他沟通，即可实现全部功能！（同时支持飞书、企业微信）
 
 <img width="960" src="assets/feature1.jpg" />
 
 <img width="960" src="assets/feature2.jpg" />
 
-**除了微信外，我们也支持飞书和企业微信**
+xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 
 ---
 
 ## 🚀 **v5.6.0 更新**
 
 - 产品重大重构,更简洁、更易上手、更精炼！
-- **重新认识你的 main agent——小贝**：这一版的小贝不再是单一职能的运营助手，而是把此前分散的几个 agent 融合成了一个"AI 搞钱搭子"——
-  - **三角色一体**：新媒体运营（self-media-operator）+ 商务拓展（BD, business-developer）+ 投资人关系（IR, investor-relations）合体，外加 crew 生命周期管理。一个微信入口，从内容产出、找客户、到融资材料全包。
-  - **新媒体运营面**：多平台发布（公众号/小红书/视频号/抖音/微博/知乎/Twitter/YouTube）、`viral-chaser` 追爆仿写、`content-calibrator` 盲打分+预测、`published-track` 数据复盘、`video-product` 短视频全流程、`de-mouth`/`highlight-clipper` 视频精剪。
+- **重新认识你的 main agent——小贝**：这一版的小贝不再是单一职能的运营助手，而是把此前分散的几个 agent 融合成了一个——
+  - **三角色一体**：新媒体运营（self-media-operator）+ 商务拓展（BD, business-developer）+ 投资人关系（IR, investor-relations）合体，外加 sales-cs 生命周期管理。一个微信入口，从内容产出、找客户、到融资材料全包。
+  - **新媒体运营面**：多平台发布（公众号/小红书/视频号/抖音/微博/知乎/Twitter/YouTube）、`viral-chaser` 追爆仿写、`content-calibrator` 盲打分+预测、`published-track` 数据复盘、`video-product` 短视频全流程……
   - **商务拓展面**：`lead-hunting` 潜客探索、`comment-engagement` 评论区拓展、`intel-gathering` 情报采集，配 `bd-record`/`info-record` 数据层。
   - **投资人关系面**：`business-model-polish` 商业模式打磨、`project-application` 项目申报（含软著 `swcr-register`）、`investor-pipeline` 投资人发掘与跟进，配 `ir-record` 数据层。
-  - **本轮新增起号知识库**：内置 `channels-account-launch-expert`，覆盖抖音、Twitter/X、微信视频号、微信公众号、小红书 5 个平台从 0 起号的运营思路与账号对标——没账号、思路乱，先问小贝。
-  - **自主协作**：遇到自己搞不定的技术问题（token 过期、登录失效、配置缺失）不喊用户、不停活，自主 spawn IT 工程师修完继续干；按需招募 content-producer / sales-cs 两个 crew。
+  - **本轮新增起号知识库**：内置 `channels-account-launch-expert`，覆盖抖音、Twitter/X、微信视频号、微信公众号、小红书 5 个平台从 0 起号的运营思路与账号对标技能——没账号、思路乱，先问小贝。
+  - **自主协作**：遇到自己搞不定的技术问题（token 过期、登录失效、配置缺失）不喊用户、不停活，自主 spawn IT 工程师修完继续干。
 - **浏览器架构重新设计（双线栈）**：
   - **线 1（日常主力）**：forked [camoufox-cli](https://github.com/daijro/camoufox)（vendor 进 `patches/camoufox-cli/`，基于上游 `camoufox-cli@0.6.2` + 三个新功能：`upload` 命令 / fail-first 队列 / `identity export`）走旁路，反指纹 Firefox + JSON-over-unix-socket，绕开 routes/、pw-session、chrome-mcp。无头胜有头，资源占用更少，速度更快，反侦测能力依然在线。
-  - **线 2（特殊情况 fallback）**：保留 `target=host`（existing-session 真机 Chrome + chrome-mcp relay）+ `target=node`（remote-cdp 远端 Chrome）。
-  - **删 sandbox 整条路**（容器 + bridge + facade + `agents.defaults.sandbox.browser` 配置）+ **删 host `local-managed` 分支**（不再额外下 Chromium）+ **patchright 整体去掉**（`overrides.sh` 不再注入 patchright-core，playwright-core 保留给 remote-cdp 用）。
-  - **每平台一个且只一个持久化 session**（指纹冻结 + cookie 留 profile），并发由 fail-first 队列串行拒绝；不涉及登录的站点（新闻等）走临时性 session（每次随机指纹，关闭自清）。
-  - **profile 丢失 / 损坏 / 指纹错配 → 重建 + 重登录，绝对不允许导入 cookie 造会话**（详见 `docs/profile-loss-handling.md`）。
+  - **线 2**：保留openclaw原版 `target=host`（existing-session 真机 Chrome + chrome-mcp relay）+ `target=node`（remote-cdp 远端 Chrome）。
+  - **profile 丢失 / 损坏 / 指纹错配 → 重建 + 重登录
 - 适配 openclaw 2026-6-11 版本（近两个月最稳定版本）、openclaw-weixin 2.4.6 版本。
-- **主力 + 视觉 + 替补模型统一走火山方舟 Coding Plan**：一个套餐覆盖 GLM-5.2、Kimi-K2.7、MiniMax-M3、DeepSeek-V4、Doubao-Seed-2.0 等主流模型，**工具不限**。安装时只需一个 `AWK_API_KEY`，**不再需要 SiliconFlow**（视觉/替补也走 AWK）。
+- **主力 + 视觉 + 替补模型统一走火山方舟 Coding Plan**：新用户仅需注册一个套餐即可。
 
 详见 [CHANGELOG.md](CHANGELOG.md)
 
@@ -91,7 +89,7 @@ cd wiseflow
 
 > **调试模式**（单次启动，适合测试）：`./scripts/dev.sh gateway`
 
-> **系统要求**：推荐 Ubuntu 22.04；支持 WSL2 / macOS；不建议 Windows 原生
+> **系统要求**：推荐 Ubuntu 22.04；支持 WSL2 / macOS；Windows 用户建议使用docker方案
 
 ### 系统与环境要求
 
@@ -102,9 +100,8 @@ cd wiseflow
 | 可用硬盘 | 40 GB | 120 GB |
 | 带宽 | 10 Mbps | — |
 
-- **网络**：需可访问外网；建议使用正常住宅 IP，数据中心 IP 部分平台可能识别限制
+- **网络**：建议使用正常住宅 IP，数据中心 IP 部分平台可能识别限制。
 - 但部分发布能力又需要固定IP（平台限制，非软件能力问题），针对这个矛盾 Wiseflow team 已推出中转服务，具体可以添加下方掌柜二维码详询👇
-- **操作系统**：推荐 Ubuntu 24.04；支持 Windows WSL2、macOS 15 / 26
 
 > **💡 模型费用说明**
 >
@@ -138,7 +135,7 @@ cd wiseflow
 🎉 xiaobei 项目目前提供 **VIP Club**（售价 **168 元/年**），权益包括：
 
 - **付费知识库**：包含《手把手从零开始安装教程》、《安装之后三分钟上手指南》、《Openclaw 自定义配置全案教程》、《Windows 下安装 WSL2 无脑教程》以及各种最佳实践分享
-- **vip 微信交流群**，共同探讨交流各种玩法，创业路上不孤单
+- **vip 微信交流群**，共同探讨交流各种高性价比获客玩法，搞钱路上不孤单
 - 免费加入 Wiseflow 知识星球
 - 每月一次的线上闭门分享（腾讯会议），陪伴你从"小白"到"大神"！
 - **会员有效期内免费使用官方中转服务**：涉及小红书、抖音、微信公众号、企业微信朋友圈的技能都需要固定IP（平台要求），一般的家庭网络或办公网络环境并没有固定IP，Wiseflow团队已经搭建了官方的中转服务，vipclub会员期内畅用，不必再单独自建或购买。
@@ -206,11 +203,9 @@ Crew 遇到自己不能解决的问题：
 
 *详询"掌柜的"👆*
 
-## 🔧 比原版更强、更适合国内网络环境的浏览器方案
+## 🔧 v5.6.0 全新的浏览器栈
 
-基于之前**AI首席情报官**的技术积累，wiseflow团队对 openclaw 源码做了多处增强与修复，强化其浏览器自动化能力，并更加适合国内网络环境：
-
-**v5.6.0 浏览器栈整体替换**（详见 `docs/browser-stack-replacement-spec-2026-07.md`）：
+v5.6.0中，我们几乎重构了OpenClaw原版的浏览器自动化方案（详见 `docs/browser-stack-replacement-spec-2026-07.md`）：
 
 | 项 | 说明 |
 |----|------|
@@ -219,7 +214,6 @@ Crew 遇到自己不能解决的问题：
 | `patches/overrides.sh` | **去掉 patchright-core 注入**（playwright-core 保留给 remote-cdp 用）；保留 web_search disable |
 | `002-disable-web-search-env-var` | **留**：openclaw 内置 web search 大部分需要申请 api key 甚至海外网络，小贝自带完全免费、零部署的 Smart Search 解决方案 | `OPENCLAW_DISABLE_WEB_SEARCH=1` |
 | `007-prefer-camoufox-cli` | **留**（改名）：在 browser 工具描述中提示优先用 camoufox-cli 做浏览器自动化，原 browser 工具仅作兜底 | 无 |
-| ~~`003-act-field-validation`~~ / ~~`005-browser-timeout-env-var`~~ / ~~`006-connectovercdp-no-defaults`~~ | **删**：默认走 camoufox-cli 不经 browser tool 的 act 路由；camoufox-cli 走旁路不受 browser tool 超时影响；`noDefaults` 是 patchright 1.60+ 专属，patchright 整体去掉后原版 playwright-core 的 `connectOverCDP` 不支持该参数 |
 
 ## 目录结构
 

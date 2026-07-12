@@ -88,12 +88,10 @@
 
 | 平台 | 方案 | 实现路径 | 需登录 | 心跳可用 |
 |------|------|---------|--------|---------|
-| 小红书 (xhs) | **浏览器取 xsec_token + 脚本抓 feed** | 见下方「小红书 xsec_token 获取流程」 | ✅ login-manager | ✅ |
+| 小红书 (xhs) | **脚本闭环取 xsec_token + feed** | `fetch-xhs-with-xsec.ts`（脚本内 navigate profile + eval flatten JS 拿映射 + 调 feed） | ✅ login-manager | ✅ |
 | B站 (bilibili) | **脚本** | `fetch-and-update-metrics.sh` → fetch-retro-data.ts (WBI 公开 API) | ❌ 无需 | ✅ |
 | 抖音 (douyin) | **脚本** | `fetch-and-update-metrics.sh` → fetch-retro-data.ts (a_bogus 签名) | ✅ login-manager | ✅ |
 | 知乎 (zhihu) | **浏览器** | browser 导航到文章页 → snapshot 读赞同/评论/收藏数 | ✅ login-manager | ✅ |
-| 今日头条 (toutiao) | **浏览器** | browser 导航到文章页 → snapshot 读阅读/评论/点赞数 | ✅ login-manager | ✅ |
-| 掘金 (juejin) | **浏览器** | browser 导航到文章页 → snapshot 读阅读/点赞/评论数 | ❌ 无需 | ✅ |
 | Twitter/X (twitter) | **浏览器** | twitter-interact 技能浏览推文详情 → 读 views/likes/retweets/replies/bookmarks | ✅ login-manager | ✅ |
 | YouTube (youtube) | **浏览器** | browser 导航到视频页 → snapshot 读观看/点赞/评论数 | ❌ 无需 | ✅  |
 | 微信公众号 (wx_mp) | **跳过** | 无法自动获取 | — | ❌ |
@@ -101,11 +99,11 @@
 
 ##### 执行流程
 
-> **小红书 (xhs) 走专属流程**，不套用下面的通用流程：见下方「小红书 xsec_token 获取流程」。其他平台按以下通用流程。
+> **小红书 (xhs) 走 `fetch-xhs-with-xsec.ts` 脚本闭环**（脚本内拿 user_id + navigate profile + eval flatten JS 取映射 + 调 feed 抓数 + 写库，见 Step 2 平台方案表），不套用下面的通用流程。其他平台按以下通用流程。
 
 对每条记录（xhs 除外）：
 
-1. **调 `fetch-and-update-metrics.sh --platform <p> --source-folder <f>`**
+1. **调 `fetch-and-update-metrics.sh --platform <p> --source-folder <f>`**（注：心跳按 `--id <rowid>` 调，见 Step 2 开头）
 2. 解析返回的 JSON：
    - `ok=true, method=script` → **数据已自动获取并写入 DB**，完成
    - `ok=false, error=SESSION_EXPIRED` → **跳过该平台**，记录到 `EXPIRED_PLATFORMS` 列表，**不唤醒用户**（凌晨执行，用户白天处理）
@@ -118,72 +116,32 @@
 1. 如需 cookie：`login-manager check <platform>`，SESSION_EXPIRED 则跳过并记录
 2. browser 导航到 `publish_url`（从 DB 读取）
 3. snapshot 读取页面上的互动指标
-4. Twitter/X 特殊：使用 **twitter-interact** 技能浏览推文详情页获取互动数据
-5. 调 `update-metrics.sh` 写入 DB：
+4. 调 `update-metrics.sh` 写入 DB：
    ```bash
    ./skills/published-track/scripts/update-metrics.sh \
      --platform <platform> --source-folder <folder> \
      --views 1234 --likes 56 ...
    ```
 
-##### 小红书 xsec_token 获取流程（xhs 专属）
+##### 小红书取数流程（xhs 专属）
 
-小红书 feed API 现在强制要求 `xsec_token`，而 xsec_token 无法通过 API 纯净获取（`user_posted` 端点已 406），只能从浏览器 DOM 取。复盘时 xhs 单独走以下流程：
+xhs 取数走 `fetch-xhs-with-xsec.ts` 脚本内闭环——脚本自动：拿 self user_id（优先读 cache）→ camoufox-cli open profile 页 → eval flatten JS 拿 `note_id → xsec_token` 映射（找不到向下滚 3 屏）→ 调 `fetch-retro-data.ts` 抓 feed → `update-metrics.sh` 写库。
 
-1. **取 self user_id**（可缓存，cookie 换了才需 `--refresh`）：
-   ```bash
-   UID=$(./skills/published-track/scripts/get-xhs-user-id.sh)
-   ```
-   失败（exit 2 = cookie 失效）→ 记入 `EXPIRED_PLATFORMS`（平台名 `xhs-browse`），跳过 xhs。
+```bash
+node --experimental-strip-types ./skills/published-track/scripts/fetch-xhs-with-xsec.ts --id <rowid>
+```
 
-2. **浏览器取 note_id → xsec_token 映射**：
-   - browser 导航到 `https://www.xiaohongshu.com/user/profile/${UID}`，等笔记卡片渲染出来
-   - 用 browser evaluate 执行下面这段 JS，拿到 JSON 映射字符串：
-     ```js
-     // 小红书 profile 页笔记数据在 __INITIAL_STATE__.user.notes，
-     // 是「按 tab 分组的二维数组」（5 个 tab，每组是笔记列表），需 flatten。
-     // 每条笔记字段为 id + xsecToken（驼峰，在 note 对象顶层，不在 noteCard 里）。
-     // notes / 各分组 / 各笔记都可能是 Vue ref，统一用 unref 解包。
-     (() => {
-       const unref = v => (v && v.__v_isRef && v._rawValue !== undefined) ? v._rawValue : v;
-       const notes = unref(window.__INITIAL_STATE__?.user?.notes);
-       const map = {};
-       if (Array.isArray(notes)) {
-         for (const grp of notes) {
-           const g = unref(grp);
-           if (!Array.isArray(g)) continue;
-           for (const n of g) {
-             const nn = unref(n);
-             const nid = nn.id, tok = nn.xsecToken;
-             if (nid && tok) map[nid] = { xsec_token: tok, xsec_source: nn.xsecSource || "" };
-           }
-         }
-       }
-       return JSON.stringify(map);
-     })()
-     ```
-   - `xsec_source` 在 note 对象上没有，留空即可（fetch-retro-data.ts 会默认 `pc_feed`，已验证可用）
-   - 若某条 cal_enabled=1 记录的 note_id 不在映射里，向下滚动加载更多后再次 evaluate（最多 3 屏）
-
-3. **逐条抓 feed**：对每条 cal_enabled=1 的 xhs 记录，从 `publish_url` 用 `/explore/(note_id)` 正则提取 note_id，查映射拿 `xsec_token`/`xsec_source`，调：
-   ```bash
-   ./skills/published-track/scripts/fetch-and-update-metrics.sh \
-     --platform xhs --id <rowid> \
-     --xsec-token <tok> --xsec-source <src>
-   ```
-   `<rowid>` 取自该条记录的 `id`（按主键写单行，重复发布各自独立）。
-   解析返回 JSON：
-   - `ok=true` → 完成
-   - `ok=false, error=NOTE_INACCESSIBLE` → xsec_token 失效或笔记异常，记入 `FAILED_ITEMS`
-   - `ok=false, error=SESSION_EXPIRED` → 记入 `EXPIRED_PLATFORMS`（`xhs-browse`），跳过 xhs
-   - note_id 在映射里找不到 → 记入 `FAILED_ITEMS`，原因写"profile 页未加载到该笔记"
+解析返回 JSON：
+- `ok=true` → 完成
+- `ok=false, error=NOTE_NOT_IN_PROFILE` → profile 页 3 屏内未加载到该笔记，记入 `FAILED_ITEMS`
+- `ok=false, error=NOTE_INACCESSIBLE`（fetch 返）→ xsec_token 失效或笔记异常，记入 `FAILED_ITEMS`
+- `ok=false, error=SESSION_EXPIRED` → 记入 `EXPIRED_PLATFORMS`（`xhs-browse`），跳过 xhs——**失效不唤醒用户**，白天用 login-manager 重登
 
 ##### 注意事项
 
 - **SESSION_EXPIRED 处理**：心跳在凌晨执行，Cookie 失效时**不唤醒用户**，跳过该平台，在 Step 5 汇总时报告，用户白天使用 login-manager 重新登录
 - **浏览器操作必须串行**，不可并行
-- 微信公众号**直接跳过**，其互动数据无法通过任何自动化手段获取
-- **探活只针对取数端 cookie**：xhs 取数探活只用 `xhs-browse`（`fetch-and-update-metrics.sh` 内部已自动调 `login-manager check xhs-browse`）。**禁止额外调 `login-manager check xhs` 或 `check xhs-publish`**——前者与 xhs-browse 重复探浏览域且 `xhs.json` 不存在恒失败，后者探 creator 发布域、与取数无关且增加风控概率。
+- **探活只针对取数端 cookie**：xhs 取数探活只用 `xhs-browse` session（`fetch-xhs-with-xsec.ts` / `fetch-and-update-metrics.sh` 内部已自动走 camoufox-cli open + snapshot 探活）。**禁止额外探活 `xhs` 或 `xhs-publish`**——前者与 xhs-browse 重复探浏览域且 `xhs.json` 不存在恒失败，后者探 creator 发布域、与取数无关且增加风控概率。
 
 ---
 

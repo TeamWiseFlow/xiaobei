@@ -29,7 +29,7 @@ metadata:
 3. 视频文件准备好（mp4）
 4. 抖音创作者中心已实名认证（必须，本人手机号 + 身份证）
 
-> **同时导出 cookie 和 UA**（原则 4，spec §4.2）：抖音设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。本 skill 脚本走持久化 session `douyin`（登录态 + 指纹冻结在 session profile 里），**自身运行不读中央 cookie 文件**——探活也是 `open + snapshot` 看跳登录页，不走中央存储。导出 cookie+UA 落中央存储仅为**备份**（session profile 损坏时作重建起点）+ 与 login-manager 6 平台统一步骤保持一致。
+> **同时导出 cookie 和 UA**（原则 4，spec §4.2）：抖音设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。本 skill 脚本走持久化 session `douyin`（登录态 + 指纹冻结在 session profile 里），**自身运行不读中央 cookie 文件**——探活也是 `open + snapshot` 看跳登录页，不走中央存储。导出 cookie+UA 落中央存储仅为**备份**（session profile 损坏时作重建起点）+ 与 login-manager 5 平台统一步骤保持一致。
 
 ---
 

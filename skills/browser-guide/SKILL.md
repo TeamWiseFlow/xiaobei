@@ -73,7 +73,13 @@ When the login page shows a QR code (WeChat Official Account backend, WeChat Cha
 5. While waiting, poll the page every **3 seconds** (`snapshot` 看 URL 是否跳走 / QR 元素是否消失 / dashboard 是否出现). Auto-detected → resume immediately without waiting for user reply.
 6. If no scan within **3 minutes** and no reply arrives, send: _"扫码超时，将继续处理当前可访问的内容。"_ and proceed.
 
-> **wechat-channel / wx-mp** 可无头启动截图发 QR；**douyin / twitter / xhs（xhs-publish \| xhs-browse）/ weibo / zhihu / xianyu / reddit / youtube 登录必须有头模式**（原则 3，见 login-manager）。
+> **显式有头/无头模式场景规则**：只有以下两种场景需要显式指定 `camoufox-cli` 的有头/无头参数：
+> 1. **login-manager 登录**（douyin / kuaishou / bilibili / xhs-publish / xhs-browse 5 平台）——强制 `--headed`，用户在浏览器手动扫码/短信/账号密码
+> 2. **需要用户手动过验证**（captcha / 滑块 / 短信）——`--headed`，用户才能在浏览器里手动操作
+>
+> 其他场景默认走 camoufox 持久化 session，**不显式指定有头/无头**——camoufox-cli 默认行为即可。
+>
+> **wx_mp（公众号）无头截图 QR** 是特例，但不属于 login-manager 体系，由 `wx-mp-hunter` + `wx-mp-engagement` 两技能自管（详见 `docs/platform-login-and-browser-spec.md` §4）。本节不集中下结论。
 
 ### 1-C. SMS verification login
 

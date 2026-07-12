@@ -24,7 +24,7 @@ metadata:
 
 ## 前置条件
 
-1. 执行 `login-manager check xhs-publish` 确认登录态有效（exit 0）。探活方式见 login-manager SKILL.md 步骤 0——开持久化 session `xhs-publish` + `open` `https://creator.xiaohongshu.com/` + `snapshot` 看是否跳登录页。
+1. 探活按 login-manager SKILL.md 步骤 0：`camoufox-cli --session xhs-publish --persistent --headless --json open "https://creator.xiaohongshu.com/"` + `snapshot` 看是否跳登录页（登录态有效 = 没跳登录页；跳登录页 = 失效）。
 2. 若 exit 2，按 login-manager skill 的流程完成**有头手动**登录（原则 3：xhs-publish 有头登录）：
    - 启有头 session：`camoufox-cli --session xhs-publish --persistent --headed --json open "https://creator.xiaohongshu.com/publish/publish?source=official"`
    - 告知用户「**小红书创作者** 浏览器已打开，请在窗口里手动扫码登录，完成后告诉我」
@@ -110,7 +110,7 @@ python3 .../publish_xhs.py --body "这里就是实际正文，不是文件路径
 
 ## Agent 工作流
 
-1. 执行 `login-manager check xhs-publish` 确认 cookie 有效
+1. 探活按 login-manager SKILL.md 步骤 0：`camoufox-cli --session xhs-publish --persistent --headless --json open "https://creator.xiaohongshu.com/"` + `snapshot` 看是否跳登录页（exit 0 = 有效）
 2. 准备素材（图片/视频 + 标题 + 正文）
 3. 运行 `publish_xhs.py` 脚本
 4. 检查 stdout JSON 输出：

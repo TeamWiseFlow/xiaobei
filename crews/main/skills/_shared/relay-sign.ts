@@ -9,8 +9,8 @@
  * 端点对应 relay 仓 services/sign/：
  *   POST /api/v1/sign/xhs/headers  → 仅签名（返回完整 headers）
  *   POST /api/v1/sign/douyin        → 算 a_bogus
+ *   POST /api/v1/sign/bilibili/wbi  → 算 WBI 签名 {wts, w_rid}（client 合并到原参数）
  *   xhsFetch(input)                  → 调 xhsHeaders 拿签名 + client 自己 fetch xhs.com（client 端收尾）
- * todo: 这里还缺一个bilibili签名接口，后续需要加上
  */
 
 // 默认指向官方中转 relay（VIP Club 会员默认走我们中转，零配置起手）。
@@ -150,6 +150,31 @@ export async function douyinSign(input: DouyinSignInput): Promise<string> {
     ua: input.ua,
   });
   return data.a_bogus
+}
+
+// ── bilibili ─────────────────────────────────────────────────────────────────
+
+export interface BilibiliWbiSignInput {
+  /** 待签字段（业务参数，不含 wts/w_rid）；relay 会加 wts 后算 w_rid */
+  params: Record<string, string | number>;
+  /** nav 拉 imgKey（client 负责 nav 拉取 + 缓存） */
+  imgKey: string;
+  /** nav 拉 subKey（client 负责 nav 拉取 + 缓存） */
+  subKey: string;
+}
+
+/**
+ * 算 WBI 签名 {wts, w_rid}（relay 只签字段，不拉 nav）。
+ * client 拿到后合并到原 params 拼 URL 发请求。imgKey/subKey 拉取与缓存归 client。
+ * （契约 docs/API-CONTRACT.md §sign/bilibili/wbi）
+ */
+export async function bilibiliWbiSign(input: BilibiliWbiSignInput): Promise<{ wts: string; w_rid: string }> {
+  const data = await postJson<{ wts: string; w_rid: string }>("/api/v1/sign/bilibili/wbi", {
+    params: input.params,
+    imgKey: input.imgKey,
+    subKey: input.subKey,
+  });
+  return { wts: String(data.wts), w_rid: data.w_rid }
 }
 
 export { RELAY_BASE_URL };

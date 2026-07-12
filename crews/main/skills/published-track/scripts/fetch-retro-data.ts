@@ -33,7 +33,6 @@ import { join } from "path"
 import { homedir } from "os"
 import { execFile } from "child_process"
 import { promisify } from "util"
-import { createHash } from "crypto"
 
 const execFileAsync = promisify(execFile)
 
@@ -255,17 +254,8 @@ function genFakeMsToken(): string {
 const BILI_API = "https://api.bilibili.com"
 const BILI_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 
-const MAP_TABLE = [
-  46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,
-  33,9,42,19,29,28,14,39,12,38,41,13,37,48,7,16,24,55,40,
-  61,26,17,0,1,60,51,30,4,22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52,
-]
-
-function getMixinKey(imgKey: string, subKey: string): string {
-  const raw = imgKey + subKey
-  return MAP_TABLE.map(i => raw[i]).join("").slice(0, 32)
-}
-
+// WBI 签名走 relay（/api/v1/sign/bilibili/wbi，仅算 {wts, w_rid}）。
+// imgKey/subKey 拉取与缓存归 client（契约 docs/API-CONTRACT.md §sign/bilibili/wbi）。
 let wbiKeyCache: { imgKey: string; subKey: string; ts: number } | null = null
 
 async function getWbiKeys(): Promise<{ imgKey: string; subKey: string }> {
@@ -288,23 +278,6 @@ async function getWbiKeys(): Promise<{ imgKey: string; subKey: string }> {
     ts: Date.now(),
   }
   return { imgKey: wbiKeyCache.imgKey, subKey: wbiKeyCache.subKey }
-}
-
-function wbiSign(params: Record<string, string | number>): Record<string, string> {
-  // 同步版本 — 需要先调 getWbiKeys() 拿到 key
-  if (!wbiKeyCache) throw new Error("WBI keys not loaded")
-  const { imgKey, subKey } = wbiKeyCache
-  const wts = Math.floor(Date.now() / 1000)
-  const allParams = { ...params, wts }
-  const sorted = Object.fromEntries(
-    Object.entries(allParams)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([k, v]) => [k, String(v).replace(/[!'()*]/g, "")])
-  )
-  const query = new URLSearchParams(sorted).toString()
-  const salt = getMixinKey(imgKey, subKey)
-  const w_rid = createHash("md5").update(query + salt).digest("hex")
-  return { ...sorted, w_rid }
 }
 
 async function fetchBilibili(bvid: string): Promise<RetroResult> {
@@ -340,14 +313,20 @@ async function fetchBilibili(bvid: string): Promise<RetroResult> {
     }
     console.error(`  ✓ 播放 ${result.stats.viewCount} / 点赞 ${result.stats.likeCount} / 评论 ${result.stats.replyCount}`)
 
-    // 2. 评论（公开 API，WBI 签名）
-    console.error("  → 调 B站 API 获取评论...")
-    await getWbiKeys()
+    // 2. 评论（公开 API，WBI 签名走 relay）
+    console.error("  → 调 B站 API 获取评论（relay 签名）...")
+    const { bilibiliWbiSign } = await import("../../_shared/relay-sign.ts")
+    const wbiKeys = await getWbiKeys()
     const comments: Array<{ cid: string; text: string; likeCount: number; userName: string }> = []
 
     for (let page = 1; page <= 5; page++) {
-      const signed = wbiSign({ type: 1, oid: aid, pn: page, ps: 20, sort: 1 })
-      const qs = new URLSearchParams(signed).toString()
+      const baseParams = { type: 1, oid: aid, pn: page, ps: 20, sort: 1 }
+      const { wts, w_rid } = await bilibiliWbiSign({
+        params: baseParams,
+        imgKey: wbiKeys.imgKey,
+        subKey: wbiKeys.subKey,
+      })
+      const qs = new URLSearchParams({ ...baseParams, wts, w_rid }).toString()
       const resp = await fetch(`${BILI_API}/x/v2/reply?${qs}`, {
         headers: { "User-Agent": BILI_UA },
         signal: AbortSignal.timeout(15_000),
@@ -385,7 +364,7 @@ const KUAISHOU_GQL = "https://www.kuaishou.com/graphql"
 async function fetchKuaishou(photoId: string): Promise<RetroResult> {
   const session = requireSession("kuaishou")
   const cookieDict = parseCookies(session.cookies)
-  const ua = sessionUA("bilibili", session)
+  const ua = sessionUA("kuaishou", session)
 
   const result: RetroResult = {
     ok: true,

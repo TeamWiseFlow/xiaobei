@@ -17,7 +17,10 @@ import { promisify } from "util"
 import { join } from "path"
 
 import { parseLink } from "./link_parser.ts"
-import { requireSession } from "./session.ts"
+import { requireSession, readUserAgent } from "./session.ts"
+import { getDouyinVideo } from "./platforms/douyin.ts"
+import { getBilibiliVideo } from "./platforms/bilibili.ts"
+import { getXhsVideo } from "./platforms/xhs.ts"
 import { downloadVideo } from "./downloader.ts"
 import { extractAudio } from "./audio_extractor.ts"
 import { transcribeAudio } from "./transcriber.ts"
@@ -129,13 +132,21 @@ async function main(): Promise<void> {
   }
 
   try {
-    // viral-chaser 平台抓取模块已废弃（douyin.ts / bilibili.ts / xhs.ts 三个 0 字节空文件被删），
-    // 整体 broken——等 config-template 任务（#1）从 main skills 列表移除 viral-chaser。
-    // 见 crews/_shared/relay-sign.ts 的 xhsFetch 改造（xhs 严格 client-only）。
-    errExit(
-      `viral-chaser 平台抓取已废弃（${platform}）；` +
-      `请改用 ${platform === "xhs" ? "xhs-content-ops fetch_note_content" : "其他平台专用 skill"}`
-    )
+    if (platform === "douyin") {
+      videoInfo = await getDouyinVideo(contentId, session)
+    } else if (platform === "bilibili") {
+      videoInfo = await getBilibiliVideo(contentId, session)
+    } else if (platform === "xhs") {
+      // Extract xsec_token from the resolved URL (after short-link expansion),
+      // not the original input — short links carry no token until expanded.
+      const tokenMatch = parsed.resolvedUrl.match(/[?&]xsec_token=([^&]+)/)
+      const xsecToken = tokenMatch ? decodeURIComponent(tokenMatch[1]) : ""
+      const sourceMatch = parsed.resolvedUrl.match(/[?&]xsec_source=([^&]+)/)
+      const xsecSource = sourceMatch ? decodeURIComponent(sourceMatch[1]) : ""
+      videoInfo = await getXhsVideo(contentId, session, xsecToken, xsecSource)
+    } else {
+      errExit(`不支持的平台: ${platform}`)
+    }
   } catch (e) {
     const msg = (e as Error).message
     if (msg.includes("cookie") || msg.includes("失效") || msg.includes("auth")) {
@@ -154,10 +165,12 @@ async function main(): Promise<void> {
   mkdirSync(tmpDir, { recursive: true })
 
   process.stderr.write(`[viral-chaser] 开始下载视频...\n`)
+  // UA 走独立 .ua.json 文件（原则 4：cookie + UA 同指纹同源）
+  const userAgent = readUserAgent(sessionPlatform)
   let downloadResult: Awaited<ReturnType<typeof downloadVideo>>
   try {
     downloadResult = await downloadVideo(
-      videoInfo!.videoUrl, tmpDir, "video.mp4", session.user_agent
+      videoInfo!.videoUrl, tmpDir, "video.mp4", userAgent
     )
   } catch (e) {
     errExit(`视频下载失败: ${(e as Error).message}`)

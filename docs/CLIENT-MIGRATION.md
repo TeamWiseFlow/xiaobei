@@ -49,10 +49,11 @@ HTTP `POST /api/v1/wx-mp/publish`，multipart 表单：
 | `markdown` | text | 是 | 待发布的 markdown 正文 |
 | `wechat_app_id` | text | 是 | 公众号 AppID |
 | `wechat_app_secret` | text | 是 | 公众号 AppSecret |
-| `theme` | text | 否 | 渲染主题 |
+| `theme` | text | 否 | 内置渲染主题 id（`pie`/`lapis`/`default`/…） |
+| `custom_theme` | text | 否 | 自定义主题 CSS 文本内容（client 读本地 `.css` 上传；relay 写 per-request 临时目录，不持久化） |
 | `images` | file | 否 | 正文图片，可多个 |
 
-错误码（400）：`MISSING_MARKDOWN` / `MISSING_APP_ID` / `MISSING_APP_SECRET`；发布失败 502。仅支持文本+图片（无视频）。普通文章 / 小绿书由 relay 内核心按 `image_list` 是否为空自动分支。
+错误码（400）：`MISSING_MARKDOWN` / `MISSING_APP_ID` / `MISSING_APP_SECRET` / `INVALID_CUSTOM_THEME`；发布失败 502。仅支持文本+图片（无视频）。普通文章 / 小绿书由 relay 内核心按 `image_list` 是否为空自动分支。`theme` 与 `custom_theme` 同时给时 `custom_theme` 优先。自定义主题由 `generate-wenyan-theme` 技能在 client 本地生成并登记到 `wx-mp-publisher/SKILL.md` 主题表；发布时 client 读对应 `.css` 文件内容作为 `custom_theme` 字段上传，relay 不存主题、不按用户落盘。
 
 ### 前后对比
 
@@ -65,7 +66,8 @@ const form = new FormData()
 form.append('markdown', markdownContent)
 form.append('wechat_app_id', creds.appId)
 form.append('wechat_app_secret', creds.appSecret)
-if (theme) form.append('theme', theme)
+if (theme) form.append('theme', theme)                 // 内置主题 id
+if (customThemeCss) form.append('custom_theme', customThemeCss) // 自定义主题 CSS 文本（读本地 .css）
 for (const img of images) form.append('images', img.blob, img.filename)
 
 const r = await fetch('https://relay.openclaw-for-business.com/api/v1/wx-mp/publish', {

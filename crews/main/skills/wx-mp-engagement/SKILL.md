@@ -1,8 +1,6 @@
 ---
 name: wx-mp-engagement
-description: 微信公众号 engagement 数据抓取。通过 camoufox-cli 跑创作者中心
-  拿已发布文章的阅读数 / 点赞数 / 评论数 / 分享数 / 收藏数，写入 published-track
-  的 pub_wx_mp 表。
+description: 微信公众号 engagement 数据抓取。通过 camoufox-cli 跑创作者中心拿已发布文章的阅读数 / 点赞数 / 评论数 / 分享数 / 收藏数，写入 published-track的 pub_wx_mp 表。
 metadata:
   openclaw:
     emoji: 📈
@@ -15,7 +13,7 @@ metadata:
 
 # 微信公众号 Engagement 抓取
 
-通过 **camoufox-cli + login-manager 拿 cookie + 创作者中心列表页爬虫** 替换 published-track `MANUAL_PLATFORMS` 中 `wx_mp` 的"手动填"。**不碰 relay**（凭据是会话 token，relay 持有无益）。
+通过 **camoufox-cli + 与 wx-mp-hunter 共用的 wx_mp 持久化 session + 创作者中心列表页爬虫** 替换 published-track `MANUAL_PLATFORMS` 中 `wx_mp` 的"手动填"。**不碰 relay**（凭据是会话 token，relay 持有无益）。
 
 **思路**：创作者中心后台的「发表记录」页面把每篇已发布文章的阅读/点赞/评论/分享/收藏列在行内，走「发表记录页 -> 解析 innerText -> 按标题匹配 -> 提行内数字」，不需要打开单篇分析页。
 
@@ -25,34 +23,25 @@ metadata:
 
 ## 前置条件
 
-### 1. login-manager 探活 + 失效重登
+### 1. wx_mp session 探活 + 失效重登（走 wx-mp-hunter，不走 login-manager）
+
+wx-mp-engagement 与 wx-mp-hunter **共用** camoufox 持久化 session `wx_mp`（靠 session 名约定共享同一 profile 目录与登录态）。探活/登录/导出 cookie+UA+token 落中央存储 全由 wx-mp-hunter 负责。
 
 ```bash
 # 探活
-login-manager.sh check wx-mp
+wx-mp-hunter.sh check
 
 # 失效后：camoufox 扫码登录
-login-manager.sh qr-headless wx-mp
+wx-mp-hunter.sh login           # camoufox 无头截 QR PNG 落 /tmp/qr-wx-mp.png
 # （发 QR PNG 给用户 -> 用户扫码后 -> 主会话回复"已扫码"）
-login-manager.sh qr-confirm wx-mp --session <s> --timeout 180
+wx-mp-hunter.sh login-confirm   # 验登录就位 + 导出 cookie+UA+token 落中央存储
 ```
 
 退出码：
 - `0` 有效
-- `2` 失效 -> 走 qr-headless + qr-confirm
+- `2` 失效 -> 走 wx-mp-hunter login + login-confirm
 
-> ⚠️ **已知问题**：login_manager.py 的 `camoufox_open` 函数使用了 `--headless` 参数，当前 camoufox-cli 不支持此参数（headless 是默认行为）。在 IT engineer 修复前，可手动用 camoufox-cli 直接登录：
-> ```bash
-> SESSION="wx-mp-login-$(python3 -c 'import secrets; print(secrets.token_hex(4))')"
-> camoufox-cli --session "$SESSION" --persistent --json open "https://mp.weixin.qq.com/"
-> # 截图 QR 发给用户扫码
-> camoufox-cli --session "$SESSION" --json screenshot /tmp/qr-wx-mp.png
-> # 用户扫码确认后，导出 cookie
-> camoufox-cli --session "$SESSION" cookies export /tmp/wx-mp-cookies.json
-> # 转为中央存储格式
-> python3 -c "import json,datetime; c=json.load(open('/tmp/wx-mp-cookies.json')); json.dump({'platform':'wx-mp','cookies':c,'updated_at':datetime.datetime.now(datetime.timezone.utc).isoformat()}, open('/home/wukong/.openclaw/logins/wx-mp.json','w'), ensure_ascii=False, indent=2)"
-> camoufox-cli --session "$SESSION" close
-> ```
+> wx-mp-engagement **不吃 cookie**——只走 camoufox-cli 操作浏览器，wx_mp session profile 里登录态已就位即可。中央存储的 cookie+UA+token 仅供 wx-mp-hunter 的脚本业务命令（search/account-posts/fetch）用。
 
 ### 2. published-track DB 已就位
 
@@ -84,7 +73,7 @@ wx-mp-engagement.sh fetch-all --days 7
 退出码：
 - `0` 成功
 - `1` 通用错误（参数错 / row 找不到 / 标题未匹配）
-- `2` cookie 失效（与 login-manager / fetch-and-update-metrics 契约一致）
+- `2` session 失效（与 wx-mp-hunter / fetch-and-update-metrics 呑约一致）
 
 ---
 
@@ -112,20 +101,20 @@ wx-mp-engagement.sh fetch-all --days 7
 ### fetch 流程
 
 ```
-1. login-manager.sh check wx-mp
-   ├─ exit 2 -> 退出（调用方触发 qr-headless + qr-confirm）
+1. wx-mp-hunter.sh check
+   ├─ exit 2 -> 退出（调用方触发 wx-mp-hunter login + login-confirm）
    └─ exit 0 -> 继续
 2. lookup_published_row(row_id) -> 拿 title / publish_url
 3. session_name() -> wx-mp-engagement-{nonce} 独立 session
 4. camoufox-cli open "https://mp.weixin.qq.com/" -> 创建 session（不传 --headless）
-5. login-manager.sh cookie-import wx-mp <session>
+5. （wx_mp session profile 内登录态已就位，无需 import）
 6. camoufox-cli open "https://mp.weixin.qq.com/" -> 用 cookie 访问首页，重定向带 token
 7. camoufox-cli url -> 提取 token
 8. camoufox-cli open "https://mp.weixin.qq.com/cgi-bin/appmsgpublish?sub=list&begin=0&count=20&token=<TOKEN>&lang=zh_CN" -> 发表记录页
 9. camoufox-cli eval <innerText 解析 JS> -> [{title, metrics}, ...]
 10. match_article(rows, row.title) -> 按标题归一化匹配
 11. update-metrics.sh --platform wx_mp --id <row_id> ... -> 写 pub_wx_mp
-12. finally: camoufox-cli close / login-manager.sh session-cleanup
+12. finally: 不主动 close（wx_mp 持久化 session 留下次用）
 ```
 
 ---
@@ -160,7 +149,7 @@ wx-mp-engagement.sh fetch-all --days 7
 # 由 published-track 现有流程统一调用
 fetch-and-update-metrics.sh --platform wx_mp --id 42
 # 内部：
-#   1. login-manager 探活（探测 wx-mp cookie）
+#   1. wx-mp-hunter 探活（探测 wx_mp session）
 #   2. wx-mp-engagement.sh fetch --row-id 42  ← 本 skill
 #   3. update-metrics.sh 写 pub_wx_mp
 ```
@@ -200,12 +189,8 @@ fetch-and-update-metrics.sh --platform wx_mp --id 42
 ### pitfall: token 过期
 
 - **症状**：列表页显示"请重新登录"
-- **workaround**：重新走 login-manager 登录流程，获取新 cookie
+- **workaround**：重新走 wx-mp-hunter login + login-confirm 流程，获取新 session
 
-### pitfall: cookie-import 前未创建 session
-
-- **症状**：`camoufox-cli cookies import` 失败
-- **workaround**：必须先 `camoufox-cli open` 创建 session，再 import cookies
 
 ### pitfall: 列表页 URL 必须带 token
 

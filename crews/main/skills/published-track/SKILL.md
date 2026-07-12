@@ -141,8 +141,6 @@ Exit codes：0=成功/浏览器/手动（非错误），1=一般错误，2=SESSI
 
 - **脚本支持**：xhs、bilibili、douyin、kuaishou（走 `fetch-retro-data.ts` 纯 HTTP + cookie + UA）；wx_mp（走同目录下的 `wx-mp-engagement` skill——已实际验证可直接用，不再作为单独技能，由 `fetch-and-update-metrics.sh` 内部 exec）
 
-其他平台只能使用浏览器进行取数，或者由用户提供。
-
 ### 流程 2B·用户提供数据（Agent 补录）
 
 用户主动告知已发布内容的信息，Agent 用 `record.sh` 录入基础信息，再用 `update-metrics.sh` 补录互动数据：

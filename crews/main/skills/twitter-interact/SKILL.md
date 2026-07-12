@@ -1,7 +1,6 @@
 ---
 name: twitter-interact
-description: Twitter/X 互动操作技能——支持点赞 / 取消点赞 / 转推 / 取消转推 / 收藏 /
-  取消收藏 / 关注 / 取关。camoufox-cli 主推路径 + login-manager 中央 cookie + 频率限制。
+description: Twitter/X 互动操作技能——支持点赞 / 取消点赞 / 转推 / 取消转推 / 收藏 / 取消收藏 / 关注 / 取关。camoufox-cli 主推路径 + 持久化 session 自管登录 + 频率限制。与 twitter-post 共用 session `twitter`。
 metadata:
   openclaw:
     emoji: 💬
@@ -14,6 +13,8 @@ metadata:
 # Twitter/X 互动操作（twitter-interact）
 
 > **Reply / Quote** 不在本 skill（属于 `twitter-post` 的 Quote Tweet / Reply to Tweet 流程）。
+>
+> 本 skill 与 login-manager **完全无关**——Twitter 互动是纯浏览器操作，走持久化 session `twitter`（与 `twitter-post` 共用同一个 session），登录态在 session profile 里闭环，**不导出 cookie/UA 落中央存储**。探活 + 登录流程在本 skill 自管，见下方「探活与登录」段。
 
 ---
 
@@ -48,22 +49,32 @@ metadata:
 
 ## 前置条件
 
-### 1. login-manager 中央 cookie + 有头登录（原则 3）
+### 1. 探活与登录（本 skill 自管，不走 login-manager）
+
+走持久化 session `twitter`（与 `twitter-post` 共用）。探活方式：开 session open 平台首页 + snapshot 看是否跳登录页。
 
 ```bash
-# 探活（exit 0 = 有效）
-login-manager.sh check twitter
-
-# 失效后：有头登录（twitter 必须有头，原则 3——不无头截图 QR）
-login-manager.sh login-headed twitter
-# → camoufox-cli --session twitter --persistent --headed open https://x.com
-# → 用户在弹出的 Firefox 窗口完成登录
-# → login-manager 导出 cookie + UA（forked cli identity export）
-#   到 ~/.openclaw/logins/twitter.json + twitter.ua.json
-# → close
+# 探活
+camoufox-cli --session twitter --persistent --headless --json open "https://x.com/"
+sleep 3
+camoufox-cli --session twitter --json snapshot
+# snapshot 看页面是否跳到登录页 / 出现登录按钮 / 推文是否正常可见
+# → 没跳登录页、内容正常 = 登录态有效，可 close 后交后续操作用
+# → 跳到登录页 / 出现登录按钮 = 登录态失效，走重登
+camoufox-cli --session twitter --json close
 ```
 
-> twitter 不走无头 QR 流程（与 wechat-channel / wx-mp 不同）。原因：X 登录风控对无头 + QR 识别严格，有头人工登录最稳。
+重登流程（失效时）：
+
+```bash
+# X 登录风控对无头 + QR 识别严格，有头人工登录最稳
+camoufox-cli --session twitter --persistent --headed --json open "https://x.com/login"
+# 告知用户「**Twitter/X** 浏览器已打开，请在窗口里手动完成登录（账号密码 / 手机 APP 扫码），完成后告诉我」
+# 等用户回复后 snapshot 验登录态就位
+camoufox-cli --session twitter --json close
+```
+
+**不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`。
 
 ### 2. camoufox-cli（forked）已安装
 
@@ -73,9 +84,11 @@ login-manager.sh login-headed twitter
 
 `~/.openclaw/agents/main/sessions/twitter-interact-frequency.json` —— 每次成功操作后自动 append。
 
-### 4. 单一持久化 session `twitter`（原则 1）
+### 4. 单一持久化 session `twitter`（与 twitter-post 共用）
 
 所有互动操作共享同一个 `--persistent` session `twitter`（指纹冻结 + cookie 留 profile）。并发调用由 forked cli 的 **fail-first 队列**串行拒绝——脚本不自动排队、不自动等待，读到 `session twitter 正忙` 文本时 exit 3，调用方（agent）应等待当前操作完成后再试。
+
+**与 `twitter-post` 共 session**：两个技能都用 `--session twitter`，所以共享同一 profile 目录与登录态——twitter-post 登录后 twitter-interact 不需重登，反之亦然。靠 session 名字符串约定即可，无需别的机制。
 
 ---
 
@@ -119,9 +132,9 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 ### 单条 like（典型）
 
 ```
-1. login-manager.sh check twitter
-   ├─ exit 0 → 继续
-   └─ exit 2 → 提示走 login-headed（原则 3，有头登录）
+1. 探活（见「探活与登录」段）
+   登录态有效 → 继续
+   登录态失效 → 走重登流程（有头手动登录），完成后继续
 2. camoufox-cli --session twitter --persistent --headless open https://x.com/i/web/status/<id>
    └─ 若 session 正忙 → forked cli 返回 fail-first 文本 → 脚本 exit 3（不 close，不排队）
 3. camoufox-cli --session twitter --json eval "
@@ -131,7 +144,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 4. 检查频率限制（check_freq_limit）
    ├─ 通过 → 写 FREQ_TRACKER_PATH
    └─ 不通过 → exit 1
-5. login-manager.sh session-cleanup twitter <session>
+5. camoufox-cli --session twitter --json close（或留着给下次用，见「必做约束」）
 6. 输出 {ok, tweet_id, action, session}
 ```
 
@@ -194,7 +207,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 
 | 情况 | 处理 |
 |------|------|
-| Cookie 失效（login-manager exit 2）| 提示走 login-headed（原则 3，有头登录）|
+| Cookie 失效（探活 exit 2）| 走自管重登流程（有头手动登录），完成后重试一次 |
 | session 正忙（forked cli fail-first）| exit 3 + 透传 busy 文本，**不 close**（避免 tear down 正在跑的另一个操作），agent 等待重试 |
 | Tweet ID / Handle 解析失败 | exit 1（提示格式错）|
 | 频率限制触发 | exit 1（提示等待时间）|
@@ -237,7 +250,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 ## 相关 skill
 
 - `twitter-post`（Quote / Reply / Long post 在那边，用 forked cli `upload` 命令传媒体）
-- `login-manager`（cookie + UA 中央存储；登录走 `login-headed twitter`，导出用 forked cli `identity export`）
+- `twitter-post` 共用 session `twitter`（靠 session 名约定共享登录态，无需别的机制）
 
 ---
 
@@ -248,5 +261,4 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 - **不**与 published-track 共享频率统计（本 skill 自有 FREQ_TRACKER_PATH）
 - **BD 场景主推**：关注目标用户（follow）+ 点赞目标推（like）+ 收藏（bookmark）— 这三个是 BD 自动化常用组合
 - **风控告警阈值**：日累计 50% 上限时输出 warning（不是 hard block）
-- **forked cli 新命令**：`upload`（本 skill 不用，无媒体）/ `identity export`（login-manager 登录时导出 UA）/ fail-first 队列（本 skill 依赖，串行化并发）
-- **AiToEarn 上游参考**（`yikart/AiToEarn` v2.4.0 `74e884f0`）：twitter 互动走 Twitter API v2 + OAuth（`POST /users/{id}/likes` 等），本 skill 不搬 API 架构（spec 要求 camoufox-cli），只吸收操作语义（like/unlike/retweet/follow 子命令结构 + 频率纪律）。如未来配齐 X OAuth 凭证，可加 API 路径作为更快/更稳的 fallback。
+- **forked cli 新命令**：`upload`（本 skill 不用，无媒体）/ fail-first 队列（本 skill 依赖，串行化并发）——本 skill 不导出 cookie/UA，故不用 `identity export`

@@ -100,7 +100,7 @@ metadata:
 
 ### 前置条件
 
-1. 执行 `login-manager check xhs-browse` 确认登录态有效（exit 0）。探活方式见 login-manager SKILL.md 步骤 0——开持久化 session `xhs-browse` + `open` 平台首页 + `snapshot` 看是否跳登录页。
+1. 探活按 login-manager SKILL.md 步骤 0：`camoufox-cli --session xhs-browse --persistent --headless --json open "https://www.xiaohongshu.com/"` + `snapshot` 看是否跳登录页（登录态有效 = 没跳登录页；跳登录页 = 失效）。
 2. 若 exit 2，按 login-manager skill 的流程完成**有头手动**登录（原则 3：xhs-browse 有头登录）：
    - 启有头 session：`camoufox-cli --session xhs-browse --persistent --headed --json open "https://www.xiaohongshu.com/"`
    - 告知用户「**小红书** 浏览器已打开，请在窗口里手动扫码登录，完成后告诉我」

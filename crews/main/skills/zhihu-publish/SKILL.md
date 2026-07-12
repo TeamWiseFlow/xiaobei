@@ -17,18 +17,14 @@ metadata:
 
 ## 前置条件
 
-1. login-manager 已有 `zhihu` cookie + UA（中央存储 `~/.openclaw/logins/zhihu.json` + `~/.openclaw/logins/zhihu.ua.json`）
-2. 首次使用 / cookie 失效需走 login-manager **有头手动**登录流（原则 3：zhihu 有头登录）：
+1. 持久化 session `zhihu` 已登录（登录态存 session profile 里）。本 skill 与 login-manager **完全无关**——自管探活 + 登录，**不导出 cookie/UA 落中央存储**。
+2. 首次使用 / 登录态失效时，走自管**有头手动**登录流：
    - `camoufox-cli --session zhihu --persistent --headed --json open "https://www.zhihu.com"`
    - 告知用户「**知乎** 浏览器已打开，请在窗口里手动登录，完成后告诉我」
-   - 登录就位后**同时导出 cookie + UA**：
-     - `camoufox-cli --session zhihu --persistent --json cookies export ~/.openclaw/logins/zhihu.json`
-     - `camoufox-cli --session zhihu --persistent --json identity export ~/.openclaw/logins/zhihu.ua.json`
+   - 等用户回复后 `snapshot` 验登录态就位
    - 关 session：`camoufox-cli --session zhihu --json close`
 
-> **同时导入 cookie 和 UA**（原则 4，spec §4.2）：知乎设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。本 skill 走持久化 session `zhihu`（登录态 + 指纹冻结在 session profile 里），中央存储的 cookie/UA 仅用于探活与备份。
-
-> zhihu 不在 login-manager 支持的 6 平台之列（spec §4），登录态管理**不走 login-manager SKILL.md**——本 skill 自管持久化 session `zhihu`，cookie/UA 导出/导入由 forked cli 的 `cookies export` / `identity export` / `cookies import` 命令完成。
+> **不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`。
 
 ---
 

@@ -17,20 +17,17 @@ metadata:
 
 ## 前置条件
 
-1. login-manager 已有 `wechat-channel` cookie + UA（中央存储 `~/.openclaw/logins/wechat-channel.json` + `~/.openclaw/logins/wechat-channel.ua.json`）
-2. 首次使用 / cookie 失效需走 login-manager **无头截图 QR**登录流（原则 3：wechat-channel 无头截图 QR）：
+1. 持久化 session `wechat-channel` 已登录（登录态存 session profile 里）。本 skill 与 login-manager **完全无关**——自管探活 + 登录，**不导出 cookie/UA 落中央存储**。
+2. 首次使用 / 登录态失效时，走自管**无头截图 QR**登录流：
    - `camoufox-cli --session wechat-channel --persistent --headless --json open "https://channels.weixin.qq.com/platform/home"`
    - `camoufox-cli --session wechat-channel --json screenshot /tmp/qr-wechat-channel.png` 截登录 QR
    - 把 PNG 用 image 工具加载发用户（**不要发本地路径**），告知「**微信视频号** 登录已失效，请用微信扫码确认，完成后回复"已扫码"」
    - 用户回复后 `snapshot` 验页面已跳走 / QR 消失
-   - 登录就位后**同时导出 cookie + UA**：
-     - `camoufox-cli --session wechat-channel --persistent --json cookies export ~/.openclaw/logins/wechat-channel.json`
-     - `camoufox-cli --session wechat-channel --persistent --json identity export ~/.openclaw/logins/wechat-channel.ua.json`
    - 关 session：`camoufox-cli --session wechat-channel --json close`
 
-> **同时导入 cookie 和 UA**（原则 4，spec §4.2）：微信设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。本 skill 走持久化 session `wechat-channel`（登录态 + 指纹冻结在 session profile 里），中央存储的 cookie/UA 仅用于探活与备份。
-
-> wechat-channel 不在 login-manager 支持的 6 平台之列（spec §4），登录态管理**不走 login-manager SKILL.md**——本 skill 自管持久化 session `wechat-channel`，cookie/UA 导出/导入由 forked cli 的 `cookies export` / `identity export` / `cookies import` 命令完成。
+> **不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`。
+>
+> 显式无头模式：本 skill 登录走 `--headless` 截 QR 发用户扫码，是少数允许显式无头的场景之一（详见 `docs/platform-login-and-browser-spec.md` §7）。
 
 ---
 

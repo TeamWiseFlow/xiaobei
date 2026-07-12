@@ -14,7 +14,7 @@ CLI 形态：
 
 依赖：
 - camoufox-cli（npm 全局）
-- login-manager skill（同 crew 私有）
+- wx-mp-hunter skill（同 crew 私有，提供 wx_mp session 探活 + 登录 + 中央存储 cookie/token/UA）
 - published-track skill（同 crew 私有）
 - python3 stdlib
 """
@@ -35,7 +35,7 @@ from typing import Any
 # ── 常量 ─────────────────────────────────────────────────────────────────────
 
 PLATFORM = "wx_mp"                              # published-track 表名前缀
-LOGIN_MANAGER_PLATFORM = "wx-mp"                # login-manager 中央存储 key
+SESSION_NAME = "wx_mp"                          # 与 wx-mp-hunter 共用的 camoufox 持久化 session 名
 
 # 创作者中心入口（登录后跳转到这里，带 token）
 CREATOR_CENTER_URL = os.environ.get(
@@ -49,12 +49,11 @@ PUBLISHED_LIST_URL_TEMPLATE = (
     "?sub=list&begin=0&count=20&token={token}&lang=zh_CN"
 )
 
-LOGIN_MANAGER_BIN = os.environ.get(
-    "LOGIN_MANAGER_BIN",
-    "~/.openclaw/workspace-main/skills/login-manager/scripts/login-manager.sh",
+WX_MP_HUNTER_BIN = os.environ.get(
+    "WX_MP_HUNTER_BIN",
+    "~/.openclaw/workspace-main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh",
 )
-# 展开 tilde（原代码遗漏了这一步）
-LOGIN_MANAGER_BIN = os.path.expanduser(LOGIN_MANAGER_BIN)
+WX_MP_HUNTER_BIN = os.path.expanduser(WX_MP_HUNTER_BIN)
 
 PUBLISHED_TRACK_ROOT = Path(
     os.environ.get("PUBLISHED_TRACK_ROOT", "./db")
@@ -70,7 +69,7 @@ UPDATE_METRICS_SH = PUBLISHED_TRACK_SCRIPTS / "update-metrics.sh"
 
 CAMOUFOX_BIN = os.environ.get("CAMOUFOX_CLI", "camoufox-cli")
 FETCH_TIMEOUT_S = 30
-SESSION_CLEANUP_ON_EXIT = True
+SESSION_CLEANUP_ON_EXIT = True  # 仅 close camoufox session，不动 wx-mp-hunter 中央存储
 
 # spike dump 输出目录
 PROBE_OUT_DIR = Path(
@@ -136,34 +135,29 @@ def update_metrics_row(row_id: int, metrics: dict) -> dict:
         return {"ok": True, "stdout": result.stdout.strip()}
 
 
-# ── login-manager 集成 ──────────────────────────────────────────────────────
+# ── wx-mp-hunter 集成（探活） ──────────────────────────────────────────────
+#
+# wx-mp-engagement 与 wx-mp-hunter 共用 camoufox 持久化 session `wx_mp`：
+# - wx-mp-hunter 负责 探活 + 登录 + 导出 cookie/token/UA 落中央存储
+# - wx-mp-engagement 只走 camoufox-cli 操作浏览器，不吃 cookie；探活委托 wx-mp-hunter
+# - 失效时 exit 2 让调用方触发 wx-mp-hunter 的 login 流程重登
 
-def login_manager_check() -> bool:
+def wx_mp_hunter_check() -> bool:
+    """调 wx-mp-hunter.sh check 探活。exit 0 = 有效；非 0 = 失效。"""
     result = subprocess.run(
-        [LOGIN_MANAGER_BIN, "check", LOGIN_MANAGER_PLATFORM],
-        capture_output=True, text=True, timeout=10, check=False,
+        [WX_MP_HUNTER_BIN, "check"],
+        capture_output=True, text=True, timeout=15, check=False,
     )
     return result.returncode == 0
-
-
-def login_manager_cookie_import(session: str) -> None:
-    subprocess.run(
-        [LOGIN_MANAGER_BIN, "cookie-import", LOGIN_MANAGER_PLATFORM, session],
-        capture_output=True, text=True, timeout=15, check=True,
-    )
-
-
-def login_manager_session_cleanup(session: str) -> None:
-    subprocess.run(
-        [LOGIN_MANAGER_BIN, "session-cleanup", LOGIN_MANAGER_PLATFORM, session],
-        capture_output=True, text=True, timeout=10, check=False,
-    )
 
 
 # ── camoufox-cli 集成 ───────────────────────────────────────────────────────
 
 def session_name() -> str:
-    return f"wx-mp-engagement-{secrets.token_hex(4)}"
+    """返回与 wx-mp-hunter 共用的固定 session 名 `wx_mp`。
+    不再开独立 nonce session——wx_mp 持久化 session 里登录态已就位，
+    camoufox-cli 直接复用即可（fail-first 队列管并发）。"""
+    return SESSION_NAME
 
 
 def camoufox_run(args: list[str], *, timeout: int = FETCH_TIMEOUT_S) -> subprocess.CompletedProcess:
@@ -380,32 +374,27 @@ def match_article(rows: list[dict], target_title: str) -> dict | None:
 # ── CLI 子命令 ──────────────────────────────────────────────────────────────
 
 def _ensure_login() -> None:
-    if not login_manager_check():
+    if not wx_mp_hunter_check():
         sys.stderr.write(
-            "error: wx-mp cookie 失效，请先走 login-manager qr-headless + qr-confirm 流程\n"
+            "error: wx_mp session 失效，请先走 wx-mp-hunter login + login-confirm 流程重登\n"
         )
         sys.exit(2)
 
 
 def _prepare_session() -> str:
-    """创建 camoufox session + 导入 cookie。返回 session name。"""
-    session = session_name()
-    # 必须先 open 创建 session，否则 cookie-import 会失败
-    camoufox_open(session, "about:blank")
-    login_manager_cookie_import(session)
-    return session
+    """复用与 wx-mp-hunter 共用的 wx_mp 持久化 session。
+    不再开独立 nonce session、不再 import cookie——wx_mp session profile
+    里登录态已就位（由 wx-mp-hunter login 流程落），camoufox-cli 直接用即可。
+    返回固定 session 名 SESSION_NAME。"""
+    return SESSION_NAME
 
 
 def _cleanup_session(session: str) -> None:
-    if SESSION_CLEANUP_ON_EXIT:
-        try:
-            camoufox_close(session)
-        except Exception:
-            pass
-        try:
-            login_manager_session_cleanup(session)
-        except Exception:
-            pass
+    """不复用 wx-mp-hunter 的 wx_mp 持久化 session 时才 close；
+    现行实现 SESSION_NAME=wx_mp 是持久化 session，**不主动 close**——
+    登录态留着下次用（wx-mp-hunter / 下次 fetch 复用）。
+    仅在 session 卡死时由调用方手动 camoufox-cli close teardown。"""
+    pass
 
 
 def cmd_probe(args) -> None:
