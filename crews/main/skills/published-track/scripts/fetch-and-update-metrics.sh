@@ -112,7 +112,7 @@ fi
 
 # ─── 平台路由 ──────────────────────────────────────────────────────────────
 
-# Phase 4.6 特殊平台：wx_mp 走 wx-mp-engagement skill（spike 验证待真机测试）
+# Phase 4.6 特殊平台：wx_mp 走 wx-mp-engagement skill
 # 不进 fetch-retro-data.ts，因为 wx-mp 是 camoufox 抓创作者中心，
 # 行为模式与 xhs/bilibili/douyin/kuaishou 的纯 HTTP+cookie 不同
 if [ "$PLATFORM" = "wx_mp" ]; then

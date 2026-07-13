@@ -149,7 +149,7 @@ camoufox-cli --session "$SESSION" --headless --json open "<url>"
 camoufox-cli --session "$SESSION" --json close
 ```
 
-涉及登录的平台搜索（知乎 / 微博 / 小红书 / 抖音 / Twitter / Reddit / 雪球 / LinkedIn 等）走持久化 session + login-manager 中央 cookie/UA 导入，见 login-manager skill。
+涉及登录的平台搜索（知乎 / 微博 / 小红书 / 抖音 / Twitter / Reddit / 雪球 / LinkedIn 等）走持久化 session。
 
 ### 页面加载等待
 

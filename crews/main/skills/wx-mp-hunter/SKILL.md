@@ -28,8 +28,7 @@ Use this skill when:
 1. **严格按本 SKILL.md 的步骤执行**，不得在服务器结果未返回时自行编排下一步。
 2. **等待服务器响应**：每次执行脚本命令后，必须等待脚本返回 JSON 结果。若结果需要时间，**先向用户说明"正在请求服务器，请稍候……"**，然后等待。
 3. **严禁提前假设结果**：不得在脚本输出 JSON 之前就根据假设继续后续步骤。
-4. **批量前必须小样本验证**：批量抓全文前，必须先 `check-session`，再选 1 篇文章 `fetch` 验证链路成功；成功后才能批量。
-5. **路径规则**：文中所有 `./scripts/` 路径均相对于本技能所在目录（即 `<skill>` 标签 `location` 属性所指目录），**不是**工作区（workspace）目录。执行时必须按本技能的实际安装路径拼接，不得从工作区 CWD 出发拼接。
+4. **批量前必须小样本验证**：批量抓全文前，必须先 `check`，再选 1 篇文章 `fetch` 验证链路成功；成功后才能批量。
 
 ---
 
@@ -37,14 +36,14 @@ Use this skill when:
 
 Wrapper 脚本路径：`./scripts/wx-mp-hunter.sh`
 
-所有命令通过 wrapper 调用，无需手动拼接 node 命令：
+所有命令通过 wrapper 调用，无需手动拼接 node 命令。
 
-```bash
-./scripts/wx-mp-hunter.sh <command> [args...]
-```
+**登录态管理**：走 camoufox-cli 持久化 session `wx_mp`（`--session wx_mp --persistent`，与 `wx-mp-engagement` 共用同一 profile 目录与登录态，靠 session 名约定共享）。登录态在 session profile 里，**无 TTL**——失效时 `check` 命令会 exit 2 触发重登。登录就位后导出 cookie + UA + token 落中央存储：
 
-Session 存储路径：`~/.openclaw/logins/wx_mp.json`（可通过 `WX_SESSION_FILE` 覆盖）
-Session TTL：**4 天**（到期自动触发重登）
+| 文件 | 内容 |
+|------|------|
+| `~/.openclaw/logins/wx_mp.json` | cookie（camoufox-cli `cookies export` 原生格式）+ `token` 字段（登录 redirect URL 里提的创作者中心后台 token，拼列表页 URL 用）+ `ua` 字段（向后兼容）+ `updated_at` |
+| `~/.openclaw/logins/wx_mp.ua.json` | UA + 指纹摘要（`camoufox-cli identity export` 输出） |
 
 ---
 
@@ -61,34 +60,33 @@ Session TTL：**4 天**（到期自动触发重登）
 | `{"ok": true}` | session 有效，可直接使用 |
 | `{"ok": false, "error": "SESSION_EXPIRED"}` (exit 2) | 需要重新登录 |
 
+`check` 内部走 camoufox-cli：`--session wx_mp --persistent --headless open "https://mp.weixin.qq.com/"` + 读 redirect URL，跳到 `login` / `scanloginqrcode` = 失效，跳到 `/cgi-bin/home?...&token=xxx` = 有效。
+
 ---
 
 ## 自动重新登录流程（Session 过期时触发）
 
 **触发条件**：任意命令返回 `"error": "SESSION_EXPIRED"`（exit code 2），或首次使用无 session 文件。
 
-### 第 1 步 — 生成二维码
+### 第 1 步 — 无头截二维码
 
 ```bash
-./scripts/wx-mp-hunter.sh login-qr
+/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh login
 ```
 
-等待脚本输出 JSON（**不要提前进入下一步**）：
+脚本内部走 camoufox-cli：`--session wx_mp --persistent --headless open "https://mp.weixin.qq.com/"` + `screenshot /tmp/qr-wx-mp.png`，**不 close session**（留着给 `login-confirm` 继续用）。等待脚本输出 JSON：
 
 ```json
 {
   "ok": true,
-  "qr_path": "/tmp/wx_mp_qr.png",
-  "qr_base64": "<base64 PNG>",
-  "message": "二维码已保存，请用微信（公众号管理员账号）扫码，完成后运行 login-confirm"
+  "qr_path": "/tmp/qr-wx-mp.png",
+  "message": "二维码已截，请用微信（公众号管理员账号）扫码，完成后运行 login-confirm"
 }
 ```
 
-> **注意**：二维码图片已自动保存到 `/tmp/wx_mp_qr.png`，脚本**不会**尝试打开它，也**不需要**手动打开。
-
 ### 第 2 步 — 将二维码发给用户
 
-使用 openclaw 飞书 plugin 能力，将二维码图片（路径 `/tmp/wx_mp_qr.png`）直接发送给用户。  
+将二维码图直接发送给用户。
 **不要**只发本地文件路径——用户在飞书客户端中无法访问 agent 本地文件系统。
 
 同时告知用户：
@@ -98,16 +96,16 @@ Session TTL：**4 天**（到期自动触发重登）
 
 **停止执行，等待用户回复。** 用户回复"已扫码"、"好了"、"扫完了"或类似确认语即可继续。
 
-### 第 4 步 — 确认登录
+### 第 4 步 — 确认登录 + 导出 cookie + UA + token
 
 ```bash
-./scripts/wx-mp-hunter.sh login-confirm [--timeout 300]
+/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh login-confirm
 ```
 
-等待脚本返回结果（脚本内部轮询，**agent 只需等待输出，不要中途中断**）：
+脚本内部走 camoufox-cli：复用已开的 `wx_mp` session `open "https://mp.weixin.qq.com/"` → 读 redirect URL 验登录态就位（跳到 `/cgi-bin/home?...&token=xxx` = 就位）→ 从 URL 提 token → `cookies export ~/.openclaw/logins/wx_mp.json` + `identity export ~/.openclaw/logins/wx_mp.ua.json` → 把 token 合写进 `wx_mp.json`（cookie + token + ua + updated_at 同文件）→ `close` session。等待脚本返回：
 
 ```json
-{"ok": true, "message": "登录成功，session 已保存"}
+{"ok": true, "message": "登录成功，cookie + UA + token 已落中央存储", "token": "..."}
 ```
 
 | 情况 | 处理 |
@@ -123,7 +121,7 @@ Session TTL：**4 天**（到期自动触发重登）
 
 ```
 流程 0：登录探活（每次使用前可选）
-  └─ check-session
+  └─ check
 
 流程 1a：搜索账号 → 获取最新发布列表
   ├─ search <keyword>        → 获取 fakeid
@@ -167,12 +165,12 @@ http://mp.weixin.qq.com/mp/homepage?...
 
 1. 批量抓全文前，必须先运行：
    ```bash
-   ./scripts/wx-mp-hunter.sh check-session
+   /Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh check
    ```
 2. 如果返回 `SESSION_EXPIRED`，先执行自动重新登录流程。
 3. 登录有效后，只选 1 篇样本运行：
    ```bash
-   ./scripts/wx-mp-hunter.sh fetch <article_link> --html
+   /Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh fetch <article_link> --html
    ```
 4. 只有样本返回 `content_text` / `content_markdown` / `content_html` 后，才允许批量抓全文。
 5. 如果样本返回 `未找到文章正文 (#js_content)`，用 camoufox-cli 打开该文章验证页面内容：
@@ -187,7 +185,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 ### search — 搜索公众号
 
 ```bash
-./scripts/wx-mp-hunter.sh search <keyword> [--begin N] [--size N]
+/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh search <keyword> [--begin N] [--size N]
 ```
 
 | Option | Default | Description |
@@ -224,7 +222,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 > 原命令名 `articles` 仍可用（向后兼容），推荐使用 `account-posts`。
 
 ```bash
-./scripts/wx-mp-hunter.sh account-posts <fakeid> [--begin N] [--size N] [--keyword K]
+/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh account-posts <fakeid> [--begin N] [--size N] [--keyword K]
 ```
 
 | Option | Default | Description |
@@ -271,7 +269,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 ### fetch — 获取文章全文
 
 ```bash
-./scripts/wx-mp-hunter.sh fetch <url> [--html]
+/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh fetch <url> [--html]
 ```
 
 | Option | Description |
@@ -308,7 +306,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 加 `--download-images --output-dir <dir>` 后，脚本并发下载（默认 4 并发、单图 ≤5MB、总量 ≤100MB、单图失败重试 1 次）到 `<dir>/images/<hash>.<ext>`，并把 `content_markdown` 里的图片 URL 替换为本地相对路径，便于离线阅读 / 二次加工 / 转存。仅依赖 Node 18+ stdlib，无 npm 依赖。
 
 ```
-./scripts/wx-mp-hunter.sh fetch <url> --html --download-images --output-dir ./article-out
+/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh fetch <url> --html --download-images --output-dir ./article-out
 ```
 
 ---
@@ -317,7 +315,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 
 **场景 A：监控某账号最新文章**
 ```
-1. check-session            → 探活
+1. check            → 探活
 2. search "公众号名"         → 得到 fakeid
 3. account-posts <fakeid>   → 得到文章列表（第 1 页）
 4. fetch <article_link>     → 获取感兴趣文章的正文
@@ -325,7 +323,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 
 **场景 B：直接抓取已知 URL 的文章**
 ```
-1. check-session            → 探活
+1. check            → 探活
 2. fetch <url>              → 直接获取正文
 ```
 
@@ -343,6 +341,6 @@ loop account-posts --begin 0, 20, 40, ...
 | Error | 原因 | 处理 |
 |-------|------|------|
 | `未登录` | 无 session 文件 | 执行登录流程 |
-| `"error": "SESSION_EXPIRED"` (exit 2) | Session 过期或 ret=200003 | 执行**自动重新登录流程** |
+| `"error": "SESSION_EXPIRED"` (exit 2) | camoufox-cli open 首页后 redirect URL 跳到 `login` / `scanloginqrcode`（登录态失效）或无 session 文件 | 执行**自动重新登录流程**（`login` → 用户扫码 → `login-confirm`） |
 | `API 错误 (ret=...)` | 微信 API 错误 | 检查网络，重试一次 |
 | `HTTP 4xx` on fetch | 文章已删除或私有 | 跳过该文章 |

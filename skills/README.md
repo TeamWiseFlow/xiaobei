@@ -15,11 +15,8 @@
 | `browser-guide` | 浏览器操作最佳实践：登录墙、验证码、懒加载、付费墙的处理指导 | 全部 crew 可用 |
 | `complex-task` | 复杂任务拆解与多步执行协调 | 全部 crew 可用；**sales-cs DENIED** |
 | `email-ops` | 邮件读写与发送 | 全部 crew 可用 |
-| `council` | 多角色审议/投票 | 全部 crew 可用 |
 | `pexels-footage` | Pexels 免费素材搜索下载 | main + content-producer 继承 |
 | `pixabay-footage` | Pixabay 免费素材搜索下载 | main + content-producer 继承 |
 | `wxwork-drive` | 企业微信微盘 | main + content-producer 继承 |
 | `siliconflow-img-gen` | 硅基流动生图（Phase 5 改火山） | main + content-producer 继承 |
 | `youtube-publish` | YouTube 视频发布（Data API v3 + OAuth2） | main + content-producer 继承 |
-
-> `pitch-deck` / `rss-reader` / `xhs-interact` / `login-manager` / `wx-mp-hunter` 已转为 `main` 专属技能，见 `crews/main/skills/`。

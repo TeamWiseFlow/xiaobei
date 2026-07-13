@@ -11,37 +11,36 @@ metadata:
 
 # 小红书社交互动
 
-通过 **camoufox-cli** 持久化 session（`xhs`，一个且只有一个持久化 session，fail-first 队列：同 session 已有命令在跑时新命令直接 fail）代替用户在小红书（xhs）上完成社交互动。
+通过 **camoufox-cli** 完成（纯浏览器操作技能）——**复用 `xhs-browse` 持久化 session**（消费者域 `www.xiaohongshu.com`，与 `xhs-content-ops` / `viral-chaser` / `published-track` 共用）。同一 session 一个且只有一个持久化实例，fail-first 队列：同 session 已有命令在跑时新命令直接 fail，浏览器操作 skill 串行排队。
 
-**前提条件**：先通过 login-manager skill 拿到有效 cookie + UA（详见 login-manager SKILL.md）：
-1. 开持久化 session `xhs-browse` 探活：`camoufox-cli --session xhs-browse --persistent --headless --json open "https://www.xiaohongshu.com/"` + `snapshot` 看是否跳登录页
-2. 跳登录页 = 失效 → 启**有头** session：`camoufox-cli --session xhs-browse --persistent --headed --json open "https://www.xiaohongshu.com/"`，告知用户在窗口里手动扫码登录，完成后**同时导出 cookie + UA**：
-   - `camoufox-cli --session xhs-browse --persistent --json cookies export ~/.openclaw/logins/xhs-browse.json`
-   - `camoufox-cli --session xhs-browse --persistent --json identity export ~/.openclaw/logins/xhs-browse.ua.json`
-3. 关 session：`camoufox-cli --session xhs-browse --json close`
-
-> **同时导入 cookie 和 UA**（原则 4，spec §4.2）：xhs 的 `a1`/`websectiga` 等设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。
+**关键边界**：本技能是**纯 camoufox-cli 浏览器操作技能**，登录态直接复用 `xhs-browse` 持久化 session（登录态 + 指纹冻结在 session profile 里）——**不开独立临时 session、不 import cookie**。每次登录后导出的 cookie + UA 是给**其他脚本类技能**（`xhs-content-ops` / `viral-chaser` / `published-track` 等）做 raw HTTP 抓取用的，**本技能自身不消费 cookie 文件**。
 
 ---
 
-## 启动一个互动用 camoufox session
+## 前置：login-manager 探活 / 登录（复用 xhs-browse 持久化 session）
 
-每个互动任务用独立临时 session（不要复用 `xhs-browse` 持久化 session 名，fail-first 会冲突）：
+走 login-manager skill 流程（详见 login-manager SKILL.md 步骤 0–3），开**同一个** `xhs-browse` 持久化 session：
+
+1. **探活**（无头 snapshot 看是否跳登录页）：`camoufox-cli --session xhs-browse --persistent --headless --json open "https://www.xiaohongshu.com/"` + `camoufox-cli --session xhs-browse --json snapshot` → 没跳登录页 = 登录态有效，跳登录页 = 失效走步骤 2。
+2. **失效则启有头重登**：`camoufox-cli --session xhs-browse --persistent --headed --json open "https://www.xiaohongshu.com/"`，告知用户「**小红书** 浏览器已打开，请在窗口里手动扫码登录，完成后告诉我」。
+3. 登录就位后**同时导出 cookie + UA**落中央存储（供其他脚本类技能消费，非本技能自用）：
+   - `camoufox-cli --session xhs-browse --persistent --json cookies export ~/.openclaw/logins/xhs-browse.json`
+   - `camoufox-cli --session xhs-browse --persistent --json identity export ~/.openclaw/logins/xhs-browse.ua.json`
+
+> **同时导出 cookie 和 UA**：xhs 的 `a1`/`websectiga` 等设备指纹 cookie 必须配同一指纹的 UA 导出，下游脚本消费时也必须同时导入，否则被风控错配。
+
+---
+
+## 互动流程：直接复用 xhs-browse 持久化 session
+
+互动操作**直接在 `xhs-browse` 持久化 session 上跑**——不开独立 session、不 import cookie（camoufox-cli 浏览器方案严禁 `cookies import` 造会话）。下文所有 `camoufox-cli` 命令统一用 `--session xhs-browse --persistent`，与上方 login-manager 登录后留下的 session 同名。若该 session 正被其他浏览器操作 skill 占用（fail-first 拒绝 → 命令报 session 正忙），等其完成再串行接力，**不要**自动 close 正在跑的 session。
 
 ```bash
-SESSION="xhs-interact-$(date +%s)-$$"
-# 启 session 并导入中央 cookie（camoufox-cli cookies import 格式与 cookies export 对称，零转换）
-camoufox-cli --session "$SESSION" --persistent --headless --json open "https://www.xiaohongshu.com/"
-camoufox-cli --session "$SESSION" --persistent --json cookies import ~/.openclaw/logins/xhs-browse.json
+# 全文下方 $SESSION 一律指 xhs-browse 持久化 session
+SESSION="xhs-browse"
 ```
 
-任务结束**必须 cleanup**：
-
-```bash
-camoufox-cli --session "$SESSION" --json close
-```
-
-> ⚠️ **不要**重复使用同一 session 名；不同 agent / 不同任务共享 session 会污染 cookie state + 触发风控。
+任务结束后**不要 close 该 session**——它是持久化 session，留给后续自己 / 其他浏览器操作技能复用。除非明确要重登，才走 login-manager 有头重登流。
 
 ---
 
@@ -84,7 +83,7 @@ https://www.xiaohongshu.com/explore/{feed_id}?xsec_token={xsec_token}&xsec_sourc
 
 ## 工作流程（camoufox-cli 版本）
 
-> **模式说明**：以下每条操作都用 `camoufox-cli` 的 `snapshot` / `eval` / `click` / `type` 子命令实现。`$SESSION` 为上文启动的 session 名。
+> **模式说明**：以下每条操作都用 `camoufox-cli` 的 `snapshot` / `eval` / `click` / `type` 子命令实现，**统一在 `xhs-browse` 持久化 session 上跑**（`$SESSION` = `xhs-browse`，见上文「互动流程」段，不开独立 session、不 import cookie）。
 >
 > 找不到元素时**不要**盲试：先 `snapshot` 看 DOM 真实结构，再决定 selector 改写。
 
@@ -139,7 +138,7 @@ https://www.xiaohongshu.com/explore/{feed_id}?xsec_token={xsec_token}&xsec_sourc
 6. 若状态未变化，重试一次；仍失败则报告
 ```
 
-> 若 `click` / `eval` 触发风控：先 teardown 当前 session（`camoufox-cli --session "$SESSION" --json close`），等 60s 后开新 session 重试；仍触发则报告用户该平台当日风控未解，转其他笔记或择日再试。
+> 若 `click` / `eval` 触发风控：等 60s 后在同一 `xhs-browse` 持久化 session 上重试（不开新 session、不 import cookie）；仍触发则报告用户该平台当日风控未解，转其他笔记或择日再试。
 
 ### 关注 / 取关
 
@@ -196,17 +195,17 @@ https://www.xiaohongshu.com/explore/{feed_id}?xsec_token={xsec_token}&xsec_sourc
 - **症状**：主站无完整创作者功能
 - **workaround**：创作者相关操作（查看草稿、创作者数据）需访问 `creator.xiaohongshu.com`
 
-### pitfall: camoufox_session_leak
+### pitfall: session_busy_fail_first
 
-- **触发**：任务结束未调 `session-cleanup`，daemon 残留
-- **症状**：下次启动同一 session 名冲突，cookie state 污染
-- **workaround**：每个互动任务**必须**三步走——`cookie-import` → 操作 → `session-cleanup`；不要跨任务复用 session 名
+- **触发**：`xhs-browse` 持久化 session 正被其他浏览器操作技能（`xhs-content-ops` 等）占用，新命令撞 fail-first 队列
+- **症状**：命令报「session xhs-browse 正忙」/ 类似 SessionBusy 错误
+- **workaround**：这是**预期行为**（原则 1 + fail-first 队列）。等当前占用方完成再串行接力，**不要**自动 close 正在跑的 session（close 会 tear down 别人的操作）。
 
 ### pitfall: cookie_expired_during_interaction
 
 - **触发**：互动过程中小红书 session 过期
 - **症状**：页面突然 redirect 到 login / 互动操作 401
-- **workaround**：立即 `close` 当前 session（`camoufox-cli --session "$SESSION" --json close`）→ 重走 login-manager 有头登录流（导出 cookie+UA）→ 开新 session 重试；不要盲 retry 当前 session
+- **workaround**：暂停当前操作 → 重走 login-manager 有头登录流（在同一个 `xhs-browse` 持久化 session 上 `--headed open` + 用户手动扫码 + 导出 cookie+UA 落中央存储给其他脚本技能用）→ 在同一 session 上重试；不要盲 retry、不要开独立 session import cookie
 
 ---
 
@@ -214,10 +213,10 @@ https://www.xiaohongshu.com/explore/{feed_id}?xsec_token={xsec_token}&xsec_sourc
 
 | 情况 | 处理 |
 |------|------|
-| cookie 失效（`login-manager check xhs-browse` exit 2） | 重走 login-manager 有头登录流（导出 cookie+UA）→ 重启 session |
+| cookie 失效（login-manager 探活 exit 2） | 在同一 `xhs-browse` 持久化 session 上重走 login-manager 有头登录流（导出 cookie+UA 落中央存储给其他脚本技能用）→ 在同一 session 上重试 |
 | 页面出现登录墙 | 同上重走 login-manager 登录流 |
 | 点赞状态未变化 | 重试一次，仍未变化则报告错误 |
-| camoufox click/eval 失败 / 超时 | 改用 `eval` 走 JS 方式（最稳）；再失败 → teardown session 等 60s 开新 session 重试 |
+| camoufox click/eval 失败 / 超时 | 改用 `eval` 走 JS 方式（最稳）；再失败 → 等 60s 后在同一 session 上重试（不开新 session、不 import cookie） |
+| `xhs-browse` session 正忙（fail-first 拒绝） | 这是预期行为（原则 1），等当前占用方完成再串行接力，不自动 close 正在跑的 session |
 | xsec_token 缺失/无效 | 从搜索结果链接中重新获取 signed URL，不要手拼 |
 | 安全限制/访问异常 | 停止操作 60 秒后重试，或换笔记操作 |
-| camoufox daemon 残留 | `camoufox-cli close --all` 兜底清掉；下个任务开新 session |

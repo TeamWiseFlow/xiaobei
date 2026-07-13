@@ -80,7 +80,7 @@ metadata:
 
 信息齐全后，开 camoufox-cli session 逐页填报。
 
-**session 约定**：申报系统这类**不涉及平台登录态长期化**的站点走临时性 session（不带 `--persistent`，每次随机指纹，关闭自清）。如果该表单本身需登录（如某政务网账号），先按 login-manager 流程登录态就绪，再开 session 导入 cookie/UA。
+**session 约定**：申报系统这类**不涉及平台登录态长期化**的站点走临时性 session（不带 `--persistent`，每次随机指纹，关闭自清）。如果该表单本身需登录（如某政务网账号），先按 browser-guide 流程登录态就绪。
 
 ```bash
 SESSION="formfill-$(date +%s)"

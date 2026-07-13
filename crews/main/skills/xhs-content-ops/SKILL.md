@@ -52,14 +52,20 @@ metadata:
 
 ## 使用场景
 
+> **三个场景统一前置**（第一步都一样）：login-manager 探活——`camoufox-cli --session xhs-browse --persistent --headless --json open "https://www.xiaohongshu.com/"` + `snapshot` 看是否跳登录页。跳登录页 = 未登录 → 走 login-manager 有头手动登录流（在同一个 `xhs-browse` 持久化 session 上 `--headed open` + 告知用户手动扫码 + 登录就位后**同时导出 cookie + UA** 落 `~/.openclaw/logins/xhs-browse.json` + `~/.openclaw/logins/xhs-browse.ua.json`，给本技能脚本做 raw HTTP 抓取用；详见下方「前置条件」段）。
+>
+> **场景 B/C 的浏览器搜索部分**走 **camoufox-cli**（复用 `xhs-browse` 持久化 session，`--session xhs-browse --persistent`，不开独立 session、不 import cookie）——`open` 搜索页 + `snapshot` 读搜索结果列表 + `eval` 拿笔记 URL 提 note_id/xsec_token。拿到 note_id 后切脚本下载。
+
 ### 场景 A：用户提供小红书帖子 URL
 
 用户直接给出一个或多个小红书图文笔记 URL（含 `xhslink.com/o/xxx` 短链），下载并分析。
 
 ```
-1. 直接把 URL 传给脚本，脚本内部解析短链、提取 note_id 和 xsec_token：
+1. login-manager 探活（见上方「三个场景统一前置」）；未登录则走有头手动登录流，登录后同时导出 cookie + UA 落中央存储。
+2. 直接把 URL 传给脚本，脚本内部解析短链、提取 note_id 和 xsec_token：
    ./skills/xhs-content-ops/scripts/fetch_note_content.sh --url <url> --output-dir campaign_assets/<slug>/
-2. 读取下载的图片和正文，执行对标分析
+   ⚠️ 脚本内部同时导入 cookie 和 UA（已写死在 fetch_note_content.ts：同时读 ~/.openclaw/logins/xhs-browse.json + ~/.openclaw/logins/xhs-browse.ua.json，喂给 raw HTTP header，不经浏览器）——脚本侧务必同时带，同一指纹下的 cookie 才不会被风控错配（原则 4，2026-06-29 CDP 注入 22 cookie 触发风控的教训）。
+3. 读取下载的图片和正文，执行对标分析
 ```
 
 `--output-dir` 必须是工作区相对路径（如 `campaign_assets/<slug>/`），不要用 `/tmp`——否则后续 image 工具读不到图片。
@@ -71,11 +77,13 @@ metadata:
 用户给出关键词，搜索小红书找到代表性图文笔记，下载并分析。
 
 ```
-1. 导航到搜索页，按"最多点赞"排序
-   URL: https://www.xiaohongshu.com/search_result?keyword=目标关键词
-2. Snapshot 获取搜索结果列表，选取前 3-5 篇高互动图文笔记
-3. 对每篇笔记，提取 note_id，运行图文下载脚本
-4. 汇总所有下载内容，执行竞品对标分析
+1. login-manager 探活（见上方「三个场景统一前置」）；未登录则走有头手动登录流，登录后同时导出 cookie + UA 落中央存储。
+2. 走 camoufox-cli 浏览器操作（复用 xhs-browse 持久化 session）导航到搜索页，按"最多点赞"排序：
+   camoufox-cli --session xhs-browse --persistent --headless --json open "https://www.xiaohongshu.com/search_result?keyword=目标关键词"
+3. camoufox-cli snapshot 获取搜索结果列表，选取前 3-5 篇高互动图文笔记；用 eval 从笔记链接里提取 note_id + xsec_token（URL 格式见「小红书 URL 格式参考」段，从 explore/{feed_id}?xsec_token={token} 解）。
+4. 对每篇笔记，运行图文下载脚本（脚本内部同时导入 cookie 和 UA，已写死，无需手动传）：
+   ./skills/xhs-content-ops/scripts/fetch_note_content.sh --note-id <note_id> --xsec-token <token> --xsec-source pc_feed --output-dir campaign_assets/<slug>/
+5. 汇总所有下载内容，执行竞品对标分析
 ```
 
 ### 场景 C：用户要求对标分析
@@ -83,15 +91,17 @@ metadata:
 用户要求将自己的内容与小红书上的内容做对标。
 
 ```
-1. 搜索目标关键词，找到 3-5 篇代表性图文笔记
-2. 下载图片和正文
-3. 与用户提供的内容逐项对标：
+1. login-manager 探活（见上方「三个场景统一前置」）；未登录则走有头手动登录流，登录后同时导出 cookie + UA 落中央存储。
+2. 走 camoufox-cli 浏览器操作（复用 xhs-browse 持久化 session）搜索目标关键词，找到 3-5 篇代表性图文笔记（同场景 B 的 camoufox-cli 搜索流程），用 eval 提 note_id + xsec_token。
+3. 对每篇笔记，运行图文下载脚本下载图片和正文（脚本内部同时导入 cookie 和 UA，已写死，无需手动传）：
+   ./skills/xhs-content-ops/scripts/fetch_note_content.sh --note-id <note_id> --xsec-token <token> --xsec-source pc_feed --output-dir campaign_assets/<slug>/
+4. 与用户提供的内容逐项对标：
    - 标题风格对比
    - 正文结构对比
    - 话题标签使用对比
    - 图片构图/风格对比
    - 互动数据对比
-4. 输出对标报告和改进建议
+5. 输出对标报告和改进建议
 ```
 
 ---
@@ -109,7 +119,7 @@ metadata:
      - `camoufox-cli --session xhs-browse --persistent --json identity export ~/.openclaw/logins/xhs-browse.ua.json`
    - 关 session：`camoufox-cli --session xhs-browse --json close`
 
-> **同时导入 cookie 和 UA**（原则 4，spec §4.2）：xhs 的 `a1`/`websectiga` 等设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配（2026-06-29 CDP 注入教训）。本 skill 的 `fetch_note_content.ts` 已同时读 `xhs-browse.json` + `xhs-browse.ua.json`。
+> **同时导入 cookie 和 UA**：xhs 的 `a1`/`websectiga` 等设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配（2026-06-29 CDP 注入教训）。本 skill 的 `fetch_note_content.ts` 已同时读 `xhs-browse.json` + `xhs-browse.ua.json`。
 
 ### 运行
 

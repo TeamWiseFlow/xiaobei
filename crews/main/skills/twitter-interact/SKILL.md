@@ -76,15 +76,11 @@ camoufox-cli --session twitter --json close
 
 **不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`。
 
-### 2. camoufox-cli（forked）已安装
-
-本仓 `patches/camoufox-cli/` 的 fork（基线上游 `camoufox-cli@0.6.2` + upload + fail-first 队列 + identity export）。`patches/camoufox-cli/build.sh` 全局安装替换 `$PATH` 上的上游版。
-
-### 3. 频率跟踪文件（首次自动创建）
+### 2. 频率跟踪文件（首次自动创建）
 
 `~/.openclaw/agents/main/sessions/twitter-interact-frequency.json` —— 每次成功操作后自动 append。
 
-### 4. 单一持久化 session `twitter`（与 twitter-post 共用）
+### 3. 单一持久化 session `twitter`（与 twitter-post 共用）
 
 所有互动操作共享同一个 `--persistent` session `twitter`（指纹冻结 + cookie 留 profile）。并发调用由 forked cli 的 **fail-first 队列**串行拒绝——脚本不自动排队、不自动等待，读到 `session twitter 正忙` 文本时 exit 3，调用方（agent）应等待当前操作完成后再试。
 

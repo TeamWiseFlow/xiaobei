@@ -27,16 +27,13 @@ Use this skill when:
 
 **优先 camoufox-cli**：headless persistent session（登录态存 session profile）+ forked cli `upload` 命令上传（底层 Playwright `setInputFiles`，穿透 shadow DOM）。camoufox-cli 无头即可完成 x.com 登录与发布，反侦测能力强、资源占用低。操作要点：`snapshot` 拿 ref → `type`/`click` 按 ref 操作，别自己 hack selector。
 
-> patchright 整体去掉（spec 补充 C）。下面 workflow 步骤（Navigate / Click / snapshot eval / upload）默认用 camoufox-cli 执行。若 camoufox-cli 在 X 上持续触发风控，等 60s 后开新 session 重试；仍触发则报告用户该平台当日风控未解，择日再试。
+> 下面 workflow 步骤（Navigate / Click / snapshot eval / upload）默认用 camoufox-cli 执行。若 camoufox-cli 在 X 上持续触发风控，等 60s 后开新 session 重试；仍触发则报告用户该平台当日风控未解，择日再试。
 
 ---
 
 ## 通用约束
 
 - 文件上传用 forked camoufox-cli 的 `upload` 命令（`camoufox-cli --session <s> --persistent --json upload <ref> <file>`，底层 Playwright `setInputFiles`，无需 DataTransfer hack）
-- 上传可能返回「超时错误」，但这**不代表上传失败**！上传后检查页面状态（缩略图是否出现）
-- **不要通过检查 `input.files.length` 是否为 0 判定上传是否失败！** `input.files.length == 0` 不代表上传失败。
-- 遇到 `timed out. Restart the OpenClaw gateway ...` 错误时，**不需要重启、不需要报错**！等待 30 秒后在原页面继续操作即可。若仍无法操作，再等 30 秒；若还不行，尝试关闭浏览器后重开；只有关闭重开后仍报错才是真的出错，需停止并反馈用户。
 - 正文输入使用 `type` + `slowly: true`，不要用 `fill()`
 
 ### 字符计数规则（X 平台特殊）

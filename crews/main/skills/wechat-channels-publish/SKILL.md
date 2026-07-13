@@ -27,7 +27,7 @@ metadata:
 
 > **不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`。
 >
-> 显式无头模式：本 skill 登录走 `--headless` 截 QR 发用户扫码，是少数允许显式无头的场景之一（详见 `docs/platform-login-and-browser-spec.md` §7）。
+> 显式无头模式：本 skill 登录走 `--headless` 截 QR 发用户扫码，是少数允许显式无头的场景之一。
 
 ---
 
