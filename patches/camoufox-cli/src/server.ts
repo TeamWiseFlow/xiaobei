@@ -5,6 +5,7 @@ import * as fs from "node:fs";
 import { BrowserManager } from "./browser.js";
 import { execute } from "./commands.js";
 import { parseCommand, serializeResponse, errorResponse } from "./protocol.js";
+import { getSocketPath, getPidPath } from "./cli.js";
 
 export class DaemonServer {
   private session: string;
@@ -37,8 +38,8 @@ export class DaemonServer {
     this.session = opts.session ?? "default";
     this.headless = opts.headless ?? true;
     this.timeout = opts.timeout ?? 1800;
-    this.socketPath = `/tmp/camoufox-cli-${this.session}.sock`;
-    this.pidPath = `/tmp/camoufox-cli-${this.session}.pid`;
+    this.socketPath = getSocketPath(this.session);
+    this.pidPath = getPidPath(this.session);
     this.manager = new BrowserManager(opts.persistent ?? null, opts.proxy ?? null, opts.geoip ?? true, opts.locale ?? null);
     this.forceExit = opts.forceExit ?? false;
   }

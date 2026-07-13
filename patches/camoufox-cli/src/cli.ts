@@ -7,12 +7,32 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import * as crypto from "node:crypto";
 import { loadDefaults } from "./config.js";
 
 const SOCKET_PREFIX = "/tmp/camoufox-cli-";
+// Linux sockaddr_un path limit is 108 bytes. With prefix "/tmp/camoufox-cli-"
+// (19 chars) + suffix ".sock" (5 chars) = 24 chars overhead, session names
+// up to 84 chars are safe. Longer names (e.g. cron session IDs) are hashed.
+const MAX_SESSION_LEN = 84;
+
+/** Shorten a session name for use in socket/pid file paths if it would exceed
+ * the 108-char Unix socket path limit. Short names are returned as-is; long
+ * names are replaced with `s-<16-char-sha256-prefix>` (18 chars total).
+ * Both the CLI client and daemon use this to agree on the same socket path. */
+export function shortenSession(session: string): string {
+  if (session.length <= MAX_SESSION_LEN) return session;
+  const hash = crypto.createHash("sha256").update(session).digest("hex").slice(0, 16);
+  return `s-${hash}`;
+}
 
 export function getSocketPath(session: string): string {
-  return `${SOCKET_PREFIX}${session}.sock`;
+  return `${SOCKET_PREFIX}${shortenSession(session)}.sock`;
+}
+
+/** PID file path for a session (mirrors socket path, uses .pid extension). */
+export function getPidPath(session: string): string {
+  return `${SOCKET_PREFIX}${shortenSession(session)}.pid`;
 }
 
 function sendCommand(sockPath: string, command: Record<string, unknown>): Promise<Record<string, unknown>> {

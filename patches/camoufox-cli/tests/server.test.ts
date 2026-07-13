@@ -2,10 +2,11 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as net from "node:net";
 import * as fs from "node:fs";
 import { DaemonServer } from "../src/server.js";
+import { getSocketPath, getPidPath } from "../src/cli.js";
 
 const TEST_SESSION = `test-${process.pid}-${Date.now()}`;
-const SOCK_PATH = `/tmp/camoufox-cli-${TEST_SESSION}.sock`;
-const PID_PATH = `/tmp/camoufox-cli-${TEST_SESSION}.pid`;
+const SOCK_PATH = getSocketPath(TEST_SESSION);
+const PID_PATH = getPidPath(TEST_SESSION);
 
 function cleanup() {
   for (const p of [SOCK_PATH, PID_PATH]) {

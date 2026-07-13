@@ -30,3 +30,9 @@ openclaw/
 # 本地凭据（relay 无状态多租户改造后，client 自管凭据）
 crews/main/skills/wx-mp-publisher/accounts.json
 skills/wxwork-drive/spaces.json
+
+# Claude Code 会话目录
+.claude/
+
+# 运行时缓存
+crews/main/skills/published-track/xhs-user-id.cache

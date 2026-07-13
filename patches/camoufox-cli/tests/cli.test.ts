@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { buildCommand, getSocketPath, parseArgs } from "../src/cli.js";
+import { buildCommand, getSocketPath, getPidPath, shortenSession, parseArgs } from "../src/cli.js";
 import { loadDefaults } from "../src/config.js";
 
 // buildCommand calls process.exit on error; mock it to throw instead
@@ -333,6 +333,58 @@ describe("getSocketPath", () => {
 
   it("custom session", () => {
     expect(getSocketPath("my-session")).toBe("/tmp/camoufox-cli-my-session.sock");
+  });
+});
+
+describe("getPidPath", () => {
+  it("default session", () => {
+    expect(getPidPath("default")).toBe("/tmp/camoufox-cli-default.pid");
+  });
+
+  it("custom session", () => {
+    expect(getPidPath("my-session")).toBe("/tmp/camoufox-cli-my-session.pid");
+  });
+});
+
+describe("shortenSession", () => {
+  it("short session unchanged", () => {
+    expect(shortenSession("default")).toBe("default");
+  });
+
+  it("84-char session unchanged (boundary)", () => {
+    const s = "a".repeat(84);
+    expect(shortenSession(s)).toBe(s);
+  });
+
+  it("85-char session hashed", () => {
+    const s = "a".repeat(85);
+    const result = shortenSession(s);
+    expect(result).toMatch(/^s-[0-9a-f]{16}$/);
+    expect(result.length).toBeLessThan(s.length);
+  });
+
+  it("long cron session ID hashed", () => {
+    const s = "agent-main-cron-2b8125b0-082b-4c2b-bdc6-7fd2193bab9a-run-11c0d125-aeeb-4357-a6d7-11b0517c944a";
+    const result = shortenSession(s);
+    expect(result).toMatch(/^s-[0-9a-f]{16}$/);
+    expect(result.length).toBe(18);
+  });
+
+  it("deterministic (same input -> same output)", () => {
+    const s = "agent-main-cron-2b8125b0-082b-4c2b-bdc6-7fd2193bab9a-run-11c0d125-aeeb-4357-a6d7-11b0517c944a";
+    expect(shortenSession(s)).toBe(shortenSession(s));
+  });
+
+  it("different inputs -> different hashes", () => {
+    const s1 = "agent-main-cron-aaa".padEnd(100, "a");
+    const s2 = "agent-main-cron-bbb".padEnd(100, "b");
+    expect(shortenSession(s1)).not.toBe(shortenSession(s2));
+  });
+
+  it("socket path stays under 108 chars", () => {
+    const longSession = "x".repeat(200);
+    const sockPath = getSocketPath(longSession);
+    expect(sockPath.length).toBeLessThanOrEqual(108);
   });
 });
 
