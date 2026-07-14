@@ -18,12 +18,12 @@ metadata:
 
 **判断是否已开通**：直接跑 Step 3 分析器，若 ASR 报错含 `status=45xxxxx` 或权限相关码，说明未开通，按下面流程开通一次即可。
 
-**开通流程**（在火山引擎控制台操作一次）：
+**开通流程**（未开通时，根据下面提示并引导用户在火山引擎控制台操作一次）：
 
 1. 登录火山引擎控制台，左侧控制面板进入 **「开通管理」**
 2. 选择 **「语音模型」** 选项卡
 3. 找到对应模型（豆包录音文件识别极速版 / `volc.bigasr.auc_turbo`），点击 **操作 → 立即使用**
-4. 在新打开的页面中点击 **「试用」**，再点击 **「开通」**
+4. 在新打开的页面中点击 **「试用」** （点击试用后会赠送20小时，可以先用，后续再点击开通付费）
 5. 开通后，复制页面下方的 **Access token Secret Key**，提供给小贝，由小贝写入实例环境变量
 
 **环境变量**（开通后由小贝配置，用户无需手动设置）：
@@ -87,7 +87,7 @@ Use the **login-manager** skill to check the session:
 Set the output directory to the `references/` subdirectory via the `OUTPUT_DIR` environment variable:
 
 ```bash
-OUTPUT_DIR="output_videos/${VIDEO_SLUG}/references" ./skills/viral-chaser/scripts/viral_chaser.sh <url> [--no-frames]
+OUTPUT_DIR="output_videos/${VIDEO_SLUG}/references" viral-chaser <url> [--no-frames]
 ```
 
 - `<url>`: Full or short-link URL of the video（支持短链，如 `xhslink.com/o/xxx`、`v.douyin.com/xxx`、`b23.tv/xxx`，脚本内部跟随重定向解析）

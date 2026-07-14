@@ -82,15 +82,17 @@ metadata:
 
 **session 约定**：申报系统这类**不涉及平台登录态长期化**的站点走临时性 session（不带 `--persistent`，每次随机指纹，关闭自清）。如果该表单本身需登录（如某政务网账号），先按 browser-guide 流程登录态就绪。
 
+**强制有头模式**：本 skill 一律 `--headed`——表单填报需用户时刻观察填报情况，可随时介入纠正（browser-guide 显式有头场景规则第 3 条）。不要用无头模式跑填报。
+
 ```bash
 SESSION="formfill-$(date +%s)"
-camoufox-cli --session "$SESSION" --headless --json open "<表单首页 URL>"
+camoufox-cli --session "$SESSION" --headed --json open "<表单首页 URL>"
 # …snapshot / click / type / select / upload 填报…
 # 任务结束 close
 camoufox-cli --session "$SESSION" --json close
 ```
 
-> 涉及扫码 / 短信 / 验证码的申报站点必须 `--headed`（browser-guide 原则 2），用户能在浏览器里手动过。
+> 涉及扫码 / 短信 / 验证码的申报站点同样必须 `--headed`（browser-guide 显式有头场景规则），用户能在浏览器里手动过。
 
 #### 3-A. 填报顺序
 

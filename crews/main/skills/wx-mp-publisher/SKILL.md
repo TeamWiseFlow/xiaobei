@@ -36,8 +36,10 @@ metadata:
 
 ## 发布命令
 
+通过 PATH 调用 wrapper：`wx-mp-publisher <cmd>`，无需手动拼接 python 命令或脚本路径。
+
 ```bash
-python3 /<workspace>/crews/main/skills/wx-mp-publisher/scripts/publish_wx_mp.py <markdown_file> [theme] [--account ALIAS]
+wx-mp-publisher <markdown_file> [theme] [--account ALIAS]
 ```
 
 - `theme`：渲染主题，三种形态：

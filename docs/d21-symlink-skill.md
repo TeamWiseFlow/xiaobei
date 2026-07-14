@@ -236,3 +236,87 @@ dev plan §Phase 7 续 写"验收"：
 按 dev plan §Phase 7 续"D21 全局技能软链化 + wrapper 覆盖审计"——**软链化早已落地，本轮 wrapper 覆盖交付完成**；C 类分发器与 Docker wrapper 暴露留作未来演进。
 
 关联：`docs/browser-stack-replacement-spec-2026-07.md` §11 · `crews/it-engineer/MEMORY.md` D20
+
+---
+
+## 八、本轮交付（2026-07-14）—— wrapper 去重 + SKILL.md 示例 PATH 化
+
+> 背景：2026-07-12 落地 30 个 B 类薄 wrapper 后，发现两个遗留问题：① 部分 skill 的顶层 wrapper 与 `scripts/` 下的"解释器引导壳"重复转发（多一跳无收益）② 多数已配 wrapper 的 skill 的 SKILL.md 示例仍写旧路径风格（`python3 /abs/path/xxx.py`、`node ./skills/.../xxx.js`），agent 照抄就不用 PATH 上的 wrapper，wrapper 形同虚设。本轮统一治理。
+
+### 8.1 顶层 wrapper 与 scripts 引导壳去重（4 个 skill）
+
+对"顶层 wrapper → scripts 引导壳 → 真脚本"三层转发链，删掉中间的 scripts 引导壳，顶层 wrapper 直调真脚本：
+
+| skill | 顶层 wrapper 改为直调 | 删的 scripts 引导壳 | 保留的真业务脚本 |
+|-------|-------------------|------------------|--------------|
+| `crews/sales-cs/skills/exp-invite` | `scripts/invite.sh`（不变，已是真脚本） | —（无引导壳） | `scripts/invite.sh` |
+| `crews/sales-cs/skills/proactive-send` | `node scripts/send.mjs` | `scripts/send.sh` | `scripts/send.mjs` |
+| `crews/main/skills/douyin-publish` | `python3 scripts/publish_douyin.py` | `scripts/publish_douyin.sh` | `scripts/publish_douyin.py` |
+| `crews/main/skills/wx-mp-hunter` | `node --experimental-strip-types scripts/wx_mp_hunter.ts` | `scripts/wx-mp-hunter.sh` | `scripts/wx_mp_hunter.ts` |
+| `crews/main/skills/wx-mp-engagement` | `python3 scripts/fetch_engagement.py` | `scripts/wx-mp-engagement.sh` | `scripts/fetch_engagement.py` |
+
+> `exp-invite` 特殊：顶层 wrapper 转发到 `scripts/invite.sh` 是真业务脚本（不是解释器引导壳），不属于重复，保留两层。其余三个的 `scripts/*.sh` 是纯 `exec node/python3` 引导壳，删之。
+
+### 8.2 SKILL.md 示例统一改 PATH 调用风格（20 个 skill）
+
+把 SKILL.md 里所有 `python3 /abs/path/scripts/xxx.py`、`node ./skills/.../xxx.js`、`bash ./scripts/xxx.sh`、`{skillDir}/scripts/xxx`、`/<workspace>/.../scripts/xxx` 等旧写法，统一改成 `<skill-name> <cmd>` PATH 调用风格。
+
+**A. 4 个本轮去重的 skill**（顶层 wrapper 去重 + SKILL.md 改 PATH 风格）：
+
+1. `crews/sales-cs/skills/exp-invite` — `./skills/exp-invite/scripts/invite.sh` → `exp-invite`
+2. `crews/sales-cs/skills/proactive-send` — `./skills/proactive-send/scripts/send.sh` → `proactive-send`
+3. `crews/main/skills/douyin-publish` — `python3 ./skills/.../publish_douyin.py` → `douyin-publish`
+4. `crews/main/skills/wx-mp-hunter` — 混用 `./scripts/wx-mp-hunter.sh` + 绝对路径 → `wx-mp-hunter`
+
+**B. 15 个已配 wrapper 但 SKILL.md 未更新的 skill**（仅改 SKILL.md 示例为 PATH 风格，不动 wrapper）：
+
+5. `skills/email-ops`
+6. `skills/pexels-footage`
+7. `skills/pixabay-footage`
+8. `skills/siliconflow-img-gen`
+9. `skills/wxwork-drive`
+10. `crews/main/skills/xhs-publish`
+11. `crews/main/skills/xhs-content-ops`
+12. `crews/main/skills/wxwork-moments`
+13. `crews/main/skills/wx-mp-publisher`
+14. `crews/main/skills/viral-chaser`
+15. `crews/main/skills/rss-reader`
+16. `crews/main/skills/generate-wenyan-theme`
+17. `crews/it-engineer/skills/awada-channel-setup`
+18. `crews/it-engineer/skills/icp-exemption`
+19. `crews/it-engineer/skills/icp-filing`
+
+**C. 1 个连带影响的 skill**（不在原清单，但因引用了 wx-mp-hunter 已删的 `scripts/wx-mp-hunter.sh` 路径，不修即失效）：
+
+20. `crews/main/skills/wx-mp-engagement` — 引用 wx-mp-hunter + 自身的旧绝对路径调用，一并改 PATH 风格；且自身顶层 wrapper 与 `scripts/wx-mp-engagement.sh` 引导壳重复转发，按 §8.1 去重删引导壳，顶层直调 `scripts/fetch_engagement.py`
+
+**D. 1 个漏列补救的 skill**（2026-07-14 追加，属 C 类多并列脚本但已有顶层 wrapper，部分改 PATH 风格）：
+
+21. `crews/main/skills/sales-cs-enablement` — scripts 下并列两个脚本（`symlink_business_knowledge.py` 主入口 + `check_awada_channel.py` 诊断）。顶层 wrapper 只转发主入口。SKILL.md：Step 5 主入口调用改 `sales-cs-enablement` PATH 风格；Step 1 诊断脚本保留绝对路径直调（wrapper 不代理并列脚本），并显式标注此约束。
+
+### 8.3 `crews/sales-cs/ALLOWED_COMMANDS` 补放行
+
+sales-cs 默认 deny，PATH 调用 `exp-invite` / `proactive-send` 需放行 wrapper 名。main / it-engineer 无限权限，无需动。
+
+```diff
++exp-invite
+ +./skills/exp-invite/scripts/invite.sh        ← 原有，保留
++proactive-send
+-+./skills/proactive-send/scripts/send.sh      ← 引导壳已删，改指向真脚本
++./skills/proactive-send/scripts/send.mjs      ← 修正
+```
+
+### 8.4 验证
+
+- ✅ 4 个顶层 wrapper `bash -n` 语法过、直调目标文件存在
+- ✅ 3 个已删引导壳不再被任何 SKILL.md 引用
+- ✅ `ALLOWED_COMMANDS` 放行脚本真实存在
+- ✅ 20 个改过的 SKILL.md 无残留旧路径调用、无残留绝对路径调用
+
+### 8.5 验收状态
+
+- [x] 顶层 wrapper 与 scripts 引导壳去重（4 个 skill，删 3 个引导壳）
+- [x] SKILL.md 示例统一 PATH 调用风格（20 个 skill）
+- [x] `ALLOWED_COMMANDS` 补放行 + 修正指向
+- [ ] 部署后 PATH 调用实测（部署期验：`which exp-invite` / `exp-invite --help` 等）
+- [ ] 弱模型 PATH 调用 exec 失败近零（部署后观察 1 周，沿用 §4.4 未结项）

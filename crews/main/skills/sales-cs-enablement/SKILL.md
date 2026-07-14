@@ -24,10 +24,10 @@ metadata:
 
 ### Step 1 · 检查 awada-channel 是否已配置
 
-跑检查脚本（绝对路径）：
+跑检查脚本（这里不走 wrapper——wrapper 只转发主入口 `symlink_business_knowledge.py`，不代理此诊断脚本）：
 
 ```bash
-python3 /<workspace 绝对路径>/crews/main/skills/sales-cs-enablement/scripts/check_awada_channel.py
+python3 ./skills/sales-cs-enablement/scripts/check_awada_channel.py
 ```
 
 退出码：
@@ -77,8 +77,10 @@ spawn IT engineer，交代任务：
 把 main agent workspace 下的 `business_knowledge.md`（业务知识正文，单文件）和 `business_knowledge/`（支撑材料文件夹）一并软链到 sales-cs workspace：
 
 ```bash
-python3 /<workspace 绝对路径>/crews/main/skills/sales-cs-enablement/scripts/symlink_business_knowledge.py
+sales-cs-enablement
 ```
+
+> wrapper 转发到 `scripts/symlink_business_knowledge.py`（主入口）。诊断脚本 `check_awada_channel.py` 是并列脚本不被 wrapper 代理，按 Step 1 的绝对路径直调。
 
 > 业务知识由 main agent 维护（治理边界：sales-cs 不自行维护业务知识，避免绕过 main agent）。
 > 首次启用若 `business_knowledge.md` 不存在，脚本会从仓库模板复制一份；若 `business_knowledge/` 不存在，脚本会创建空目录。后续由 main agent 填充。

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# wx-mp-engagement.sh — wx-mp-engagement 顶层 wrapper（薄转发）
+# wx-mp-engagement — 公众号 engagement 抓取 wrapper
 # 让 agent 用 `wx-mp-engagement <cmd>` 走 PATH，零路径拼接。
-# 内部转发到 scripts/wx-mp-engagement.sh（已是 fetch_engagement.py 的薄转发）；
-# wrapper 自身只是 exec 转发，不改语义。
+# 直调 scripts/fetch_engagement.py（Python 3 stdlib + camoufox-cli）。
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SCRIPT_DIR/scripts/wx-mp-engagement.sh" "$@"
+exec python3 "$SCRIPT_DIR/scripts/fetch_engagement.py" "$@"

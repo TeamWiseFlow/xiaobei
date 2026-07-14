@@ -38,11 +38,11 @@ metadata:
 ## 使用方式
 
 ```bash
-bash ./skills/icp-filing/scripts/icp.sh checklist company
-bash ./skills/icp-filing/scripts/icp.sh flow
-bash ./skills/icp-filing/scripts/icp.sh query example.com
-bash ./skills/icp-filing/scripts/icp.sh province 广东
-bash ./skills/icp-filing/scripts/icp.sh footer "京ICP备2024001234号-1"
+icp-filing checklist company
+icp-filing flow
+icp-filing query example.com
+icp-filing province 广东
+icp-filing footer "京ICP备2024001234号-1"
 ```
 
 ## 备案号格式

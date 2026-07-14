@@ -24,12 +24,12 @@ Follow these rules whenever you drive a browser against web pages.
 ### 0.1 camoufox-cli 基本用法
 
 ```
-camoufox-cli --session <name> [--persistent] [--headed|--headless] [--json] <command> [args...]
+camoufox-cli --session <name> [--persistent] [--headed] [--json] <command> [args...]
 ```
 
 - **`--session <name>`**：会话隔离单元，同名 session 共享一个 profile 目录。**涉及登录的平台用一个且只用一个持久化 session 名**。
 - **`--persistent`**：冻结指纹到 `~/.camoufox-cli/profiles/<name>/camoufox-cli.json`（首次生成后冻结）。持久化平台 session 必带；临时性 session（新闻等不登录站点）**不带**——走默认临时 profile，每次随机指纹，关闭自清。
-- **`--headed` / `--headless`**：有头 / 无头。**需要用户配合过验证码、扫码、收短信的，必须 `--headed`**（微信公众号wx_mp和微信视频号weixin_channel可以使用无头模式截图含二维码区域发用户登录）。
+- **`--headed`**：有头模式。**需要用户配合过验证码、扫码、收短信的，或者填表场景，必须 `--headed`**（微信公众号wx_mp和微信视频号weixin_channel可以使用无头模式截图含二维码区域发用户登录）。其他场景，包括探活，都可以使用默认的无头模式。
 - **`--json`**：命令输出走 JSON 信封（`{ok, ...}` / `{error, ...}`），agent 解析稳定，推荐常带。
 - 命令集（含 `upload` / `identity export`）：
   `open / back / forward / reload / url / title / close / snapshot / click / fill / type / select / check / hover / press / text / eval / screenshot / pdf / scroll / wait / tabs / switch / close-tab / sessions / cookies / install / upload / identity`
@@ -71,9 +71,10 @@ When the login page shows a QR code (WeChat Official Account backend, WeChat Cha
 5. While waiting, poll the page every **3 seconds** (`snapshot` 看 URL 是否跳走 / QR 元素是否消失 / dashboard 是否出现). Auto-detected → resume immediately without waiting for user reply.
 6. If no scan within **3 minutes** and no reply arrives, send: _"扫码超时，将继续处理当前可访问的内容。"_ and proceed.
 
-> **显式有头/无头模式场景规则**：只有以下两种场景需要显式指定 `camoufox-cli` 的有头/无头参数：
+> **显式有头/无头模式场景规则**：只有以下场景需要显式指定 `camoufox-cli` 的有头/无头参数：
 > 1. **login-manager 登录**（douyin / kuaishou / bilibili / xhs-publish / xhs-browse 5 平台）——强制 `--headed`，用户在浏览器手动扫码/短信/账号密码
 > 2. **需要用户手动过验证**（captcha / 滑块 / 短信）——`--headed`，用户才能在浏览器里手动操作
+> 3. **web-form-fill 表单填报**——强制 `--headed`，便于用户时刻观察填报情况、可随时介入纠正
 >
 > 其他场景默认走 camoufox 持久化 session，**不显式指定有头/无头**——camoufox-cli 默认行为即可。
 >
@@ -127,7 +128,7 @@ If the simple click in Step 2 above **fails** — the page still shows a challen
 
 1. **Do NOT retry blindly.** Stop attempting automated verification.
 2. Send a message to the user: _"xx 页面有验证码，我无法解决，请在浏览器中完成，完成后请通知我。"_（xx 为页面标题）.
-   > 涉及登录的 session 必须是 **有头模式**（原则 2），用户才能在浏览器里手动过验证。无头跑出来的 session 遇验证码先 teardown 再换有头重开。
+   > 涉及登录的 session 必须是 **有头模式**，用户才能在浏览器里手动过验证。无头跑出来的 session 遇验证码先 teardown 再换有头重开。
 3. Wait for the user to confirm.
 4. If no response arrives within **5 minutes**, continue with whatever content is accessible.
 

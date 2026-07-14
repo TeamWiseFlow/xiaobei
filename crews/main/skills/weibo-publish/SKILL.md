@@ -8,7 +8,7 @@ metadata:
 
 # 微博发布
 
-通过 **camoufox-cli** 持久化 session `weibo`（一个且只有一个持久化 session，fail-first 队列：同 session 已有命令在跑时新命令直接 fail）在微博上发布内容（文字、图片、视频）。微博 API 对个人开发者申请门槛高，浏览器自动化是更实用的方案。
+通过 **camoufox-cli** 持久化 session `weibo`（有且只有一个，fail-first 队列：同 session 已有命令在跑时新命令直接 fail）在微博上发布内容（文字、图片、视频）。微博 API 对个人开发者申请门槛高，浏览器自动化是更实用的方案。
 
 > **主力后端 = `target=camoufox`**。下方命令 / 示例只针对 `target=camoufox`。
 > **`target=host` / `target=node`**：只按本 skill 的「流程 + 提示事项」走——何时有头 / 何时无头 / 频率限制 / 错误处理约定是**后端无关**的，照本 skill 执行。不要照搬 `camoufox-cli ...` 命令，用你当前后端自带的浏览器工具语义调用即可。

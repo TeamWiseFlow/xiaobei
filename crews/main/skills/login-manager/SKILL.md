@@ -10,8 +10,6 @@ metadata:
 
 本 skill 是**纯 SKILL.md 指导文件**，无脚本。cookie / UA 的导出/导入由 **camoufox-cli** 的 `cookies export` / `cookies import` / `identity export` 命令完成（全局可用的 `camoufox-cli` 命令）。
 
-在任何需要平台 cookie 的 skill（xhs-content-ops / xhs-publish / douyin-publish / viral-chaser / published-track 等）调用前，先用本 skill 的流程把登录态就绪。
-
 > **主力后端 = `target=camoufox`**。下方命令 / 示例只针对 `target=camoufox`。
 > **`target=host` / `target=node`**：只按本 skill 的「流程 + 提示事项」走——何时有头 / 探活节奏 / 中央存储路径约定是**后端无关**的，照本 skill 执行。不要照搬 `camoufox-cli ...` 命令，用你当前后端自带的浏览器工具语义登录 + 导出 cookie/UA 即可。
 
@@ -93,11 +91,11 @@ metadata:
 
 ### 步骤 0：探活（先验当前登录态是否还有效）
 
-对持久化 session（涉及登录的平台一律走持久化），先打开 session 探活：
+对持久化 session（涉及登录的平台一律走持久化），先打开 session 探活(这一步不是登录，可以用默认无头模式)：
 
 ```bash
 SESSION="<platform>"   # 持久化 session 名 = 平台 key，见下方约定
-camoufox-cli --session "$SESSION" --persistent --headless --json open "<平台首页 URL>"
+camoufox-cli --session "$SESSION" --persistent --json open "<平台首页 URL>"
 sleep 3
 camoufox-cli --session "$SESSION" --json snapshot
 # snapshot 看页面是否跳到登录页 / 出现登录按钮 / 互动数据是否正常

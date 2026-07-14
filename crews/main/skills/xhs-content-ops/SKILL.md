@@ -63,7 +63,7 @@ metadata:
 ```
 1. login-manager 探活（见上方「三个场景统一前置」）；未登录则走有头手动登录流，登录后同时导出 cookie + UA 落中央存储。
 2. 直接把 URL 传给脚本，脚本内部解析短链、提取 note_id 和 xsec_token：
-   ./skills/xhs-content-ops/scripts/fetch_note_content.sh --url <url> --output-dir campaign_assets/<slug>/
+   xhs-content-ops --url <url> --output-dir campaign_assets/<slug>/
    ⚠️ 脚本内部同时导入 cookie 和 UA（已写死在 fetch_note_content.ts：同时读 ~/.openclaw/logins/xhs-browse.json + ~/.openclaw/logins/xhs-browse.ua.json，喂给 raw HTTP header，不经浏览器）——脚本侧务必同时带，同一指纹下的 cookie 才不会被风控错配。
 3. 读取下载的图片和正文，执行对标分析
 ```
@@ -82,7 +82,7 @@ metadata:
    camoufox-cli --session xhs-browse --persistent --headless --json open "https://www.xiaohongshu.com/search_result?keyword=目标关键词"
 3. camoufox-cli snapshot 获取搜索结果列表，选取前 3-5 篇高互动图文笔记；用 eval 从笔记链接里提取 note_id + xsec_token（URL 格式见「小红书 URL 格式参考」段，从 explore/{feed_id}?xsec_token={token} 解）。
 4. 对每篇笔记，运行图文下载脚本（脚本内部同时导入 cookie 和 UA，已写死，无需手动传）：
-   ./skills/xhs-content-ops/scripts/fetch_note_content.sh --note-id <note_id> --xsec-token <token> --xsec-source pc_feed --output-dir campaign_assets/<slug>/
+   xhs-content-ops --note-id <note_id> --xsec-token <token> --xsec-source pc_feed --output-dir campaign_assets/<slug>/
 5. 汇总所有下载内容，执行竞品对标分析
 ```
 
@@ -94,7 +94,7 @@ metadata:
 1. login-manager 探活（见上方「三个场景统一前置」）；未登录则走有头手动登录流，登录后同时导出 cookie + UA 落中央存储。
 2. 走 camoufox-cli 浏览器操作（复用 xhs-browse 持久化 session）搜索目标关键词，找到 3-5 篇代表性图文笔记（同场景 B 的 camoufox-cli 搜索流程），用 eval 提 note_id + xsec_token。
 3. 对每篇笔记，运行图文下载脚本下载图片和正文（脚本内部同时导入 cookie 和 UA，已写死，无需手动传）：
-   ./skills/xhs-content-ops/scripts/fetch_note_content.sh --note-id <note_id> --xsec-token <token> --xsec-source pc_feed --output-dir campaign_assets/<slug>/
+   xhs-content-ops --note-id <note_id> --xsec-token <token> --xsec-source pc_feed --output-dir campaign_assets/<slug>/
 4. 与用户提供的内容逐项对标：
    - 标题风格对比
    - 正文结构对比
@@ -123,14 +123,16 @@ metadata:
 
 ### 运行
 
+通过 PATH 调用 wrapper：`xhs-content-ops <cmd>`，无需手动拼接 node 命令或脚本路径。
+
 ```bash
 # 推荐：直接传 URL（支持 xhslink.com 短链和完整 explore 链接，脚本自动解析 note_id + xsec_token）
-./skills/xhs-content-ops/scripts/fetch_note_content.sh \
+xhs-content-ops \
   --url <url> \
   --output-dir <output_dir>
 
 # 或：已拿到 note-id 时（若有 xsec_token 一并传，否则部分笔记会 note_card not found）
-./skills/xhs-content-ops/scripts/fetch_note_content.sh \
+xhs-content-ops \
   --note-id <note_id> \
   --xsec-token <token> \
   --xsec-source <source> \

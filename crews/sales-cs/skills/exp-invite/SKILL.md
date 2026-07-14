@@ -18,7 +18,7 @@ description: >
 此处需要同时传入两个标识符，各自职责不同：
 
 ```bash
-./skills/exp-invite/scripts/invite.sh \
+exp-invite \
   --peer "<[CustomerDB].peer>" \
   --user-id-external "<Sender.id>"
 ```
@@ -39,7 +39,7 @@ description: >
 - 客户可能主动退出后想重新加入
 
 ```bash
-./skills/exp-invite/scripts/invite.sh \
+exp-invite \
   --peer "<[CustomerDB].peer>" \
   --user-id-external "<Sender.id>" \
   --force

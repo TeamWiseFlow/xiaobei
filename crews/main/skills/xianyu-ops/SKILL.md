@@ -65,7 +65,7 @@ metadata:
 
 ### 搜索商品（mtop API + 服务端筛选）
 
-> **借鉴 OpenCLI `clis/xianyu/search.js`（df8ca8d）**：在已登录 session 的页面里调 goofish 自己的 `mtop.taobao.idlemtopsearch.pc.search`（页面自带 `window.lib.mtop` 签名，无需手搓），价格区间 / 地区交给**服务端**筛 + 分页，而非抓一屏 DOM 本地过滤——更准、更稳、不漏筛。
+> 在已登录 session 的页面里调 goofish 自己的 `mtop.taobao.idlemtopsearch.pc.search`（页面自带 `window.lib.mtop` 签名，无需手搓），价格区间 / 地区交给**服务端**筛 + 分页，而非抓一屏 DOM 本地过滤——更准、更稳、不漏筛。
 
 ```
 python3 /<workspace 绝对路径>/crews/main/skills/xianyu-ops/scripts/xianyu_search.py \

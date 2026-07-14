@@ -8,8 +8,7 @@
 
 2. **遇到技术故障时处理方案**:
 
-   - 先尝试彻底关闭浏览器,再打开(使用默认 `openclaw` profile);
-   - 重启浏览器不解决问题时,**spawn IT Engineer**协助解决:调用 `sessions_spawn`,将问题现象、错误信息、当前任务上下文完整传递给 IT Engineer,请它协助解决。**spawn 后 fire-and-forget,严禁 `sessions_yield` 等待**——IT Engineer 的结果通过 announce 异步回来,若没回来按下一条跳过继续(见下方约束 3);
+   - **spawn IT Engineer**协助解决:调用 `sessions_spawn`,将问题现象、错误信息、当前任务上下文完整传递给 IT Engineer,请它协助解决。**spawn 后 fire-and-forget,严禁 `sessions_yield` 等待**——IT Engineer 的结果通过 announce 异步回来,若没回来按下一条跳过继续(见下方约束 3);
    - 仍无法解决 → **跳过当前任务,继续执行后续步骤**,不要卡住整个 HEARTBEAT
 
    不可:
@@ -18,11 +17,10 @@
 
 3. **⛔ cron/heartbeat isolated session 中禁止 `sessions_yield`,原则上也不 spawn subagent**:
 
-   本任务由 cron 以 `session_target=isolated` 启动,**本身已是独立上下文**,不占主 agent 上下文、不阻塞主 session。再 spawn subagent 是零收益纯增复杂度,且 `sessions_yield` 会通过 `runAbortController.abort("sessions_yield")`(`openclaw/src/agents/embedded-agent-runner/run/attempt.ts:1351`)**直接 abort 当前 run**,cron 将 yield 视为 run 结束并标记 outcome,session 变 inactive;subagent 完成后的 announce 找不到可唤醒的活跃 session,retry 3 次后 give-up,**后续 Step 全部丢失**。
+   本任务由 cron 以 `session_target=isolated` 启动,**本身已是独立上下文**,不占主 agent 上下文、不阻塞主 session。再 spawn subagent 是零收益纯增复杂度,且 `sessions_yield` 会**直接 abort 当前 run**,cron 将 yield 视为 run 结束并标记 outcome,session 变 inactive;subagent 完成后的 announce 找不到可唤醒的活跃 session,retry 3 次后 give-up,**后续 Step 全部丢失**。
 
-   - 所有 Step 0–5 **顺序内联执行**,retro.md 等产出主 agent 自己写,不 spawn subagent、不 `sessions_yield`。
+   - 所有 Step 1–5 **顺序内联执行**,retro.md 等产出主 agent 自己写,不 spawn subagent、不 `sessions_yield`。
    - 唯一允许 spawn 的是约束 2 的「故障兜底 spawn IT Engineer」,且必须 fire-and-forget(不 yield)。
-   - 涉及浏览器的操作本来就必须串行(避免浏览器竞态抢夺),内联顺序执行天然满足。
 
 4. **⛔ 登录失效一律「跳过 + 记录 + 汇总上报」，严禁硬行恢复登录**
 
@@ -49,14 +47,6 @@
 
 ### 工作流程
 
-#### Step 0:准备工作
-
-为避免浏览器连接不稳干扰后续任务执行,正式开始前应该将已经打开的浏览器实例(如有)先完全关闭，再打开。
-
-打开时使用默认 `openclaw` profile。
-
----
-
 #### Step 1: 通过 published-track 读取所有已启用打分（cal_enabled=1）的已发布内容
 
 ```bash
@@ -73,20 +63,28 @@
 
 #### Step 2: 依次获取已发布内容的互动数据并更新到 published-track
 
-对 Step 1 中列出的**每条记录（按 id 逐条）**取数并写库。按平台分三种情况，能用脚本的先用脚本，不能用脚本的用对应技能，再不就指导 Agent 自己上：
+对 Step 1 中列出的**每条记录（按 id 逐条）**取数并写库。按平台分三种情况：
 
-1. **douyin / xhs / kuaishou / bilibili** —— 走脚本：
+1. **douyin / xhs / kuaishou / bilibili** —— 走 `fetch-and-update-metrics.sh`（纯 HTTP+cookie 链路：login-manager 探活 → fetch-retro-data.ts → update-metrics.sh）：
 
    ```bash
    ./skills/published-track/scripts/fetch-and-update-metrics.sh \
      --platform <platform> --id <rowid>
    ```
 
-   脚本封装了 login-manager 探活 → API 抓取 → DB 写入 的完整流程，返回统一 JSON 结果。
+   脚本封装了完整流程，返回统一 JSON 结果。**wx_mp 不走这个脚本**——机制不同，见下方第 2 条。
 
-2. **微信公众号 (wx_mp)** —— 走 `wx-mp-engagement` 技能取数后写库。
+2. **微信公众号 (wx_mp)** —— **走 `wx-mp-engagement` 技能**，camoufox 抓创作者中心方案，与上面四个平台的纯 HTTP+cookie 链路完全不同，两条路独立、不耦合：
 
-3. **其他平台** —— 指导 Agent 使用持久化 session 通过 `camoufox-cli` 打开对应创作者中心，读取已发布文章的互动数据再写库。
+   ```bash
+   wx-mp-engagement fetch --row-id <rowid>
+   ```
+
+   内部流程：wx-mp-hunter check 探活 wx_mp session → camoufox 抓创作者中心发表记录页 → 解析 innerText 按标题匹配 → update-metrics.sh 写 pub_wx_mp。SESSION_EXPIRED（exit 2）按通用规则跳过 + 记入 `EXPIRED_PLATFORMS`。
+
+   > ⚠️ 不要调 `fetch-and-update-metrics.sh --platform wx_mp`——该脚本对 wx_mp 直接 exit 1 报错提示走 wx-mp-engagement。两条链路独立维护，避免机制错配。
+
+3. **其他平台** —— 使用平台对应的持久化 session 通过 `camoufox-cli` 打开平台创作者中心，读取已发布文章的互动数据再写库。
 
    > 这条路效果一般，**尽力而为即可，不要硬弄**——拿不到就跳过，切勿反复操作以免引发风控。后面会持续更新。
 
@@ -95,7 +93,6 @@
 - **必须传 `--id <rowid>`**（脚本类平台）：`<rowid>` 取自 Step 1 查询结果里的 `id` 字段。同一 `source_folder` 可能对应多条记录（同内容重复发布到不同帖子），按 `--id` 逐条抓取/写库才能让每次发布各自独立统计；若只传 `--source-folder`，脚本会只抓一行指标却批量写进所有同 folder 行，造成重复发布之间互相污染。
 - **SESSION_EXPIRED**：脚本返回 `ok=false, error=SESSION_EXPIRED`（exit 2）时，**跳过该平台**本轮取数，记入 `EXPIRED_PLATFORMS`，Step 5 统一汇报，由用户白天用 login-manager 重新登录。**凌晨不唤醒用户、不扫码登录、不私拉会话**（见约束 4/5）。
 - **xhs 风控显著高于其他平台**：xhs 任何登录失效迹象 → 立刻整段跳过 xhs，不尝试任何恢复。取数只走 `xhs-browse`，**禁止**探测/使用 `xhs-publish` creator 域 cookie。
-- **浏览器操作必须串行**，不可并行。
 
 ---
 
@@ -149,7 +146,7 @@
    > **只报告取数端 cookie**。**不要报告、也不要探测 `xhs-publish`（小红书发布端 / creator.xiaohongshu.com）**：
    > 复盘/取数完全不依赖发布端 cookie，探测它只会给 creator 域增加风控概率且结论与取数无关。
    > 发布端失效由发布任务（xhs-publish 技能）自己管，不在本复盘心跳职责内。
-3. 浏览器获取结果摘要（如有）
-4. content-calibrator 复盘结果摘要（如有）
+3. content-calibrator 复盘结果摘要（如有）
+4. 用户咨询回复摘要。
 
 发送后本次定时任务结束。

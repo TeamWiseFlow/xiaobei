@@ -30,10 +30,6 @@ Two modes:
 
 参考文档：<https://www.volcengine.com/docs/82379/1541523>
 
-> 📍 **全局技能路径提示**：文中所有 `./scripts/` 路径均相对于本技能所在目录。执行时按本技能实际安装路径拼接。
->
-> **⚠️ exec 调用方式**：通过 exec 调用时**不要**用 `cd <dir> && ./scripts/xxx.sh` 复合形式（触发 allowlist miss），也**不要**用相对路径 `./scripts/...`（agent 容易误拼）。openclaw 加载本技能时已注入绝对路径，**直接用绝对路径调用**。
-
 ---
 
 ## Run
@@ -42,17 +38,19 @@ Note: Image generation can take 10–60 seconds. Set a higher timeout when invok
 
 **Do NOT set env vars inline** (e.g., `AWK_API_KEY=... python3 ...`). The env var is already in the system environment; inline assignments break the exec permission check.
 
+通过 PATH 调用 wrapper，无需拼接脚本路径。
+
 ```bash
 # Text-to-image (default model: doubao-seedream-4.5，失败自动 fallback doubao-seedream-5.0-lite)
-python3 /abs/path/to/skills/siliconflow-img-gen/scripts/gen.py --prompt "your prompt here"
+siliconflow-img-gen --prompt "your prompt here"
 
 # 指定其他 model（显式指定时不 fallback）
-python3 .../gen.py --prompt "your prompt" --model "doubao-seedream-5.0-lite"
-python3 .../gen.py --prompt "your prompt" --model "doubao-seedream-3-0-t2i-250415"
+siliconflow-img-gen --prompt "your prompt" --model "doubao-seedream-5.0-lite"
+siliconflow-img-gen --prompt "your prompt" --model "doubao-seedream-3-0-t2i-250415"
 
 # Image-edit（1-3 张参考图）
-python3 .../gen.py --prompt "add a lighthouse" --image "https://example.com/source.jpg"
-python3 .../gen.py --prompt "blend" \
+siliconflow-img-gen --prompt "add a lighthouse" --image "https://example.com/source.jpg"
+siliconflow-img-gen --prompt "blend" \
   --image "https://example.com/a.jpg" \
   --image2 "https://example.com/b.jpg" \
   --image3 "https://example.com/c.jpg"
@@ -62,29 +60,29 @@ python3 .../gen.py --prompt "blend" \
 
 ```bash
 # Square 2K (default)
-python3 .../gen.py --prompt "a futuristic city at dusk"
+siliconflow-img-gen --prompt "a futuristic city at dusk"
 
 # Landscape 16:9
-python3 .../gen.py --prompt "mountain lake" --image-size 2848x1600
+siliconflow-img-gen --prompt "mountain lake" --image-size 2848x1600
 
 # Portrait 9:16
-python3 .../gen.py --prompt "mountain lake" --image-size 1600x2848
+siliconflow-img-gen --prompt "mountain lake" --image-size 1600x2848
 
 # Quality preset (火山的 2K / 3K / 4K 方式 1)
-python3 .../gen.py --prompt "4K 超清" --image-size 4K
+siliconflow-img-gen --prompt "4K 超清" --image-size 4K
 
 # Save to specific directory
-python3 .../gen.py --prompt "sunset" --out-dir ./out/images
+siliconflow-img-gen --prompt "sunset" --out-dir ./out/images
 ```
 
 ### Image-edit examples
 
 ```bash
 # 单图生图
-python3 .../gen.py --prompt "make it night time" --image "https://example.com/photo.jpg"
+siliconflow-img-gen --prompt "make it night time" --image "https://example.com/photo.jpg"
 
 # 多图融合（3 张）
-python3 .../gen.py --prompt "blend these photos" \
+siliconflow-img-gen --prompt "blend these photos" \
   --image  "https://example.com/a.jpg" \
   --image2 "https://example.com/b.jpg" \
   --image3 "https://example.com/c.jpg"
@@ -189,7 +187,7 @@ python3 .../gen.py --prompt "blend these photos" \
 ### 6. 完整示例
 
 ```bash
-python3 /abs/path/to/skills/siliconflow-img-gen/scripts/gen.py \
+siliconflow-img-gen \
   --prompt "A dramatic vertical 9:16 short-video cover with bold red and black gradient background, glowing AI chip icons floating in the upper area, and large bold Chinese text '前几周 DeepSeek 还是神一般的存在' in the middle in white and gold gradient with sharp shadows. At the bottom, dramatic glowing red Chinese text '为什么热度消散得这么快？' with lightning-like effects. Visual style: high contrast, modern tech poster, dramatic lighting, professional Chinese typography, sharp text rendering, cinematic, no watermarks" \
   --image-size 1600x2848 \
   --watermark false \

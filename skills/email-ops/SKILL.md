@@ -18,8 +18,6 @@ metadata:
 
 代替用户起草并发送邮件。
 
-> 📍 **全局技能路径提示**：文中所有 `./scripts/` 路径均相对于本技能所在目录（即 `<skill>` 标签 `location` 属性所指目录），**不是**工作区目录。执行时按本技能实际安装路径拼接。
-
 ---
 
 ## Step 1 — 确定邮件类型与上下文
@@ -260,8 +258,10 @@ Subject: Re: [原主题]
 
 ## Step 5 — 发送（仅明确要求发送时）
 
+通过 PATH 调用 wrapper，无需拼接脚本路径。
+
 ```bash
-python3 ./scripts/send_email.py \
+email-ops \
   --to "{收件人邮箱}" \
   --subject "{主题}" \
   --body "{正文}"

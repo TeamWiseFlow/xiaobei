@@ -112,21 +112,13 @@ fi
 
 # ─── 平台路由 ──────────────────────────────────────────────────────────────
 
-# Phase 4.6 特殊平台：wx_mp 走 wx-mp-engagement skill
-# 不进 fetch-retro-data.ts，因为 wx-mp 是 camoufox 抓创作者中心，
-# 行为模式与 xhs/bilibili/douyin/kuaishou 的纯 HTTP+cookie 不同
+# wx_mp（微信公众号）**不走本脚本**——它走 camoufox 抓创作者中心的方案，
+# 与 xhs/bilibili/douyin/kuaishou 的纯 HTTP+cookie 链路完全不同，
+# 由 wx-mp-engagement 技能独立承担（agent 直调 wx-mp-engagement wrapper）。
+# 见 crews/main/HEARTBEAT.md Step 2 与 wx-mp-engagement/SKILL.md。
 if [ "$PLATFORM" = "wx_mp" ]; then
-  WX_MP_ENGAGEMENT="$SCRIPT_DIR/../../wx-mp-engagement/scripts/wx-mp-engagement.sh"
-  if [ ! -x "$WX_MP_ENGAGEMENT" ]; then
-    echo "{\"ok\":false,\"error\":\"WX_MP_ENGAGEMENT_NOT_FOUND\",\"hint\":\"wx-mp-engagement.sh 不存在或不可执行: $WX_MP_ENGAGEMENT\"}"
-    exit 1
-  fi
-  if [ -z "$ROW_ID" ]; then
-    echo "{\"ok\":false,\"error\":\"WX_MP_NEEDS_ROW_ID\",\"hint\":\"wx_mp 平台需要 --id <row_id>（无 row_id 无法定位 pub_wx_mp 行）\"}"
-    exit 1
-  fi
-  echo "[fetch-and-update] wx_mp 走 wx-mp-engagement skill..." >&2
-  exec "$WX_MP_ENGAGEMENT" fetch --row-id "$ROW_ID"
+  echo "{\"ok\":false,\"error\":\"WX_MP_NOT_SUPPORTED_HERE\",\"platform\":\"wx_mp\",\"hint\":\"微信公众号不走 fetch-and-update-metrics.sh。请直调 wx-mp-engagement 技能：wx-mp-engagement fetch --row-id <rowid>（camoufox 抓创作者中心方案，与纯 HTTP+cookie 平台不同）\"}"
+  exit 1
 fi
 
 # 手动平台：直接返回

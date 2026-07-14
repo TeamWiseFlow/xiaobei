@@ -40,9 +40,9 @@ metadata:
 
 ## 文章采集脚本
 
-脚本路径：`./skills/generate-wenyan-theme/scripts/collect-theme-sources.js`
+通过 PATH 调用 wrapper：`generate-wenyan-theme <cmd>`，无需拼接脚本路径。
 
-调用方式：`node ./skills/generate-wenyan-theme/scripts/collect-theme-sources.js ...`
+调用方式：`generate-wenyan-theme ...`
 
 该脚本会调用全局 `wx-mp-hunter` wrapper：
 
@@ -52,7 +52,7 @@ metadata:
 ### URL 模式
 
 ```bash
-node ./skills/generate-wenyan-theme/scripts/collect-theme-sources.js --url <mp.weixin.qq.com-url> --output wenyan-theme-sources.json
+generate-wenyan-theme --url <mp.weixin.qq.com-url> --output wenyan-theme-sources.json
 ```
 
 输出 JSON 中 `articles[0].content_html` 为文章正文 HTML。
@@ -60,13 +60,13 @@ node ./skills/generate-wenyan-theme/scripts/collect-theme-sources.js --url <mp.w
 ### 公众号账号模式
 
 ```bash
-node ./skills/generate-wenyan-theme/scripts/collect-theme-sources.js --account <公众号名> --count 10 --output wenyan-theme-sources.json
+generate-wenyan-theme --account <公众号名> --count 10 --output wenyan-theme-sources.json
 ```
 
 如果用户同时给出关键词或筛选信息，传入 `--keywords`：
 
 ```bash
-node ./skills/generate-wenyan-theme/scripts/collect-theme-sources.js --account <公众号名> --keywords "关键词1,关键词2" --count 10 --scan-batch 20 --max-scan 100 --output wenyan-theme-sources.json
+generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2" --count 10 --scan-batch 20 --max-scan 100 --output wenyan-theme-sources.json
 ```
 
 筛选规则：
@@ -268,7 +268,7 @@ node ./skills/generate-wenyan-theme/scripts/collect-theme-sources.js --account <
 1. **识别链接**：确认用户输入包含 `https://mp.weixin.qq.com` 开头的文章 URL。
 2. **采集 HTML**：运行采集脚本：
    ```bash
-   node ./skills/generate-wenyan-theme/scripts/collect-theme-sources.js --url <url> --output wenyan-theme-sources.json
+   generate-wenyan-theme --url <url> --output wenyan-theme-sources.json
    ```
 3. **分析样式**：读取输出 JSON，基于 `articles[0].content_html` 分析标题、段落、引用、分割线、强调、图片周边等样式特征。
 4. **生成 CSS**：将可迁移特征映射到 `#wenyan` 选择器体系，不复制无效的微信原始 class 或 inline style。
@@ -281,11 +281,11 @@ node ./skills/generate-wenyan-theme/scripts/collect-theme-sources.js --account <
    - 无筛选信息：抓最近 10 篇。
    - 有筛选信息：从最近 20 篇开始筛选，不足则继续下一批 20 篇。
    ```bash
-   node ./skills/generate-wenyan-theme/scripts/collect-theme-sources.js --account <公众号名> --count 10 --output wenyan-theme-sources.json
+   generate-wenyan-theme --account <公众号名> --count 10 --output wenyan-theme-sources.json
    ```
    或：
    ```bash
-   node ./skills/generate-wenyan-theme/scripts/collect-theme-sources.js --account <公众号名> --keywords "关键词1,关键词2" --count 10 --scan-batch 20 --max-scan 100 --output wenyan-theme-sources.json
+   generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2" --count 10 --scan-batch 20 --max-scan 100 --output wenyan-theme-sources.json
    ```
 3. **向用户确认**：生成 CSS 前，必须向用户展示拟参考的文章列表（标题、发布时间/链接、匹配关键词），并询问是否继续。用户确认后再生成。
 4. **抽取共性**：优先使用多篇文章共同出现的视觉规律；冲突样式按出现频次和标题层级一致性取舍。
@@ -338,9 +338,9 @@ node ./skills/generate-wenyan-theme/scripts/collect-theme-sources.js --account <
 
 ```bash
 # 1) 直接传 CSS 文件路径
-python3 ./skills/wx-mp-publisher/scripts/publish_wx_mp.py article.md custom-theme.css
+wx-mp-publisher article.md custom-theme.css
 # 2) 传登记在主题表里的 theme-id（脚本自动解析出 CSS 路径）
-python3 ./skills/wx-mp-publisher/scripts/publish_wx_mp.py article.md custom-theme
+wx-mp-publisher article.md custom-theme
 ```
 
 ---
@@ -350,9 +350,9 @@ python3 ./skills/wx-mp-publisher/scripts/publish_wx_mp.py article.md custom-them
 生成 CSS 文件后，用 `wx-mp-publisher` 发布，第二个位置参数即主题（CSS 路径或登记的 theme-id 均可）：
 
 ```bash
-python3 ./skills/wx-mp-publisher/scripts/publish_wx_mp.py article.md custom-theme.css
+wx-mp-publisher article.md custom-theme.css
 # 或
-python3 ./skills/wx-mp-publisher/scripts/publish_wx_mp.py article.md custom-theme
+wx-mp-publisher article.md custom-theme
 ```
 
 > 注：发布统一走 `publish_wx_mp.py`，当 theme 参数指向本地 `.css` 文件路径、或为主题表中登记的自定义 id 时，脚本读出 CSS 内容作 `custom_theme` 字段随 multipart 上传 relay；relay 侧请求结束即清理，不持久化、不落盘、不按用户存主题。

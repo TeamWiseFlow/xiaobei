@@ -21,8 +21,6 @@ metadata:
 
 > ⚠️ **分享标准用法 = `file-share`（文件级），不是 `space-share`（空间级）**。应用建的空间默认「邀请链接功能关闭」且 API 打不开（只能管理后台手动开），`space-share` 在未开启时报 `640028`。`file-share` 只要微盘权限就能用，发给同事直接看文件、无需加入空间。**默认走 `file-share`**，别白白去试 `space-share`。详见下文「典型流程」与「特殊用途接口」。
 
-> 📍 **全局技能路径提示**：文中所有 `./scripts/` 路径均相对于本技能所在目录（即 `<skill>` 标签 `location` 属性所指目录），**不是**工作区目录。执行时按本技能实际安装路径拼接。
-
 ---
 
 ## 关键约束：往哪传文件
@@ -51,8 +49,10 @@ metadata:
 
 ## 命令
 
+通过 PATH 调用 wrapper，无需拼接脚本路径。
+
 ```bash
-python3 {skillDir}/scripts/drive.py <subcommand> [args...]
+wxwork-drive <subcommand> [args...]
 ```
 
 ### 空间管理（写 spaces.json）
@@ -104,16 +104,16 @@ python3 {skillDir}/scripts/drive.py <subcommand> [args...]
 
 ```bash
 # 1. 建空间（首次）并设为默认
-python3 {skillDir}/scripts/drive.py space-create main wiseflow素材 --default
+wxwork-drive space-create main wiseflow素材 --default
 
 # 2. 在空间根建文件夹，并记为默认上传文件夹
-python3 {skillDir}/scripts/drive.py mkdir main 2026-07 --default-folder
+wxwork-drive mkdir main 2026-07 --default-folder
 
 # 3. 上传（自动用 default_folderid）
-python3 {skillDir}/scripts/drive.py upload ./cover.jpg main
+wxwork-drive upload ./cover.jpg main
 
 # 4. 取文件分享链接，发给同事即可直接看文件（不依赖空间邀请链接功能）
-python3 {skillDir}/scripts/drive.py file-share <上一步 upload 返回的 fileid>
+wxwork-drive file-share <上一步 upload 返回的 fileid>
 # → share_url，发给同事
 ```
 

@@ -1,6 +1,6 @@
 ---
 name: twitter-interact
-description: Twitter/X 互动操作技能——支持点赞 / 取消点赞 / 转推 / 取消转推 / 收藏 / 取消收藏 / 关注 / 取关。camoufox-cli 主推路径 + 持久化 session `twitter`（与 twitter-post 共用，自管探活登录）+ 频率限制。交互能力移植自 OpenCLI（article-scoped 探针 / testid 确认菜单 / 晚水合轮询 / 按钮互换模型）。
+description: Twitter/X 互动操作技能——支持点赞 / 取消点赞 / 转推 / 取消转推 / 收藏 / 取消收藏 / 关注 / 取关。camoufox-cli 主推路径 + 持久化 session `twitter`（与 twitter-post 共用，自管探活登录）+ 频率限制。
 metadata:
   openclaw:
     emoji: 💬
@@ -125,7 +125,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 
 ## 工作流程
 
-> **实现要点（移植自 OpenCLI `clis/twitter/`）**：脚本 `twitter_interact.py` 内置三个模式，agent 无需手写 eval：
+> **实现要点**：脚本 `twitter_interact.py` 内置三个模式，agent 无需手写 eval：
 > 1. **article-scoped 探针**：按 tweet_id 定位含 `a[href*="/status/<id>"]` 的 article，按钮查找限定其内——会话页有多 article，bare `querySelector('[data-testid="like"]')` 会抓第一个（父推）误操作。
 > 2. **testid 确认菜单**：retweet→`[data-testid="retweetConfirm"]`、unretweet→`unretweetConfirm`、unfollow→`confirmationSheetConfirm`，比 text match 稳且不受本地化影响。
 > 3. **晚水合轮询**：Python 侧 20×500ms 找按钮 / article，确认菜单 20×250ms。

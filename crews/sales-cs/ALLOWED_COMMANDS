@@ -9,8 +9,10 @@
 +./skills/customer-db/scripts/follow-up-mark-sent.sh
 +./skills/customer-db/scripts/follow-up-complete.sh
 +./skills/customer-db/scripts/follow-up-expire.sh
++exp-invite
 +./skills/exp-invite/scripts/invite.sh
-+./skills/proactive-send/scripts/send.sh
++proactive-send
++./skills/proactive-send/scripts/send.mjs
 +nano-pdf
 +jq
 +rg

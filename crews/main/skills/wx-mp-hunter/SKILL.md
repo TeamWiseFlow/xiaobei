@@ -34,9 +34,7 @@ Use this skill when:
 
 ## Prerequisites
 
-Wrapper 脚本路径：`./scripts/wx-mp-hunter.sh`
-
-所有命令通过 wrapper 调用，无需手动拼接 node 命令。
+通过 PATH 调用 wrapper：`wx-mp-hunter <cmd>`，无需手动拼接 node 命令或脚本路径。
 
 **登录态管理**：走 camoufox-cli 持久化 session `wx_mp`（`--session wx_mp --persistent`，与 `wx-mp-engagement` 共用同一 profile 目录与登录态，靠 session 名约定共享）。登录态在 session profile 里，**无 TTL**——失效时 `check` 命令会 exit 2 触发重登。登录就位后导出 cookie + UA + token 落中央存储：
 
@@ -52,7 +50,7 @@ Wrapper 脚本路径：`./scripts/wx-mp-hunter.sh`
 **每次使用前可选地检查 session 是否有效：**
 
 ```bash
-./scripts/wx-mp-hunter.sh check-session
+wx-mp-hunter check-session
 ```
 
 | 返回值 | 含义 |
@@ -71,7 +69,7 @@ Wrapper 脚本路径：`./scripts/wx-mp-hunter.sh`
 ### 第 1 步 — 无头截二维码
 
 ```bash
-/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh login
+wx-mp-hunter login
 ```
 
 脚本内部走 camoufox-cli：`--session wx_mp --persistent --headless open "https://mp.weixin.qq.com/"` + `screenshot /tmp/qr-wx-mp.png`，**不 close session**（留着给 `login-confirm` 继续用）。等待脚本输出 JSON：
@@ -99,7 +97,7 @@ Wrapper 脚本路径：`./scripts/wx-mp-hunter.sh`
 ### 第 4 步 — 确认登录 + 导出 cookie + UA + token
 
 ```bash
-/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh login-confirm
+wx-mp-hunter login-confirm
 ```
 
 脚本内部走 camoufox-cli：复用已开的 `wx_mp` session `open "https://mp.weixin.qq.com/"` → 读 redirect URL 验登录态就位（跳到 `/cgi-bin/home?...&token=xxx` = 就位）→ 从 URL 提 token → `cookies export ~/.openclaw/logins/wx_mp.json` + `identity export ~/.openclaw/logins/wx_mp.ua.json` → 把 token 合写进 `wx_mp.json`（cookie + token + ua + updated_at 同文件）→ **不 close session**（wx_mp 持久化 session 留给 wx-mp-engagement 复用，两 skill 共用同一 session）。等待脚本返回：
@@ -165,12 +163,12 @@ http://mp.weixin.qq.com/mp/homepage?...
 
 1. 批量抓全文前，必须先运行：
    ```bash
-   /Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh check
+   wx-mp-hunter check
    ```
 2. 如果返回 `SESSION_EXPIRED`，先执行自动重新登录流程。
 3. 登录有效后，只选 1 篇样本运行：
    ```bash
-   /Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh fetch <article_link> --html
+   wx-mp-hunter fetch <article_link> --html
    ```
 4. 只有样本返回 `content_text` / `content_markdown` / `content_html` 后，才允许批量抓全文。
 5. 如果样本返回 `未找到文章正文 (#js_content)`，用 camoufox-cli 打开该文章验证页面内容：
@@ -185,7 +183,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 ### search — 搜索公众号
 
 ```bash
-/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh search <keyword> [--begin N] [--size N]
+wx-mp-hunter search <keyword> [--begin N] [--size N]
 ```
 
 | Option | Default | Description |
@@ -222,7 +220,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 > 原命令名 `articles` 仍可用（向后兼容），推荐使用 `account-posts`。
 
 ```bash
-/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh account-posts <fakeid> [--begin N] [--size N] [--keyword K]
+wx-mp-hunter account-posts <fakeid> [--begin N] [--size N] [--keyword K]
 ```
 
 | Option | Default | Description |
@@ -269,7 +267,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 ### fetch — 获取文章全文
 
 ```bash
-/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh fetch <url> [--html]
+wx-mp-hunter fetch <url> [--html]
 ```
 
 | Option | Description |
@@ -306,7 +304,7 @@ http://mp.weixin.qq.com/mp/homepage?...
 加 `--download-images --output-dir <dir>` 后，脚本并发下载（默认 4 并发、单图 ≤5MB、总量 ≤100MB、单图失败重试 1 次）到 `<dir>/images/<hash>.<ext>`，并把 `content_markdown` 里的图片 URL 替换为本地相对路径，便于离线阅读 / 二次加工 / 转存。仅依赖 Node 18+ stdlib，无 npm 依赖。
 
 ```
-/Users/wukong/projects/wiseflow/crews/main/skills/wx-mp-hunter/scripts/wx-mp-hunter.sh fetch <url> --html --download-images --output-dir ./article-out
+wx-mp-hunter fetch <url> --html --download-images --output-dir ./article-out
 ```
 
 ---

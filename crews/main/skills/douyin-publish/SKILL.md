@@ -53,7 +53,7 @@ metadata:
 ### 一键全流程
 
 ```bash
-python3 ./skills/douyin-publish/scripts/publish_douyin.py run \
+douyin-publish run \
   --video /path/to/video.mp4 \
   --title "视频标题" \
   --caption "视频描述 #话题1 #话题2"
@@ -65,16 +65,16 @@ python3 ./skills/douyin-publish/scripts/publish_douyin.py run \
 
 ```bash
 # 1. 上传视频（返回 session 名，后续步骤用）
-python3 ./skills/douyin-publish/scripts/publish_douyin.py upload --video video.mp4
+douyin-publish upload --video video.mp4
 
 # 2. 填标题/描述
-python3 ./skills/douyin-publish/scripts/publish_douyin.py fill --session <s> --title "标题" --caption "描述"
+douyin-publish fill --session <s> --title "标题" --caption "描述"
 
 # 3. 点发布
-python3 ./skills/douyin-publish/scripts/publish_douyin.py publish --session <s>
+douyin-publish publish --session <s>
 
 # 4. 取视频链接
-python3 ./skills/douyin-publish/scripts/publish_douyin.py get-link --session <s>
+douyin-publish get-link --session <s>
 ```
 
 > **注意**：本 skill **没有 `login` 子命令、也没有 `cleanup` 子命令**——探活/登录/导出 cookie+UA 全交 login-manager；持久化 session `douyin` 不主动 close（登录态留着下次用），只在 session 卡死时由调用方手动 `camoufox-cli --session douyin --json close` teardown。

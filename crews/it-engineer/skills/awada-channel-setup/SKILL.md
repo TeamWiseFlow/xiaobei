@@ -42,7 +42,7 @@ cd <WISEFLOW_PROJECT_ROOT>/awada && pnpm install --prod
 合并进运行中的 `~/.openclaw/openclaw.json`：
 
 ```bash
-python3 /<workspace 绝对路径>/crews/it-engineer/skills/awada-channel-setup/scripts/apply-awada-config.py
+awada-channel-setup
 ```
 
 脚本行为：

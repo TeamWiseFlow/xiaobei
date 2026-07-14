@@ -17,7 +17,7 @@ Use this skill when:
 - The user provides an RSS or Atom feed URL directly
 - You need to efficiently collect multiple articles from one source without visiting each page
 
-> 📍 **全局技能路径提示**：文中所有 `./scripts/` 路径均相对于本技能所在目录（即 `<skill>` 标签 `location` 属性所指目录），**不是**工作区目录。执行时按本技能实际安装路径拼接。
+> 通过 PATH 调用 wrapper：`rss-reader <cmd>`，无需拼接脚本路径。
 
 ---
 
@@ -47,7 +47,7 @@ A valid feed URL returns XML starting with `<rss`, `<feed`, or `<rdf:RDF`.
 ## Step 2 — Run the script
 
 ```bash
-node /path/to/wiseflow/crews/main/skills/rss-reader/scripts/fetch-rss.mjs <feed_url> [--limit N] [--skip url1,url2,...]
+rss-reader <feed_url> [--limit N] [--skip url1,url2,...]
 ```
 
 | Option | Description |

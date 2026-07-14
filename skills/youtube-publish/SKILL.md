@@ -36,6 +36,8 @@ metadata:
 
 ## 使用方式
 
+通过 PATH 调用 wrapper，无需拼接脚本路径。
+
 ```bash
 python3 /home/wukong/wiseflow-pro/skills/youtube-publish/scripts/publish_youtube.py \
   --title "视频标题" \

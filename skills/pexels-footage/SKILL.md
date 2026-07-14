@@ -21,16 +21,16 @@ Use this skill when:
 
 **Prerequisites**: `PEXELS_API_KEY` must be set. Register free at https://www.pexels.com/api/
 
-> 📍 **全局技能路径提示**：文中所有 `./scripts/` 路径均相对于本技能所在目录（即 `<skill>` 标签 `location` 属性所指目录），**不是**工作区目录。执行时按本技能实际安装路径拼接。
-
 ---
 
 ## Usage
 
+通过 PATH 调用 wrapper，无需拼接脚本路径。
+
 ### 下载图片
 
 ```bash
-python3 ./scripts/pexels_search.py \
+pexels-footage \
   --type image \
   --terms "sunset ocean,mountain landscape,forest path" \
   --aspect 16:9 \
@@ -41,7 +41,7 @@ python3 ./scripts/pexels_search.py \
 ### 下载视频
 
 ```bash
-python3 ./scripts/pexels_search.py \
+pexels-footage \
   --type video \
   --terms "sunset ocean" \
   --aspect 9:16 \

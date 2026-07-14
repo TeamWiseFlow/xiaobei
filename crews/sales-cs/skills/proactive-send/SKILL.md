@@ -16,7 +16,7 @@ metadata:
 ## 使用方法
 
 ```bash
-./skills/proactive-send/scripts/send.sh \
+proactive-send \
   --user-id-external "<user_id_external>" \
   --text "<消息内容>"
 ```

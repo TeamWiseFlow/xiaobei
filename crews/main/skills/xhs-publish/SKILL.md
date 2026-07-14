@@ -40,10 +40,12 @@ metadata:
 
 ## 使用方式
 
+通过 PATH 调用 wrapper：`xhs-publish "<正文>" [附件...]`，无需拼接脚本路径。
+
 ### 图文笔记
 
 ```bash
-python3 ./skills/xhs-publish/scripts/publish_xhs.py \
+xhs-publish \
   --mode image \
   --title "笔记标题" \
   --body "正文内容 #话题1 #话题2" \
@@ -53,7 +55,7 @@ python3 ./skills/xhs-publish/scripts/publish_xhs.py \
 ### 视频笔记
 
 ```bash
-python3 ./skills/xhs-publish/scripts/publish_xhs.py \
+xhs-publish \
   --mode video \
   --title "笔记标题" \
   --body "正文内容" \
@@ -88,7 +90,7 @@ python3 ./skills/xhs-publish/scripts/publish_xhs.py \
 
 把整段正文直接硬编码到命令里**
 ```bash
-python3 .../publish_xhs.py --body "这里就是实际正文，不是文件路径"
+xhs-publish --body "这里就是实际正文，不是文件路径"
 ```
 
 **禁止**：
