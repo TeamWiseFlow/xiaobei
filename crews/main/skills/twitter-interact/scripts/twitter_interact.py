@@ -3,8 +3,8 @@
 
 架构：
 - camoufox-cli 主推（反指纹 headless Firefox）
-- login-manager 中央 cookie
-- 每任务一 session
+- 单一持久化 session `twitter`（与 twitter-post 共用，探活登录走 browser-guide §1）
+- forked cli fail-first 队列串行并发
 - run 一键跑全流程
 
 子命令：
@@ -22,9 +22,11 @@
 
 依赖：
 - camoufox-cli（npm 全局）
-- login-manager skill（同 crew 私有，cookie 中央存储）
-- login-manager 平台 key: `twitter`
-- python3 stdlib（json / subprocess / secrets / re / urllib）
+- python3 stdlib（json / subprocess / re / time）
+
+探活 / 登录不在本脚本内——由调用方（agent）按 SKILL.md「前置：持久化 session twitter
+与探活登录」段完成（camoufox-cli open + snapshot 探活，失效走 browser-guide §1 有头重登）。
+本脚本假设 session `twitter` 登录态就位，只做互动操作。
 """
 from __future__ import annotations
 
@@ -38,21 +40,21 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 # ── 常量 ─────────────────────────────────────────────────────────────────────
 
-LOGIN_MANAGER_BIN = os.environ.get(
-    "LOGIN_MANAGER_BIN",
-    "~/.openclaw/workspace-main/skills/login-manager/scripts/login-manager.sh",
-)
 CAMOUFOX_BIN = os.environ.get("CAMOUFOX_CLI", "camoufox-cli")
-LOGIN_MANAGER_PLATFORM = "twitter"
 
 # 原则 1：每平台一个且只一个持久化 session，顺次使用（forked cli fail-first 队列串行）。
 # 不再每任务生成 nonce session——并发调用由 forked cli 的 fail-first 队列拒绝，脚本透传给调用方。
 TWITTER_SESSION = os.environ.get("TWITTER_SESSION", "twitter")
+
+# 晚水合轮询参数（移植自 OpenCLI：20 × 500ms = 10s 上限找按钮 / article）
+POLL_ATTEMPTS = 20
+POLL_INTERVAL_S = 0.5
+# 确认菜单轮询：20 × 250ms = 5s 上限（菜单弹出比 article 水合快）
+CONFIRM_POLL_ATTEMPTS = 20
+CONFIRM_POLL_INTERVAL_S = 0.25
 
 
 class SessionBusyError(Exception):
@@ -79,15 +81,6 @@ CAMOUFOX_TIMEOUT_S = 60
 
 
 # ── 平台工具 ───────────────────────────────────────────────────────────────
-
-def login_manager_check() -> bool:
-    """探活 login-manager 中央 cookie。"""
-    result = subprocess.run(
-        [LOGIN_MANAGER_BIN, "check", LOGIN_MANAGER_PLATFORM],
-        capture_output=True, text=True, timeout=10, check=False,
-    )
-    return result.returncode == 0
-
 
 def session_name(purpose: str = "interact") -> str:
     """返回 twitter 持久化 session 名（原则 1：单一 session）。
@@ -134,9 +127,9 @@ def camoufox_eval(session: str, js: str, timeout: int = 30) -> Optional[str]:
 
 
 def camoufox_close(session: str) -> None:
-    """关闭 camoufox session（委托给 login-manager）。"""
+    """关闭 camoufox session（直调 camoufox-cli，不经 login-manager）。"""
     subprocess.run(
-        [LOGIN_MANAGER_BIN, "session-cleanup", LOGIN_MANAGER_PLATFORM, session],
+        [CAMOUFOX_BIN, "--session", session, "--json", "close"],
         capture_output=True, text=True, timeout=10, check=False,
     )
 
@@ -162,6 +155,140 @@ def twitter_session():
     finally:
         if not busy:
             camoufox_close(session)
+
+
+def _emit(**fields) -> None:
+    """输出 JSON 行到 stdout。"""
+    sys.stdout.write(json.dumps(fields, ensure_ascii=False))
+    sys.stdout.write("\n")
+
+
+# ── article-scoped JS 探针（移植自 OpenCLI shared.js） ─────────────────────
+# 会话页有多 article，bare querySelector('[data-testid="like"]') 会抓到第一个 article
+# （如父推）误操作。按 tweet_id 定位含 a[href*="/status/<id>"] 的 article，按钮查找限定其内。
+
+def _article_scope_preamble(tweet_id: str) -> str:
+    """返回 article-scoped JS 前奏（var 声明，供 IIFE 内拼接）。tweet_id 经 json.dumps 注入防注入。"""
+    tid_js = json.dumps(tweet_id)
+    return (
+        "var __tid = " + tid_js + ";"
+        " var __pathRe = /^\\/(?:[^/]+|i)\\/status\\/(\\d+)\\/?$/;"
+        " var __isHost = function(h){ return h==='x.com'||h==='twitter.com'"
+        "||h.endsWith('.x.com')||h.endsWith('.twitter.com'); };"
+        " var __sidFromHref = function(href){"
+        " try { var u = new URL(href, window.location.origin);"
+        " if(u.protocol!=='https:'||!__isHost(u.hostname.toLowerCase())) return null;"
+        " return (u.pathname.match(__pathRe)||[])[1]||null; } catch(e){ return null; } };"
+        " var __hasLink = function(root){"
+        " return Array.from(root.querySelectorAll('a[href*=\"/status/\"]'))"
+        ".some(function(l){ return __sidFromHref(l.href)===__tid; }); };"
+        " var __findArticle = function(){"
+        " return Array.from(document.querySelectorAll('article')).find(__hasLink); };"
+    )
+
+
+def _probe_js(tweet_id: str, testids: list[str]) -> str:
+    """探针：在目标 article 内找第一个存在的 testid，返回该 testid / 'none' / 'no-article'。"""
+    pre = _article_scope_preamble(tweet_id)
+    tids_js = json.dumps(testids)
+    return (
+        "(function(){ " + pre +
+        " var art = __findArticle();"
+        " if (!art) return 'no-article';"
+        " var tids = " + tids_js + ";"
+        " for (var i=0;i<tids.length;i++){"
+        " if (art.querySelector('[data-testid=\"'+tids[i]+'\"]')) return tids[i]; }"
+        " return 'none'; })()"
+    )
+
+
+def _click_scoped_js(tweet_id: str, testid: str) -> str:
+    """在目标 article 内 click 指定 testid。返回 'clicked' / 'not-found' / 'no-article'。"""
+    pre = _article_scope_preamble(tweet_id)
+    return (
+        "(function(){ " + pre +
+        " var art = __findArticle();"
+        " if (!art) return 'no-article';"
+        " var btn = art.querySelector('[data-testid=\"" + testid + "\"]');"
+        " if (!btn) return 'not-found';"
+        " btn.click(); return 'clicked'; })()"
+    )
+
+
+def _click_confirm_js(testid: str) -> str:
+    """document 根 click 确认菜单项（确认弹层在 document root，不在 article 内）。返回 'clicked' / 'not-found'。"""
+    return (
+        "(function(){"
+        " var btn = document.querySelector('[data-testid=\"" + testid + "\"]');"
+        " if (!btn) return 'not-found';"
+        " btn.click(); return 'clicked'; })()"
+    )
+
+
+def _probe_suffix_js(suffixes: list[str]) -> str:
+    """profile 页 follow/Unfollow 按钮探针（document-scoped，testid 后缀匹配）。返回后缀 / 'none'。"""
+    sfx_js = json.dumps(suffixes)
+    return (
+        "(function(){"
+        " var sfx = " + sfx_js + ";"
+        " for (var i=0;i<sfx.length;i++){"
+        " if (document.querySelector('[data-testid$=\"'+sfx[i]+'\"]')) return sfx[i]; }"
+        " return 'none'; })()"
+    )
+
+
+def _click_suffix_js(suffix: str) -> str:
+    """document-scoped click testid 后缀匹配按钮。返回 'clicked' / 'not-found'。"""
+    return (
+        "(function(){"
+        " var btn = document.querySelector('[data-testid$=\"" + suffix + "\"]');"
+        " if (!btn) return 'not-found';"
+        " btn.click(); return 'clicked'; })()"
+    )
+
+
+# ── 轮询 helper（Python 侧 sleep 循环，每次 eval 一个 sync IIFE） ───────────
+
+def _poll_probe(session: str, tweet_id: str, testids: list[str]) -> Optional[str]:
+    """轮询目标 article 内第一个出现的 testid，超时返回 None。"""
+    js = _probe_js(tweet_id, testids)
+    for _ in range(POLL_ATTEMPTS):
+        res = camoufox_eval(session, js)
+        if res in testids:
+            return res
+        time.sleep(POLL_INTERVAL_S)
+    return None
+
+
+def _click_scoped(session: str, tweet_id: str, testid: str) -> str:
+    """在目标 article 内 click testid（探针已确认存在，单次点击）。"""
+    return camoufox_eval(session, _click_scoped_js(tweet_id, testid)) or ""
+
+
+def _click_confirm(session: str, testid: str) -> bool:
+    """轮询确认菜单项出现并 click（菜单弹出需 ~250ms，最多等 5s）。"""
+    js = _click_confirm_js(testid)
+    for _ in range(CONFIRM_POLL_ATTEMPTS):
+        if camoufox_eval(session, js) == "clicked":
+            return True
+        time.sleep(CONFIRM_POLL_INTERVAL_S)
+    return False
+
+
+def _poll_suffix(session: str, suffixes: list[str]) -> Optional[str]:
+    """轮询 profile 页 follow/unfollow 按钮后缀，超时返回 None。"""
+    js = _probe_suffix_js(suffixes)
+    for _ in range(POLL_ATTEMPTS):
+        res = camoufox_eval(session, js)
+        if res in suffixes:
+            return res
+        time.sleep(POLL_INTERVAL_S)
+    return None
+
+
+def _click_suffix(session: str, suffix: str) -> str:
+    """document-scoped click 后缀按钮（探针已确认存在，单次点击）。"""
+    return camoufox_eval(session, _click_suffix_js(suffix)) or ""
 
 
 # ── URL 解析 ───────────────────────────────────────────────────────────────
@@ -260,336 +387,232 @@ def _open_tweet(session: str, tweet_id: str) -> None:
     camoufox_open(session, f"https://x.com/i/web/status/{tweet_id}")
 
 
-def cmd_like(tweet: str) -> None:
-    """点赞。"""
+def _require_tid(tweet: str) -> str:
     tid = extract_tweet_id(tweet)
     if not tid:
         sys.stderr.write(f"error: 无法从 '{tweet}' 提取 tweet ID\n")
         sys.exit(1)
-    ok, reason = check_freq_limit("like")
+    return tid
+
+
+def _require_handle(user: str) -> str:
+    handle = extract_user_handle(user)
+    if not handle:
+        sys.stderr.write(f"error: 无法从 '{user}' 提取 username\n")
+        sys.exit(1)
+    return handle
+
+
+def _gate_freq(action: str) -> None:
+    ok, reason = check_freq_limit(action)
     if not ok:
         sys.stderr.write(f"error: 频率限制 — {reason}\n")
         sys.exit(1)
 
+
+def cmd_like(tweet: str) -> None:
+    """点赞。按钮互换验证状态（like↔unlike），非 aria-pressed。"""
+    tid = _require_tid(tweet)
+    _gate_freq("like")
     with twitter_session() as session:
         _open_tweet(session, tid)
-        # click like 按钮
-        js = """
-        (function() {
-            var btn = document.querySelector('[data-testid="like"]');
-            if (!btn) return false;
-            // 已是 liked 状态？按钮 aria-pressed="true"
-            if (btn.getAttribute('aria-pressed') === 'true') return 'already';
-            btn.click();
-            return true;
-        })()
-        """
-        result = camoufox_eval(session, js)
-        if result is None:
-            sys.stderr.write("error: eval 失败（可能 DOM 未加载完成）\n")
+        found = _poll_probe(session, tid, ["unlike", "like"])
+        if found == "unlike":
+            _emit(ok=True, tweet_id=tid, action="like", note="已点赞")
+            return
+        if found != "like":
+            sys.stderr.write("error: 未找到 like 按钮（DOM 未加载或未登录？）\n")
             sys.exit(1)
-        if result == "already":
-            sys.stdout.write(json.dumps({"ok": True, "tweet_id": tid, "action": "like", "note": "已点赞"}))
-        elif result == "true":
+        if _click_scoped(session, tid, "like") != "clicked":
+            sys.stderr.write("error: click like 失败\n")
+            sys.exit(1)
+        if _poll_probe(session, tid, ["unlike"]) == "unlike":
             record_action("like")
-            sys.stdout.write(json.dumps({"ok": True, "tweet_id": tid, "action": "like", "session": session}))
+            _emit(ok=True, tweet_id=tid, action="like", session=session)
         else:
-            sys.stderr.write(f"error: like 失败（result={result}）\n")
+            sys.stderr.write("error: like 点击后 UI 未翻转为 unlike\n")
             sys.exit(1)
-        sys.stdout.write("\n")
 
 
 def cmd_unlike(tweet: str) -> None:
     """取消点赞。"""
-    tid = extract_tweet_id(tweet)
-    if not tid:
-        sys.stderr.write(f"error: 无法从 '{tweet}' 提取 tweet ID\n")
-        sys.exit(1)
+    tid = _require_tid(tweet)
     with twitter_session() as session:
         _open_tweet(session, tid)
-        js = """
-        (function() {
-            var btn = document.querySelector('[data-testid="like"]');
-            if (!btn) return false;
-            if (btn.getAttribute('aria-pressed') !== 'true') return 'not_liked';
-            btn.click();
-            return true;
-        })()
-        """
-        result = camoufox_eval(session, js)
-        if result == "true":
-            sys.stdout.write(json.dumps({"ok": True, "tweet_id": tid, "action": "unlike", "session": session}))
-        elif result == "not_liked":
-            sys.stdout.write(json.dumps({"ok": True, "tweet_id": tid, "action": "unlike", "note": "未点赞"}))
-        else:
-            sys.stderr.write(f"error: unlike 失败（result={result}）\n")
+        found = _poll_probe(session, tid, ["like", "unlike"])
+        if found == "like":
+            _emit(ok=True, tweet_id=tid, action="unlike", note="未点赞")
+            return
+        if found != "unlike":
+            sys.stderr.write("error: 未找到 unlike 按钮（DOM 未加载或未登录？）\n")
             sys.exit(1)
-        sys.stdout.write("\n")
+        if _click_scoped(session, tid, "unlike") != "clicked":
+            sys.stderr.write("error: click unlike 失败\n")
+            sys.exit(1)
+        if _poll_probe(session, tid, ["like"]) == "like":
+            _emit(ok=True, tweet_id=tid, action="unlike", session=session)
+        else:
+            sys.stderr.write("error: unlike 点击后 UI 未翻转为 like\n")
+            sys.exit(1)
 
 
 def cmd_retweet(tweet: str) -> None:
-    """转推。"""
-    tid = extract_tweet_id(tweet)
-    if not tid:
-        sys.stderr.write(f"error: 无法从 '{tweet}' 提取 tweet ID\n")
-        sys.exit(1)
-    ok, reason = check_freq_limit("retweet")
-    if not ok:
-        sys.stderr.write(f"error: 频率限制 — {reason}\n")
-        sys.exit(1)
-
+    """转推（纯转，不 Quote）。确认菜单 testid=retweetConfirm。"""
+    tid = _require_tid(tweet)
+    _gate_freq("retweet")
     with twitter_session() as session:
         _open_tweet(session, tid)
-        # click retweet → confirm（不 quote，单纯转推）
-        js = """
-        (function() {
-            var btn = document.querySelector('[data-testid="retweet"]');
-            if (!btn) return false;
-            if (btn.getAttribute('aria-pressed') === 'true') return 'already';
-            btn.click();
-            // 弹出 confirm 菜单 → click "Repost"（不是 Quote）
-            return 'pending_confirm';
-        })()
-        """
-        result = camoufox_eval(session, js)
-        if result == "pending_confirm":
-            time.sleep(1)  # 等菜单弹出
-            confirm_js = """
-            (function() {
-                // X confirm 菜单的 Repost 按钮（不含 Quote）
-                var items = document.querySelectorAll('[role="menuitem"]');
-                for (var i = 0; i < items.length; i++) {
-                    var text = items[i].textContent || '';
-                    if (text.includes('Repost') && !text.includes('Quote')) {
-                        items[i].click();
-                        return true;
-                    }
-                }
-                return false;
-            })()
-            """
-            confirmed = camoufox_eval(session, confirm_js)
-            if confirmed == "true":
-                record_action("retweet")
-                sys.stdout.write(json.dumps({"ok": True, "tweet_id": tid, "action": "retweet", "session": session}))
-            else:
-                sys.stderr.write(f"error: retweet confirm 失败（result={confirmed}）\n")
-                sys.exit(1)
-        elif result == "already":
-            sys.stdout.write(json.dumps({"ok": True, "tweet_id": tid, "action": "retweet", "note": "已转推"}))
-        else:
-            sys.stderr.write(f"error: retweet 失败（result={result}）\n")
+        found = _poll_probe(session, tid, ["unretweet", "retweet"])
+        if found == "unretweet":
+            _emit(ok=True, tweet_id=tid, action="retweet", note="已转推")
+            return
+        if found != "retweet":
+            sys.stderr.write("error: 未找到 retweet 按钮（DOM 未加载或未登录？）\n")
             sys.exit(1)
-        sys.stdout.write("\n")
+        if _click_scoped(session, tid, "retweet") != "clicked":
+            sys.stderr.write("error: click retweet 失败\n")
+            sys.exit(1)
+        if not _click_confirm(session, "retweetConfirm"):
+            sys.stderr.write("error: retweet 确认菜单未出现（retweetConfirm）\n")
+            sys.exit(1)
+        time.sleep(1)  # 等 UI 翻转
+        if _poll_probe(session, tid, ["unretweet"]) == "unretweet":
+            record_action("retweet")
+            _emit(ok=True, tweet_id=tid, action="retweet", session=session)
+        else:
+            sys.stderr.write("error: retweet 后 UI 未翻转为 unretweet\n")
+            sys.exit(1)
 
 
 def cmd_unretweet(tweet: str) -> None:
-    """取消转推。"""
-    tid = extract_tweet_id(tweet)
-    if not tid:
-        sys.stderr.write(f"error: 无法从 '{tweet}' 提取 tweet ID\n")
-        sys.exit(1)
+    """取消转推。确认菜单 testid=unretweetConfirm。"""
+    tid = _require_tid(tweet)
     with twitter_session() as session:
         _open_tweet(session, tid)
-        js = """
-        (function() {
-            var btn = document.querySelector('[data-testid="unretweet"]');
-            if (!btn) return false;
-            btn.click();
-            return 'pending_confirm';
-        })()
-        """
-        result = camoufox_eval(session, js)
-        if result == "pending_confirm":
-            time.sleep(1)
-            confirm_js = """
-            (function() {
-                var items = document.querySelectorAll('[role="menuitem"]');
-                for (var i = 0; i < items.length; i++) {
-                    if ((items[i].textContent || '').includes('Undo repost')) {
-                        items[i].click();
-                        return true;
-                    }
-                }
-                return false;
-            })()
-            """
-            confirmed = camoufox_eval(session, confirm_js)
-            if confirmed == "true":
-                sys.stdout.write(json.dumps({"ok": True, "tweet_id": tid, "action": "unretweet"}))
-            else:
-                sys.stderr.write("error: unretweet confirm 失败\n")
-                sys.exit(1)
-        else:
-            sys.stderr.write(f"error: unretweet 失败（result={result}）\n")
+        found = _poll_probe(session, tid, ["retweet", "unretweet"])
+        if found == "retweet":
+            _emit(ok=True, tweet_id=tid, action="unretweet", note="未转推")
+            return
+        if found != "unretweet":
+            sys.stderr.write("error: 未找到 unretweet 按钮（DOM 未加载或未登录？）\n")
             sys.exit(1)
-        sys.stdout.write("\n")
+        if _click_scoped(session, tid, "unretweet") != "clicked":
+            sys.stderr.write("error: click unretweet 失败\n")
+            sys.exit(1)
+        if not _click_confirm(session, "unretweetConfirm"):
+            sys.stderr.write("error: unretweet 确认菜单未出现（unretweetConfirm）\n")
+            sys.exit(1)
+        time.sleep(1)
+        if _poll_probe(session, tid, ["retweet"]) == "retweet":
+            _emit(ok=True, tweet_id=tid, action="unretweet", session=session)
+        else:
+            sys.stderr.write("error: unretweet 后 UI 未翻转为 retweet\n")
+            sys.exit(1)
 
 
 def cmd_bookmark(tweet: str) -> None:
-    """收藏。"""
-    tid = extract_tweet_id(tweet)
-    if not tid:
-        sys.stderr.write(f"error: 无法从 '{tweet}' 提取 tweet ID\n")
-        sys.exit(1)
-    ok, reason = check_freq_limit("bookmark")
-    if not ok:
-        sys.stderr.write(f"error: 频率限制 — {reason}\n")
-        sys.exit(1)
-
+    """收藏。按钮互换 bookmark↔removeBookmark。"""
+    tid = _require_tid(tweet)
+    _gate_freq("bookmark")
     with twitter_session() as session:
         _open_tweet(session, tid)
-        js = """
-        (function() {
-            var btn = document.querySelector('[data-testid="bookmark"]');
-            if (!btn) return false;
-            if (btn.getAttribute('aria-pressed') === 'true') return 'already';
-            btn.click();
-            return true;
-        })()
-        """
-        result = camoufox_eval(session, js)
-        if result == "true":
-            record_action("bookmark")
-            sys.stdout.write(json.dumps({"ok": True, "tweet_id": tid, "action": "bookmark"}))
-        elif result == "already":
-            sys.stdout.write(json.dumps({"ok": True, "tweet_id": tid, "action": "bookmark", "note": "已收藏"}))
-        else:
-            sys.stderr.write(f"error: bookmark 失败（result={result}）\n")
+        found = _poll_probe(session, tid, ["removeBookmark", "bookmark"])
+        if found == "removeBookmark":
+            _emit(ok=True, tweet_id=tid, action="bookmark", note="已收藏")
+            return
+        if found != "bookmark":
+            sys.stderr.write("error: 未找到 bookmark 按钮（DOM 未加载或未登录？）\n")
             sys.exit(1)
-        sys.stdout.write("\n")
+        if _click_scoped(session, tid, "bookmark") != "clicked":
+            sys.stderr.write("error: click bookmark 失败\n")
+            sys.exit(1)
+        if _poll_probe(session, tid, ["removeBookmark"]) == "removeBookmark":
+            record_action("bookmark")
+            _emit(ok=True, tweet_id=tid, action="bookmark", session=session)
+        else:
+            sys.stderr.write("error: bookmark 点击后 UI 未翻转为 removeBookmark\n")
+            sys.exit(1)
 
 
 def cmd_unbookmark(tweet: str) -> None:
     """取消收藏。"""
-    tid = extract_tweet_id(tweet)
-    if not tid:
-        sys.stderr.write(f"error: 无法从 '{tweet}' 提取 tweet ID\n")
-        sys.exit(1)
+    tid = _require_tid(tweet)
     with twitter_session() as session:
         _open_tweet(session, tid)
-        js = """
-        (function() {
-            var btn = document.querySelector('[data-testid="removeBookmark"]');
-            if (!btn) return false;
-            btn.click();
-            return true;
-        })()
-        """
-        result = camoufox_eval(session, js)
-        if result == "true":
-            sys.stdout.write(json.dumps({"ok": True, "tweet_id": tid, "action": "unbookmark"}))
-        else:
-            sys.stderr.write(f"error: unbookmark 失败（result={result}）\n")
+        found = _poll_probe(session, tid, ["bookmark", "removeBookmark"])
+        if found == "bookmark":
+            _emit(ok=True, tweet_id=tid, action="unbookmark", note="未收藏")
+            return
+        if found != "removeBookmark":
+            sys.stderr.write("error: 未找到 removeBookmark 按钮（DOM 未加载或未登录？）\n")
             sys.exit(1)
-        sys.stdout.write("\n")
+        if _click_scoped(session, tid, "removeBookmark") != "clicked":
+            sys.stderr.write("error: click removeBookmark 失败\n")
+            sys.exit(1)
+        if _poll_probe(session, tid, ["bookmark"]) == "bookmark":
+            _emit(ok=True, tweet_id=tid, action="unbookmark", session=session)
+        else:
+            sys.stderr.write("error: unbookmark 后 UI 未翻转为 bookmark\n")
+            sys.exit(1)
 
 
 def cmd_follow(user: str) -> None:
-    """关注用户。"""
-    handle = extract_user_handle(user)
-    if not handle:
-        sys.stderr.write(f"error: 无法从 '{user}' 提取 username\n")
-        sys.exit(1)
-    ok, reason = check_freq_limit("follow")
-    if not ok:
-        sys.stderr.write(f"error: 频率限制 — {reason}\n")
-        sys.exit(1)
-
+    """关注用户。profile 页按钮 testid 后缀 -follow / -unfollow，无确认菜单。"""
+    handle = _require_handle(user)
+    _gate_freq("follow")
     with twitter_session() as session:
         camoufox_open(session, f"https://x.com/{handle}")
-        js = """
-        (function() {
-            var btns = document.querySelectorAll('[data-testid$="-follow"]');
-            for (var i = 0; i < btns.length; i++) {
-                var btn = btns[i];
-                var pressed = btn.getAttribute('aria-pressed') || btn.getAttribute('data-testid');
-                if (btn.getAttribute('data-testid') === '-follow' || btn.getAttribute('data-testid') === 'follow') {
-                    // 简化：用 text 判断
-                    var text = (btn.textContent || '').trim();
-                    if (text === 'Follow' || text === '关注' || text === 'Follow back') {
-                        btn.click();
-                        return true;
-                    }
-                }
-            }
-            return 'not_found';
-        })()
-        """
-        result = camoufox_eval(session, js)
-        if result == "true":
-            record_action("follow")
-            sys.stdout.write(json.dumps({"ok": True, "user": handle, "action": "follow"}))
-        elif result == "not_found":
-            sys.stdout.write(json.dumps({"ok": True, "user": handle, "action": "follow", "note": "已关注或按钮不在"}))
-        else:
-            sys.stderr.write(f"error: follow 失败（result={result}）\n")
+        found = _poll_suffix(session, ["-unfollow", "-follow"])
+        if found == "-unfollow":
+            _emit(ok=True, user=handle, action="follow", note="已关注")
+            return
+        if found != "-follow":
+            sys.stderr.write("error: 未找到 follow 按钮（DOM 未加载或未登录？）\n")
             sys.exit(1)
-        sys.stdout.write("\n")
+        if _click_suffix(session, "-follow") != "clicked":
+            sys.stderr.write("error: click follow 失败\n")
+            sys.exit(1)
+        time.sleep(1)
+        if _poll_suffix(session, ["-unfollow"]) == "-unfollow":
+            record_action("follow")
+            _emit(ok=True, user=handle, action="follow", session=session)
+        else:
+            sys.stderr.write("error: follow 后 UI 未翻转为 unfollow\n")
+            sys.exit(1)
 
 
 def cmd_unfollow(user: str) -> None:
-    """取关用户。"""
-    handle = extract_user_handle(user)
-    if not handle:
-        sys.stderr.write(f"error: 无法从 '{user}' 提取 username\n")
-        sys.exit(1)
+    """取关用户。确认菜单 testid=confirmationSheetConfirm。"""
+    handle = _require_handle(user)
     with twitter_session() as session:
         camoufox_open(session, f"https://x.com/{handle}")
-        js = """
-        (function() {
-            // X profile 页的 Following 按钮（aria-pressed="true" 表示已关注）
-            var btns = document.querySelectorAll('[data-testid$="-follow"]');
-            for (var i = 0; i < btns.length; i++) {
-                var btn = btns[i];
-                if (btn.getAttribute('data-testid') === '-follow' || btn.textContent === 'Following') {
-                    btn.click();
-                    return 'pending_confirm';
-                }
-            }
-            return 'not_following';
-        })()
-        """
-        result = camoufox_eval(session, js)
-        if result == "pending_confirm":
-            time.sleep(1)
-            confirm_js = """
-            (function() {
-                var items = document.querySelectorAll('[role="menuitem"]');
-                for (var i = 0; i < items.length; i++) {
-                    var text = items[i].textContent || '';
-                    if (text.includes('Unfollow') || text.includes('取消关注')) {
-                        items[i].click();
-                        return true;
-                    }
-                }
-                return false;
-            })()
-            """
-            confirmed = camoufox_eval(session, confirm_js)
-            if confirmed == "true":
-                sys.stdout.write(json.dumps({"ok": True, "user": handle, "action": "unfollow"}))
-            else:
-                sys.stderr.write("error: unfollow confirm 失败\n")
-                sys.exit(1)
-        elif result == "not_following":
-            sys.stdout.write(json.dumps({"ok": True, "user": handle, "action": "unfollow", "note": "未关注"}))
-        else:
-            sys.stderr.write(f"error: unfollow 失败（result={result}）\n")
+        found = _poll_suffix(session, ["-follow", "-unfollow"])
+        if found == "-follow":
+            _emit(ok=True, user=handle, action="unfollow", note="未关注")
+            return
+        if found != "-unfollow":
+            sys.stderr.write("error: 未找到 unfollow 按钮（DOM 未加载或未登录？）\n")
             sys.exit(1)
-        sys.stdout.write("\n")
+        if _click_suffix(session, "-unfollow") != "clicked":
+            sys.stderr.write("error: click unfollow 失败\n")
+            sys.exit(1)
+        if not _click_confirm(session, "confirmationSheetConfirm"):
+            sys.stderr.write("error: unfollow 确认菜单未出现（confirmationSheetConfirm）\n")
+            sys.exit(1)
+        time.sleep(1)
+        if _poll_suffix(session, ["-follow"]) == "-follow":
+            _emit(ok=True, user=handle, action="unfollow", session=session)
+        else:
+            sys.stderr.write("error: unfollow 后 UI 未翻转为 follow\n")
+            sys.exit(1)
 
 
 def cmd_run(*, tweet_url: str = "", action: str = "like", user: str = "") -> None:
-    """一键跑（脚本化主流程）。"""
-    if not login_manager_check():
-        sys.stderr.write(
-            f"error: {LOGIN_MANAGER_PLATFORM} cookie 失效；先走 login-manager 有头登录\n"
-            f"  原则 3：twitter 登录必须 有头模式（camoufox-cli --headed），不无头截图 QR。\n"
-            f"  流程：login-manager.sh login-headed twitter → 用户在浏览器完成登录 → close。\n"
-        )
-        sys.exit(2)
+    """一键跑（脚本化主流程）。
 
+    探活 / 登录由调用方按 SKILL.md 前置段完成（camoufox-cli open + snapshot 探活，
+    失效走 browser-guide §1 有头重登）。本命令假设 session `twitter` 登录态就位。
+    """
     if tweet_url:
         if action == "like": cmd_like(tweet_url)
         elif action == "retweet": cmd_retweet(tweet_url)
@@ -610,8 +633,7 @@ def cmd_run(*, tweet_url: str = "", action: str = "like", user: str = "") -> Non
 
 def cmd_cleanup(session: str) -> None:
     camoufox_close(session)
-    sys.stdout.write(json.dumps({"ok": True, "session": session}))
-    sys.stdout.write("\n")
+    _emit(ok=True, session=session)
 
 
 # ── main ─────────────────────────────────────────────────────────────────────

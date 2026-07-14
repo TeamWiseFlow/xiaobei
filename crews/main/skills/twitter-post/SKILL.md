@@ -19,7 +19,46 @@ Use this skill when:
 - You need to **reply** to a specific tweet (engagement use case)
 - You have a Premium/Blue account and need **long post** (up to 25,000 chars)
 
-**Prerequisites**: camoufox-cli session 已登录 x.com（登录态持久化在 session profile 里）。冷会话先访问一次首页预热。本 skill 与 login-manager **完全无关**——Twitter 发布是纯浏览器操作，走持久化 session `twitter`（与 `twitter-interact` 共用），登录态在 session profile 里闭环，不导出 cookie/UA 落中央存储。
+## 前置：持久化 session `twitter` 与探活登录
+
+> **本段在 `twitter-post` 与 `twitter-interact` 两份 SKILL.md 中完全一致——改一处必须同步另一处。** 登录机制走全局 `browser-guide` skill §1 Login Prompts，本 skill 不重写登录步骤。
+
+**单一持久化 session `twitter`**：两个技能都用 `--session twitter --persistent`，共享同一 profile 目录与登录态——任一技能登录后另一个不需重登，靠 session 名字符串约定共享，无需别的机制。
+
+**不导出 cookie/UA**：Twitter 阵营是纯浏览器操作，没有脚本类技能消费 cookie，登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`，与 login-manager 无关。
+
+### 探活（每次操作前必跑）
+
+```bash
+camoufox-cli --session twitter --persistent --headless --json open "https://x.com/"
+sleep 3
+camoufox-cli --session twitter --json snapshot
+# snapshot 判断：
+#   没跳登录页、推文正常可见 = 登录态有效 → close 后交后续操作
+#   跳到登录页 / 出现登录按钮 = 失效 → 走重登
+camoufox-cli --session twitter --json close
+```
+
+### 重登（失效时，走 browser-guide §1）
+
+X 登录风控对无头 + 自动化登录严格，**重登必须 `--headed`**，让用户在浏览器窗口手动完成（账号密码 / 手机 APP 扫码 / 2FA / captcha 都在窗口里过）：
+
+```bash
+camoufox-cli --session twitter --persistent --headed --json open "https://x.com/login"
+# 告知用户：「**Twitter/X** 浏览器已打开，请在窗口里手动完成登录，完成后告诉我」
+# 等用户回复后 snapshot 验登录态就位
+camoufox-cli --session twitter --json close
+```
+
+登录机制细节（saved credentials 优先 / 账号密码 / captcha fallback / 最多重试 2 次）按 `browser-guide` §1-A~1-E + §3 执行，本 skill 不重复。
+
+### 并发约束（fail-first，不并行）
+
+同一 session 已有命令在跑时，forked cli 直接 fail，返回 `session twitter 正忙`。脚本读到该文本 → exit 3，**不 close**（避免 tear down 正在跑的另一个操作），调用方等待重试，不自动排队。
+
+### 任务结束不 close
+
+持久化 session 留给后续自己 / 另一个 twitter 技能复用，**不要 close**。除非明确要重登，才走上面重登流。
 
 登录流程按 `browser-guide` skill 走有头手动登录（手机号+验证码 / Twitter APP 扫码），登录后**不关 session**——持久化 session `twitter` 登录态留着给本 skill 做发布操作复用，主动 close 会破坏复用。
 

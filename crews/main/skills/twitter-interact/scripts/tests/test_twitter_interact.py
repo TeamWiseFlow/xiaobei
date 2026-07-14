@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Unit tests for twitter_interact.py (Phase 2026.7 v2.4 borrow).
+"""Unit tests for twitter_interact.py.
 
 Covers:
 - 6 subcommands on tweets (like/unlike/retweet/unretweet/bookmark/unbookmark)
 - 2 subcommands on users (follow/unfollow)
 - URL/id extraction (extract_tweet_id / extract_user_handle)
 - Frequency limit (check_freq_limit / record_action)
-- Session naming (D18 + 4.5.5)
+- Session naming (单一持久化 session twitter）
 - run / cleanup subcommands
+- article-scoped 探针 / testid 确认菜单 / 晚水合轮询（mock 新 helper）
 
-All camoufox-cli / login-manager / file IO are mocked.
+All camoufox-cli / file IO are mocked at the helper layer (_poll_probe /
+_click_scoped / _click_confirm / _poll_suffix / _click_suffix), 不耦合 eval 调用次数。
 """
 import json
-import os
 import subprocess
 import sys
 import tempfile
@@ -84,13 +85,12 @@ class TestSessionNaming(unittest.TestCase):
 
 
 class TestFailFirstQueue(unittest.TestCase):
-    """forked cli fail-first 队列（spec §1.1）：session 正忙时抛 SessionBusyError，
+    """forked cli fail-first 队列：session 正忙时抛 SessionBusyError，
     twitter_session 透传 exit 3 且不 close（避免 tear down 正在跑的另一个操作）。"""
 
     @mock.patch("twitter_interact.camoufox_close")
-    @mock.patch("twitter_interact.camoufox_eval")
     @mock.patch("twitter_interact.camoufox_open")
-    def test_busy_raises_exit3_no_close(self, mock_open, mock_eval, mock_close):
+    def test_busy_raises_exit3_no_close(self, mock_open, mock_close):
         mock_open.side_effect = twitter_interact.SessionBusyError(
             "session twitter 正忙，请等待当前操作完成后再试"
         )
@@ -118,7 +118,6 @@ class TestFrequencyLimits(unittest.TestCase):
         self.assertEqual(reason, "")
 
     def test_check_min_interval_violation(self):
-        # 写一个 1s 前的记录
         import time as t
         twitter_interact._save_freq({
             "last_action_at": t.strftime("%Y-%m-%dT%H:%M:%S%z", t.localtime(t.time() - 1)),
@@ -147,13 +146,19 @@ class TestFrequencyLimits(unittest.TestCase):
         self.assertEqual(data["actions"]["like"], 1)
 
 
+# ── 命令层测试：mock 新 helper（_poll_probe / _click_scoped / _click_confirm /
+#    _poll_suffix / _click_suffix），不耦合 eval 调用次数。 ────────────────
+
 class TestCmdLike(unittest.TestCase):
     @mock.patch("twitter_interact.record_action")
-    @mock.patch("twitter_interact.camoufox_eval")
+    @mock.patch("twitter_interact._poll_probe")
+    @mock.patch("twitter_interact._click_scoped")
     @mock.patch("twitter_interact.camoufox_open")
     @mock.patch("twitter_interact.camoufox_close")
-    def test_like_success(self, mock_close, mock_open, mock_eval, mock_record):
-        mock_eval.return_value = "true"
+    def test_like_success(self, mock_close, mock_open, mock_click, mock_probe, mock_record):
+        # 第一次探针找到 like，验证探针找到 unlike
+        mock_probe.side_effect = ["like", "unlike"]
+        mock_click.return_value = "clicked"
         out = StringIO()
         with mock.patch("sys.stdout", out):
             twitter_interact.cmd_like("https://x.com/u/status/123")
@@ -164,11 +169,11 @@ class TestCmdLike(unittest.TestCase):
         mock_record.assert_called_once()
         mock_close.assert_called_once()
 
-    @mock.patch("twitter_interact.camoufox_eval")
+    @mock.patch("twitter_interact._poll_probe")
     @mock.patch("twitter_interact.camoufox_open")
     @mock.patch("twitter_interact.camoufox_close")
-    def test_like_already(self, mock_close, mock_open, mock_eval):
-        mock_eval.return_value = "already"
+    def test_like_already(self, mock_close, mock_open, mock_probe):
+        mock_probe.return_value = "unlike"  # 已点赞
         out = StringIO()
         with mock.patch("sys.stdout", out):
             twitter_interact.cmd_like("123")
@@ -176,10 +181,8 @@ class TestCmdLike(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertIn("已点赞", result["note"])
 
-    @mock.patch("twitter_interact.camoufox_eval")
     @mock.patch("twitter_interact.camoufox_open")
-    @mock.patch("twitter_interact.camoufox_close")
-    def test_like_invalid_url(self, mock_close, mock_open, mock_eval):
+    def test_like_invalid_url(self, mock_open):
         with self.assertRaises(SystemExit) as ctx:
             twitter_interact.cmd_like("not-a-tweet")
         self.assertEqual(ctx.exception.code, 1)
@@ -194,25 +197,32 @@ class TestCmdLike(unittest.TestCase):
 
 class TestCmdRetweet(unittest.TestCase):
     @mock.patch("twitter_interact.record_action")
-    @mock.patch("twitter_interact.camoufox_eval")
+    @mock.patch("twitter_interact._click_confirm")
+    @mock.patch("twitter_interact._poll_probe")
+    @mock.patch("twitter_interact._click_scoped")
     @mock.patch("twitter_interact.camoufox_open")
     @mock.patch("twitter_interact.camoufox_close")
-    def test_retweet_with_confirm(self, mock_close, mock_open, mock_eval, mock_record):
-        # 第一次 eval 返回 pending_confirm，第二次返回 true
-        mock_eval.side_effect = ["pending_confirm", "true"]
+    def test_retweet_with_confirm(self, mock_close, mock_open, mock_click, mock_probe,
+                                  mock_confirm, mock_record):
+        # 探针：找到 retweet，验证找到 unretweet
+        mock_probe.side_effect = ["retweet", "unretweet"]
+        mock_click.return_value = "clicked"
+        mock_confirm.return_value = True
         out = StringIO()
         with mock.patch("sys.stdout", out):
             twitter_interact.cmd_retweet("123")
         result = json.loads(out.getvalue())
         self.assertTrue(result["ok"])
         self.assertEqual(result["action"], "retweet")
+        # 确认菜单用 testid=retweetConfirm（不是 text match "Repost"）
+        mock_confirm.assert_called_once_with(twitter_interact.TWITTER_SESSION, "retweetConfirm")
         mock_record.assert_called_once()
 
-    @mock.patch("twitter_interact.camoufox_eval")
+    @mock.patch("twitter_interact._poll_probe")
     @mock.patch("twitter_interact.camoufox_open")
     @mock.patch("twitter_interact.camoufox_close")
-    def test_retweet_already(self, mock_close, mock_open, mock_eval):
-        mock_eval.return_value = "already"
+    def test_retweet_already(self, mock_close, mock_open, mock_probe):
+        mock_probe.return_value = "unretweet"  # 已转推
         out = StringIO()
         with mock.patch("sys.stdout", out):
             twitter_interact.cmd_retweet("123")
@@ -222,11 +232,13 @@ class TestCmdRetweet(unittest.TestCase):
 
 class TestCmdFollow(unittest.TestCase):
     @mock.patch("twitter_interact.record_action")
-    @mock.patch("twitter_interact.camoufox_eval")
+    @mock.patch("twitter_interact._poll_suffix")
+    @mock.patch("twitter_interact._click_suffix")
     @mock.patch("twitter_interact.camoufox_open")
     @mock.patch("twitter_interact.camoufox_close")
-    def test_follow_success(self, mock_close, mock_open, mock_eval, mock_record):
-        mock_eval.return_value = "true"
+    def test_follow_success(self, mock_close, mock_open, mock_click, mock_suffix, mock_record):
+        mock_suffix.side_effect = ["-follow", "-unfollow"]
+        mock_click.return_value = "clicked"
         out = StringIO()
         with mock.patch("sys.stdout", out):
             twitter_interact.cmd_follow("openai")
@@ -235,11 +247,11 @@ class TestCmdFollow(unittest.TestCase):
         self.assertEqual(result["user"], "openai")
         mock_record.assert_called_once()
 
-    @mock.patch("twitter_interact.camoufox_eval")
+    @mock.patch("twitter_interact._poll_suffix")
     @mock.patch("twitter_interact.camoufox_open")
     @mock.patch("twitter_interact.camoufox_close")
-    def test_follow_already(self, mock_close, mock_open, mock_eval):
-        mock_eval.return_value = "not_found"
+    def test_follow_already(self, mock_close, mock_open, mock_suffix):
+        mock_suffix.return_value = "-unfollow"  # 已关注
         out = StringIO()
         with mock.patch("sys.stdout", out):
             twitter_interact.cmd_follow("openai")
@@ -248,39 +260,43 @@ class TestCmdFollow(unittest.TestCase):
 
 
 class TestCmdUnfollow(unittest.TestCase):
-    @mock.patch("twitter_interact.camoufox_eval")
+    @mock.patch("twitter_interact._click_confirm")
+    @mock.patch("twitter_interact._poll_suffix")
+    @mock.patch("twitter_interact._click_suffix")
     @mock.patch("twitter_interact.camoufox_open")
     @mock.patch("twitter_interact.camoufox_close")
-    def test_unfollow_with_confirm(self, mock_close, mock_open, mock_eval):
-        mock_eval.side_effect = ["pending_confirm", "true"]
+    def test_unfollow_with_confirm(self, mock_close, mock_open, mock_click, mock_suffix, mock_confirm):
+        mock_suffix.side_effect = ["-unfollow", "-follow"]
+        mock_click.return_value = "clicked"
+        mock_confirm.return_value = True
         out = StringIO()
         with mock.patch("sys.stdout", out):
             twitter_interact.cmd_unfollow("openai")
         result = json.loads(out.getvalue())
         self.assertTrue(result["ok"])
         self.assertEqual(result["action"], "unfollow")
+        # 确认菜单用 testid=confirmationSheetConfirm（不是 text match "Unfollow"）
+        mock_confirm.assert_called_once_with(twitter_interact.TWITTER_SESSION, "confirmationSheetConfirm")
 
 
 class TestCmdRun(unittest.TestCase):
-    @mock.patch("twitter_interact.login_manager_check")
+    """cmd_run 不再 gate login-manager（探活归前奏/agent），纯派发。"""
+
     @mock.patch("twitter_interact.cmd_like")
-    def test_run_like_tweet(self, mock_like, mock_check):
-        mock_check.return_value = True
+    def test_run_like_tweet(self, mock_like):
         with mock.patch("sys.argv", ["twitter_interact", "run",
                                       "--tweet-url", "https://x.com/u/status/123",
                                       "--action", "like"]):
             twitter_interact.main()
         mock_like.assert_called_once_with("https://x.com/u/status/123")
 
-    @mock.patch("twitter_interact.login_manager_check")
-    def test_run_cookie_expired(self, mock_check):
-        mock_check.return_value = False
-        # main() 抓住 SystemExit 转换为返回值
+    @mock.patch("twitter_interact.cmd_follow")
+    def test_run_follow_user(self, mock_follow):
         with mock.patch("sys.argv", ["twitter_interact", "run",
-                                      "--tweet-url", "123",
-                                      "--action", "like"]):
-            rc = twitter_interact.main()
-        self.assertEqual(rc, 2)
+                                      "--user", "openai",
+                                      "--action", "follow"]):
+            twitter_interact.main()
+        mock_follow.assert_called_once_with("openai")
 
 
 class TestIntegrationDryRun(unittest.TestCase):
