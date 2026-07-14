@@ -40,8 +40,7 @@ metadata:
 | `unbookmark <tweet>` | 取消收藏 | 1 min / 100 / 日 |
 | `follow <user>` | 关注用户 | 5 min / 50 / 日 |
 | `unfollow <user>` | 取关用户 | 5 min / 50 / 日 |
-| `run` | 一键跑（全流程：login + 操作 + cleanup）| — |
-| `cleanup <session>` | 关闭 camoufox session | — |
+| `run` | 一键跑（全流程：login 探活 + 操作）| — |
 
 > **频率限制**：平台 anti-automation 阈值 + 经验值（30 min 风险窗口 / reply 27x like 权重）。如触发风控 → 24h 静默。
 
@@ -51,27 +50,26 @@ metadata:
 
 ### 1. 探活与登录（本 skill 自管，不走 login-manager）
 
-走持久化 session `twitter`（与 `twitter-post` 共用）。探活方式：开 session open 平台首页 + snapshot 看是否跳登录页。
+走持久化 session `twitter`（与 `twitter-interact` 共用）。探活方式：开 session open 平台首页 + snapshot 看是否跳登录页。
 
 ```bash
-# 探活
-camoufox-cli --session twitter --persistent --headless --json open "https://x.com/"
+# 探活（默认无头模式）
+camoufox-cli --session twitter --persistent --json open "https://x.com/"
 sleep 3
 camoufox-cli --session twitter --json snapshot
 # snapshot 看页面是否跳到登录页 / 出现登录按钮 / 推文是否正常可见
-# → 没跳登录页、内容正常 = 登录态有效，可 close 后交后续操作用
+# → 没跳登录页、内容正常 = 登录态有效，不 close session（留着给后续操作 + twitter-interact 复用）
 # → 跳到登录页 / 出现登录按钮 = 登录态失效，走重登
-camoufox-cli --session twitter --json close
 ```
 
-重登流程（失效时）：
+重登流程（失效时）——登录流程按 `browser-guide` skill 走有头手动登录（手机号+验证码 / Twitter APP 扫码），登录后**不关 session**——持久化 session `twitter` 登录态留着给本 skill 做发布操作 + `twitter-interact` 做互动操作复用，主动 close 会破坏复用。只在 session 卡死时由调用方手动 `camoufox-cli --session twitter --json close` teardown。
 
 ```bash
 # X 登录风控对无头 + QR 识别严格，有头人工登录最稳
 camoufox-cli --session twitter --persistent --headed --json open "https://x.com/login"
 # 告知用户「**Twitter/X** 浏览器已打开，请在窗口里手动完成登录（账号密码 / 手机 APP 扫码），完成后告诉我」
 # 等用户回复后 snapshot 验登录态就位
-camoufox-cli --session twitter --json close
+# 登录就位后不 close session——留着给本 skill + twitter-interact 复用
 ```
 
 **不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`。
@@ -108,7 +106,7 @@ twitter_interact follow https://x.com/openai
 ### 一键跑
 
 ```bash
-# 一键：login → 操作 → cleanup
+# 一键：login 探活 → 操作
 twitter_interact run --tweet-url <url> --action <like|retweet|bookmark>
 twitter_interact run --user <handle> --action <follow|unfollow>
 ```
@@ -116,9 +114,9 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 ### 并发约束（fail-first，不并行）
 
 ```bash
-# 原则 1：单一 session twitter，并发调用由 forked cli fail-first 队列拒绝
+# 单一 session twitter，并发调用由 forked cli fail-first 队列拒绝
 # 脚本读到 "session twitter 正忙" → exit 3，agent 应等待重试（不自动排队）
-# 串行使用：上一次操作 close 后再发下一次
+# 串行使用：上一次操作完后 session 留着（不 close），下一次直接复用
 ```
 
 ---
@@ -131,8 +129,9 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 1. 探活（见「探活与登录」段）
    登录态有效 → 继续
    登录态失效 → 走重登流程（有头手动登录），完成后继续
-2. camoufox-cli --session twitter --persistent --headless open https://x.com/i/web/status/<id>
+2. camoufox-cli --session twitter --persistent open https://x.com/i/web/status/<id>
    └─ 若 session 正忙 → forked cli 返回 fail-first 文本 → 脚本 exit 3（不 close，不排队）
+   注：操作执行 + 探活都走默认无头（自动化操作无需用户在场）；只有登录走有头（见上方「探活与登录」段）
 3. camoufox-cli --session twitter --json eval "
      document.querySelector('[data-testid=\"like\"]').click();
      'clicked';
@@ -140,8 +139,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 4. 检查频率限制（check_freq_limit）
    ├─ 通过 → 写 FREQ_TRACKER_PATH
    └─ 不通过 → exit 1
-5. camoufox-cli --session twitter --json close（或留着给下次用，见「必做约束」）
-6. 输出 {ok, tweet_id, action, session}
+5. 输出 {ok, tweet_id, action, session}
 ```
 
 ### retweet（带 confirm 菜单）
@@ -151,8 +149,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 4. eval retweet 按钮 → 点击 → 弹出 confirm 菜单
 5. sleep 1s → eval confirm 菜单 "Repost"（**不是** "Quote"）
 6. check_freq_limit + record
-7. cleanup
-8. 输出 {ok, tweet_id, action, session}
+7. 输出 {ok, tweet_id, action, session}
 ```
 
 ### follow
@@ -161,7 +158,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 1-2. camoufox open https://x.com/<handle>
 3. eval [data-testid$="-follow"] 按钮 → text 是 "Follow" → click
 4. check_freq_limit (follow: 5 min, 50/day)
-5. record_action + cleanup
+5. record_action
 ```
 
 ### unfollow（带 confirm 菜单）
@@ -170,7 +167,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 1-2. camoufox open https://x.com/<handle>
 3. eval "Following" 按钮 → click → confirm 菜单
 4. sleep 1s → eval confirm 菜单 "Unfollow"
-5. cleanup
+5. 输出 {ok, action, user}
 ```
 
 ---
@@ -234,7 +231,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 ### pitfall: 并发调用撞 fail-first 队列
 
 - **症状**：两个 twitter-interact 调用同时跑 → 第二个收到 `session twitter 正忙` → exit 3
-- **workaround**：这是**预期行为**（原则 1 + forked cli fail-first）。agent 读到 exit 3 应等待当前操作完成再重试，**不**自动排队、**不**自动 close session（close 会 tear down 正在跑的那个操作）
+- **workaround**：这是**预期行为**（forked cli fail-first）。agent 读到 exit 3 应等待当前操作完成再重试，**不**自动排队、**不**自动 close session（close 会 tear down 正在跑的那个操作）
 
 ### pitfall: X UI 改版 → selector 失效
 

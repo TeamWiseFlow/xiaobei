@@ -19,15 +19,39 @@ Use this skill when:
 - You need to **reply** to a specific tweet (engagement use case)
 - You have a Premium/Blue account and need **long post** (up to 25,000 chars)
 
-**Prerequisites**: camoufox-cli session 已登录 x.com（登录态持久化在 session profile 里）。冷会话先访问一次首页预热。本 skill 与 login-manager **完全无关**——Twitter 发布是纯浏览器操作，走持久化 session `twitter`（与 `twitter-interact` 共用），登录态在 session profile 里闭环，不导出 cookie/UA 落中央存储。
+**Prerequisites**: camoufox-cli session 已登录 x.com（登录态持久化在 session profile 里）。冷会话先访问一次首页预热。本 skill 与 login-manager **完全无关**——Twitter 发布是纯浏览器操作，走持久化 session `twitter`（与 `twitter-interact` **共用同一个 session 名 `twitter`**，靠 session 名字符串约定共享同一 profile 目录与登录态——twitter-interact 登录后 twitter-post 不需重登，反之亦然），登录态在 session profile 里闭环，不导出 cookie/UA 落中央存储。
 
-登录流程按 `browser-guide` skill 走有头手动登录（手机号+验证码 / Twitter APP 扫码），登录后**不关 session**——持久化 session `twitter` 登录态留着给本 skill 做发布操作复用，主动 close 会破坏复用。
+### 探活与登录（本 skill 自管，不走 login-manager）
+
+走持久化 session `twitter`（与 `twitter-interact` 共用）。探活方式：开 session open 平台首页 + snapshot 看是否跳登录页。
+
+```bash
+# 探活（默认无头模式）
+camoufox-cli --session twitter --persistent --json open "https://x.com/"
+sleep 3
+camoufox-cli --session twitter --json snapshot
+# snapshot 看页面是否跳到登录页 / 出现登录按钮 / 推文是否正常可见
+# → 没跳登录页、内容正常 = 登录态有效，不 close session（留着给后续操作 + twitter-interact 复用）
+# → 跳到登录页 / 出现登录按钮 = 登录态失效，走重登
+```
+
+重登流程（失效时）——登录流程按 `browser-guide` skill 走有头手动登录（手机号+验证码 / Twitter APP 扫码），登录后**不关 session**——持久化 session `twitter` 登录态留着给本 skill 做发布操作 + `twitter-interact` 做互动操作复用，主动 close 会破坏复用。只在 session 卡死时由调用方手动 `camoufox-cli --session twitter --json close` teardown。
+
+```bash
+# X 登录风控对无头 + QR 识别严格，有头人工登录最稳
+camoufox-cli --session twitter --persistent --headed --json open "https://x.com/login"
+# 告知用户「**Twitter/X** 浏览器已打开，请在窗口里手动完成登录（账号密码 / 手机 APP 扫码），完成后告诉我」
+# 等用户回复后 snapshot 验登录态就位
+# 登录就位后不 close session——留着给本 skill + twitter-interact 复用
+```
+
+**不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`。
 
 ---
 
 ## 浏览器方案（重要）
 
-**优先 camoufox-cli**：headless persistent session（登录态存 session profile）+ forked cli `upload` 命令上传（底层 Playwright `setInputFiles`，穿透 shadow DOM）。camoufox-cli 无头即可完成 x.com 发布，反侦测能力强、资源占用低。操作要点：`snapshot` 拿 ref → `type`/`click` 按 ref 操作，别自己 hack selector。
+**优先 camoufox-cli，且除了登录外，其他都可以默认的无头方式进行**
 
 > 下面 workflow 步骤（Navigate / Click / snapshot eval / upload）默认用 camoufox-cli 执行。若 camoufox-cli 在 X 上持续触发风控，等 60s 后开新 session 重试；仍触发则报告用户该平台当日风控未解，择日再试。
 
@@ -37,10 +61,6 @@ Use this skill when:
 
 - 文件上传用 forked camoufox-cli 的 `upload` 命令（`camoufox-cli --session <s> --persistent --json upload <ref> <file>`，底层 Playwright `setInputFiles`，无需 DataTransfer hack）
 - 正文输入使用 `type` + `slowly: true`，不要用 `fill()`
-
-### 登录
-
-登录流程按 `browser-guide` skill 走有头手动登录（手机号+验证码 / Twitter APP 扫码），登录后**不关 session**——持久化 session `twitter` 登录态留着给本 skill 做发布操作复用，主动 close 会破坏复用。
 
 ### 字符计数规则（X 平台特殊）
 

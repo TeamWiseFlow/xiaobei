@@ -3,8 +3,7 @@
 
 架构：
 - camoufox-cli 主推（反指纹 headless Firefox）
-- login-manager 中央 cookie
-- 每任务一 session
+- 持久化 session `twitter`（与 twitter-post 共用，靠 session 名约定共享登录态）
 - run 一键跑全流程
 
 子命令：
@@ -18,13 +17,13 @@
   unfollow   <user_handle>              取关用户
   run        --tweet-url <url> --action <like|retweet|bookmark|follow>
                                     一键跑（脚本化主流程）
-  cleanup    <session>                 关闭 camoufox session
 
 依赖：
 - camoufox-cli（npm 全局）
-- login-manager skill（同 crew 私有，cookie 中央存储）
-- login-manager 平台 key: `twitter`
 - python3 stdlib（json / subprocess / secrets / re / urllib）
+
+与 login-manager **完全无关**——Twitter 互动是纯浏览器操作，登录态在 session profile 里闭环，
+不导出 cookie/UA 落中央存储。登录流程按 `browser-guide` skill 走有头手动登录，登录后不关 session。
 """
 from __future__ import annotations
 
@@ -43,14 +42,9 @@ from urllib.request import Request, urlopen
 
 # ── 常量 ─────────────────────────────────────────────────────────────────────
 
-LOGIN_MANAGER_BIN = os.environ.get(
-    "LOGIN_MANAGER_BIN",
-    "~/.openclaw/workspace-main/skills/login-manager/scripts/login-manager.sh",
-)
 CAMOUFOX_BIN = os.environ.get("CAMOUFOX_CLI", "camoufox-cli")
-LOGIN_MANAGER_PLATFORM = "twitter"
 
-# 原则 1：每平台一个且只一个持久化 session，顺次使用（forked cli fail-first 队列串行）。
+# 每平台一个且只一个持久化 session，顺次使用（forked cli fail-first 队列串行）。
 # 不再每任务生成 nonce session——并发调用由 forked cli 的 fail-first 队列拒绝，脚本透传给调用方。
 TWITTER_SESSION = os.environ.get("TWITTER_SESSION", "twitter")
 
@@ -80,17 +74,8 @@ CAMOUFOX_TIMEOUT_S = 60
 
 # ── 平台工具 ───────────────────────────────────────────────────────────────
 
-def login_manager_check() -> bool:
-    """探活 login-manager 中央 cookie。"""
-    result = subprocess.run(
-        [LOGIN_MANAGER_BIN, "check", LOGIN_MANAGER_PLATFORM],
-        capture_output=True, text=True, timeout=10, check=False,
-    )
-    return result.returncode == 0
-
-
 def session_name(purpose: str = "interact") -> str:
-    """返回 twitter 持久化 session 名（原则 1：单一 session）。
+    """返回 twitter 持久化 session 名（单一 session）。
 
     保留 purpose 参数仅为向后兼容（调用方可标注意图），实际忽略——所有操作共享
     同一个 `twitter` session，由 forked cli fail-first 队列串行。
@@ -110,7 +95,7 @@ def _camoufox_json(cmd: list[str], timeout: int) -> dict:
         env = json.loads(stdout)
     except json.JSONDecodeError:
         return {"data": stdout}
-    # fail-first 队列拒绝（spec §1.1）
+    # fail-first 队列拒绝
     if isinstance(env, dict) and env.get("success") is False:
         err = str(env.get("error", ""))
         if "正忙" in err:
@@ -119,9 +104,15 @@ def _camoufox_json(cmd: list[str], timeout: int) -> dict:
     return env if isinstance(env, dict) else {"data": env}
 
 
-def camoufox_open(session: str, url: str) -> None:
-    """启 headless + persistent 会话 + 打开 URL。"""
-    cmd = [CAMOUFOX_BIN, "--session", session, "--persistent", "--headless", "--json", "open", url]
+def camoufox_open(session: str, url: str, *, headed: bool = False) -> None:
+    """启 persistent 会话 + 打开 URL。
+
+    headed=True 走有头模式（登录场景，与 browser-guide 一致）；
+    headed=False 走默认无头模式（自动化操作场景，无需用户在场）。
+    """
+    cmd = [CAMOUFOX_BIN, "--session", session, "--persistent", "--json", "open", url]
+    if headed:
+        cmd.insert(2, "--headed")
     _camoufox_json(cmd, CAMOUFOX_TIMEOUT_S)
 
 
@@ -134,34 +125,47 @@ def camoufox_eval(session: str, js: str, timeout: int = 30) -> Optional[str]:
 
 
 def camoufox_close(session: str) -> None:
-    """关闭 camoufox session（委托给 login-manager）。"""
+    """关闭 camoufox session——仅供 session 卡死时手动 teardown，不主动调。
+    持久化 session `twitter` 登录态留着给下次操作复用，主动 close 会破坏复用。"""
     subprocess.run(
-        [LOGIN_MANAGER_BIN, "session-cleanup", LOGIN_MANAGER_PLATFORM, session],
+        [CAMOUFOX_BIN, "--session", session, "--json", "close"],
         capture_output=True, text=True, timeout=10, check=False,
     )
 
 
+def _check_session_alive() -> bool:
+    """探活：camoufox-cli open x.com 首页 + snapshot 看是否跳登录页。
+    与 login-manager 无关——twitter 走自有持久化 session `twitter`。"""
+    try:
+        camoufox_open(TWITTER_SESSION, "https://x.com/")
+        time.sleep(3)
+        result = subprocess.run(
+            [CAMOUFOX_BIN, "--session", TWITTER_SESSION, "--json", "snapshot"],
+            capture_output=True, text=True, timeout=CAMOUFOX_TIMEOUT_S, check=False,
+        )
+        env = json.loads(result.stdout) if result.stdout.strip() else {}
+        data = env.get("data", "") if isinstance(env, dict) else ""
+        # 跳登录页 / 出现登录按钮 = 失效
+        return "登录" not in str(data) and "log in" not in str(data).lower()
+    except Exception:
+        return False
+
 @contextlib.contextmanager
 def twitter_session():
-    """单一持久化 session `twitter` 的生命周期（原则 1）。
+    """单一持久化 session `twitter` 的生命周期（单一 session）。
 
-    - 正常退出：close session（daemon 退出，profile 留盘）
+    - 正常退出：**不 close** session——登录态留着下次操作复用（与 twitter-post 共用同一 session）
     - SessionBusyError：**不 close**（close 会 tear down 正在跑的另一个操作），透传 exit 3
     """
     session = TWITTER_SESSION
-    busy = False
     try:
         yield session
     except SessionBusyError as e:
-        busy = True
         sys.stderr.write(
             f"error: session {session} 正忙 — {e}\n"
             f"  forked cli fail-first 队列拒绝。请等待当前操作完成后再试。\n"
         )
         raise SystemExit(3)
-    finally:
-        if not busy:
-            camoufox_close(session)
 
 
 # ── URL 解析 ───────────────────────────────────────────────────────────────
@@ -581,12 +585,11 @@ def cmd_unfollow(user: str) -> None:
 
 
 def cmd_run(*, tweet_url: str = "", action: str = "like", user: str = "") -> None:
-    """一键跑（脚本化主流程）。"""
-    if not login_manager_check():
+    """一键跑（脚本化主流程）。探活走 camoufox-cli open + snapshot 看 session 内登录态。"""
+    if not _check_session_alive():
         sys.stderr.write(
-            f"error: {LOGIN_MANAGER_PLATFORM} cookie 失效；先走 login-manager 有头登录\n"
-            f"  原则 3：twitter 登录必须 有头模式（camoufox-cli --headed），不无头截图 QR。\n"
-            f"  流程：login-manager.sh login-headed twitter → 用户在浏览器完成登录 → close。\n"
+            f"error: twitter session 失效；先按 browser-guide skill 走有头手动登录\n"
+            f"  流程：camoufox-cli --session twitter --persistent --headed open \"https://x.com/\" → 用户在浏览器完成登录 → 不 close session（留着下次用）。\n"
         )
         sys.exit(2)
 
@@ -607,14 +610,6 @@ def cmd_run(*, tweet_url: str = "", action: str = "like", user: str = "") -> Non
         sys.stderr.write("error: --tweet-url or --user required\n")
         sys.exit(1)
 
-
-def cmd_cleanup(session: str) -> None:
-    camoufox_close(session)
-    sys.stdout.write(json.dumps({"ok": True, "session": session}))
-    sys.stdout.write("\n")
-
-
-# ── main ─────────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -649,10 +644,6 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--action", default="like",
                     choices=["like", "retweet", "bookmark", "follow", "unfollow"])
     sp.set_defaults(func=lambda a: cmd_run(tweet_url=a.tweet_url, action=a.action, user=a.user))
-
-    sp = sub.add_parser("cleanup", help="关闭 camoufox session")
-    sp.add_argument("session")
-    sp.set_defaults(func=lambda a: cmd_cleanup(a.session))
 
     return p
 
