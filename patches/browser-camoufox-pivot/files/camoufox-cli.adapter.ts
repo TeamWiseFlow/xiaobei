@@ -9,7 +9,9 @@
  * executeCamoufoxCliAction().
  *
  * Daemon protocol: one JSON object per line, `{id, action, params}\n` →
- * `{id, success, data?, error?}\n`. Socket: `/tmp/camoufox-cli-<session>.sock`.
+ * `{id, success, data?, error?}\n`. Socket: `/tmp/camoufox-cli-<session>.sock`
+ * (long session names >84 chars are sha256-shortened to stay under Linux's
+ * 108-byte sockaddr_un path limit — see `shortenSession()` below).
  *
  * Unsupported browser-tool actions (console capture, dialog arming, act
  * drag/clickCoords/resize — camoufox-cli has no equivalents) return a clear
@@ -21,6 +23,7 @@ import * as net from "node:net";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import type { AgentToolResult } from "openclaw/plugin-sdk/agent-core";
 import { wrapExternalContent } from "./sdk-security-runtime.js";
@@ -55,8 +58,29 @@ interface CliResponse {
 // Daemon lifecycle
 // ---------------------------------------------------------------------------
 
-function socketPath(session: string): string {
-  return `/tmp/camoufox-cli-${session}.sock`;
+const SOCKET_PREFIX = "/tmp/camoufox-cli-";
+// Linux sockaddr_un path limit is 108 bytes. With prefix "/tmp/camoufox-cli-"
+// (19 chars) + suffix ".sock" (5 chars) = 24 chars overhead, session names
+// up to 84 chars are safe. Longer names (e.g. cron session IDs) are hashed.
+// MUST stay in sync with patches/camoufox-cli/src/cli.ts shortenSession() —
+// the daemon uses the identical logic to compute its listen path; if these
+// two diverge, ensureDaemon's waitForSocket waits on the wrong path and the
+// browser never opens. Duplicated here (rather than imported) because the
+// adapter is vendored into openclaw/extensions/browser/src and built as part
+// of openclaw, not the camoufox-cli package.
+const MAX_SESSION_LEN = 84;
+
+/** Shorten a session name for use in socket/pid file paths if it would exceed
+ * the 108-char Unix socket path limit. Short names are returned as-is; long
+ * names are replaced with `s-<16-char-sha256-prefix>` (18 chars total). */
+export function shortenSession(session: string): string {
+  if (session.length <= MAX_SESSION_LEN) return session;
+  const hash = crypto.createHash("sha256").update(session).digest("hex").slice(0, 16);
+  return `s-${hash}`;
+}
+
+export function socketPath(session: string): string {
+  return `${SOCKET_PREFIX}${shortenSession(session)}.sock`;
 }
 
 /**
@@ -115,8 +139,11 @@ async function waitForSocket(sock: string, timeoutMs = 15000): Promise<void> {
   throw new Error(`camoufox-cli daemon did not start within ${timeoutMs}ms (session=${configSession(sock)})`);
 }
 
+/** Extract the (possibly hashed) session identifier from a socket path, for
+ * diagnostics only. For long sessions this returns the `s-<hash>` short form,
+ * not the original session name — enough to identify the daemon in errors. */
 function configSession(sock: string): string {
-  return sock.replace("/tmp/camoufox-cli-", "").replace(".sock", "");
+  return sock.replace(SOCKET_PREFIX, "").replace(".sock", "");
 }
 
 /** Ensure a daemon is running for the session; spawn one if the socket is dead/absent. */

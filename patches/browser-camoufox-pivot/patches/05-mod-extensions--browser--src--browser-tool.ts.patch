@@ -1,8 +1,17 @@
 diff --git a/extensions/browser/src/browser-tool.ts b/extensions/browser/src/browser-tool.ts
-index 330a0b6f3c..dddc28a317 100644
+index 330a0b6f3c..f81002675a 100644
 --- a/extensions/browser/src/browser-tool.ts
 +++ b/extensions/browser/src/browser-tool.ts
-@@ -57,6 +57,7 @@ import { DEFAULT_BROWSER_SCREENSHOT_TIMEOUT_MS } from "./browser/constants.js";
+@@ -5,6 +5,8 @@
+  * maps high-level actions onto browser control client calls.
+  */
+ import crypto from "node:crypto";
++import os from "node:os";
++import path from "node:path";
+ import {
+   executeActAction,
+   executeConsoleAction,
+@@ -57,6 +59,7 @@ import { DEFAULT_BROWSER_SCREENSHOT_TIMEOUT_MS } from "./browser/constants.js";
  import { normalizeBrowserScreenshot } from "./browser/screenshot.js";
  import { describeBrowserScreenshot, neutralizeMediaDirectives } from "./browser/vision.js";
  import { wrapExternalContent } from "./sdk-security-runtime.js";
@@ -10,7 +19,7 @@ index 330a0b6f3c..dddc28a317 100644
  
  const browserToolDeps = {
    browserAct,
-@@ -260,8 +261,7 @@ function isBrowserNode(node: NodeListNode) {
+@@ -260,8 +263,7 @@ function isBrowserNode(node: NodeListNode) {
  
  async function resolveBrowserNodeTarget(params: {
    requestedNode?: string;
@@ -20,7 +29,7 @@ index 330a0b6f3c..dddc28a317 100644
  }): Promise<BrowserNodeTarget | null> {
    const cfg = browserToolDeps.getRuntimeConfig();
    const policy = cfg.gateway?.nodes?.browser;
-@@ -272,9 +272,6 @@ async function resolveBrowserNodeTarget(params: {
+@@ -272,9 +274,6 @@ async function resolveBrowserNodeTarget(params: {
      }
      return null;
    }
@@ -30,7 +39,7 @@ index 330a0b6f3c..dddc28a317 100644
    if (params.target && params.target !== "node") {
      return null;
    }
-@@ -389,23 +386,11 @@ function applyProxyPaths(result: unknown, mapping: Map<string, string>) {
+@@ -389,23 +388,11 @@ function applyProxyPaths(result: unknown, mapping: Map<string, string>) {
  }
  
  function resolveBrowserBaseUrl(params: {
@@ -55,28 +64,40 @@ index 330a0b6f3c..dddc28a317 100644
  
    if (params.allowHostControl === false) {
      throw new Error("Host browser control is disabled by sandbox policy.");
-@@ -469,9 +454,29 @@ function readToolTimeoutMs(params: Record<string, unknown>) {
+@@ -469,9 +456,41 @@ function readToolTimeoutMs(params: Record<string, unknown>) {
    });
  }
  
 +/**
 + * Build camoufox-cli daemon session config from tool opts + runtime config.
-+ * session 来自 agentSessionKey（每 agent 独立 socket/profile 命名空间），缺省 "openclaw"。
-+ * headless/proxy/locale 跟 browser 配置；persistentDir 留空让 camoufox-cli 自管。
-+ * spec §11 阶段一 step 3a。
++ *
++ * session 命名优先级（spec §3 session 名即共享契约）：action 显式传入的平台名
++ * （如 "xhs-publish"）> agentSessionKey（每 agent 独立）> "openclaw"。
++ * 同一 session 名 = 同一 socket + 同一 persistent profile = 同一登录态/指纹，
++ * 这让 adapter 路与直接 `camoufox-cli --session <name> --persistent` CLI 路等价。
++ *
++ * persistentDir 默认指 ~/.camoufox-cli/profiles/<session>——与 cli.ts 里
++ * `--persistent` 无参数时的默认值完全一致（cli.ts:411-414），故 adapter 启的
++ * daemon 与 login-manager 直接 CLI 启的 daemon 共享同一 profile/登录态。
++ * spec §11 阶段一 step 3a；§3 持久化适用于所有涉及登录的平台（非仅 login-manager 的 5 个）。
 + */
 +function resolveCamoufoxSessionConfig(opts?: {
 +  agentSessionKey?: string;
 +  workspaceDir?: string;
++  platformSession?: string;
 +}): CamoufoxCliSessionConfig {
 +  const cfg = browserToolDeps.getRuntimeConfig();
 +  // proxy/locale/geoip 暂不从 openclaw 配置读（BrowserConfig 无这些字段）；
 +  // adapter 默认 geoip=true、无代理、无 locale。后续如需可扩 BrowserConfig。
++  const session = (opts?.platformSession ?? opts?.agentSessionKey ?? "openclaw").replace(
++    /[^a-zA-Z0-9_-]/g,
++    "-",
++  );
 +  return {
-+    session: (opts?.agentSessionKey ?? "openclaw").replace(/[^a-zA-Z0-9_-]/g, "-"),
++    session,
 +    headless: cfg.browser?.headless === true,
 +    geoip: true,
-+    persistentDir: null,
++    persistentDir: path.join(os.homedir(), ".camoufox-cli", "profiles", session),
 +  };
 +}
 +
@@ -86,7 +107,7 @@ index 330a0b6f3c..dddc28a317 100644
    allowHostControl?: boolean;
    agentSessionKey?: string;
    agentDir?: string;
-@@ -486,7 +491,6 @@ export function createBrowserTool(opts?: {
+@@ -486,7 +505,6 @@ export function createBrowserTool(opts?: {
      chatType?: string;
    };
  }): AnyAgentTool {
@@ -94,17 +115,21 @@ index 330a0b6f3c..dddc28a317 100644
    const hostHint =
      opts?.allowHostControl === false ? "Host target blocked by policy." : "Host target allowed.";
    return {
-@@ -502,7 +506,7 @@ export function createBrowserTool(opts?: {
+@@ -502,7 +520,8 @@ export function createBrowserTool(opts?: {
        "For multi-step browser work, login checks, stale refs, duplicate tabs, or Google Meet flows, use the bundled browser-automation skill when it is available.",
        'For stable, self-resolving refs across calls, use snapshot with refs="aria" (Playwright aria-ref ids). Default refs="role" are role+name-based.',
        "Use snapshot+act for UI automation. Avoid act:wait by default; use only in exceptional cases when no reliable UI state exists.",
 -      `target selects browser location (sandbox|host|node). Default: ${targetDefault}.`,
 +      'target selects browser location (camoufox|host|node). Default: camoufox (forked camoufox-cli, anti-detect Firefox via unix-socket). Use target="host" for existing-session real Chrome (profile="user"), or target="node" for a remote browser node.',
++      'For target=camoufox, session=<platform> pins the persistent browser profile/登录态 to a named platform session (e.g. session="xhs-publish"); same session name reuses the same fingerprint + cookies across calls and agents. Omit to fall back to the per-agent session.',
        hostHint,
      ].join(" "),
      parameters: BrowserToolSchema,
-@@ -512,7 +516,11 @@ export function createBrowserTool(opts?: {
+@@ -510,9 +529,14 @@ export function createBrowserTool(opts?: {
+       const params = args as Record<string, unknown>;
+       const action = readStringParam(params, "action", { required: true });
        const profile = readStringParam(params, "profile");
++      const platformSession = readStringParam(params, "session");
        const requestedNode = readStringParam(params, "node");
        const requestedTimeoutMs = readToolTimeoutMs(params);
 -      let target = readStringParam(params, "target") as "sandbox" | "host" | "node" | undefined;
@@ -116,7 +141,7 @@ index 330a0b6f3c..dddc28a317 100644
        const configuredNode = browserToolDeps
          .getRuntimeConfig()
          .gateway?.nodes?.browser?.node?.trim();
-@@ -520,15 +528,39 @@ export function createBrowserTool(opts?: {
+@@ -520,15 +544,42 @@ export function createBrowserTool(opts?: {
        if (requestedNode && target && target !== "node") {
          throw new Error('node is only supported with target="node".');
        }
@@ -155,14 +180,17 @@ index 330a0b6f3c..dddc28a317 100644
 +          }
 +          return await executeCamoufoxCliAction(
 +            { ...params, paths: uploadResolved.paths },
-+            resolveCamoufoxSessionConfig(opts),
++            resolveCamoufoxSessionConfig({ ...opts, platformSession }),
            );
          }
-+        return await executeCamoufoxCliAction(params, resolveCamoufoxSessionConfig(opts));
++        return await executeCamoufoxCliAction(
++          params,
++          resolveCamoufoxSessionConfig({ ...opts, platformSession }),
++        );
        }
  
        let nodeTarget: BrowserNodeTarget | null = null;
-@@ -536,7 +568,6 @@ export function createBrowserTool(opts?: {
+@@ -536,7 +587,6 @@ export function createBrowserTool(opts?: {
          nodeTarget = await resolveBrowserNodeTarget({
            requestedNode: requestedNode ?? undefined,
            target,
@@ -170,7 +198,7 @@ index 330a0b6f3c..dddc28a317 100644
          });
        } catch (error) {
          // Keep the logged-in user browser usable on the host when auto-discovery
-@@ -554,7 +585,6 @@ export function createBrowserTool(opts?: {
+@@ -554,7 +604,6 @@ export function createBrowserTool(opts?: {
          ? undefined
          : resolveBrowserBaseUrl({
              target: resolvedTarget,

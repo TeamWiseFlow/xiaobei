@@ -6,6 +6,8 @@
 import { describe, expect, it } from "vitest";
 import {
   executeCamoufoxCliAction,
+  shortenSession,
+  socketPath,
   type CamoufoxCliSessionConfig,
   type Transport,
   type AdapterDeps,
@@ -267,5 +269,58 @@ describe("camoufox-cli adapter — act kind translation", () => {
     await expect(
       executeCamoufoxCliAction({ action: "act", request: { kind: "click", ref: "e1" } }, CONFIG, deps),
     ).rejects.toThrow("element not found");
+  });
+});
+
+describe("shortenSession / socketPath — 108-char socket path limit", () => {
+  // Regression for the cron long-session-ID bug: the daemon (patches/camoufox-cli)
+  // hashes long session names to stay under Linux's 108-byte sockaddr_un limit.
+  // The adapter MUST apply the identical shortening, else ensureDaemon waits on
+  // a path the daemon never listens on and the browser never opens.
+  const LONG_CRON_SESSION =
+    "agent-main-cron-2b8125b0-082b-4c2b-bdc6-7fd2193bab9a-run-11c0d125-aeeb-4357-a6d7-11b0517c944a";
+
+  it("short session is returned unchanged", () => {
+    expect(shortenSession("default")).toBe("default");
+    expect(shortenSession("my-session")).toBe("my-session");
+  });
+
+  it("84-char session is the unchanged boundary", () => {
+    const s = "a".repeat(84);
+    expect(shortenSession(s)).toBe(s);
+  });
+
+  it("85-char session is hashed to s-<16 hex>", () => {
+    const result = shortenSession("a".repeat(85));
+    expect(result).toMatch(/^s-[0-9a-f]{16}$/);
+    expect(result.length).toBe(18);
+  });
+
+  it("long cron session ID is hashed", () => {
+    const result = shortenSession(LONG_CRON_SESSION);
+    expect(result).toMatch(/^s-[0-9a-f]{16}$/);
+    expect(result.length).toBe(18);
+  });
+
+  it("shortenSession is deterministic", () => {
+    expect(shortenSession(LONG_CRON_SESSION)).toBe(shortenSession(LONG_CRON_SESSION));
+  });
+
+  it("different long inputs produce different hashes", () => {
+    const s1 = "agent-main-cron-aaa".padEnd(100, "a");
+    const s2 = "agent-main-cron-bbb".padEnd(100, "b");
+    expect(shortenSession(s1)).not.toBe(shortenSession(s2));
+  });
+
+  it("socketPath stays under 108 chars for any session", () => {
+    expect(socketPath("default").length).toBeLessThanOrEqual(108);
+    expect(socketPath(LONG_CRON_SESSION).length).toBeLessThanOrEqual(108);
+    expect(socketPath("x".repeat(200)).length).toBeLessThanOrEqual(108);
+  });
+
+  it("socketPath for a long session is the hashed short form, not the raw name", () => {
+    const raw = socketPath(LONG_CRON_SESSION);
+    expect(raw).not.toContain(LONG_CRON_SESSION);
+    expect(raw).toMatch(/^\/tmp\/camoufox-cli-s-[0-9a-f]{16}\.sock$/);
   });
 });
