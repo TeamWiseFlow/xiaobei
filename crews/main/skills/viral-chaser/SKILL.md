@@ -9,8 +9,34 @@ metadata:
       - node
       - ffmpeg
       env:
-      - SILICONFLOW_API_KEY
+      - VOLC_ASR_APP_KEY
 ---
+
+## 🔑 前置：开通火山语音模型（仅首次）
+
+本技能的语音转写（ASR）使用**火山引擎豆包语音 · 录音文件极速版**（资源 ID `volc.bigasr.auc_turbo`）。即便账号已订购火山 Code Plan，语音模型仍需**单独开通**，否则调用会返回鉴权/权限错误。
+
+**判断是否已开通**：直接跑 Step 3 分析器，若 ASR 报错含 `status=45xxxxx` 或权限相关码，说明未开通，按下面流程开通一次即可。
+
+**开通流程**（在火山引擎控制台操作一次）：
+
+1. 登录火山引擎控制台，左侧控制面板进入 **「开通管理」**
+2. 选择 **「语音模型」** 选项卡
+3. 找到对应模型（豆包录音文件识别极速版 / `volc.bigasr.auc_turbo`），点击 **操作 → 立即使用**
+4. 在新打开的页面中点击 **「试用」**，再点击 **「开通」**
+5. 开通后，复制页面下方的 **Access token Secret Key**，提供给小贝，由小贝写入实例环境变量
+
+**环境变量**（开通后由小贝配置，用户无需手动设置）：
+
+| 变量 | 说明 |
+|------|------|
+| `VOLC_ASR_APP_KEY` | 火山控制台获取的 APP ID / App Key（必需） |
+| `VOLC_ASR_ACCESS_KEY` | Access Token（旧控制台双头鉴权用；新控制台可留空，仅用 `VOLC_ASR_APP_KEY`） |
+| `VOLC_ASR_RESOURCE_ID` | 资源 ID，默认 `volc.bigasr.auc_turbo`，一般无需改 |
+
+> **写入流程**：用户把 `VOLC_ASR_APP_KEY` / `VOLC_ASR_ACCESS_KEY` 交给小贝后，**小贝应 spawn 一个 `IT engineer` 作为 subagent** 去把这两个变量添加到实例环境变量中——IT engineer 掌握如何在本机环境变量 / 服务配置里安全添加此类密钥的规范。小贝本人不要直接写环境变量文件。
+
+> **关于接口选型**：火山 ASR 分录音文件标准版 2.0（`volc.seedasr.auc`，单价最低，但只接受音频公网 URL，需自备 TOS 对象存储）、极速版（本技能采用，支持本地文件 base64 直传、一次返回）、闲时版（24h 内返回，不适合交互流程）、流式（实时上屏用）。viral-chaser 输入是本地 audio.wav，极速版免托管、原生返回时间戳，综合最合适。若后续为降本要切标准版 2.0，需额外引入 TOS 上传环节。
 
 # Viral Chaser（追爆分析 — 报告产出）
 
@@ -100,7 +126,7 @@ The script outputs a **JSON object to stdout**. Read it and proceed with analysi
 }
 ```
 
-- `transcript.estimated`: `true` 表示 `segments` 的时间戳是按音频时长估算的（SiliconFlow ASR 不返回真实时间戳），`false` 表示是 ASR 真实分段。估算分段仍可用于钩子分析与结构拆解，但时间区间是按字数比例分配的近似值。
+- `transcript.estimated`: `false` 表示 `segments` 是火山 ASR 返回的**真实时间戳**（utterance 级，毫秒精度转秒）；`true` 仅在接口异常未返回 utterances 时出现，此时按句切分全文并按字数比例在音频时长上估算分段，时间区间为近似值。正常情况下始终为 `false`。
 
 **Exit codes:**
 - `0` = Success
@@ -184,5 +210,5 @@ One sentence describing the primary audience persona.
 - **Workspace files** are stored in `output_videos/<slug>/` — all downloaded assets and analysis reports are kept together. The `references/` subdirectory contains raw assets from the analyzer.
 - **Bilibili DASH format**: if `mediaFormat` is `DASH`, the video and audio streams are separate. The downloaded `video.mp4` contains the video stream only; audio is in `audio.wav` after extraction. This is transparent to the analysis workflow.
 - **XHS video notes only**: 小红书图文笔记（image-only）不含视频，viral-chaser 会报错并提示。只有视频笔记（type=video）才能下载和分析。XHS 使用 `xhs-browse` cookie（消费者端域 www.xiaohongshu.com）。
-- **ASR segments**: SiliconFlow ASR（SenseVoiceSmall / TeleSpeechASR）只返回全文 text、不返回分段时间戳。脚本在拿不到真实 segments 时，会按句切分全文并按字数比例在音频时长上**估算**分段（`transcript.estimated=true`）。若需要真实时间戳，可改用支持 verbose_json 的 whisper 类模型（设置 `ASR_MODEL` 环境变量），脚本会优先采用真实 segments。
+- **ASR segments**: 语音转写使用火山引擎豆包语音·录音文件极速版（`volc.bigasr.auc_turbo`），原生返回 utterance 级真实时间戳（`start_time`/`end_time`，毫秒），脚本转成秒后填入 `transcript.segments`，`estimated=false`。仅在接口异常未返回 utterances 时，才按句切分全文并按字数比例在音频时长上估算分段（`estimated=true`）作为兜底。开通/鉴权见文首「前置：开通火山语音模型」。
 - **Exit code 2 — cookie expired:** Execute the login flow described in the login-manager skill（原则 3：douyin / xhs-browse 有头手动登录；bilibili 有头登录），导出 cookie + UA 后重试一次。Do not retry more than once.

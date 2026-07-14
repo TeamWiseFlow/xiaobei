@@ -1,21 +1,30 @@
 #!/usr/bin/env -S node --experimental-strip-types
 /**
- * transcriber.ts — ASR transcription via SiliconFlow API
+ * transcriber.ts — ASR transcription via 火山引擎豆包语音（录音文件极速版）
  *
- * 实现说明：Node 24 的 fetch + FormData 在部分环境下会抛
- * "location is not defined" 等兼容异常，改用 python requests 子进程
- * 调 SiliconFlow，与 xhs.ts 同一模式（python3 -c 内联脚本）。
+ * 接口：POST https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash
+ * 资源 ID：volc.bigasr.auc_turbo（需在火山控制台「开通管理 → 语音模型」开通）
  *
- * API: POST https://api.siliconflow.cn/v1/audio/transcriptions
- * model via env: ASR_MODEL (default: FunAudioLLM/SenseVoiceSmall)
+ * 选型说明：viral-chaser 的输入是本地 audio.wav（16kHz mono，≤10min），
+ * 极速版支持 audio.data（base64）直传本地文件，一次请求即返回，无需对象
+ * 存储/公网 URL，且原生返回 utterances 带 start_time/end_time（毫秒）和
+ * word 级时间戳——正好替代原先 SiliconFlow SenseVoiceSmall 无时间戳、
+ * 靠字数比例估算的方案。标准版 2.0（volc.seedasr.auc）单价更低但只接受
+ * audio.url，需自备 TOS 托管，未采用。
  *
- * 注意：SiliconFlow ASR（SenseVoiceSmall / TeleSpeechASR）官方只返回 text、
- * 不返回 segments/时间戳。因此当 API 未返回 segments 时，本模块基于全文按
- * 句切分、按字数比例在已知音频时长上估算分段，并在结果中置 estimated=true。
- * 若上游将来支持时间戳或切换到 whisper 类模型，真实 segments 仍优先采用。
+ * 鉴权：兼容新旧控制台。
+ *   - VOLC_ASR_ACCESS_KEY 设置 → 旧控制台双头：X-Api-App-Key + X-Api-Access-Key
+ *   - 未设置 → 新控制台单头：X-Api-Key
+ *
+ * 实现说明：沿用 xhs.ts 同一模式（python3 -c 内联脚本调 requests），避免
+ * Node fetch/FormData 在部分环境的兼容异常。
+ *
+ * 注意：保留 synthesizeSegments 作为兜底——正常情况下火山会返回真实
+ * utterances，estimated=false；仅当接口异常未返回 utterances 时才按音频
+ * 时长估算，estimated=true。
  */
 
-import { existsSync } from "fs"
+import { existsSync, statSync } from "fs"
 import { execFile } from "child_process"
 import { promisify } from "util"
 
@@ -34,7 +43,7 @@ export interface TranscriptResult {
   estimated?: boolean
 }
 
-// ── 估算分段（当 ASR 不返回时间戳时）─────────────────────────────────────────
+// ── 估算分段（当 ASR 未返回 utterances 时的兜底）──────────────────────────────
 
 function splitSentences(text: string): string[] {
   if (!text) return []
@@ -82,7 +91,7 @@ function synthesizeSegments(text: string, durationSeconds: number): TranscriptSe
 }
 
 const PYTHON_SCRIPT = `
-import json, os, sys
+import json, os, sys, uuid, base64
 try:
     import requests
 except ImportError as e:
@@ -90,42 +99,86 @@ except ImportError as e:
     sys.exit(1)
 
 audio_path = sys.argv[1]
-api_key = os.environ.get("SILICONFLOW_API_KEY")
-if not api_key:
-    print(json.dumps({"ok": False, "error": "环境变量 SILICONFLOW_API_KEY 未设置"}))
+app_key = os.environ.get("VOLC_ASR_APP_KEY")
+if not app_key:
+    print(json.dumps({"ok": False, "error": "环境变量 VOLC_ASR_APP_KEY 未设置（火山语音 APP ID/App Key）"}))
     sys.exit(1)
+access_key = os.environ.get("VOLC_ASR_ACCESS_KEY", "")
 
-model = os.environ.get("ASR_MODEL", "FunAudioLLM/SenseVoiceSmall")
-url = "https://api.siliconflow.cn/v1/audio/transcriptions"
+resource_id = os.environ.get("VOLC_ASR_RESOURCE_ID", "volc.bigasr.auc_turbo")
+url = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash"
+
+# 鉴权头：有 access_key 走旧控制台双头，否则新控制台单头
+headers = {
+    "X-Api-Resource-Id": resource_id,
+    "X-Api-Request-Id": str(uuid.uuid4()),
+    "X-Api-Sequence": "-1",
+}
+if access_key:
+    headers["X-Api-App-Key"] = app_key
+    headers["X-Api-Access-Key"] = access_key
+else:
+    headers["X-Api-Key"] = app_key
 
 try:
     with open(audio_path, "rb") as f:
-        files = {"file": (os.path.basename(audio_path), f, "audio/wav")}
-        data = {"model": model}
-        r = requests.post(url, headers={"Authorization": f"Bearer {api_key}"},
-                          files=files, data=data, timeout=180)
+        b64 = base64.b64encode(f.read()).decode("ascii")
+except Exception as e:
+    print(json.dumps({"ok": False, "error": f"读取音频失败: {e}"}))
+    sys.exit(1)
+
+# 根据扩展名推断 format（火山支持 wav/mp3/ogg；默认 wav）
+ext = os.path.splitext(audio_path)[1].lower().lstrip(".")
+fmt = ext if ext in ("wav", "mp3", "ogg") else "wav"
+
+body = {
+    "user": {"uid": app_key},
+    "audio": {"data": b64, "format": fmt},
+    "request": {
+        "model_name": "bigmodel",
+        "show_utterances": True,
+        "enable_itn": True,
+        "enable_punc": True,
+    },
+}
+
+try:
+    r = requests.post(url, json=body, headers=headers, timeout=300)
 except Exception as e:
     print(json.dumps({"ok": False, "error": f"请求失败: {e}"}))
     sys.exit(1)
 
-if not r.ok:
-    print(json.dumps({"ok": False, "error": f"ASR API 失败 ({r.status_code}): {r.text[:500]}"}))
+status = r.headers.get("X-Api-Status-Code", "")
+msg = r.headers.get("X-Api-Message", "")
+logid = r.headers.get("X-Tt-Logid", "")
+
+if status != "20000000":
+    snippet = r.text[:500] if r.text else ""
+    print(json.dumps({"ok": False, "error": f"火山 ASR 失败 (status={status}, msg={msg}, logid={logid}): {snippet}"}))
     sys.exit(1)
 
 try:
-    body = r.json()
+    resp = r.json()
 except Exception as e:
-    print(json.dumps({"ok": False, "error": f"响应解析失败: {e}"}))
+    print(json.dumps({"ok": False, "error": f"响应解析失败: {e}; raw={r.text[:500]}"}))
     sys.exit(1)
 
+result = resp.get("result") or {}
+text = result.get("text", "") or ""
 segs = []
-for s in (body.get("segments") or []):
+for u in (result.get("utterances") or []):
     try:
-        segs.append({"start": float(s.get("start", 0)), "end": float(s.get("end", 0)), "text": s.get("text", "")})
+        start_ms = float(u.get("start_time", 0))
+        end_ms = float(u.get("end_time", 0))
+        segs.append({
+            "start": round(start_ms / 1000.0, 3),
+            "end": round(end_ms / 1000.0, 3),
+            "text": u.get("text", "") or "",
+        })
     except Exception:
         continue
 
-print(json.dumps({"ok": True, "text": body.get("text", ""), "segments": segs}, ensure_ascii=False))
+print(json.dumps({"ok": True, "text": text, "segments": segs}, ensure_ascii=False))
 `
 
 export async function transcribeAudio(audioPath: string, durationSeconds = 0): Promise<TranscriptResult> {
@@ -133,10 +186,16 @@ export async function transcribeAudio(audioPath: string, durationSeconds = 0): P
     throw new Error(`音频文件不存在: ${audioPath}`)
   }
 
+  // 极速版硬限 100MB；本地 audio.wav（16kHz mono ≤10min）约 19MB，远低于上限。
+  const sizeMb = statSync(audioPath).size / (1024 * 1024)
+  if (sizeMb > 100) {
+    throw new Error(`音频文件过大 (${sizeMb.toFixed(1)}MB)，火山极速版上限 100MB`)
+  }
+
   const { stdout } = await execFileAsync(
     "python3",
     ["-c", PYTHON_SCRIPT, audioPath],
-    { timeout: 200_000, maxBuffer: 10 * 1024 * 1024 },
+    { timeout: 320_000, maxBuffer: 50 * 1024 * 1024 },
   )
 
   let data: { ok: boolean; text?: string; segments?: TranscriptSegment[]; error?: string }
@@ -156,16 +215,16 @@ export async function transcribeAudio(audioPath: string, durationSeconds = 0): P
     text: s.text,
   }))
 
-  // ASR 返回了真实 segments → 直接用
+  // 火山返回了真实 utterances → 直接用
   if (apiSegments.length) {
     return { text: data.text ?? "", segments: apiSegments, estimated: false }
   }
 
-  // 上游未返回时间戳 → 按音频时长估算分段
+  // 接口未返回 utterances（异常情况）→ 按音频时长估算分段兜底
   const estimatedSegments = synthesizeSegments(data.text ?? "", durationSeconds)
   if (estimatedSegments.length) {
     process.stderr.write(
-      `[transcriber] ASR 未返回时间戳，按音频时长估算 ${estimatedSegments.length} 个分段\n`,
+      `[transcriber] 火山未返回 utterances，按音频时长估算 ${estimatedSegments.length} 个分段\n`,
     )
   }
   return {
