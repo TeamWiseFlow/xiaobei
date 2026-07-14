@@ -73,75 +73,29 @@
 
 #### Step 2: 依次获取已发布内容的互动数据并更新到 published-track
 
-对 Step 1 中列出的**每条记录（按 id 逐条）**，统一通过 `fetch-and-update-metrics.sh` 获取数据：
+对 Step 1 中列出的**每条记录（按 id 逐条）**取数并写库。按平台分三种情况，能用脚本的先用脚本，不能用脚本的用对应技能，再不就指导 Agent 自己上：
 
-```bash
-./skills/published-track/scripts/fetch-and-update-metrics.sh \
-  --platform <platform> --id <rowid>
-```
+1. **douyin / xhs / kuaishou / bilibili** —— 走脚本：
 
-`<rowid>` 取自 Step 1 查询结果里的 `id` 字段。**必须传 `--id`**：同一 `source_folder` 可能对应多条记录（同内容重复发布到不同帖子），按 `--id` 逐条抓取/写库才能让每次发布各自独立统计；若只传 `--source-folder`，脚本会只抓一行指标却批量写进所有同 folder 行，造成重复发布之间互相污染。
-
-该脚本封装了 login-manager 探活 → API 抓取 → DB 写入 的完整流程，返回统一 JSON 结果。
-
-##### 平台数据获取方案
-
-| 平台 | 方案 | 实现路径 | 需登录 | 心跳可用 |
-|------|------|---------|--------|---------|
-| 小红书 (xhs) | **脚本闭环取 xsec_token + feed** | `fetch-xhs-with-xsec.ts`（脚本内 navigate profile + eval flatten JS 拿映射 + 调 feed） | ✅ login-manager | ✅ |
-| B站 (bilibili) | **脚本** | `fetch-and-update-metrics.sh` → fetch-retro-data.ts (WBI 公开 API) | ❌ 无需 | ✅ |
-| 抖音 (douyin) | **脚本** | `fetch-and-update-metrics.sh` → fetch-retro-data.ts (a_bogus 签名) | ✅ login-manager | ✅ |
-| 知乎 (zhihu) | **浏览器** | browser 导航到文章页 → snapshot 读赞同/评论/收藏数 | ✅ login-manager | ✅ |
-| Twitter/X (twitter) | **浏览器** | twitter-interact 技能浏览推文详情 → 读 views/likes/retweets/replies/bookmarks | ✅ login-manager | ✅ |
-| YouTube (youtube) | **浏览器** | browser 导航到视频页 → snapshot 读观看/点赞/评论数 | ❌ 无需 | ✅  |
-| 微信公众号 (wx_mp) | **跳过** | 无法自动获取 | — | ❌ |
-| Facebook/Instagram/TikTok/Pinterest/Threads | **浏览器** | browser 导航 → snapshot | ✅ login-manager |✅  |
-
-##### 执行流程
-
-> **小红书 (xhs) 走 `fetch-xhs-with-xsec.ts` 脚本闭环**（脚本内拿 user_id + navigate profile + eval flatten JS 取映射 + 调 feed 抓数 + 写库，见 Step 2 平台方案表），不套用下面的通用流程。其他平台按以下通用流程。
-
-对每条记录（xhs 除外）：
-
-1. **调 `fetch-and-update-metrics.sh --platform <p> --source-folder <f>`**（注：心跳按 `--id <rowid>` 调，见 Step 2 开头）
-2. 解析返回的 JSON：
-   - `ok=true, method=script` → **数据已自动获取并写入 DB**，完成
-   - `ok=false, error=SESSION_EXPIRED` → **跳过该平台**，记录到 `EXPIRED_PLATFORMS` 列表，**不唤醒用户**（凌晨执行，用户白天处理）
-   - `ok=false, method=browser` → **走浏览器获取流程**（见下方）
-   - `ok=false, method=manual` → **跳过**（心跳中无法手动提供数据）
-   - 其他错误 → 记录到 `FAILED_ITEMS` 列表，跳过继续
-
-##### 浏览器获取流程（method=browser 的平台）
-
-1. 如需 cookie：`login-manager check <platform>`，SESSION_EXPIRED 则跳过并记录
-2. browser 导航到 `publish_url`（从 DB 读取）
-3. snapshot 读取页面上的互动指标
-4. 调 `update-metrics.sh` 写入 DB：
    ```bash
-   ./skills/published-track/scripts/update-metrics.sh \
-     --platform <platform> --source-folder <folder> \
-     --views 1234 --likes 56 ...
+   ./skills/published-track/scripts/fetch-and-update-metrics.sh \
+     --platform <platform> --id <rowid>
    ```
 
-##### 小红书取数流程（xhs 专属）
+   脚本封装了 login-manager 探活 → API 抓取 → DB 写入 的完整流程，返回统一 JSON 结果。
 
-xhs 取数走 `fetch-xhs-with-xsec.ts` 脚本内闭环——脚本自动：拿 self user_id（优先读 cache）→ camoufox-cli open profile 页 → eval flatten JS 拿 `note_id → xsec_token` 映射（找不到向下滚 3 屏）→ 调 `fetch-retro-data.ts` 抓 feed → `update-metrics.sh` 写库。
+2. **微信公众号 (wx_mp)** —— 走 `wx-mp-engagement` 技能取数后写库。
 
-```bash
-node --experimental-strip-types ./skills/published-track/scripts/fetch-xhs-with-xsec.ts --id <rowid>
-```
+3. **其他平台** —— 指导 Agent 使用持久化 session 通过 `camoufox-cli` 打开对应创作者中心，读取已发布文章的互动数据再写库。
 
-解析返回 JSON：
-- `ok=true` → 完成
-- `ok=false, error=NOTE_NOT_IN_PROFILE` → profile 页 3 屏内未加载到该笔记，记入 `FAILED_ITEMS`
-- `ok=false, error=NOTE_INACCESSIBLE`（fetch 返）→ xsec_token 失效或笔记异常，记入 `FAILED_ITEMS`
-- `ok=false, error=SESSION_EXPIRED` → 记入 `EXPIRED_PLATFORMS`（`xhs-browse`），跳过 xhs——**失效不唤醒用户**，白天用 login-manager 重登
+   > 这条路效果一般，**尽力而为即可，不要硬弄**——拿不到就跳过，切勿反复操作以免引发风控。后面会持续更新。
 
-##### 注意事项
+##### 通用规则
 
-- **SESSION_EXPIRED 处理**：心跳在凌晨执行，Cookie 失效时**不唤醒用户**，跳过该平台，在 Step 5 汇总时报告，用户白天使用 login-manager 重新登录
-- **浏览器操作必须串行**，不可并行
-- **探活只针对取数端 cookie**：xhs 取数探活只用 `xhs-browse` session（`fetch-xhs-with-xsec.ts` / `fetch-and-update-metrics.sh` 内部已自动走 camoufox-cli open + snapshot 探活）。**禁止额外探活 `xhs` 或 `xhs-publish`**——前者与 xhs-browse 重复探浏览域且 `xhs.json` 不存在恒失败，后者探 creator 发布域、与取数无关且增加风控概率。
+- **必须传 `--id <rowid>`**（脚本类平台）：`<rowid>` 取自 Step 1 查询结果里的 `id` 字段。同一 `source_folder` 可能对应多条记录（同内容重复发布到不同帖子），按 `--id` 逐条抓取/写库才能让每次发布各自独立统计；若只传 `--source-folder`，脚本会只抓一行指标却批量写进所有同 folder 行，造成重复发布之间互相污染。
+- **SESSION_EXPIRED**：脚本返回 `ok=false, error=SESSION_EXPIRED`（exit 2）时，**跳过该平台**本轮取数，记入 `EXPIRED_PLATFORMS`，Step 5 统一汇报，由用户白天用 login-manager 重新登录。**凌晨不唤醒用户、不扫码登录、不私拉会话**（见约束 4/5）。
+- **xhs 风控显著高于其他平台**：xhs 任何登录失效迹象 → 立刻整段跳过 xhs，不尝试任何恢复。取数只走 `xhs-browse`，**禁止**探测/使用 `xhs-publish` creator 域 cookie。
+- **浏览器操作必须串行**，不可并行。
 
 ---
 
