@@ -93,9 +93,9 @@ agent 应在 `AGENTS.md` 中明确记录此约定：
 
 ---
 
-## 六、wiseflow 扩展文件（非 openclaw 原生）
+## 六、xiaobei 扩展文件（非 openclaw 原生）
 
-以下文件是 wiseflow 的约定扩展，**openclaw 框架不会自动处理**，由脚本或 agent 按需读取后写入 `openclaw.json`。
+以下文件是 xiaobei 的约定扩展，**openclaw 框架不会自动处理**，由脚本或 agent 按需读取后写入 `openclaw.json`。
 
 ### 6.1 DECLARED_SKILLS — 外部 crew 技能白名单
 
@@ -141,27 +141,22 @@ agent 应在 `AGENTS.md` 中明确记录此约定：
 
 ## 七、各 Crew 文件配置速查
 
-### 内置 Crew（对内，T3）
+> **2026-07-04 修订（D8 扁平化 + D19 权限放开）**：从 Pro 仓 addons 层级结构改为 client 仓扁平结构。原 `hrbp` / `selfmedia-operator` / `business-developer` / `designer` 全部合入 `main`（AI 搞钱搭子「小贝」）。`main` / `content-producer` / `it-engineer` 升为 T3 full，`sales-cs` 维持 T0。（产品拆分决策已落地，历史规划文档已清理，可从 git 历史恢复。）
 
-| Crew | 特殊文件 | 备注 |
-|------|---------|------|
-| main | 标准 8 个文件 | 无 DECLARED_SKILLS/BUILTIN_SKILLS（直接由 config-templates 配置） |
-| hrbp | 标准 8 个文件 + EXTERNAL_CREW_REGISTRY.md | EXTERNAL_CREW_REGISTRY.md：已招募外部 crew 的注册表 |
-| it-engineer | 标准 8 个文件 | 无 |
+### 内置 Crew（对内，T3 full — D19 已落）
 
-### Official Addon Crew（对内，T2）
+| Crew | 角色 | 特殊文件 | 备注 |
+|------|------|---------|------|
+| `main` | DEFAULT — AI 搞钱搭子「小贝」（OPC / 中小微企业老板） | 标准 8 个文件 | 整合原 selfmedia-operator + business-developer + IR 三模式；绑 openclaw-weixin |
+| `content-producer` | 内容制作（视频 / 图像） | 标准 8 个文件 | 整合原 video-producer + designer |
+| `it-engineer` | sub-agent，无 channel | 标准 8 个文件 + D19/D20/部署运维知识（注入到 MEMORY 顶部） | Phase 8.1 记忆注入已完成（2026-07-04） |
+| `_template` | crew 创建模板 | 标准 8 个文件 | D8 扁平化时搬入 |
 
-| Crew | BUILTIN_SKILLS 关键技能 | DENIED_SKILLS 关键技能 |
-|------|------------------------|----------------------|
-| selfmedia-operator | `summarize`, `wenyan-publisher`, `twitter-post`, `tiktok-post`, `instagram-post`, `youtube-upload`, `siliconflow-img-gen`, `gifgrep`, `video-frames` | `github`, `gh-issues`, `coding-agent`, `connections-optimizer`, `email-ops`, `pitch-deck`, `social-graph-ranker` |
-| business-developer | `summarize`, `affiliate-marketing`, `cold-outreach`, `twitter-post`, `instagram-post`, `connections-optimizer`, `email-ops`, `pitch-deck`, `social-graph-ranker` | `github`, `gh-issues`, `coding-agent` |
-| designer | `siliconflow-img-gen`, `summarize` | `github`, `gh-issues`, `coding-agent`, `connections-optimizer`, `email-ops`, `pitch-deck`, `social-graph-ranker` |
+### 外部 Crew（对外，T0 — D19 维持）
 
-### Official Addon Crew（对外，T0）
-
-| Crew | DECLARED_SKILLS 关键技能 | ALLOWED_COMMANDS 关键脚本 |
-|------|------------------------|--------------------------|
-| sales-cs | `nano-pdf`, `session-logs`, `summarize`, `gifgrep`, `weather`, `customer-db`, `demo_send`, `exp_invite`, `payment_send`, `proactive-send` | `./skills/customer-db/scripts/*.sh`, `./skills/exp_invite/scripts/invite.sh`, `./skills/proactive-send/scripts/send.sh` 等 |
+| Crew | 角色 | 特殊文件 | 备注 |
+|------|------|---------|------|
+| `sales-cs` | 销售客服 | 标准 8 个文件 + `DECLARED_SKILLS` + `ALLOWED_COMMANDS` | 默认 seed 不在 openclaw.json；绑 awada（启用时由 IT 改 enabled+软链 `business_knowledge/`） |
 
 ---
 

@@ -1,12 +1,7 @@
 {
   "browser": {
     "enabled": true,
-    "headless": false,
-    "defaultProfile": "openclaw",
-    "extraArgs": [
-      "--window-size=1920,1080",
-      "--window-position=0,0"
-    ],
+    "headless": true,
     "ssrfPolicy": {
       "dangerouslyAllowPrivateNetwork": true
     }
@@ -68,6 +63,9 @@
       "imageModel": {
         "primary": "aihubmix/gpt-5.5"
       },
+      "memorySearch": {
+        "provider": "none"
+      },
       "models": {
         "aihubmix/gpt-5.5": {
           "alias": "default"
@@ -80,9 +78,9 @@
         "mode": "safeguard"
       },
       "thinkingDefault": "medium",
-      "maxConcurrent": 2,
+      "maxConcurrent": 3,
       "subagents": {
-        "maxConcurrent": 2,
+        "maxConcurrent": 4,
         "announceTimeoutMs": 3600000,
         "maxSpawnDepth": 2
       }
@@ -91,7 +89,7 @@
       {
         "id": "main",
         "default": true,
-        "name": "Main Agent",
+        "name": "小贝",
         "workspace": "~/.openclaw/workspace-main",
         "skills": [
           "nano-pdf",
@@ -110,7 +108,7 @@
         "tools": {
           "exec": {
             "host": "gateway",
-            "security": "allowlist",
+            "security": "full",
             "ask": "off"
           }
         },
@@ -409,7 +407,7 @@
         "enabled": true,
         "config": {
           "dreaming": {
-            "enabled": true
+            "enabled": false
           }
         }
       },

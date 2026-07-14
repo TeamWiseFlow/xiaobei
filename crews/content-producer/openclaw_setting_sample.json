@@ -1,0 +1,8 @@
+{
+  "skills": ["siliconflow-tts", "manim-explainer", "remotion-video-creation", "ui-demo", "hyperframes-video-creation", "siliconflow-img-gen", "siliconflow-video-gen", "pexels-footage", "pixabay-footage", "smart-search", "complex-task"],
+  "subagents": {
+    "allowAgents": ["it-engineer", "designer"]
+  },
+  "maxConcurrent": 2,
+  "tools": {}
+}

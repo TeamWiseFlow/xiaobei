@@ -1,0 +1,26 @@
+diff --git a/extensions/browser/src/browser/client-fetch.ts b/extensions/browser/src/browser/client-fetch.ts
+index 82f6d16251..f60958ec16 100644
+--- a/extensions/browser/src/browser/client-fetch.ts
++++ b/extensions/browser/src/browser/client-fetch.ts
+@@ -108,7 +108,7 @@ function isRateLimitStatus(status: number): boolean {
+   return status === 429;
+ }
+ 
+-type BrowserControlOwnership = "local-managed" | "external-browser" | "unknown";
++type BrowserControlOwnership = "external-browser" | "unknown";
+ 
+ function resolveDispatcherBrowserControlOwnership(url: string): BrowserControlOwnership {
+   if (isAbsoluteHttp(url)) {
+@@ -123,9 +123,9 @@ function resolveDispatcherBrowserControlOwnership(url: string): BrowserControlOw
+     if (!profile) {
+       return "unknown";
+     }
+-    return profile.driver === "openclaw" && profile.cdpIsLoopback && !profile.attachOnly
+-      ? "local-managed"
+-      : "external-browser";
++    // local-managed (OpenClaw-managed local Chromium) was replaced by camoufox;
++    // all remaining profiles are external browsers.
++    return "external-browser";
+   } catch {
+     return "unknown";
+   }

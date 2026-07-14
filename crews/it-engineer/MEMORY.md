@@ -1,183 +1,196 @@
-# IT Engineer Agent — Memory
+# IT Engineer Agent - Memory
 
-## 关于 wiseflow 项目
+## 内置运维知识
 
-项目背景、功能介绍和目录结构详见工作区中的**项目背景.md**（由部署脚本自动同步，每次升级均为最新版）。
+### 权限策略
 
----
+- **内 crew（main / content-producer / it-engineer）**：`crew-type: internal` → `exec-approvals.json` 给 `security: full`（无白名单）。
+- **对外 crew（sales-cs）**：`crew-type: external` + 显式 `ALLOWED_COMMANDS` `+` 条目 → `security: allowlist`（只放行声明脚本，prompt injection 防线）；无 `+` 条目的对外 crew → `deny`。
 
-## Crew 通讯录（只读参考）
-- 对内 Crew 通讯录：`~/.openclaw/crew_templates/TEAM_DIRECTORY.md`（由 Main Agent 维护，IT Engineer 只读）
-- 对外 Crew 注册表：`~/.openclaw/workspace-hrbp/EXTERNAL_CREW_REGISTRY.md`（由 HRBP 维护，IT Engineer 只读）
-- Crew 的增删改**不属于 IT Engineer 职责**；遇到 crew 相关配置��题，IT Engineer 可读取以上文件辅助排查，但不主动修改 crew 配置
+### skill 依赖策略
 
----
+#### 镜像预装常用包
 
-## 安装路径（由 setup-crew.sh 自动维护）
+内置技能所需依赖已经在部署环境中。
 
-> 实际项目路径记录在 `OFB_ENV.md`（同目录），每次运行 `setup-crew.sh` 自动更新。
-> 执行任何脚本前，先读取该文件确认路径，再 `cd <PROJECT_ROOT>` 后调用 `./scripts/xxx.sh`。
->
-> **禁止直接运行 `openclaw` 命令**，只能通过项目脚本或在 `openclaw/` 子目录内用 `pnpm openclaw` 调用。
+#### awada 插件依赖（ws + zod）
 
----
+- **Docker 部署**：Dockerfile wiseflow-layer 阶段 `COPY awada/ + npm install --omit=dev`，ws+zod 烘进 `/opt/openclaw/awada/node_modules`。
+- **源码部署**：`apply-addons.sh` 自动 `cd awada && npm install --omit=dev`（哈希守卫 `.awada-pkg-hash`，幂等）。
+- **关键点**：awada 插件运行时从自身 `awada/node_modules` 解析 ws/zod，**不**走 `~/.openclaw/node_modules`（不在向上解析链），故必须装在 awada 局部，不能靠统一依赖扫描。
+- **Phase 4 已完成**（2026-07-07）：awada 改 HTTP/WS transport 调 relay 网关，ioredis 已从 deps 移除，预装步骤改装 ws+zod。proactive-send skill 同步迁 HTTP 网关，不再依赖 ioredis。
+- **IT engineer 介入时机**：仅当日志报 `Cannot find module 'ws'`（plugin=awada）且上述预装漏跑时，按 `awada-channel-setup` SKILL 步骤 1 手动补装。
 
-## AWADA Extension 知识（运维必备）
+#### volume 扩展
 
-### AWADA 是什么（定义与适用场景）
-- `awada-server` 是部署在公网服务器的中转服务，解决"本地 OpenClaw 无固定公网 IP"但仍需接入第三方消息平台 webhook 的问题。
-- `awada-extension` 是本地 OpenClaw 的 channel 插件，通过 Redis Streams 与 awada-server 双向通信。
-- 典型场景：
-  - WorkTool / QiweAPI 等要求固定公网回调地址
-  - 多渠道统一接入后分发给不同 OpenClaw 实例
-  - 企业希望 remote→local 全链路 self-host
+- 用户额外装 skill 时的依赖路径：
+  - **Python**：`pip install --target ~/.openclaw/skills/<skill>/vendor/ <pkg>`（PYTHONPATH 由 `docker-entrypoint.sh` 注入）
+  - **Node**：`cd ~/.openclaw/skills/<skill> && npm install <pkg>`（局部 `node_modules`）
+- 重启不丢（volume 持久化）
 
-### AWADA 架构要点
-- 上行链路：
-  - 用户消息 -> WorkTool/QiweAPI webhook -> awada-server -> `awada:events:inbound:<lane>` -> awada-extension -> OpenClaw agent
-- 下行链路：
-  - OpenClaw agent 回复 -> `awada:events:outbound:<lane>` -> awada-server -> 用户侧平台
-- 核心组件职责：
-  - `awada-server`：接 webhook、写 inbound stream、消费 outbound 并回发
-  - `Redis`：事件总线（按 lane 分流）
-  - `awada-extension`：订阅 inbound、提交 outbound
+#### 依赖安装规范
 
-### 本地 channel 配置（openclaw.json）
-- 配置入口：`channels.awada`
-- 最小必填项：
-  - `enabled: true`
-  - `redisUrl`
-  - `lane`（单实例只绑定一个 lane，通常 `user` 或 `admin`）
-  - `platform`（需与 awada-server 端 `BOT_N_PLATFORM` 对齐）
-- 常用可选项：
-  - `consumerGroup`（默认 `openclaw`）
-  - `consumerName`（多实例需唯一）
-  - `dmPolicy` / `allowFrom`
-  - `maxRetries` / `blockTimeMs` / `batchSize`
-  - `perMsgMaxLen`：单条消息最大字符数，超长回���自动拆分多条发送（微信等平台有单消息长度限制时必设）
-- Redis URL 示例：
-  - `redis://HOST:PORT/DB`
-  - `redis://:PASSWORD@HOST:PORT/DB`
+- **何时装**：
+  - skill 报错 `ModuleNotFoundError: No module named 'xxx'` → 装 xxx 到该 skill 的 vendor
+  - skill 报错 `Cannot find module 'xxx'`（Node）→ 装 xxx 到该 skill 局部 node_modules
+- **何时**不**装**：
+  - skill 内 import 但镜像已预装（按镜像预装策略） → 检查 image 是否完整 / 用户是否漏装
+  - 通用依赖（如 requests、Pillow）应已在镜像，不需用户装
+- **依赖冲突处理**：
+  - **Python**：vendor 目录是隔离的（每个 skill 独立），不冲突；如果跨 skill 同名不同版本需求 → 各自装各自的 vendor
+  - **Node**：局部 node_modules 可能与全局 openclaw 依赖冲突 → 用 `npm install --save-prefix=~` 避免锁到特定 patch 版本
+- **it-engineer 介入**：
+  - 用户报告"skill 不能用" → 1）查 `~/.openclaw/logs/gateway-error.log` 2）确认 `pip list --target ~/.openclaw/skills/<skill>/vendor/` 或 `ls ~/.openclaw/skills/<skill>/node_modules/` 3）按需装
+  - **不**主动更新 skill 自带的依赖版本（避免破坏 skill 兼容性）
+- **特殊场景**：
+  - **镜像重建后**（用户重 deploy Docker 镜像）→ 镜像预装的包恢复；vendor 目录在 volume 持久化不受影响
+  - **本机源码部署**（非 Docker）→ 直接 `pip install <pkg>` 到系统 Python 即可（无 vendor 隔离需要），或者按 volume 扩展模式到 skill 子目录
 
-### 客服场景配置要点
+### camoufox-cli 排故
 
-1. **`channels.awada.perMsgMaxLen`**(如 `1800`):微信对单条消息有长度限制,超长回复会被截断。设置此项后,awada-extension 会在发送层自动将长回复拆分为多条,不影响 LLM 生成。
+- **指纹模板 bake**（Docker 镜像内）：`/root/.openclaw/logins/_template/camoufox-cli.json`，由 `Dockerfile wiseflow-layer` 阶段跑 `camoufox-cli --session _template --persistent open about:blank`（默认 headless）生成。
+- **运行时模板复用**：每个 agent session 启动前 `cp /root/.openclaw/logins/_template/camoufox-cli.json ~/.camoufox-cli/profiles/<session>/`。
+- **约束**：不 fork camoufox-cli / 不 bake chromium / 每 agent 一 session / 独立 profile dir / 独立 cookie state。
+- **常见问题**：
+  - `camoufox-cli open` 超时 → `camoufox-cli close --all` 清残留 + 重试
+  - `qr-confirm` 轮询不到成功 → 用户手机上确认后再说；不要盲等超过 `--timeout`（默认 180s）
+  - `cookie-import` 后访问仍 401 → cookies 过期 / 域不匹配；重新走登录流
+  - daemon 残留 → `camoufox-cli close --all` 兜底；每任务结束必须 `session-cleanup`
 
-```json
-{
-  "channels": {
-    "awada": { "perMsgMaxLen": 500, "...": "其他配置" }
-  }
-}
-```
+### 运行数据中openclaw.json中禁止更改的项目
 
-2. 如需启动 customerDB hook（自动记录客户来访、更新状态等），需要在`plugins`字段下参考如下配置：
+如下`openclaw.json`中的项目严格禁止更改，如果如果用户明确要求更改，你也应向他解释理由，并再三征得确认：
 
-```json
-"plugins": [
-  {
-    "path": "{wiseflow 项目路径}/awada/awada-extension",
-    "config": {
-      "customerdb": {
-        "agentId": "sales-cs",
-        "workspaceDir": "/home/wukong/.openclaw/workspace-sales-cs"
-      }
-    }
-  }
-]
-```
+- browser模块：本系统已经对浏览器的使用做过优化，默认会使用camoufox-cli，Browser tool是作为托底手段去处理反爬特别严格的站点，openclaw.json中整个browser部分的配置已经是针对这种场景下的最佳配置。
 
----
+### LLM 模型参数约束(火山方舟 awk provider)
 
-### AWADA 排障检查单
-0. 若日志出现 `Cannot find module 'ioredis'`（plugin=awada）：
-   - 进入 awada-extension 目录安装依赖：
-     ```bash
-     cd <PROJECT_ROOT>/awada/awada-extension
-     pnpm install --prod
-     ```
-   - 该命令不是每次都要跑，仅在首次启用、`node_modules` 被清理、或 `package.json` 变更后执行
-0.1 若日志出现 ioredis 连接重试异常（如 `MaxRetriesPerRequestError`）：
-   - 先检查 `channels.awada.redisUrl` 是否是合法 URL
-   - 密码中如含 `@`、`#`、`!`、`%`，必须 URL 编码（如 `#` -> `%23`）
-   - 常见误配症状：URL 被解析后 host 异常（例如变成 `R3d1s`），导致探测连接持续失败
-1. awada-server 进程是否存活（pm2 / systemd）
-2. Redis 连通性是否正常（公网访问、密码、db）
-3. webhook 回调地址是否与平台后台配置一致
-4. openclaw `channels.awada` 的 `lane/platform` 是否与服务端 bot 配置匹配
-5. Channel 状态是否显示 connected，消息是否能完成收发闭环
+#### GLM 5.2 系列(模型 id `glm-latest` / 其他 GLM 5.2 变体)
 
----
+- **Provider 端点**:`https://ark.cn-beijing.volces.com/api/coding/v3`(provider alias `awk`)
+- **实际 max_tokens 上限**:**128000**
+- **模型卡 / 官方文档标的**:131072(**这是 GLM 模型本身的能力上限**,但火山方舟 `coding/v3` 端点把它截到 128000)
+- **错误症状**:所有请求 `400 The parameter 'max_tokens' specified in the request are not valid: integer above maximum value, expected a value <= 128000, but got 131072 instead`
+- **openclaw.json 正确配置**:`maxTokens: 128000`
 
-## 如何更新 wiseflow 系统
+### 某个 agent 全报 "Something went wrong"处置方案
 
-### 升级命令
+1. **看 gateway-error.log**(`/home/wukong/wiseflow-pro/logs/gateway-error.log`),找 `embedded run agent end: isError=true` + 紧跟的 `error=LLM request failed` 行。
+2. **看 sessions.json 里那个 agent 的 modelOverride**(`~/.openclaw/agents/<agent>/sessions/sessions.json`,key 是 `agent:<agent>:feishu:direct:<user_ouid>`):
+   - 如果有 `modelOverride` + `modelOverrideSource: "user"` → 说明之前 `/model <xx>` 把会话锁死在那个模型上了。
+   - **修复**:用户在该 agent 对话里发 `/model <默认主模型>`,或 IT Engineer 删掉 sessions.json 里的 `modelOverride/providerOverride/modelOverrideSource` 三个字段(注意先 `cp` 备份 `.bak-<日期>`)。
+   - **原因**:用户用 `/model` 切换是持久化的,`/new` 不会清。
+3. **如果错误是 `max_tokens` 超过 provider 上限**:改 `openclaw.json` 里那个模型的 `maxTokens`。注意备份,hot-reload 通常生效。
+
+### ⚠️ 重大警告：`pnpm openclaw <subcommand>` 会触发 build，在运行中的 Gateway 上使用会掏空系统
+
+**防范规则（勿犯）**：
+
+1. **永远不要在生产 Gateway 运行中调用 `pnpm openclaw <任何子命令>`**，包括看起来“只读”的 `cron list`、`cron show`、`cron runs`、`config get` 等。只要走 `pnpm openclaw` 入口，都会触发 build。
+2. **查询/操作 cron、config、会话状态、系统状态都走 MCP 工具**：
+   - cron 查询/增删改 → `cron` MCP 工具（不触发 build，不写 dist）
+   - config 查询/修改 → `gateway` MCP 工具的 `config.get` / `config.patch` / `config.apply`
+   - 会话状态 → `sessions_list` / `sessions_history` / `session_status`
+3. **如果实在需要走 CLI**：优先看项目里的 `dist/` 是否已 build 过且是热的，可以直接 `node dist/index.js <subcommand>` 跳过 npm script 的 build wrapper；但在生产上也不推荐。
+4. **对话里跟用户呈现任何 cron/config 信息**：走 MCP 工具拿到结果。
+
+**反例（禁止）**：
 ```bash
-cd <PROJECT_ROOT>
-./scripts/upgrade.sh
+cd /home/wukong/wiseflow-pro/openclaw && pnpm openclaw cron list
+cd /home/wukong/wiseflow-pro/openclaw && pnpm openclaw config get
+cd /home/wukong/wiseflow-pro/openclaw && pnpm openclaw doctor --fix
+# 以上三条都会触发 build，都是雷区。
 ```
 
-`upgrade.sh` 会依次：
-1. 拉取最新代码（`git reset --hard origin/main`）
-2. 读取 `openclaw.version`，按锚定 commit 检出 openclaw 引擎
-   - 若已是目标 commit，跳过 install/build
-3. 安装 / 更新依赖（`pnpm install`）并重新构建（`pnpm build`）
-4. 重新应用 addons + 同步 crew 配置（`apply-addons.sh` 内含 `setup-crew.sh`）
+**正例（推荐）**：
+```
+MCP cron 工具调用，action="list" / "get" / "add" / "update" / "remove" / "run" / "runs"
+MCP gateway 工具调用，action="config.get" / "config.patch" / "config.apply" / "restart"
+```
 
-升级完成后通常需要重启服务（详见 AGENTS.md **服务重启流程**）。
+| 需求 | 工具 |
+|------|------|
+| cron 查询 / 增删改 / 运行历史 / 手动触发 | `cron` MCP 工具 |
+| config 查询 / 修改 / 应用 / 重启 Gateway | `gateway` MCP 工具 |
+| 会话 查询 / 历史 / 状态 / 送信 / spawn | `sessions_list` / `sessions_history` / `session_status` / `sessions_send` / `sessions_spawn` |
+| 节点 / 文件传输 / 调用 | `nodes` / `file_fetch` / `file_write` / `dir_list` / `dir_fetch` |
+| 技能架库 增删改查 | `skill_workshop` |
 
----
+### ⚠️ OpenClaw binding routing 的关键坑
 
-## 定时任务（Cron）维护方案
+**坑 1：binding 不写 `accountId` 时不会"通配所有 account"** — `src/routing/resolve-route.ts` 里的 `normalizeBindingMatch` 把没填的 `match.accountId` 视为 `""`（`DEFAULT_ACCOUNT_ID` = `"default"`），路由查找时只匹配 `accountId="default"` 的请求。**没有匹配的 binding 时回退到 `resolveDefaultAgentId` = default agent（main）**，看起来 binding 写了但消息还是去 default agent。
 
-> **v2026.6.6 起**：cron 存储已从 JSON 文件迁移至 SQLite，**禁止再编辑任何 JSON 文件**。
+**正确做法**（任何 binding 改 channel 路由都要写 `accountId`）：
+- 想通配所有 account：用 `"accountId": "*"`（会进 `byAnyAccount` 桶）
+- 想精确匹配某个 account：用具体 account id
 
-### 存储变更
+**坑 2：routing 缓存 `resolvedRouteCacheByCfg` 不会因 SIGUSR1 hot-reload 重置** — 它是 `WeakMap<OpenClawConfig, ...>`，基于 cfg 对象引用判断，hot-reload 不换 cfg 引用所以不重置。改 binding 后必须用 `systemctl --user restart openclaw-gateway.service` 完整重启（这会断所有 session，因此执行前必须告知用户并征得同意）。
 
-| 项目 | 旧方案（已废弃） | 新方案（当前） |
+**坑 3：sessions.json 中的旧 session entry 会"劫持"新消息** — openclaw 看到有 `(channel, peer) → sessionId` 的 entry 直接复用，agent 也按 entry 里绑的来，跟 binding 无关。改 binding 之前/之后都要查 `agents/<agent>/sessions/sessions.json` 把这个 entry 删掉，否则即使 binding 改对了，session 缓存仍把消息路由回旧 agent。
+
+### 定时任务(Cron)维护方案
+
+> **v2026.6.6 起**:cron 存储已从 JSON 文件迁移至 SQLite,**禁止再编辑任何 JSON 文件**。
+
+#### 存储变更
+
+| 项目 | 旧方案(已废弃) | 新方案(当前) |
 |------|------------------|----------------|
 | Job 定义 | `~/.openclaw/cron/jobs.json` | SQLite 表 `cron_jobs` |
 | 运行时状态 | `~/.openclaw/cron/jobs-state.json` | SQLite 同表内字段 |
 | 运行日志 | `~/.openclaw/cron/runs/*.jsonl` | SQLite 表 `cron_run_logs` |
-| 数据库位置 | — | `~/.openclaw/state/openclaw.sqlite` |
+| 数据库位置 | - | `~/.openclaw/state/openclaw.sqlite` |
 
-旧文件已被 `openclaw doctor --fix` 重命名为 `.migrated` 后缀，数据已导入 SQLite。`.migrated` 文件可安全删除。
+旧文件已被 `doctor --fix`（上游升级后一次性迁移，由用户手动调用）重命名为 `.migrated` 后缀,数据已导入 SQLite。`.migrated` 文件可安全删除。
 
-### 日常管理命令
+> ⚠️ **生产 Gateway 运行中，不得调用 `pnpm openclaw cron ...` / `node dist/index.js cron ...` 任何 CLI 入口**。它会触发重新 build 并写运行中 Gateway 共享的 `dist/`，多次连续调用可能导致系统崩溃。一律走 MCP `cron` 工具。
 
-> ⚠️ **禁止直接运行 `openclaw` 命令**（不在系统 PATH 中）。
-> 必须先 `cd` 到 openclaw 子目录，通过 `pnpm openclaw` 调用。
-> 项目路径见同目录 `OFB_ENV.md`，以下用 `<OC>` 代指 `<WISEFLOW_PROJECT_ROOT>/openclaw`。
+**正确姿势（MCP `cron` 工具，零 build、零 dist 写入）**：
 
-```bash
+```
 # 查看所有定时任务
-cd <OC> && pnpm openclaw cron list
+cron(action="list")
 
-# 查看某个任务详情（含投递路由预览）
-cd <OC> && pnpm openclaw cron show <job-id>
+# 查看某个任务详情
+cron(action="get", jobId="<job-id>")
 
-# 新增定时任务
-cd <OC> && pnpm openclaw cron add "0 8 * * *" "任务描述" --name "任务名" --agent <agent-id>
+# 新增定时任务（完整 schema 见工具描述：schedule 、payload、delivery、sessionTarget 等）
+cron(action="add", job={
+  "name": "任务名",
+  "agentId": "<agent-id>",
+  "schedule": {"kind": "cron", "expr": "0 8 * * *", "tz": "Asia/Shanghai"},
+  "payload": {"kind": "agentTurn", "message": "任务描述"},
+  "sessionTarget": "isolated",
+  "delivery": {"mode": "announce", "channel": "feishu", "to": "user:ou_xxx"}
+})
 
-# 编辑任务（修改调度/投递/模型等）
-cd <OC> && pnpm openclaw cron edit <job-id> --announce --channel feishu --to "user:ou_xxx"
-cd <OC> && pnpm openclaw cron edit <job-id> --model "provider/model"
+# 启用 / 禁用
+cron(action="update", jobId="<job-id>", patch={"enabled": true})
+cron(action="update", jobId="<job-id>", patch={"enabled": false})
 
-# 启用/禁用任务
-cd <OC> && pnpm openclaw cron edit <job-id> --enabled    # 启用
-cd <OC> && pnpm openclaw cron edit <job-id> --no-enabled # 禁用
+# 修改投递目标
+cron(action="update", jobId="<job-id>", patch={
+  "delivery": {"mode": "announce", "channel": "feishu", "to": "user:ou_xxx"}
+})
+
+# 修改模型覆盖
+cron(action="update", jobId="<job-id>", patch={
+  "payload": {"model": "provider/model"}
+})
 
 # 删除任务
-cd <OC> && pnpm openclaw cron remove <job-id>
+cron(action="remove", jobId="<job-id>")
 
-# 手动触发一次
-cd <OC> && pnpm openclaw cron run <job-id>
+# 手动触发一次（默认仅在到期时走，加 runMode="force" 立刻触发）
+cron(action="run", jobId="<job-id>", runMode="force")
 
 # 查看运行历史
-cd <OC> && pnpm openclaw cron runs --id <job-id> --limit 20
+cron(action="runs", jobId="<job-id>", limit=20)
 ```
 
-### 直接查询 SQLite（排查用）
+#### 直接查询 SQLite（只读排查用）
+
+SQLite 只读查询不会触发 build，安全。但 **不得直接 UPDATE/INSERT/DELETE `cron_jobs` 表**，会跟 MCP 的状态机、`job_json` 冲突。
 
 ```bash
 # 列出所有 job 及关键字段
@@ -187,35 +200,21 @@ sqlite3 ~/.openclaw/state/openclaw.sqlite \
 # 查看最近运行记录
 sqlite3 ~/.openclaw/state/openclaw.sqlite \
   "SELECT job_id, seq, datetime(ts/1000, 'unixepoch', 'localtime') as time, status, error FROM cron_run_logs ORDER BY ts DESC LIMIT 20;"
-
-# 修改投递目标（紧急调整时使用，正常应走 openclaw cron edit）
-sqlite3 ~/.openclaw/state/openclaw.sqlite \
-  "UPDATE cron_jobs SET delivery_to = 'user:ou_新ID' WHERE job_id = '目标job-id';"
 ```
 
-### 迁移操作（仅升级后首次需要）
+修改、增删都走 MCP `cron` 工具，**不允许手工 SQL 修改这些表**。
 
-```bash
-cd <OC> && pnpm openclaw doctor --fix
-```
+#### 迁移操作（如需要）
 
-该命令会将 `jobs.json`、`jobs-state.json`、`runs/*.jsonl` 导入 SQLite，并将原文件重命名为 `.migrated`。**已迁移过则无需再执行**。
+1. 读取`~/.openclaw/cron/job.json` 文件，获取目前的定时任务配置。
+2. 按上使用`cron`MCP工具进行配置。
 
-### 重要提醒
+#### 重要提醒
 
-1. **禁止手动编辑** `~/.openclaw/cron/` 下的任何 JSON 文件，它们已不再被运行时读取
-2. **禁止直接修改** SQLite 中 `job_json` 列（它是完整 job 定义的冗余快照），应通过 `openclaw cron edit` 修改，CLI 会同时更新结构化列和 `job_json`
-3. `delivery_to` 等结构化列的紧急修改可直接 UPDATE，但后续应通过 CLI 确认一致性
-4. cron 运行在 Gateway 进程内，修改后立即生效，无需重启
+1. **禁止手动编辑** `~/.openclaw/cron/` 下的任何 JSON 文件,它们已不再被运行时读取
+2. **禁止手动 UPDATE/INSERT/DELETE** SQLite 中 `cron_jobs` / `cron_run_logs` 表；必须走 MCP `cron` 工具，CLI 会同时更新结构化列和概念上的 `job_json` 快照
+3. cron 运行在 Gateway 进程内,修改后立即生效,无需重启
 
 ---
 
-## 常见故障与解决方案
-
-（在排查故障后将解决方案记录在此，方便复用）
-
----
-
-## 部署记录
-
-（首次部署和重要变更记录）
+## 运行中持续积累的经验

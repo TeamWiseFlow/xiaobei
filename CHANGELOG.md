@@ -1,3 +1,119 @@
+# v5.6.0 (2026-07-12)
+
+### 浏览器栈整体替换（双线栈，spec `docs/browser-stack-replacement-spec-2026-07.md`）
+
+> 2026-07-11 ~ 07-12 落地。调研结论见 `docs/browser-extension-replacement-research.md` §12（架构转向，优先级最高）。
+
+**双线浏览器栈**（替代原"整体替换 extension"路线）：
+
+- **线 1（日常主力）**：新增 `target=camoufox`（默认）→ forked camoufox-cli 走旁路，绕开 routes/、pw-session、chrome-mcp。反指纹 Firefox + JSON-over-unix-socket。
+- **线 2（特殊情况 fallback）**：保留 `target=host`（existing-session 真机 Chrome + chrome-mcp relay）+ `target=node`（remote-cdp 远端 Chrome）。routes/ 层不动。
+- **删 sandbox 整条路**（容器 + bridge + facade + `agents.defaults.sandbox.browser` 配置）+ **删 host `local-managed` 分支**（不再额外下 Chromium）+ **patchright 整体去掉**（`overrides.sh` 不再注入 patchright-core，playwright-core 保留给 remote-cdp 用）。
+
+**§1 fork camoufox-cli**（commit `24c1bf1`）：
+
+- vendored 进 `patches/camoufox-cli/`（flat layout，基线上游 `Bin-Huang/camoufox-cli@0.6.2`），不另起 repo、不 npm 发布。`build.sh` 全局安装（`npm install -g .` link，bin → `dist/cli.js`），全局版本 `0.6.2-wiseflow.1`。
+- **三个新功能**（spec §1.1 必改）：
+  - `upload @ref|selector <file> [more files...]` — Playwright `setInputFiles`，variadic，缺文件 fail-fast。发布类技能依赖。
+  - daemon **fail-first 队列** — 同 session 并发命令直接 fail 返回 `session <name> 正忙，请等待当前操作完成后再试`，`close` bypass（recovery）。不排队不等待，agent 读到 fail 文本知道发生了什么。
+  - `identity [export <f>]` — 导出有效 UA + 指纹摘要（fingerprintHash），与 `cookies export` 对称（对应原则 4 cookie+UA 双导出）。
+- code-review 后两处修复：HIGH 测试隔离（`server-queue.test.ts` 的 `queueState.calls` + firstGate 在 `beforeEach` 重置）+ MEDIUM daemon 挂起（`activeConnections` Set + `forceExit` 构造选项，`wait 999999999` + `close` 不再 linger）。
+- 测试：`cli.test.ts` 加 upload/identity 解析 + `server-queue.test.ts` 新文件（fail-first + close bypass）。`npm test` 非 e2e 全过（173 passed）。`tests/e2e.test.ts` 1 失败（沙箱无 camoufox 浏览器二进制，557MB，`camoufox-cli install` 下，deferred 到 §11 step 7 真机验证）。
+
+**§2 extension 改造 + patches 重组**：
+
+- **001 monolith 拆成 35 个单文件 patch**（commit `c3fb7f9`）移至 `patches/browser-camoufox-pivot/patches/`，命名 `NN-{mod|del}-<path>.patch`，按文件名 sort 顺序应用。各 patch 改不同文件、彼此独立，上游漂一个文件只挂那一个 patch。干净上游逐个 `git apply --3way` + 全量端到端 dry-run 验证通过。
+- **adapter + 测试 ship 在 `patches/browser-camoufox-pivot/files/`**（`camoufox-cli.adapter.ts` 的 `executeCamoufoxCliAction` 翻译 17 action → forked cli daemon 命令，JSON-over-unix-socket 通信，daemon 生命周期 `ensureDaemon` 探活 + `spawn detached unref`，DI 注入便于测试，33 测试过）。
+- **default 改成 camoufox + upload 校验前置**（commit `b0fe815`）：`browser-tool.ts` 无 target 无 node 无 existing-session profile 时走 camoufox（description 同步 `Default: camoufox`）；`resolveExistingUploadPaths` 前置到 camoufox 早返回前，闭合 explicit target=camoufox+upload 绕过路径校验的 pre-existing 安全缺口。
+- **patch 处置**：002 留 / 003 删 / 005 删 / 006 删（`noDefaults` 是 patchright 1.60+ 专属，patchright 去掉后原版 playwright-core `connectOverCDP` 不支持）/ 007 留并改名 `007-prefer-camoufox-cli.patch`（system-prompt 引导与架构 patch 解耦，便于单独 revert/调序）。
+- **`overrides.sh`**：删 patchright-core 注入（pnpm override + doc sed 都删），保留 web_search disable。
+- **`docs/tools/browser.md`** 改成双线模型（`target` 枚举段：`camoufox|host|node`，sandbox/local-managed 标已删，camoufox 为默认日常主力）。
+
+**§2.3 setup-crew.sh 改造**（commit `ce28c38`）：
+
+- `scripts/lib/crew-workspaces.sh` 加 `sync_crew_skills` 函数（按 skill 粒度 `rm -rf + cp -R` 覆盖，不删部署实例独有 skill，带 package.json 的 skill 跑 `npm install --production`）。
+- `setup-crew.sh` §1 部署循环 fresh + exists 两个分支都调它，exists 分支不再只做 guide 注入。沙箱验证：自定义 skill 保留、同名 skill 被覆盖、npm 依赖装好。crew 专属 skill 更新现可传播到已部署 workspace。
+
+**§7 twitter-interact 恢复脚本模式**（commit `0c2e962`）：
+
+- AiToEarn clone 正好在 catchup commit `74e884f0`（v2.4.0），无 HEAD 差异要追。上游走 Twitter API v2 + OAuth，按「只吸收知识不搬架构」+ spec 要求 camoufox-cli，吸收操作语义（子命令结构 + 频率纪律），执行仍走 camoufox-cli。
+- `twitter_interact.py` 改造：单一持久化 session `twitter`（原则 1，去掉 per-task nonce）+ fail-first 队列检测（`SessionBusyError` → exit 3，busy 时不 close 避免 tear down 正在跑的操作）+ 登录错误消息改成有头（原则 3）。
+- 测试：`TestSessionNaming` 改断言常量 `twitter`，加 `TestFailFirstQueue` 验证 busy → exit 3 + 不 close。28/28 通过。
+
+**§8 profile 丢失处理**：
+
+- 新增 `docs/profile-loss-handling.md` canonical 程序：profile 丢失 / 损坏 / 指纹错配 → 重建 + 重登录，**绝对不允许导入 cookie 造会话**（补充 D，强化原则 5）。
+- 理由：xhs `a1`/`websectiga` 等设备指纹 cookie 导入到不同指纹会错配 → 被风控检测。2026-06-29 教训：凌晨心跳里 xhs-browse 无登录态，Agent 用 CDP `Network.setCookies` 注入 22 个 cookie 强造会话后批量抓取，当日触发小红书风控、账号被处罚。
+- camoufox-cli `cookies import` 合法用途仅限同指纹 profile 的 cookie 备份/恢复 + 跨设备迁移同一指纹（profile 整体搬，不是只搬 cookie）。
+- HEARTBEAT.md 约束 4 已落地「凌晨心跳跳过 + 等白天」策略，本文档补白天恢复流程。
+
+**§9 README.md / CHANGELOG.md 更新**：本条目 + README `**v5.6.0 更新**` 浏览器架构重新设计段 + `## 🔧 比原版更强、更适合国内网络环境的浏览器方案` patch 表更新 + `## 🤝 xiaobei 基于如下优秀的开源项目` 去掉 Patchright 加 camoufox（🦊 https://github.com/daijro/camoufox）。
+
+**§3-§6 并行中**（另一 agent）：browser-guide/smart-search/web-form-fill 三技能适配 + login-manager 纯指导化 + 9+ 平台 skill 改造 + wx-mp-hunter 收编。
+
+**核心原则**（用户拍板的 8 点 + 补充，详见 spec §0）：每平台一个且只一个持久化 session（原则 1）/ 需验证码必须 camoufox-cli 有头（原则 2）/ douyin·twitter·xhs·weibo·zhihu·xianyu·reddit·youtube 有头登录 + wechat-channel·wx-mp 无头截图 QR（原则 3）/ cookie+UA 双导出（原则 4）/ 严禁浏览器方案导入 cookie（原则 5）/ profile 丢失重建+重登录绝不导入（补充 D）/ 涉及登录持久化 + 不登录临时性 session（补充 A）。
+
+### 产品拆分（client 仓）
+
+- **client 仓独立成仓**：从 Pro 仓 `product-split/client` 分支切出独立仓 `wiseflow`（远程 `git@github.com:bigbrother666sh/wiseflow.git`），发布仓 `TeamWiseFlow/xiaobei.git`。
+- **relay 仓独立**：auth / sign / publish-relay / video-relay / tx-relay / awada-server 等服务搬到独立 PM2 仓 `wiseflow-relay`（`git-server:repos/wiseflow-relay.git`）。client 不持任何平台凭据，所有 relay 调用带 `X-OFB-Key` header。
+- **openclaw 版本锁定**：本仓 `openclaw.version` 锁 `v2026.6.10 / aa69b12d`，CI/release 按此 clone + checkout。
+- **patches 精简**：001（relax exec allowlist）+ 004（chrome port grace retry）已删，上游 6.10 已吸收或风险降级；保留 002/003/005/006。
+
+### D8 扁平化 + D15 删减 + addons 销毁 + awada 拍平
+
+- **D8**：原 `addons/officials/crew/{main,content-producer,it-engineer,sales-cs}` 拍平到 `crews/<crew-id>/`；公共技能统一在 `skills/`。
+- **D15**：删除所有不用的 addons 模板与脚本。
+- **awada 拍平**：原 `awada/awada-extension/` 改为 `awada/`（D8 一并）。
+- **D19 权限放开**（2026-07-03）：内 crew（main / content-producer / it-engineer）SOUL.md `command-tier: T3` + 清空 `ALLOWED_COMMANDS`；sales-cs 维持 `T0`。Docker 内对内全放开（消除 allowlist miss 摩擦），对外保留 prompt injection 防线。
+- **权限模型简化**（2026-07-07）：删 `command-tier`（T0~T3 四档抽象）字段，T1/T2 死代码清除。权限改由 `crew-type` + `ALLOWED_COMMANDS` 两源决定：`internal` → `full`；`external` → `deny`，有 `+` 条目则升级 `allowlist`。SOUL.md ×5 删 `command-tier` 行；`exec-tiers.sh` 重写；`inject_exec_guide` 改读 `crew-type`；内 crew 空 `ALLOWED_COMMANDS` 删除。
+
+### Phase 4.5 — camoufox-cli 集成
+
+- **login-manager 重写**：从 CDP WebSocket 抽 cookie 路径 → camoufox-cli cookies export。保留中央存储 `~/.openclaw/logins/{platform}.json`；新增 5 个子命令（`qr-headless` / `qr-confirm` / `cookie-export` / `cookie-import` / `session-cleanup`），加 `wx-mp` 平台（Phase 4.6）。25 单元测试全过。
+- **browser-guide 改写**：加 §0 camoufox-cli 主推章节（5 小节），§1-6 标 fallback。
+- **浏览器类 skill 收敛**：viral-chaser / content-calibrator / xhs-content-ops / xhs-interact 4 个 skill SKILL.md 改用 camoufox-cli 主推路径（修过期引用 + xhs-interact 全文重写 161+ 行）。
+- **指纹模板 bake**：Dockerfile `wiseflow-layer` 阶段加 camoufox-cli 指纹模板 bake，产物 `/root/.openclaw/logins/_template/camoufox-cli.json`。
+- **D18 约束**：不 fork camoufox-cli / 不 bake chromium / 每 agent 一 session。
+- **设计骨架**：`docs/phase-4.5-design.md`（4 子任务地图 + 接口契约 + D18 约束清单）。
+- **spike 报告**：`docs/camoufox-spike-2026-07.md`（指纹复用 + cookies export 验证通过）。
+
+### Phase 4.6 — 微信公众号 engagement 接入（方案 A 骨架）
+
+- **wx-mp-engagement skill 新建**：`crews/main/skills/wx-mp-engagement/`（SKILL.md + fetch_engagement.py + 15 单元测试）。camoufox 跑创作者中心抓阅读数/点赞数/评论数/分享数/收藏数 → 写 `pub_wx_mp`。
+- **published-track 集成**：`fetch-and-update-metrics.sh` 加 `wx_mp` 平台路由（直接 exec `wx-mp-engagement.sh fetch --row-id $ROW_ID`），`MANUAL_PLATFORMS` 移除 `wx_mp`。
+- **登录复用**：走 login-manager `wx-mp` 平台（中央 cookie）+ camoufox 扫码流程。
+- **限制**：仅支持用户**自己有后台权限的号**（创作者中心用公众号账号登录），竞品号拿不到。
+- **spike 验证待真机**：10 项 checklist 见 `docs/wechat-mp-engagement-design.md` §七，等统一部署后由用户跑。
+- **失败回退**：方案 A → B（容器内 mitmproxy + camoufox）→ C（维持 manual update）。
+
+### Phase 5 — img-gen 改火山方舟 Seedream 4.0（D13 决策）
+
+- **siliconflow-img-gen 改调火山方舟**：`/api/v3/images/generations`（非 `/coding/v3`）。默认 model `doubao-seedream-4-0-250828`，可选 5.0 lite / 3.0 t2i。
+- **API key 改 AWK_API_KEY**（D13 决策：img-gen Key 用户自带，纯客户端不入 server）。Skill 内全部 SiliconFlow / Qwen 引用清除。
+- **size 校验**：按火山文档（方式 1: 2K/3K/4K；方式 2: WxH，总像素 [2560×1440, 4096×4096]，宽高比 [1/16, 16]）。
+- **28 单元测试全过**：常量 / size 校验 / payload 构造 / API 请求 / env 校验 / CLI smoke。
+- **SKILL.md 全文重写**：火山方舟专属文档，保留与 SiliconFlow 路径对比表。
+
+### Phase 8.1 / 8.2 — IT engineer 记忆注入
+
+- **产品拆分后运维知识集中注入**：`crews/it-engineer/MEMORY.md` 顶部加 116 行新章节（D19 / D20 / login-manager / awada / camoufox 排故 / 4.6 engagement / 部署路径 / 升级策略）。
+- **D20③ 依赖安装规范**（pip `--target vendor` / npm 局部 / 冲突处理 / it-engineer 介入准则）。
+- **未动**：SOUL / IDENTITY / AGENTS（属 Phase 7 续暂缓部分，待下一阶段）。
+
+### 默认配置精简（开箱即用）
+
+- **记忆默认 fts-only**：`config-templates/openclaw.json` 与 `openclaw-aihubmix.json` 均加 `agents.defaults.memorySearch.provider = "none"`，新用户**无需开向量/embedding 模型**即可用记忆（走 FTS 全文检索）。
+- **dream 默认关闭**：`plugins.entries.memory-core.config.dreaming.enabled` 改 `false`，避免 3am 烧 token 和噪声日志；进阶用户可自行开启（README 有指引）。
+- **主力模型统一走 AWK**：`install.sh` 不再收集 `SILICONFLOW_API_KEY`，`_USER_PROMPT_KEYS="AWK_API_KEY"`；视觉/替补也走火山方舟 Coding Plan，一个 key 即可。
+
+### 脚本注入精简
+
+- **Python 调用规范挪进 `inject_exec_guide` 的 external-allowlist 分支**：原独立 `inject_python_exec_guide()` 删除，`setup-crew.sh` 4 处调用移除。内 crew 无 allowlist，该规范对内不成立，不再注入。
+- **`inject_env_file_guide()` 删除**：与 main / it-engineer AGENTS.md 已建立的"main 不直接写 env，spawn IT engineer；IT engineer 按 OFB_ENV.md 规范写入"约定重复，`setup-crew.sh` 中调用与 `_OFB_ENV_FILE` 计算块一并移除。
+
+---
+
 # v5.5.2
 
 ### Selfmedia Operator 视频制作与分发能力
@@ -9,14 +125,11 @@
   - `highlight-clipper`：从本地视频中通过 ASR 转录 + 文本分析自动提取高光片段，剪辑输出多段短视频
 - Selfmedia Operator引入科学的评估方案和自动复盘方案（发布前预测打分 -> 每日数据复盘 -> 根据复盘调整打分量表 -> 不断优化预测准确性)。以上已内置到所有平台的发布流程中，让运营工作不再“凭感觉”。
 
-### Smart Search重构
-- 采用路由模式。
-
 ### 主力模型切换为 GLM-5.2，推荐火山方舟 Coding Plan
 
 - `config-templates/openclaw.json` 主力模型由 DeepSeek V4 Pro 切换为 **GLM-5.2**（经火山引擎方舟 Coding Plan 接入，`awk/glm-latest`），fallback 为 siliconflow provider
 - `install.sh` 交互式收集的 key 由 `DEEPSEEK_API_KEY` 改为 `AWK_API_KEY`
-- 大模型推荐主推**火山方舟 Coding Plan**：支持 GLM-5.2、Kimi-K2.7、MiniMax-M3、DeepSeek-V4 系列、Doubao-Seed-2.0 系列等模型，工具不限；通过 wiseflow 邀请链接订阅叠加 9.5 折，首月尝鲜低至 9.4 元。邀请链接 https://volcengine.com/L/dx-wt80li-I/ ，邀请码 `5Y5A6L86`
+- 大模型推荐主推**火山方舟 Coding Plan**：支持 GLM-5.2、Kimi-K2.7、MiniMax-M3、DeepSeek-V4 系列、Doubao-Seed-2.0 系列等模型，工具不限；通过 xiaobei 邀请链接订阅叠加 9.5 折，首月尝鲜低至 9.4 元。邀请链接 https://volcengine.com/L/dx-wt80li-I/ ，邀请码 `5Y5A6L86`
 - siliconflow、aihubmix 推荐不变（siliconflow 仍需申请，作为视觉/替补模型）
 
 > 想使用 5.5.2 的视频生成能力，需额外开通火山方舟 doubao-seedance-2.0 系列或阿里云百炼 happyhorse-1.1 系列模型，并将对应 key（`AWK_GEN_KEY` 或 `MODELSTUDIO_API_KEY`）配置到 `daemon.env`。
@@ -28,7 +141,7 @@
 - **删除 patch 004**（chrome port grace retry）：上游新增 `ensureManagedChromePortAvailable` + `recoverOwnedStaleManagedChromeCdpListener`，命中 EADDRINUSE 时主动杀掉占用端口的陈旧 Chrome 进程并清 singleton lock 再重探，比 3×500ms 轮询更强
 - 保留 patch 002/003/005/006（验证 apply 通过，上游无等价改动）
 
-### 上游关键变更摘要（与 wiseflow 相关）
+### 上游关键变更摘要（与 xiaobei 相关）
 
 - **GLM-5.2（6.10）**：暴露 reasoning levels、GLM overload failover、Zai 合成模型回退 manifest baseUrl
 - **心跳（6.9）**：修复 5.20 及所有 5.x 上心跳 scheduler 不触发的回归（#88970）
@@ -193,9 +306,9 @@
 
 ### 架构调整
 
-- **patches 与 addon 分离**：将代码补丁（`patches/*.patch`）、插件（`patches/suppress-stale-reply`）和依赖覆盖（`patches/overrides.sh`）从 `addons/officials/` 迁移至项目根目录 `patches/`，作为 wiseflow 的共性基础能力，对所有 addon 生效。addon 不再支持 patches 层，仅提供额外全局技能和 Crew 模板。
+- **patches 与 addon 分离**：将代码补丁（`patches/*.patch`）、插件（`patches/suppress-stale-reply`）和依赖覆盖（`patches/overrides.sh`）从 `addons/officials/` 迁移至项目根目录 `patches/`，作为 xiaobei 的共性基础能力，对所有 addon 生效。addon 不再支持 patches 层，仅提供额外全局技能和 Crew 模板。
 
-- **默认全局技能重新划分**：`smart-search`、`browser-guide` 从 addon 专属技能迁移至 `skills/`（项目根目录），成为 wiseflow 所有 crew 默认可用的内置技能，无需依赖 official addon 即可生效。
+- **默认全局技能重新划分**：`smart-search`、`browser-guide` 从 addon 专属技能迁移至 `skills/`（项目根目录），成为 xiaobei 所有 crew 默认可用的内置技能，无需依赖 official addon 即可生效。
 
 - **`apply-addons.sh` 重构**：先应用 `patches/` 下的基础补丁和覆盖，再安装默认全局技能（`skills/`），最后逐 addon 安装额外技能和 Crew 模板。addon 加载流程简化为两层（skills → crew），移除原有的 overrides 和 patches 层。
 

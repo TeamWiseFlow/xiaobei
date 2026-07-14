@@ -1,37 +1,26 @@
 #!/bin/bash
-# apply-addons.sh - wiseflow 基础能力安装 + addon 加载器
+# apply-addons.sh - wiseflow 基础能力安装 + 补丁应用 + 配置同步
 #
-# 技能两级体系：
-#   - 默认全局 skills: skills/ (项目根目录) → 安装到 ~/.openclaw/skills/ (managed dir)
-#   - Addon 额外全局 skills: addons/<name>/skills/ → 安装到 ~/.openclaw/skills/ (managed dir)
-#   - Agent 专属 skills: crews/<template>/skills/ → 已由 setup-crew.sh 安装到 workspace
-#
-# 每次运行时：
+# Phase 7 续精简（2026-07-04）：删除原 addons/ 扫描循环（D8 扁平化后死代码）。
+# 本脚本现仅负责：
 #   1. 恢复 openclaw/ 到干净状态
 #   2. 应用基础补丁（patches/*.patch）+ 依赖覆盖（patches/overrides.sh）
-#   3. 安装默认全局 skills（项目根目录 skills/）
-#   4. 扫描 addons/*/ 目录，对每个 addon 依次执行：
-#      a. skills/*/SKILL.md — 额外全局 skill 安装
-#      b. crew/*/  — Crew 模板安装 + 可选自动实例化
+#   3. 安装默认全局 skills（项目根目录 skills/ → ~/.openclaw/skills/）
+#   4. 注入 awada 扩展路径 + 同步 openclaw.json skills 节点
+#   5. 合并全仓 npm / pip 依赖到 ~/.openclaw/node_modules + ~/.openclaw/lib/python
+#   6. 编译 dist + 重启 gateway service
+# Crew 模板安装由 setup-crew.sh 单独负责（扫顶层 crews/）。
 #
-# addon 目录结构：
-#   addons/<name>/
-#   ├── addon.json          # 元数据（名称、版本、描述）
-#   ├── skills/*/SKILL.md   # 可选：额外全局技能（所有 Agent 可见）
-#   └── crew/               # 可选：Crew 模板
-#       └── <template-id>/
-#           ├── SOUL.md ... HEARTBEAT.md  # 模板 workspace 文件
-#           ├── DENIED_SKILLS             # 可选：屏蔽特定内置 skill
-#           └── skills/*/SKILL.md         # 模板专属技能
+# 技能两级体系：
+#   - 公共 skills: skills/ (项目根目录) → ~/.openclaw/skills/ (managed dir, 所有 Agent 可见)
+#   - Agent 专属 skills: crews/<template>/skills/ → 由 setup-crew.sh 安装到 workspace
 set -e
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CREWS_DIR="$PROJECT_ROOT/crews"
-ADDONS_DIR="$PROJECT_ROOT/addons"
 OPENCLAW_DIR="$PROJECT_ROOT/openclaw"
 OPENCLAW_HOME="$HOME/.openclaw"
 CONFIG_PATH="$OPENCLAW_HOME/openclaw.json"
-HRBP_ADD_AGENT_SCRIPT="$PROJECT_ROOT/crews/hrbp/skills/hrbp-recruit/scripts/add-agent.sh"
 GLOBAL_SHARED_SKILLS_FILE="$OPENCLAW_HOME/GLOBAL_SHARED_SKILLS"
 FORCE=false
 SKIP_CREW=false
@@ -65,6 +54,14 @@ while [ $# -gt 0 ]; do
 done
 
 source "$PROJECT_ROOT/scripts/lib/crew-workspaces.sh"
+source "$PROJECT_ROOT/scripts/lib/skill-wrappers.sh"
+
+# 便携 md5：读 stdin 输出裸 hash。
+# Linux md5sum / macOS md5 命令名不同，且 macOS 无 md5sum（set -e 下会 abort）。
+# python3 是 openclaw 硬依赖，hashlib 跨平台最稳。
+_md5() {
+  python3 -c 'import hashlib,sys; print(hashlib.md5(sys.stdin.buffer.read()).hexdigest())'
+}
 
 GLOBAL_SHARED_SKILLS_RAW=""
 append_global_shared_skill() {
@@ -90,20 +87,62 @@ if [ -f "$PROJECT_ROOT/patches/overrides.sh" ]; then
   NEEDS_INSTALL=true
 fi
 
+# ─── 补丁应用 helper（两遍：先纯 --3way，失败回退容错 flags） ──────────
+# 纯 --3way 对 freshly-generated 补丁最稳，且能正确处理 deleted-file 条目
+# （--ignore-whitespace --whitespace=fix 会静默跳过删除）。
+# 仅当纯 --3way 失败（如上游 whitespace 漂移）才回退到容错 flags。
+apply_patch() {
+  local patch="$1"
+  echo "  → $(basename "$patch")"
+  if git apply --3way "$patch" 2>/dev/null; then
+    return 0
+  fi
+  git apply --3way --ignore-whitespace --whitespace=fix "$patch" 2>/dev/null || {
+    echo "  ❌ Failed to apply $(basename "$patch")"
+    echo "     Hint: 上游代码可能已变更，需重新生成此补丁"
+    exit 1
+  }
+}
+
 # ─── 应用基础补丁（patches/*.patch，按序号顺序） ─────────────────
 PATCHES_DIR="$PROJECT_ROOT/patches"
 if ls "$PATCHES_DIR"/*.patch 1>/dev/null 2>&1; then
   echo "🩹 Applying base patches..."
   cd "$OPENCLAW_DIR"
   for patch in $(ls "$PATCHES_DIR"/*.patch | sort); do
-    echo "  → $(basename "$patch")"
-    git apply --3way --ignore-whitespace --whitespace=fix "$patch" || {
-      echo "  ❌ Failed to apply $(basename "$patch")"
-      echo "     Hint: 上游代码可能已变更，需重新生成此补丁"
-      exit 1
-    }
+    apply_patch "$patch"
   done
   cd "$PROJECT_ROOT"
+  NEEDS_INSTALL=true
+fi
+
+# ─── 应用浏览器转向 per-file 补丁（patches/browser-camoufox-pivot/patches/）──
+# 原 001 monolith（35 文件）按「一个 patch 只改一个上游文件」拆成 35 个单文件
+# patch，降低上游漂移时的失效面：一个文件漂只挂一个 patch，其余照常应用。
+# 按文件名 sort 顺序应用（各 patch 改不同文件，彼此独立，顺序不影正确性）。
+PIVOT_PATCH_DIR="$PROJECT_ROOT/patches/browser-camoufox-pivot/patches"
+if ls "$PIVOT_PATCH_DIR"/*.patch 1>/dev/null 2>&1; then
+  echo "🩹 Applying browser-camoufox-pivot per-file patches..."
+  cd "$OPENCLAW_DIR"
+  for patch in $(ls "$PIVOT_PATCH_DIR"/*.patch | sort); do
+    apply_patch "$patch"
+  done
+  cd "$PROJECT_ROOT"
+  NEEDS_INSTALL=true
+fi
+
+# ─── 拷入浏览器转向新文件（patches/browser-camoufox-pivot/files/）──
+# per-file patch 只改现有文件；新增的 adapter + 测试以整文件形式 ship 在
+# patches/ 下，这里 cp 进 openclaw（git clean 已先跑，所以目标一定是干净上游
+# 状态）。spec §12.3 线 1 后端。
+PIVOT_FILES_DIR="$PROJECT_ROOT/patches/browser-camoufox-pivot/files"
+if [ -d "$PIVOT_FILES_DIR" ]; then
+  echo "🌐 Copying browser-camoufox-pivot new files into openclaw..."
+  for f in "$PIVOT_FILES_DIR"/*.ts; do
+    [ -f "$f" ] || continue
+    cp "$f" "$OPENCLAW_DIR/extensions/browser/src/"
+    echo "  → extensions/browser/src/$(basename "$f")"
+  done
   NEEDS_INSTALL=true
 fi
 
@@ -213,7 +252,7 @@ if [ -f "$CONFIG_PATH" ] && [ -f "$PROJECT_ROOT/config-templates/openclaw.json" 
 fi
 
 # ─── 注入 awada 扩展路径（绝对路径，避免 CWD 依赖）──────────────
-AWADA_EXT="$PROJECT_ROOT/awada/awada-extension"
+AWADA_EXT="$PROJECT_ROOT/awada"
 if [ -d "$AWADA_EXT" ] && [ -f "$AWADA_EXT/openclaw.plugin.json" ]; then
   if [ -f "$CONFIG_PATH" ]; then
     node -e "
@@ -225,7 +264,7 @@ if [ -d "$AWADA_EXT" ] && [ -f "$AWADA_EXT/openclaw.plugin.json" ]; then
       const awadaPath = '$AWADA_EXT';
       // 先移除所有结尾匹配 awada/awada-extension 的旧路径（跨机器迁移时清理残留）
       config.plugins.load.paths = config.plugins.load.paths.filter(
-        p => !p.endsWith('awada/awada-extension')
+        p => !p.endsWith('awada/awada-extension') && !p.endsWith('/awada')
       );
       config.plugins.load.paths.push(awadaPath);
       if (!config.plugins.entries) config.plugins.entries = {};
@@ -238,8 +277,29 @@ if [ -d "$AWADA_EXT" ] && [ -f "$AWADA_EXT/openclaw.plugin.json" ]; then
   fi
 fi
 
+# ─── 安装 awada 插件依赖（ws + zod）─────────────────────────────
+# awada 走 relay 网关 HTTP/WS 传输，运行时依赖 ws + zod（见 awada/package.json）。
+# awada 自己的 node_modules 解析这些依赖，不走 ~/.openclaw/node_modules，
+# 故必须装在 awada/ 局部。内容哈希守卫避免重复 install。
+AWADA_PKG_HASH_FILE="$OPENCLAW_HOME/.awada-pkg-hash"
+if [ -d "$AWADA_EXT" ] && [ -f "$AWADA_EXT/package.json" ]; then
+  awada_hash="$(_md5 < "$AWADA_EXT/package.json")"
+  awada_stored="$(cat "$AWADA_PKG_HASH_FILE" 2>/dev/null || echo '')"
+  if [ "$awada_hash" != "$awada_stored" ] || [ ! -d "$AWADA_EXT/node_modules" ]; then
+    echo "📦 Installing awada plugin dependencies (ws + zod)..."
+    (cd "$AWADA_EXT" && npm install --omit=dev --no-audit --no-fund --loglevel=warn) \
+      && echo "$awada_hash" > "$AWADA_PKG_HASH_FILE" \
+      && echo "✅ awada dependencies installed" \
+      || echo "  ⚠️  awada npm install failed (可后续手动 cd $AWADA_EXT && pnpm install --prod)" >&2
+  else
+    echo "✅ awada dependencies up to date"
+  fi
+fi
+
 
 # ─── 安装全局共享技能（项目根目录 skills/） ──────────────────────
+# 软链而非拷贝：skill 在仓里改完即生效，运行实例无需重跑 setup。
+# openclaw skill loader 跟随软链（local-loader.ts readdirSync isDirectory + realpathSync）。
 GLOBAL_SKILL_COUNT=0
 if [ -d "$PROJECT_ROOT/skills" ]; then
   mkdir -p "$OPENCLAW_HOME/skills"
@@ -247,7 +307,7 @@ if [ -d "$PROJECT_ROOT/skills" ]; then
     if [ -f "${skill_dir}SKILL.md" ]; then
       skill_name="$(basename "$skill_dir")"
       rm -rf "$OPENCLAW_HOME/skills/$skill_name"
-      cp -r "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
+      ln -s "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
       GLOBAL_SKILL_COUNT=$((GLOBAL_SKILL_COUNT + 1))
       append_global_shared_skill "$skill_name"
     fi
@@ -257,219 +317,68 @@ if [ "$GLOBAL_SKILL_COUNT" -gt 0 ]; then
   echo "📦 Global skills installed ($GLOBAL_SKILL_COUNT)"
 fi
 
-# ─── 扫描并加载 addons ──────────────────────────────────────────
-if [ ! -d "$ADDONS_DIR" ]; then
-  mkdir -p "$ADDONS_DIR"
-fi
+# ─── 暴露公共 skill 顶层 wrapper → ~/.openclaw/bin/（PATH 友好） ───
+# D21 wrapper 覆盖：每个含 <skill>/<skill>.sh 的 skill 建一条 symlink 到
+# ~/.openclaw/bin/<skill>，agent 调 `<skill> <cmd>` 零路径拼接。
+# 同时把 ~/.openclaw/bin 注入 shell rc 的 PATH（幂等）。
+expose_skill_wrappers "$PROJECT_ROOT/skills"
+ensure_openclaw_bin_in_path
 
-ADDON_COUNT=0
 
-for addon_dir in "$ADDONS_DIR"/*/; do
-  [ -d "$addon_dir" ] || continue
-
-  addon_name="$(basename "$addon_dir")"
-
-  # 跳过没有 addon.json 的目录
-  if [ ! -f "$addon_dir/addon.json" ]; then
-    echo "⚠️  Skipping $addon_name (no addon.json)"
-    continue
-  fi
-
-  echo "📦 Loading addon: $addon_name"
-  ADDON_COUNT=$((ADDON_COUNT + 1))
-
-  # ─── 第一层：全局 skills 安装 ──────────────────────────────────
-  if [ -d "$addon_dir/skills" ]; then
-    echo "  📚 Installing global skills..."
-    mkdir -p "$OPENCLAW_HOME/skills"
-    for skill_dir in "$addon_dir"/skills/*/; do
-      if [ -f "${skill_dir}SKILL.md" ]; then
-        skill_name="$(basename "$skill_dir")"
-        echo "    → $skill_name (global)"
-        rm -rf "$OPENCLAW_HOME/skills/$skill_name"
-        cp -r "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
-        append_global_shared_skill "$skill_name"
-      fi
-    done
-  fi
-
-  # ─── 第二层：Crew 模板安装（crew/ → ~/.openclaw runtime dirs） ──
-  if [ -d "$addon_dir/crew" ]; then
-    echo "  🤖 Installing crew templates..."
-
-    # 从 addon.json 读取 internal_crews / external_crews 数组（crew-type 的唯一权威来源）
-    # addon 模板的 SOUL.md 不要求包含 crew-type 字段；若包含则被此声明覆盖
-    addon_crew_lists="$(node -e "
-      try {
-        const a = JSON.parse(require('fs').readFileSync('${addon_dir}addon.json','utf8'));
-        const i = Array.isArray(a.internal_crews) ? a.internal_crews : [];
-        const e = Array.isArray(a.external_crews) ? a.external_crews : [];
-        console.log(JSON.stringify({ internal: i, external: e }));
-      } catch(err) { console.log(JSON.stringify({ internal: [], external: [] })); }
-    " 2>/dev/null || echo '{"internal":[],"external":[]}')"
-
-    for template_ws in "$addon_dir"/crew/*/; do
-      [ -d "$template_ws" ] || continue
-      # 需要至少有 SOUL.md 才算有效的模板
-      [ -f "${template_ws}SOUL.md" ] || continue
-
-      template_id="$(basename "$template_ws")"
-
-      # 从 addon.json 的 internal_crews / external_crews 数组确定 crew-type
-      addon_crew_type="$(ADDON_CREW_LISTS="$addon_crew_lists" node -e "
-        const { internal, external } = JSON.parse(process.env.ADDON_CREW_LISTS);
-        const id = '$template_id';
-        if (internal.includes(id) && external.includes(id)) console.log('CONFLICT');
-        else if (internal.includes(id)) console.log('internal');
-        else if (external.includes(id)) console.log('external');
-        else console.log('');
-      " 2>/dev/null || echo "")"
-
-      if [ "$addon_crew_type" = "CONFLICT" ]; then
-        echo "    ❌ template $template_id listed in both internal_crews and external_crews"
-        exit 1
-      elif [ -z "$addon_crew_type" ]; then
-        echo "    ⚠️  template $template_id not in internal_crews or external_crews, defaulting to external"
-        addon_crew_type="external"
-      fi
-
-      echo "    → $template_id (crew-type: $addon_crew_type)"
-
-      # 同步到运行时模板目录（按 crew-type 分路由）
-      if [ "$addon_crew_type" = "internal" ]; then
-        # 对内 Crew → crew_templates/（Main Agent 访问）
-        mkdir -p "$OPENCLAW_HOME/crew_templates"
-        runtime_template_dir="$OPENCLAW_HOME/crew_templates/$template_id"
-        rm -rf "$runtime_template_dir"
-        copy_crew_template_contents "$template_ws" "$runtime_template_dir"
-        ensure_soul_crew_type "$runtime_template_dir/SOUL.md" "$addon_crew_type"
-        echo "    ✅ synced to crew_templates/ (internal)"
-      else
-        # 对外 Crew → hrbp_templates/（HRBP 访问）
-        mkdir -p "$OPENCLAW_HOME/hrbp_templates"
-        runtime_template_dir="$OPENCLAW_HOME/hrbp_templates/$template_id"
-        rm -rf "$runtime_template_dir"
-        copy_crew_template_contents "$template_ws" "$runtime_template_dir"
-        ensure_soul_crew_type "$runtime_template_dir/SOUL.md" "$addon_crew_type"
-        echo "    ✅ synced to hrbp_templates/ (external)"
-      fi
-
-      # 可选自动实例化（addon.json 中 auto-activate: true）
-      auto_activate="$(node -e "
-        const a = JSON.parse(require('fs').readFileSync('$addon_dir/addon.json','utf8'));
-        console.log(a['auto-activate'] === true ? 'true' : 'false');
-      " 2>/dev/null || echo "false")"
-
-      if [ "$auto_activate" = "true" ]; then
-        agent_id="$template_id"
-        dest="$OPENCLAW_HOME/workspace-$agent_id"
-
-        if [ -d "$dest" ]; then
-          echo "    ⚠️  workspace-$agent_id already exists, skipping auto-activate"
-          # 对外 Crew：幂等同步 DECLARED_SKILLS（仅追加模板中有但 workspace 缺失的技能）
-          if [ "$addon_crew_type" = "external" ] \
-              && [ -f "${template_ws}DECLARED_SKILLS" ] \
-              && [ -f "$dest/DECLARED_SKILLS" ]; then
-            _added=0
-            while IFS= read -r _skill; do
-              [ -n "$_skill" ] || continue
-              grep -qxF "$_skill" "$dest/DECLARED_SKILLS" 2>/dev/null || {
-                echo "$_skill" >> "$dest/DECLARED_SKILLS"
-                _added=$((_added + 1))
-              }
-            done < <(
-              sed 's/#.*$//' "${template_ws}DECLARED_SKILLS" \
-                | tr ',' '\n' \
-                | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
-                | awk 'NF'
-            )
-            [ "$_added" -gt 0 ] && echo "    📝 DECLARED_SKILLS: synced $_added new skill(s) from template"
-          fi
-        else
-          copy_crew_template_contents "$template_ws" "$dest"
-          ensure_soul_crew_type "$dest/SOUL.md" "$addon_crew_type"
-          # 对外 Crew：复制 DECLARED_SKILLS 和创建 feedback/ 目录
-          if [ "$addon_crew_type" = "external" ]; then
-            mkdir -p "$dest/feedback"
-          fi
-          # 复制共享协议
-          if [ -d "$CREWS_DIR/shared" ]; then
-            cp "$CREWS_DIR/shared/"*.md "$dest/"
-          fi
-          echo "    ✅ workspace-$agent_id auto-activated"
-
-          # 注册 agent（如果尚未注册）
-          if [ -f "$CONFIG_PATH" ]; then
-            if ! node -e "
-              const c = JSON.parse(require('fs').readFileSync('$CONFIG_PATH','utf8'));
-              process.exit((c.agents?.list || []).some(a => a.id === '$agent_id') ? 0 : 1);
-            " 2>/dev/null; then
-              if [ ! -f "$HRBP_ADD_AGENT_SCRIPT" ]; then
-                echo "    ❌ HRBP add-agent script not found: $HRBP_ADD_AGENT_SCRIPT"
-                exit 1
-              fi
-              # 根据 crew-type 传入对应参数
-              "$HRBP_ADD_AGENT_SCRIPT" "$agent_id" --crew-type "$addon_crew_type"
-              echo "    ✅ agent $agent_id registered (crew-type: $addon_crew_type)"
-            fi
-          fi
-        fi
-      else
-        echo "    📋 template $template_id ready (use HRBP/Main Agent to instantiate)"
-      fi
-    done
-  fi
-  echo "  ✅ $addon_name loaded"
-done
-
-# ─── 安装全仓统一 Node.js 依赖到 ~/.openclaw/node_modules ──────────
-# 扫描 skills/ 和 addons/ 下所有 package.json，合并 dependencies。
-# 内容哈希守卫：仅当依赖集发生变化（或 node_modules 不存在）时才执行 npm install。
-# Node.js 从 ~/.openclaw/skills/**  或 ~/.openclaw/workspace-**/skills/** 运行脚本时，
-# 向上解析模块会自然命中 ~/.openclaw/node_modules，无需 NODE_PATH 也无需改脚本。
+# ─── 安装各 skill 的 Node.js 依赖（per-skill，写进仓内 skill 目录）─────
+# skill 走软链部署后，Node 从脚本 realpath（仓内 skill 目录）向上解析模块，
+# 命中 skill 自己的 node_modules。故对每个含 package.json 的 skill 单独
+# npm install --omit=dev，node_modules 落在仓内 skill 目录（.gitignore 已覆盖
+# node_modules/ 与 package-lock.json），不污染 ~/.openclaw。
+# 内容哈希守卫：仅当任一 skill 的 package.json 发生变化时才重装。
 SKILL_PKG_HASH_FILE="$OPENCLAW_HOME/.skill-pkg-hash"
 
-merged_deps_json="$(node -e "
+# 收集所有含 package.json + SKILL.md 的 skill 目录（skills/ + crews/*/skills/）
+skill_pkg_dirs=()
+while IFS= read -r line; do
+  [ -n "$line" ] && skill_pkg_dirs+=("$line")
+done < <(node -e "
   const fs = require('fs');
   const path = require('path');
-  const deps = {};
+  const roots = ['$PROJECT_ROOT/skills', '$CREWS_DIR'];
+  const out = [];
   function scan(dir) {
     if (!fs.existsSync(dir)) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (entry.name === 'node_modules' || entry.name === '.git') continue;
+      if (!entry.isDirectory()) continue;
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        scan(full);
-      } else if (entry.name === 'package.json') {
-        try {
-          const pkg = JSON.parse(fs.readFileSync(full, 'utf8'));
-          Object.assign(deps, pkg.dependencies || {});
-        } catch {}
+      if (fs.existsSync(path.join(full, 'SKILL.md')) && fs.existsSync(path.join(full, 'package.json'))) {
+        out.push(full);
       }
+      scan(full);
     }
   }
-  scan('$PROJECT_ROOT/skills');
-  scan('$ADDONS_DIR');
-  const sorted = Object.fromEntries(Object.entries(deps).sort());
-  console.log(JSON.stringify(sorted));
-" 2>/dev/null || echo '{}')"
+  for (const r of roots) scan(r);
+  console.log(out.join('\n'));
+" 2>/dev/null)
 
-current_pkg_hash="$(echo "$merged_deps_json" | md5sum | cut -d' ' -f1)"
+# 哈希所有 skill package.json 内容，作为重装判据
+current_pkg_hash=""
+for d in "${skill_pkg_dirs[@]}"; do
+  current_pkg_hash="$current_pkg_hash$(_md5 < "$d/package.json")"
+done
+current_pkg_hash="$(printf '%s' "$current_pkg_hash" | _md5)"
 stored_pkg_hash="$(cat "$SKILL_PKG_HASH_FILE" 2>/dev/null || echo '')"
 
-if [ "$current_pkg_hash" != "$stored_pkg_hash" ] || [ ! -d "$OPENCLAW_HOME/node_modules" ]; then
-  echo "📦 Installing skill Node.js dependencies to ~/.openclaw/..."
-  MERGED_DEPS="$merged_deps_json" SKILL_OPENCLAW_HOME="$OPENCLAW_HOME" node -e "
-    const deps = JSON.parse(process.env.MERGED_DEPS);
-    const pkg = { name: 'openclaw-skills', version: '1.0.0', private: true, dependencies: deps };
-    require('fs').writeFileSync(
-      require('path').join(process.env.SKILL_OPENCLAW_HOME, 'package.json'),
-      JSON.stringify(pkg, null, 2) + '\n'
-    );
-  "
-  npm install --prefix "$OPENCLAW_HOME" --no-audit --no-fund --loglevel=warn
-  echo "$current_pkg_hash" > "$SKILL_PKG_HASH_FILE"
-  echo "✅ Skill dependencies installed (hash: ${current_pkg_hash:0:8})"
+if [ "$current_pkg_hash" != "$stored_pkg_hash" ]; then
+  if [ ${#skill_pkg_dirs[@]} -gt 0 ]; then
+    echo "📦 Installing per-skill Node.js dependencies..."
+    for d in "${skill_pkg_dirs[@]}"; do
+      echo "  → ${d#$PROJECT_ROOT/}"
+      (cd "$d" && npm install --omit=dev --no-audit --no-fund --loglevel=warn) \
+        || echo "  ⚠️  npm install failed in $d" >&2
+    done
+    echo "$current_pkg_hash" > "$SKILL_PKG_HASH_FILE"
+    echo "✅ Skill dependencies installed (hash: ${current_pkg_hash:0:8})"
+  else
+    echo "✅ No skill package.json found"
+  fi
 else
   echo "✅ Skill dependencies up to date (hash: ${current_pkg_hash:0:8})"
 fi
@@ -503,12 +412,21 @@ merged_pip_deps="$(node -e "
     }
   }
   scan('$PROJECT_ROOT/skills');
-  scan('$ADDONS_DIR');
   scan('$CREWS_DIR');
+  // 仓根 requirements.txt（全仓统一声明，CLAUDE.md 规范）
+  const rootReq = path.join('$PROJECT_ROOT', 'requirements.txt');
+  if (fs.existsSync(rootReq)) {
+    try {
+      fs.readFileSync(rootReq, 'utf8').split(/\\r?\\n/).forEach(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) lines.add(trimmed);
+      });
+    } catch {}
+  }
   console.log(Array.from(lines).sort().join('\\n'));
 " 2>/dev/null || echo '')"
 
-current_pip_hash="$(echo "$merged_pip_deps" | md5sum | cut -d' ' -f1)"
+current_pip_hash="$(printf '%s' "$merged_pip_deps" | _md5)"
 stored_pip_hash="$(cat "$PIP_HASH_FILE" 2>/dev/null || echo '')"
 
 if [ -n "$merged_pip_deps" ] && { [ "$current_pip_hash" != "$stored_pip_hash" ] || [ ! -f "$PIP_HASH_FILE" ]; }; then
@@ -577,12 +495,6 @@ if [ "$NEEDS_INSTALL" = "true" ]; then
   cd "$PROJECT_ROOT"
 fi
 
-if [ "$ADDON_COUNT" -gt 0 ]; then
-  echo "✅ All addons applied ($ADDON_COUNT loaded)"
-else
-  echo "📦 No addons found"
-fi
-
 # ─── 写入全局共享 skills 清单（供 skills allowlist 计算使用） ──────
 mkdir -p "$OPENCLAW_HOME"
 printf '%s\n' "$GLOBAL_SHARED_SKILLS_RAW" \
@@ -611,6 +523,17 @@ elif [ "$NEEDS_INSTALL" = "true" ]; then
   pnpm build
   cd "$PROJECT_ROOT"
   echo "✅ Build complete"
+fi
+
+# ─── camoufox-cli 浏览器二进制（反指纹 Firefox，browser-guide 主推） ──────
+# camoufox-cli install 自带幂等：已装版本 === 当前版本时打印 "already up to date" 并返回
+# （camoufox-cli/dist/install.js:118）。首次下载 ~557MB；仅当 camoufox-cli npm 包升级
+# 导致版本漂移时才重下。用户电脑已有则无害跳过。
+if command -v camoufox-cli >/dev/null 2>&1; then
+  echo "🌐 Ensuring camoufox browser binary (idempotent)..."
+  camoufox-cli install || echo "  ⚠️  camoufox-cli install failed (可后续手动 camoufox-cli install)"
+else
+  echo "  ⚠️  camoufox-cli not on PATH; skip browser binary. 全局装: npm i -g camoufox-cli"
 fi
 
 # ─── 重启 gateway service（如果正在运行） ─────────────────────────

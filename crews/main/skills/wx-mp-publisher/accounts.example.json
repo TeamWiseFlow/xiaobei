@@ -1,0 +1,12 @@
+{
+  "_comment": "公众号凭据本地存储。复制为 accounts.json 后由 Agent 帮用户填入真实值。accounts.json 已 gitignore，不会进仓。",
+  "_comment_default": "default 指向默认账号的 alias；多账号时必填，单账号可留空字符串。",
+  "default": "main",
+  "accounts": [
+    {
+      "alias": "main",
+      "appId": "wxXXXXXXXXXXXXXX",
+      "appSecret": "______________________________"
+    }
+  ]
+}

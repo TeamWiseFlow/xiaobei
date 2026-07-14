@@ -1,0 +1,26 @@
+diff --git a/extensions/browser/src/browser-tool.schema.ts b/extensions/browser/src/browser-tool.schema.ts
+index 31bb35ad73..1cb40cf04f 100644
+--- a/extensions/browser/src/browser-tool.schema.ts
++++ b/extensions/browser/src/browser-tool.schema.ts
+@@ -49,7 +49,9 @@ const BROWSER_TOOL_ACTIONS = [
+   "act",
+ ] as const;
+ 
+-const BROWSER_TARGETS = ["sandbox", "host", "node"] as const;
++// camoufox: forked camoufox-cli daemon via unix-socket (spec §11 阶段一 step 3a).
++// sandbox removed in 3b (camoufox-cli pivot): only host/node/camoufox remain.
++const BROWSER_TARGETS = ["host", "node", "camoufox"] as const;
+ 
+ const BROWSER_SNAPSHOT_FORMATS = ["aria", "ai"] as const;
+ const BROWSER_SNAPSHOT_MODES = ["efficient"] as const;
+@@ -111,6 +113,10 @@ export const BrowserToolSchema = Type.Object({
+   target: optionalStringEnum(BROWSER_TARGETS),
+   node: Type.Optional(Type.String()),
+   profile: Type.Optional(Type.String()),
++  // camoufox 平台 session 名（spec §3）：决定 --session <name> + --persistent
++  // profile dir 命名空间。同一平台名 = 同一浏览器登录态/指纹。缺省回退到
++  // agentSessionKey（每 agent 独立）再回退 "openclaw"。仅 target=camoufox 生效。
++  session: Type.Optional(Type.String()),
+   targetUrl: Type.Optional(Type.String()),
+   url: Type.Optional(Type.String()),
+   targetId: Type.Optional(Type.String({ description: TAB_REFERENCE_DESCRIPTION })),

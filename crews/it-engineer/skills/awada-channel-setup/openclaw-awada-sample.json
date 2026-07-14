@@ -1,0 +1,30 @@
+{
+  "channels": {
+    "awada": {
+      "enabled": true,
+      "relayBaseUrl": "https://relay.wiseflow.example.com",
+      "ofbKey": "<OFB_KEY>",
+      "lane": "user",
+      "platform": "wecom",
+      "perMsgMaxLen": 1800
+    }
+  },
+  "plugins": {
+    "load": {
+      "paths": [
+        "{WISEFLOW_PROJECT_ROOT}/awada"
+      ]
+    },
+    "entries": {
+      "awada": {
+        "enabled": true,
+        "config": {
+          "customerdb": {
+            "agentId": "sales-cs",
+            "workspaceDir": "{HOME}/.openclaw/workspace-sales-cs"
+          }
+        }
+      }
+    }
+  }
+}

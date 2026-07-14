@@ -1,0 +1,66 @@
+spec_version: 1
+id: glitch-title-916
+name: Glitch Title 9:16
+description: >
+  赛博朋克风格故障标题动画，RGB 偏移 + 扫描线 + 色差效果。
+  9:16 竖屏版本，支持中文标题。适用于开篇 hook 片段。
+
+engine: hyperframes
+engine_version: ^0.4.0
+source_entry: source/index.html
+
+category: title-animation
+subcategory: text-card
+tags: [title, glitch, cyberpunk, hook, 9:16]
+
+best_for:
+  - "开篇标题动画"
+  - "科技产品发布"
+  - "赛博朋克风格"
+
+output:
+  formats: [mp4, webm]
+  default_format: mp4
+  resolution:
+    default: { width: 1080, height: 1920 }
+    supported_aspects: ["9:16"]
+  fps:
+    default: 30
+    supported: [30, 60]
+  duration:
+    type: variable
+    min_sec: 3
+    max_sec: 8
+  alpha: false
+  audio:
+    supported: true
+    expected_inputs: [narration]
+
+inputs:
+  schema:
+    type: object
+    required: [title]
+    properties:
+      title:
+        type: string
+        maxLength: 30
+        description: "主标题文案（建议简短有力）"
+      subtitle:
+        type: string
+        maxLength: 50
+        description: "副标题/补充文案"
+      duration_sec:
+        type: number
+        minimum: 3
+        maximum: 8
+        default: 4
+  examples:
+    - { "title": "99%的人都不知道", "subtitle": "这个赚钱方法", "duration_sec": 4 }
+
+license:
+  spdx: Apache-2.0
+  attribution_required: false
+  redistribution_allowed: true
+  commercial_use: true
+
+version: 0.1.0

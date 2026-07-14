@@ -1,12 +1,7 @@
 {
   "browser": {
     "enabled": true,
-    "headless": false,
-    "defaultProfile": "openclaw",
-    "extraArgs": [
-      "--window-size=1920,1080",
-      "--window-position=0,0"
-    ],
+    "headless": true,
     "ssrfPolicy": {
       "dangerouslyAllowPrivateNetwork": true
     }
@@ -26,14 +21,8 @@
             "input": [
               "text"
             ],
-            "cost": {
-              "input": 1.2,
-              "output": 2.4,
-              "cacheRead": 0.145,
-              "cacheWrite": 0
-            },
-            "contextWindow": 1000000,
-            "maxTokens": 128000,
+            "contextWindow": 1024000,
+            "maxTokens": 65536,
             "compat": {
               "supportsReasoningEffort": true,
               "supportsUsageInStreaming": true,
@@ -48,43 +37,8 @@
             "input": [
               "text"
             ],
-            "cost": {
-              "input": 0.1,
-              "output": 0.2,
-              "cacheRead": 0.028,
-              "cacheWrite": 0
-            },
-            "contextWindow": 1000000,
-            "maxTokens": 131072,
-            "compat": {
-              "supportsReasoningEffort": true,
-              "supportsUsageInStreaming": true,
-              "maxTokensField": "max_tokens"
-            },
-            "api": "openai-completions"
-          }
-        ]
-      },
-      "siliconflow": {
-        "baseUrl": "https://api.siliconflow.cn/v1",
-        "apiKey": "${SILICONFLOW_API_KEY}",
-        "api": "openai-completions",
-        "models": [
-          {
-            "id": "zai-org/GLM-5.2",
-            "name": "zai-org/GLM-5.2",
-            "reasoning": false,
-            "input": [
-              "text"
-            ],
-            "cost": {
-              "input": 1.2,
-              "output": 2.4,
-              "cacheRead": 0.145,
-              "cacheWrite": 0
-            },
-            "contextWindow": 1000000,
-            "maxTokens": 128000,
+            "contextWindow": 1024000,
+            "maxTokens": 65536,
             "compat": {
               "supportsReasoningEffort": true,
               "supportsUsageInStreaming": true,
@@ -93,20 +47,13 @@
             "api": "openai-completions"
           },
           {
-            "id": "deepseek-ai/DeepSeek-V4-Flash",
-            "name": "deepseek-ai/DeepSeek-V4-Flash",
-            "reasoning": true,
+            "id": "deepseek-v4-pro",
+            "name": "deepseek-v4-pro",
             "input": [
               "text"
             ],
-            "cost": {
-              "input": 0.1,
-              "output": 0.2,
-              "cacheRead": 0.028,
-              "cacheWrite": 0
-            },
-            "contextWindow": 1000000,
-            "maxTokens": 131072,
+            "contextWindow": 1024000,
+            "maxTokens": 65536,
             "compat": {
               "supportsReasoningEffort": true,
               "supportsUsageInStreaming": true,
@@ -115,21 +62,15 @@
             "api": "openai-completions"
           },
           {
-            "id": "Qwen/Qwen3.6-27B",
-            "name": "Qwen/Qwen3.6-27B",
-            "reasoning": false,
-            "input": [
-              "image",
-              "text"
-            ],
-            "cost": {
-              "input": 0.0018,
-              "output": 0.0144,
-              "cacheRead": 0,
-              "cacheWrite": 0
-            },
+            "id": "doubao-seed-2.0-lite",
+            "name": "doubao-seed-2.0-lite",
             "contextWindow": 256000,
-            "maxTokens": 8192
+            "maxTokens": 65536,
+            "input": [
+              "text",
+              "image"
+            ],
+            "api": "openai-completions"
           }
         ]
       }
@@ -140,11 +81,15 @@
       "model": {
         "primary": "awk/glm-latest",
         "fallbacks": [
-          "siliconflow/zai-org/GLM-5.2"
+          "awk/deepseek-v4-pro",
+          "awk/deepseek-v4-flash"
         ]
       },
       "imageModel": {
-        "primary": "siliconflow/Qwen/Qwen3.6-27B"
+        "primary": "awk/doubao-seed-2.0-lite"
+      },
+      "memorySearch": {
+        "provider": "none"
       },
       "models": {
         "awk/glm-latest": {
@@ -153,23 +98,20 @@
         "awk/deepseek-v4-flash": {
           "alias": "awk/ds-v4-flash"
         },
-        "siliconflow/zai-org/GLM-5.2": {
-          "alias": "sf/zai-org/GLM-5.2"
+        "awk/deepseek-v4-pro": {
+          "alias": "awk/ds-v4-pro"
         },
-        "siliconflow/deepseek-ai/DeepSeek-V4-Flash": {
-          "alias": "sf/deepseek-ai/DeepSeek-V4-Flash"
-        },
-        "siliconflow/Qwen/Qwen3.6-27B": {
-          "alias": "sf/qwen3.6-27b"
+        "awk/doubao-seed-2.0-lite": {
+          "alias": "awk/seed-2-lite"
         }
       },
       "compaction": {
         "mode": "safeguard"
       },
       "thinkingDefault": "medium",
-      "maxConcurrent": 2,
+      "maxConcurrent": 3,
       "subagents": {
-        "maxConcurrent": 2,
+        "maxConcurrent": 4,
         "announceTimeoutMs": 3600000,
         "maxSpawnDepth": 2
       }
@@ -178,26 +120,26 @@
       {
         "id": "main",
         "default": true,
-        "name": "Main Agent",
+        "name": "小贝",
         "workspace": "~/.openclaw/workspace-main",
         "skills": [
-          "nano-pdf",
-          "skill-creator",
+          "smart-search",
+          "browser-guide",
+          "email-ops",
+          "council",
           "session-logs",
-          "tmux",
-          "weather",
-          "summarize",
-          "gifgrep"
+          "tmux"
         ],
         "subagents": {
           "allowAgents": [
-            "it-engineer"
+            "it-engineer",
+            "content-producer"
           ]
         },
         "tools": {
           "exec": {
             "host": "gateway",
-            "security": "allowlist",
+            "security": "full",
             "ask": "off"
           }
         },
@@ -206,7 +148,6 @@
           "target": "none",
           "isolatedSession": true
         },
-        "thinkingDefault": "high",
         "reasoningDefault": "off"
       },
       {
@@ -231,6 +172,31 @@
           "exec": {
             "host": "gateway",
             "security": "full",
+            "ask": "off"
+          }
+        },
+        "thinkingDefault": "high",
+        "reasoningDefault": "off"
+      },
+      {
+        "id": "content-producer",
+        "name": "producer",
+        "workspace": "~/.openclaw/workspace-content-producer",
+        "skills": [
+          "smart-search",
+          "browser-guide",
+          "session-logs",
+          "tmux"
+        ],
+        "subagents": {
+          "allowAgents": [
+            "it-engineer"
+          ]
+        },
+        "tools": {
+          "exec": {
+            "host": "gateway",
+            "security": "allowlist",
             "ask": "off"
           }
         },
@@ -402,7 +368,7 @@
         "enabled": true,
         "config": {
           "dreaming": {
-            "enabled": true
+            "enabled": false
           }
         }
       },

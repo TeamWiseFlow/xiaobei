@@ -6,4 +6,3 @@
 ## Preferences
 - Language: {preferred language}
 - Style: {communication preferences}
-- Autonomy: L1/L2 proceed directly; L3 always confirm

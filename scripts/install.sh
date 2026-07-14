@@ -19,7 +19,7 @@
 # ⚠️  升级前请确保系统空闲（无 agent 会话正在处理任务）
 set -e
 
-OFB_REPO="https://github.com/TeamWiseFlow/wiseflow.git"
+OFB_REPO="https://github.com/TeamWiseFlow/xiaobei.git"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OPENCLAW_DIR="$PROJECT_ROOT/openclaw"
 VERSION_FILE="$PROJECT_ROOT/openclaw.version"
@@ -27,7 +27,6 @@ OPENCLAW_HOME="$HOME/.openclaw"
 OPENCLAW_CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-$OPENCLAW_HOME/openclaw.json}"
 SYSTEMD_ENV_FILE="$OPENCLAW_HOME/daemon.env"
 MACOS_GATEWAY_ENV="$OPENCLAW_HOME/service-env/ai.openclaw.gateway.env"
-BUILTIN_CREWS="main hrbp it-engineer"
 FORCE=false
 SKIP_CREW=false
 SKIP_WEIXIN=false
@@ -299,16 +298,10 @@ else
 fi
 echo ""
 
-# ─── 5. 初始化内置 Crew workspace + 配置文件 ───────────────────
-# shellcheck source=scripts/lib/crew-workspaces.sh
-source "$PROJECT_ROOT/scripts/lib/crew-workspaces.sh"
-
-if [ "$SKIP_CREW" = "true" ]; then
-  echo "⏭️  Skipping built-in crew workspace bootstrap (--skip-crew)"
-else
-  echo "📦 Bootstrapping built-in crew workspaces..."
-  seed_builtin_crew_workspaces "$PROJECT_ROOT/crews" "$OPENCLAW_HOME" "$BUILTIN_CREWS"
-fi
+# ─── 5. 初始化配置文件 ───────────────────────────────────────────
+# Crew workspace bootstrap 由步骤 6 apply-addons → setup-crew.sh 统一负责
+# （含模板拷贝 + skill npm 依赖 + guide 注入）。此处不预先建 workspace，
+# 否则 setup-crew.sh 会因目录已存在跳过 skill 依赖安装。
 ensure_openclaw_config
 echo ""
 
@@ -334,7 +327,8 @@ echo ""
 # ─── 8. 环境变量收集 + daemon 安装 ─────────────────────────
 
 # 需要询问用户的 API Key（若已在目标文件中存在则跳过）
-_USER_PROMPT_KEYS="AWK_API_KEY SILICONFLOW_API_KEY"
+# 5.5.3 起主力 + 视觉 + 替补统一走 AWK（火山方舟 Coding Plan），不再收集 SILICONFLOW_API_KEY
+_USER_PROMPT_KEYS="AWK_API_KEY"
 
 # 固定默认值（硬编码，不询问，已存在则跳过）
 _HARDCODED_DEFAULTS="OPENCLAW_BROWSER_TIMEOUT_MS=90000 OPENCLAW_DISABLE_BONJOUR=true"
@@ -388,6 +382,9 @@ _write_missing_env() {
       _val="${_sv:-}"
       [ -z "$_val" ] && echo "⚠️  Missing ${_key} in non-interactive mode; leaving it unset."
     fi
+    # 清洗：去除所有空白字符。API key 是不透明 token，绝不含空白；
+    # 防止粘贴/环境变量带入前导换行或空格导致 daemon.env 出现 `KEY=\nvalue` 错行。
+    _val="$(printf '%s' "$_val" | tr -d '[:space:]')"
     if [ -n "$_val" ]; then
       if [ "$format" = "export" ]; then
         printf "export %s='%s'\n" "$_key" "${_val//\'/\'\\\'\'}" >> "$env_file"

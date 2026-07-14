@@ -1,0 +1,64 @@
+{
+  "_comment": [
+    "Sample openclaw.json fragment for enabling Feishu (飞书) work channel.",
+    "Feishu 不需要额外安装 plugin 包，但需要在 openclaw.json 里同时配置三处：",
+    "  1) bindings[]        —— 把 feishu 渠道消息路由到对应 agent",
+    "  2) channels.feishu   —— 账号凭证 + dm/group 策略 + allowFrom",
+    "  3) plugins.entries.feishu.enabled = true",
+    "合并到正式 openclaw.json 时删掉本 _comment 字段；appSecret 必须替换为真实值，",
+    "且真实 appSecret 不得提交到代码仓——这里只用占位符。"
+  ],
+
+  "bindings": [
+    {
+      "agentId": "main",
+      "comment": "feishu main-bot -> Main Agent",
+      "match": { "channel": "feishu", "accountId": "main-bot" }
+    },
+    {
+      "agentId": "content-producer",
+      "comment": "feishu producer-bot -> Content Producer",
+      "match": { "channel": "feishu", "accountId": "producer-bot" }
+    },
+    {
+      "agentId": "it-engineer",
+      "comment": "feishu it-bot -> IT Engineer",
+      "match": { "channel": "feishu", "accountId": "it-bot" }
+    }
+  ],
+
+  "channels": {
+    "feishu": {
+      "enabled": true,
+      "accounts": {
+        "main-bot": {
+          "appId": "cli_main_bot_placeholder",
+          "appSecret": "${FEISHU_MAIN_BOT_APP_SECRET}",
+          "dmPolicy": "open",
+          "groupPolicy": "mention",
+          "allowFrom": ["all"]
+        },
+        "producer-bot": {
+          "appId": "cli_producer_bot_placeholder",
+          "appSecret": "${FEISHU_PRODUCER_BOT_APP_SECRET}",
+          "dmPolicy": "open",
+          "groupPolicy": "mention",
+          "allowFrom": ["all"]
+        },
+        "it-bot": {
+          "appId": "cli_it_bot_placeholder",
+          "appSecret": "${FEISHU_IT_BOT_APP_SECRET}",
+          "dmPolicy": "open",
+          "groupPolicy": "mention",
+          "allowFrom": ["all"]
+        }
+      }
+    }
+  },
+
+  "plugins": {
+    "entries": {
+      "feishu": { "enabled": true }
+    }
+  }
+}

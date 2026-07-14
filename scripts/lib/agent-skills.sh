@@ -475,10 +475,30 @@ inject_exec_guide() {
   local tools_md="$1" workspace_dir="$2"
   [ -f "$tools_md" ] || return 0
   grep -q "## exec 命令规范" "$tools_md" && return 0
+
+  # 按 SOUL.md 的 crew-type 分发（2026-07-07 简化，删 T0~T3 抽象）：
+  #   internal              → 无白名单，短提示即可
+  #   external + ALLOWED_COMMANDS 有 + 条目 → allowlist 模式，注入完整白名单规范
+  #   external 无 + 条目     → deny，无 shell 执行权限，不注入
+  local soul="${workspace_dir:-}/SOUL.md"
+  local crew_type=""
+  [ -f "$soul" ] && crew_type="$(resolve_crew_type "$soul")"
   local ws="${workspace_dir:-<workspace>}"
-  cat >> "$tools_md" << 'GUIDE'
+
+  # external crew 是否有 ALLOWED_COMMANDS + 条目（决定 deny 还是 allowlist）
+  local ext_has_allowlist="false"
+  if [ "$crew_type" = "external" ] && [ -f "${workspace_dir:-}/ALLOWED_COMMANDS" ]; then
+    if grep -qE '^[[:space:]]*\+' "${workspace_dir:-}/ALLOWED_COMMANDS"; then
+      ext_has_allowlist="true"
+    fi
+  fi
+
+  if [ "$crew_type" = "external" ] && [ "$ext_has_allowlist" = "true" ]; then
+    cat >> "$tools_md" << 'GUIDE'
 
 ## exec 命令规范
+
+本 crew 为**对外 crew**，exec 走 **allowlist**——只允许 `ALLOWED_COMMANDS` 里 `+` 声明的命令/脚本，其余一律拒绝（prompt injection 防线）。
 
 exec allowlist 会解析管道、`&&`、`||`、`;` 和常见重定向，并逐段检查实际执行的命令是否都在白名单中。
 
@@ -516,15 +536,6 @@ cat file.txt | grep keyword
 - ✅ `python3 /tmp/check_env.py`（探查环境变量：脚本内容 `import os; print(bool(os.environ.get("PEXELS_API_KEY")))`）
 - ✅ `mkdir -p notes images`（逐一直写目录名，不用花括号展开）
 - ✅ 逐个调用 `ls dir1/`、`ls dir2/` …（替代 `for` 循环），或写 python 脚本批量处理
-GUIDE
-  sed -i "s|@@WS@@|$ws|g" "$tools_md"
-}
-
-inject_python_exec_guide() {
-  local tools_md="$1"
-  [ -f "$tools_md" ] || return 0
-  grep -qF "## Python 调用规范" "$tools_md" && return 0
-  cat >> "$tools_md" << 'GUIDE'
 
 ## Python 调用规范
 
@@ -546,25 +557,18 @@ python3 /tmp/my_script.py
 
 临时脚本统一写到 `/tmp/` 下，执行后可删除。
 GUIDE
-}
+    # sed -i 在 BSD（macOS）会把脚本串当成备份后缀吞掉；-i.bak 两端都支持，再清掉 .bak。
+    sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
+  elif [ "$crew_type" = "internal" ]; then
+    cat >> "$tools_md" << 'GUIDE'
 
-inject_env_file_guide() {
-  local tools_md="$1" env_file="$2"
-  [ -f "$tools_md" ] || return 0
-  grep -qF "## 环境变量写入规范" "$tools_md" && return 0
-  cat >> "$tools_md" << GUIDEEOF
+## exec 命令规范
 
-## 环境变量写入规范
+本 crew 为**对内 crew**，exec **无白名单限制**——管道、`&&`、`||`、`;`、`cd` 前缀、相对路径、`bash`/`sh` 前缀等均不触发 allowlist miss，可直接执行。
 
-为技能配置环境变量时，必须写入 gateway 环境变量文件：
-
-- **文件路径**：${env_file}
-
-**写入步骤**：
-1. 读取当前文件内容，确认该变量是否已存在
-2. 若不存在，按格式追加（`KEY=value` 一行一个）
-3. 写入后必须重启 gateway 使变量生效
-
-**严禁**在 exec 调用时内联设置环境变量（如 \`KEY=value python3 script.py\`），这会导致 allowlist miss。
-GUIDEEOF
+脚本调用仍建议用绝对路径（如 `python3 @@WS@@/skills/xxx/scripts/yyy.py`），仅为跨环境/跨 workspace 稳定，非安全约束。
+GUIDE
+    sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
+  fi
+  # external 无 + 条目（deny）或未知 crew-type：不注入（无 shell 执行权限）
 }

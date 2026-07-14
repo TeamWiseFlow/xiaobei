@@ -1,0 +1,71 @@
+spec_version: 1
+id: data-chart-916
+name: Data Chart 9:16
+description: >
+  NYT 编辑风格数据可视化模板，竖向柱状图 + 计数器动画。
+  9:16 竖屏版本，支持中文。适用于数据对比、增长趋势、年度报告等场景。
+
+engine: hyperframes
+engine_version: ^0.4.0
+source_entry: source/index.html
+
+category: data-visualization
+subcategory: bar-chart
+tags: [chart, data, bar, nyt, editorial, 9:16]
+
+best_for:
+  - "数据对比展示"
+  - "增长趋势动画"
+  - "年度数据报告"
+  - "编辑风格数据可视化"
+
+output:
+  formats: [mp4, webm]
+  default_format: mp4
+  resolution:
+    default: { width: 1080, height: 1920 }
+    supported_aspects: ["9:16"]
+  fps:
+    default: 30
+    supported: [30, 60]
+  duration:
+    type: variable
+    min_sec: 3
+    max_sec: 10
+  alpha: false
+  audio:
+    supported: true
+    expected_inputs: [narration]
+
+inputs:
+  schema:
+    type: object
+    required: [title]
+    properties:
+      title:
+        type: string
+        maxLength: 40
+        description: "图表主标题"
+      kicker:
+        type: string
+        maxLength: 30
+        description: "类别标签（标题上方红色小字）"
+      source:
+        type: string
+        maxLength: 60
+        description: "数据来源说明"
+      durationSec:
+        type: number
+        minimum: 3
+        maximum: 10
+        default: 5
+  examples:
+    - { "title": "用户增长突破九百万", "kicker": "年度增长", "source": "公司年报 2025", "durationSec": 5 }
+
+license:
+  spdx: Apache-2.0
+  attribution_required: false
+  redistribution_allowed: true
+  commercial_use: true
+
+version: 0.1.0

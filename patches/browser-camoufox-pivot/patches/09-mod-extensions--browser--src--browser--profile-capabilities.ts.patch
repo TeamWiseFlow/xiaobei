@@ -1,0 +1,52 @@
+diff --git a/extensions/browser/src/browser/profile-capabilities.ts b/extensions/browser/src/browser/profile-capabilities.ts
+index aac784a0ea..621df70135 100644
+--- a/extensions/browser/src/browser/profile-capabilities.ts
++++ b/extensions/browser/src/browser/profile-capabilities.ts
+@@ -6,7 +6,7 @@
+  */
+ import type { ResolvedBrowserProfile } from "./config.js";
+ 
+-type BrowserProfileMode = "local-managed" | "local-existing-session" | "remote-cdp";
++type BrowserProfileMode = "local-existing-session" | "remote-cdp";
+ 
+ type BrowserProfileCapabilities = {
+   mode: BrowserProfileMode;
+@@ -37,28 +37,18 @@ export function getBrowserProfileCapabilities(
+     };
+   }
+ 
+-  if (!profile.cdpIsLoopback) {
+-    return {
+-      mode: "remote-cdp",
+-      isRemote: true,
+-      usesChromeMcp: false,
+-      usesPersistentPlaywright: true,
+-      supportsPerTabWs: false,
+-      supportsJsonTabEndpoints: false,
+-      supportsReset: false,
+-      supportsManagedTabLimit: false,
+-    };
+-  }
+-
++  // local-managed (OpenClaw-managed local Chromium on loopback) was replaced by
++  // the camoufox target in the camoufox-cli pivot. Remaining non-existing-session
++  // profiles are treated as remote-cdp (including loopback CDP endpoints).
+   return {
+-    mode: "local-managed",
+-    isRemote: false,
++    mode: "remote-cdp",
++    isRemote: !profile.cdpIsLoopback,
+     usesChromeMcp: false,
+-    usesPersistentPlaywright: false,
+-    supportsPerTabWs: true,
+-    supportsJsonTabEndpoints: true,
+-    supportsReset: true,
+-    supportsManagedTabLimit: true,
++    usesPersistentPlaywright: true,
++    supportsPerTabWs: false,
++    supportsJsonTabEndpoints: false,
++    supportsReset: false,
++    supportsManagedTabLimit: false,
+   };
+ }
+ 

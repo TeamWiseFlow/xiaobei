@@ -60,7 +60,7 @@ https://www.zhihu.com/search?type=content&q={keyword}
 
 ### 多关键词
 
-用 `%20` 连接：`wiseflow%20AI%20搜索`
+用 `%20` 连接：`xiaobei%20AI%20搜索`
 
 ## 回答详情
 

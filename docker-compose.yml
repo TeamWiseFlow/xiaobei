@@ -1,0 +1,36 @@
+# wiseflow-client 容器编排。
+# 镜像由仓根 Dockerfile 构建（多阶段，bake openclaw + camoufox + 指纹模板）。
+#
+# 持久化（关键）：两个 named volume 分别挂 /root/.openclaw 与 /root/.camoufox-cli，
+# 跨 docker compose down/up 保留登录态、指纹 profile、camoufox 运行时缓存。
+# 误删 volume = 丢全部登录态（重新登录触发平台风控），务必定期备份：
+#   docker run --rm -v wiseflow-logins:/data -v "$PWD":/backup alpine \
+#     tar czf /backup/wiseflow-logins-$(date +%F).tgz -C /data .
+services:
+  wiseflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wiseflow-client:local
+    restart: unless-stopped
+    environment:
+      # 产品方发放的 key（必填）。从 .env 或命令行 -e OFB_KEY=... 注入。
+      OFB_KEY: ${OFB_KEY:?OFB_KEY 必须设置}
+      # relay 网关端点（无状态多租户）。默认占位，生产环境覆盖。
+      RELAY_BASE_URL: ${RELAY_BASE_URL:-https://relay.wiseflow.example.com}
+      GATEWAY_PORT: ${GATEWAY_PORT:-18789}
+      # 容器内固定路径，防止宿主机 HOME/OPENCLAW_HOME 泄漏进运行时路径解析。
+      OPENCLAW_HOME: /root/.openclaw
+      HOME: /root
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${GATEWAY_PORT:-18789}:18789"
+    volumes:
+      # 登录态/cookie 中央仓 + 各 session 指纹 profile（首选落点）。
+      - wiseflow-logins:/root/.openclaw
+      # camoufox-cli 配置 + 默认 profile dir + geoip/db 缓存。
+      - wiseflow-camoufox:/root/.camoufox-cli
+
+volumes:
+  wiseflow-logins:
+  wiseflow-camoufox:

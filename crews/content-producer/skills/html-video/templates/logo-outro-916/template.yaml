@@ -1,0 +1,70 @@
+spec_version: 1
+id: logo-outro-916
+name: Logo Outro 9:16
+description: >
+  品牌 Logo 组装动画 + 品牌名 + 标语 + CTA 尾帧模板。
+  9:16 竖屏版本，支持中文。适用于视频结尾品牌露出与行动号召。
+
+engine: hyperframes
+engine_version: ^0.4.0
+source_entry: source/index.html
+
+category: outro
+subcategory: brand-cta
+tags: [outro, logo, brand, cta, 9:16]
+
+best_for:
+  - "视频结尾品牌露出"
+  - "行动号召尾帧"
+  - "品牌 Logo 动画"
+
+output:
+  formats: [mp4, webm]
+  default_format: mp4
+  resolution:
+    default: { width: 1080, height: 1920 }
+    supported_aspects: ["9:16"]
+  fps:
+    default: 30
+    supported: [30, 60]
+  duration:
+    type: variable
+    min_sec: 3
+    max_sec: 8
+  alpha: false
+  audio:
+    supported: true
+    expected_inputs: [narration]
+
+inputs:
+  schema:
+    type: object
+    required: [brandName]
+    properties:
+      brandName:
+        type: string
+        maxLength: 20
+        description: "品牌名称"
+      tagline:
+        type: string
+        maxLength: 40
+        description: "品牌标语/一句话定位"
+      cta:
+        type: string
+        maxLength: 20
+        description: "行动号召文案（如：立即体验、关注我们）"
+      durationSec:
+        type: number
+        minimum: 3
+        maximum: 8
+        default: 4
+  examples:
+    - { "brandName": "WiseFlow", "tagline": "让信息为你所用", "cta": "立即体验", "durationSec": 4 }
+
+license:
+  spdx: Apache-2.0
+  attribution_required: false
+  redistribution_allowed: true
+  commercial_use: true
+
+version: 0.1.0

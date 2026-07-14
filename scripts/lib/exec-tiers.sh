@@ -1,43 +1,29 @@
 #!/bin/bash
-# exec-tiers.sh - T0~T3 命令分级 → exec-approvals / tools.exec 映射
+# exec-tiers.sh - crew-type + ALLOWED_COMMANDS → exec-approvals / tools.exec 映射
 #
-# 读取 SOUL.md 中的 command-tier 声明 + ALLOWED_COMMANDS 微调，
+# 读取 SOUL.md 的 crew-type（internal/external）+ ALLOWED_COMMANDS 微调，
 # 生成 openclaw 原生 exec 权限配置（tools.exec + exec-approvals.json）。
+#
+# 权限模型（2026-07-07 简化，删 T0~T3 四档抽象）：
+#   internal        → security: full（无白名单）
+#   external        → security: deny
+#   external + ALLOWED_COMMANDS 有 + 条目 → 升级为 allowlist（只放行那些条目）
+# ALLOWED_COMMANDS 是对外 crew 在 deny 上凿洞的唯一通道；对内 crew 不读它。
 #
 # 被 setup-crew.sh source 使用。
 
-# ── 各 Tier 基线命令 ──────────────────────────────────
-# T0: 无命令（deny）
-# T1: 只读型系统命令
-TIER_T1_COMMANDS="cat ls grep find xargs ps date echo pwd env which head tail wc sort uniq diff curl stat basename dirname realpath readlink tr printf whoami uname du df file ffprobe fc-list fc-match sed mkdir true false"
-# T2: T1 + 开发工具链
-# 注意：不再列入 bash/sh。openclaw exec 审批对 shell wrapper（bash/sh/zsh 等）调用
-# 要求 argPattern 绑定脚本（`bash script.sh`、`bash -c '...'` 都触发 requiresBoundArgPattern），
-# 裸 `/usr/bin/bash` 条目匹配不上这类调用，属于死条目。crew 脚本统一走 shebang 直接执行
-# 或 `python3 /abs/script.py`；`bash -c '...'` 由 inlineChain 拆开按内联命令逐段匹配白名单。
-TIER_T2_EXTRA="git npm npx pnpm bun node python python3 pip pip3 ffmpeg perl cp mv mkdir rmdir rm touch chmod sleep test"
-# T3: full access（无需白名单）
-
-# ── 从 SOUL.md 解析 command-tier ──────────────────────
-resolve_command_tier() {
-  local soul_file="$1"
-  if [ ! -f "$soul_file" ]; then
-    echo "T0"
-    return
-  fi
-  local tier
-  tier="$(grep -i 'command-tier:' "$soul_file" 2>/dev/null \
-    | head -1 \
-    | sed 's/.*command-tier:[[:space:]]*//' \
-    | tr -d '[:space:]' \
-    | tr '[:lower:]' '[:upper:]')"
-  case "$tier" in
-    T0|T1|T2|T3) echo "$tier" ;;
-    *) echo "T0" ;;
-  esac
+# ── 便携 readlink -f ──────────────────────────────────
+# macOS 自带 BSD readlink 不支持 -f（静默失败），GNU readlink 才支持。
+# 优先 readlink -f；失败则用 python3 os.path.realpath 兜底（python3 是 openclaw 硬依赖）；
+# 再失败原样返回，由调用方决定是否接受非 realpath。
+_resolve_realpath() {
+  local p="$1" r
+  r="$(readlink -f "$p" 2>/dev/null || true)"
+  if [ -n "$r" ]; then echo "$r"; return; fi
+  r="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$p" 2>/dev/null || true)"
+  echo "${r:-$p}"
 }
 
-# ── 从 SOUL.md 解析 crew-type（internal/external）──────
 # 注意：resolve_crew_type 由 agent-skills.sh 提供（唯一权威实现）
 # setup-crew.sh 先 source agent-skills.sh 再 source 本文件，无需重复定义。
 
@@ -65,41 +51,33 @@ parse_allowed_commands() {
   echo "${added}|${removed}"
 }
 
-# ── 计算某 agent 的最终命令列表 ──────────────────────
-# 返回: 空格分隔的命令名列表, 或 "__FULL__"（T3）, 或空（T0）
-resolve_tier_commands() {
-  local tier="$1"
+# ── 计算某 crew 的最终命令列表 ──────────────────────
+# 返回: 空格分隔的命令名列表, 或 "__FULL__"（internal）, 或空（external 无 + 条目）
+# $1: crew_type (internal/external)
+# $2: allowed_commands_file（仅 external 读取）
+resolve_crew_commands() {
+  local crew_type="$1"
   local allowed_commands_file="$2"
 
-  # 解析微调
-  local adjustments
-  adjustments="$(parse_allowed_commands "$allowed_commands_file")"
-  local added="${adjustments%%|*}"
-  local removed="${adjustments##*|}"
-
-  local base_commands=""
-  case "$tier" in
-    # T0 默认 deny；若显式声明 +command，则升级为 allowlist（仍是最小权限）
-    T0) base_commands="$added" ;;
-    T1) base_commands="$TIER_T1_COMMANDS $added" ;;
-    T2) base_commands="$TIER_T1_COMMANDS $TIER_T2_EXTRA $added" ;;
-    T3) echo "__FULL__"; return ;;
-    *) base_commands="$added" ;;
+  case "$crew_type" in
+    internal)
+      echo "__FULL__"
+      return
+      ;;
+    external)
+      local adjustments
+      adjustments="$(parse_allowed_commands "$allowed_commands_file")"
+      local added="${adjustments%%|*}"
+      # external 只认 + 条目（deny 上凿洞）；- 条目无意义（本就 deny）
+      echo "$added"
+      return
+      ;;
+    *)
+      # 未知 crew-type：保守 deny
+      echo ""
+      return
+      ;;
   esac
-
-  local all_commands="$base_commands"
-
-  # 过滤被移除的命令
-  local final=""
-  for cmd in $all_commands; do
-    local skip=false
-    for r in $removed; do
-      [ "$cmd" = "$r" ] && { skip=true; break; }
-    done
-    [ "$skip" = "false" ] && final="$final $cmd"
-  done
-
-  echo "$final"
 }
 
 # ── 解析命令名 → 二进制绝对路径 ──────────────────────
@@ -128,7 +106,7 @@ resolve_binary_path() {
       # 因此 allowlist 条目必须用 realpath 而非 symlink 路径，
       # 否则 /usr/bin/python3 → /usr/bin/python3.12 的 symlink 会导致 allowlist miss。
       local real
-      real="$(readlink -f "$cmd" 2>/dev/null || true)"
+      real="$(_resolve_realpath "$cmd")"
       echo "${real:-$cmd}"
       return
       ;;
@@ -139,7 +117,7 @@ resolve_binary_path() {
   case "$resolved" in
     /*)
       local real
-      real="$(readlink -f "$resolved" 2>/dev/null || true)"
+      real="$(_resolve_realpath "$resolved")"
       echo "${real:-$resolved}"
       return
       ;;
@@ -149,7 +127,7 @@ resolve_binary_path() {
   case "$resolved" in
     /*)
       local real
-      real="$(readlink -f "$resolved" 2>/dev/null || true)"
+      real="$(_resolve_realpath "$resolved")"
       echo "${real:-$resolved}"
       return
       ;;
@@ -159,16 +137,16 @@ resolve_binary_path() {
   for dir in /usr/bin /bin /usr/local/bin; do
     if [ -x "$dir/$cmd" ]; then
       local real
-      real="$(readlink -f "$dir/$cmd" 2>/dev/null || true)"
+      real="$(_resolve_realpath "$dir/$cmd")"
       echo "${real:-$dir/$cmd}"
       return
     fi
   done
 }
 
-# ── 为 agent 生成 allowlist JSON 数组 ────────────────
+# ── 为 crew 生成 allowlist JSON 数组 ────────────────
 # $1: 空格分隔的命令列表
-# $2: (可选) agent workspace 目录，用于解析 ./ 相对路��
+# $2: (可选) agent workspace 目录，用于解析 ./ 相对路径
 # 输出: JSON 数组字符串
 build_exec_allowlist_json() {
   local commands="$1"
@@ -200,15 +178,20 @@ build_exec_allowlist_json() {
   echo "[${entries}]"
 }
 
-# ── Tier → tools.exec JSON 对象 ──────────────────────
-tier_to_tools_exec_json() {
-  local tier="$1"
-  case "$tier" in
-    T0) echo '{"host":"gateway","security":"deny","ask":"off"}' ;;
-    T1) echo '{"host":"gateway","security":"allowlist","ask":"off"}' ;;
-    T2) echo '{"host":"gateway","security":"allowlist","ask":"off"}' ;;
-    T3) echo '{"host":"gateway","security":"full","ask":"off"}' ;;
-    *)  echo '{"host":"gateway","security":"deny","ask":"off"}' ;;
+# ── crew-type → tools.exec JSON 对象 ────────────────
+# $1: crew_type, $2: has_allowlist (true/false)
+crew_type_to_tools_exec_json() {
+  local crew_type="$1" has_allowlist="$2"
+  case "$crew_type" in
+    internal) echo '{"host":"gateway","security":"full","ask":"off"}' ;;
+    external)
+      if [ "$has_allowlist" = "true" ]; then
+        echo '{"host":"gateway","security":"allowlist","ask":"off"}'
+      else
+        echo '{"host":"gateway","security":"deny","ask":"off"}'
+      fi
+      ;;
+    *) echo '{"host":"gateway","security":"deny","ask":"off"}' ;;
   esac
 }
 
@@ -288,7 +271,7 @@ fs.writeFileSync(filePath, JSON.stringify(result, null, 2) + "\n", { mode: 0o600
 
 # ── 高层接口：为一组 agents 计算并写入 exec 配置 ─────
 # 参数: config_path exec_approvals_path crews_dir project_root
-# 读取每个已注册 crew 的 tier，生成 tools.exec + exec-approvals
+# 读取每个已注册 crew 的 crew-type，生成 tools.exec + exec-approvals
 apply_exec_tiers() {
   local config_path="$1"
   local exec_approvals_path="$2"
@@ -322,51 +305,42 @@ for (const a of (c.agents?.list || [])) {
     local crew_type
     crew_type="$(resolve_crew_type "$soul_file")"
 
-    # 优先读取实例 workspace 的 ALLOWED_COMMANDS；缺失时回退模板目录
+    # ALLOWED_COMMANDS：优先实例 workspace，缺失回退模板目录
     local allowed_cmds_file="$workspace_dir/ALLOWED_COMMANDS"
     if [ ! -f "$allowed_cmds_file" ] && [ -f "$crews_dir/$agent_id/ALLOWED_COMMANDS" ]; then
       allowed_cmds_file="$crews_dir/$agent_id/ALLOWED_COMMANDS"
     fi
 
-    # 解析 tier
-    local tier
-    tier="$(resolve_command_tier "$soul_file")"
-
     # 解析最终命令列表
     local commands
-    commands="$(resolve_tier_commands "$tier" "$allowed_cmds_file")"
+    commands="$(resolve_crew_commands "$crew_type" "$allowed_cmds_file")"
 
     # 生成 allowlist JSON（./ 路径相对于 agent workspace 解析）
     local allowlist_json
     allowlist_json="$(build_exec_allowlist_json "$commands" "$workspace_dir")"
 
-    local t0_has_allowlist="false"
-    if [ "$tier" = "T0" ] && [ -n "$(printf '%s' "$commands" | tr -d '[:space:]')" ]; then
-      t0_has_allowlist="true"
+    local has_allowlist="false"
+    if [ -n "$allowlist_json" ] && [ "$allowlist_json" != "[]" ]; then
+      has_allowlist="true"
     fi
 
     # 生成 tools.exec JSON
     local tools_exec_json
-    if [ "$t0_has_allowlist" = "true" ]; then
-      tools_exec_json='{"host":"gateway","security":"allowlist","ask":"off"}'
-    else
-      tools_exec_json="$(tier_to_tools_exec_json "$tier")"
-    fi
+    tools_exec_json="$(crew_type_to_tools_exec_json "$crew_type" "$has_allowlist")"
 
     # 生成 exec-approvals agent 配置
     local agent_security agent_ask
-    case "$tier" in
-      T0)
-        if [ "$t0_has_allowlist" = "true" ]; then
+    agent_ask="off"
+    case "$crew_type" in
+      internal) agent_security="full" ;;
+      external)
+        if [ "$has_allowlist" = "true" ]; then
           agent_security="allowlist"
         else
           agent_security="deny"
         fi
-        agent_ask="off"
         ;;
-      T1|T2) agent_security="allowlist"; agent_ask="off" ;;
-      T3) agent_security="full"; agent_ask="off" ;;
-      *) agent_security="deny"; agent_ask="off" ;;
+      *) agent_security="deny" ;;
     esac
 
     local cmd_count
@@ -382,7 +356,7 @@ for (const a of (c.agents?.list || [])) {
       ')"
     fi
 
-    echo "  🔒 $agent_id [$crew_type] → $tier (security=$agent_security, commands=$cmd_count)"
+    echo "  🔒 $agent_id [$crew_type] → security=$agent_security, commands=$cmd_count"
 
     # 累加到 JSON 对象
     agent_configs="$(PREV="$agent_configs" AID="$agent_id" SEC="$agent_security" ASK="$agent_ask" AL="$allowlist_json" \

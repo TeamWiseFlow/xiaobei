@@ -1,80 +1,23 @@
-# Main Agent — Tools
+# 自媒体运营 — Tools
 
-## 工具与脚本
+## 环境备注
 
-- `sessions_spawn`: Dispatch tasks to allowed sub-agents, especially IT Engineer for system work.
-- `./skills/crew-list/scripts/list-internal-crews.sh`: List internal team roster.
-- `./skills/crew-recruit/scripts/recruit-internal-crew.sh`: Recruit non-protected internal crew.
-- `./skills/crew-dismiss/scripts/dismiss-internal-crew.sh`: Dismiss non-protected internal crew.
-- `./skills/work-channel-binding/scripts/check-work-channel-bindings.py`: Inspect current work channel bindings.
-- `./skills/work-channel-binding/scripts/prepare-work-channel-binding.py`: Build a dry-run binding plan.
-- `./skills/work-channel-binding/scripts/apply-work-channel-binding.py`: Apply confirmed binding changes.
-- `./skills/work-channel-binding/scripts/record-pending-followup.py`: Record restart followup before Gateway restart.
-- `./skills/work-channel-binding/scripts/complete-pending-followup.py`: Complete restart followup after recovery.
-- `./skills/reminder/scripts/update-reminders.py`: Refresh reminder state.
+- 文生图/改图默认输出 JPG 格式：企业微信后台发送图片只支持 JPG；如需 PNG 需显式指定 --format png
 
-## System Environment Notes
+### 📝 视频封面/海报制作经验
 
-- OpenClaw config: `~/.openclaw/openclaw.json`
-- Main workspace: `~/.openclaw/workspace-main`
-- IT Engineer workspace: `~/.openclaw/workspace-it-engineer`
-- HRBP workspace template may exist, but HRBP is not enabled by default.
-- Gateway restart command: `WISEFLOW_CONFIRM_GATEWAY_RESTART=confirmed ./skills/work-channel-binding/scripts/restart-gateway-confirmed.sh <reason>`
-- Gateway status command: `systemctl --user status openclaw-gateway --no-pager`
-- Weixin login command: `openclaw channels login --channel openclaw-weixin`
-- Weixin pairing check: `openclaw pairing list openclaw-weixin`
-- Weixin pairing approve: `openclaw pairing approve openclaw-weixin <id>`
+`siliconflow-img-gen` 可以很好的直接出带文字的海报，完全不必要先生成图，然后自己再编写脚本拼字。
 
-## OFV_ENV
+具体见 `siliconflow-img-gen` 技能中 `视频封面/海报最佳实践`。
 
-Main Agent should know the same operating environment that IT Engineer uses, but should delegate risky or detailed system work to IT Engineer.
+### 数据库查询一定走 published-track 脚本
 
-Use this knowledge for guidance and orchestration only:
+`sqlite3` 不在 allowlist 中。查询 published-track 数据库必须通过已有脚本：
 
-- Project root is the wiseflow-pro checkout.
-- OpenClaw runtime state lives under `~/.openclaw`.
-- Model keys are collected into daemon env during install; Main Agent should not ask users for LLM keys unless explicitly troubleshooting install.
-- Default main model is `deepseek/deepseek-v4-pro` with high thinking.
+```
+✅ ./skills/published-track/scripts/query.sh --platform wx_mp
+✅ ./skills/published-track/scripts/query-pending.sh
 
-## Work Channel Notes
-
-Main Agent supports onboarding for these work channels:
-
-- Feishu
-- WeCom
-
-Tutorial placeholders:
-
-- `./skills/work-channel-binding/docs/feishu.md`
-- `./skills/work-channel-binding/docs/wecom.md`
-
-Do not configure awada as a default work channel. Awada is reserved for external crew service scenarios.
-
-## Tool Usage Rules
-
-### sessions_spawn 规范
-
-- Spawn only agents in `allowAgents`.
-- IT Engineer is the default system subagent.
-- HRBP is enabled only when external crew is needed.
-- External crew are bind-only and not spawned by Main Agent.
-
-### 团队管理操作
-
-- 查看团队 → `crew-list`
-- 招募成员 → `crew-recruit`
-- 下线成员 → `crew-dismiss`
-- 工作 channel 绑定 → `work-channel-binding`
-- reminder 更新 → `reminder`
-
-Do not hand-edit `openclaw.json`; use skill scripts.
-
-### L3 Confirmation Required
-
-Ask the user before:
-
-- modifying `openclaw.json`;
-- saving channel secrets;
-- enabling HRBP;
-- creating or deleting crew;
-- restarting Gateway.
+❌ sqlite3 db/published_track.db "SELECT ..."
+❌ echo ".tables" | sqlite3 db/published_track.db
+```

@@ -1,0 +1,11 @@
+# wiseflow-client 全仓 Python 依赖（统一声明）
+#
+# 由 scripts/apply-addons.sh 扫描合并后 pip install（源码部署），
+# 或由 Dockerfile wiseflow-layer 阶段直接 pip install（Docker 部署）。
+# 不在此声明 skill 专属的冷门/重型依赖（如 manim，由 SKILL.md requires.bins 声明，按需系统安装）。
+#
+# 第三方包清单（被 skills/ crews/ 下脚本 import）：
+requests          # relay_sign.py / xhs-publish / youtube-publish / pexels / pixabay ...
+urllib3           # youtube-publish 重试策略
+Pillow            # wxwork-moments / xhs-publish / pitch-deck / process_images 自动缩放
+websockets        # wechat-channels-publish 视频上传

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1080, height=1920" />
+<title>Data Chart 9:16</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 1080px; height: 1920px;
+    overflow: hidden;
+    font-family: 'IBM Plex Sans', 'Noto Sans SC', system-ui, sans-serif;
+    background: #f7f5ee;
+    color: #1a1a1a;
+  }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+  #scene {
+    position: relative;
+    width: 1080px; height: 1920px;
+    padding: 100px 80px;
+    display: flex; flex-direction: column;
+  }
+
+  /* Kicker */
+  .kicker {
+    font-size: 22px; font-weight: 600;
+    color: #a91d1d;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0; transform: translateY(12px);
+    animation: fadeUp 0.4s 0.2s ease-out forwards;
+  }
+
+  /* Title */
+  .title {
+    font-family: 'Noto Sans SC', 'IBM Plex Sans', sans-serif;
+    font-size: 64px; font-weight: 900;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    margin-top: 16px;
+    opacity: 0; transform: translateY(12px);
+    animation: fadeUp 0.5s 0.4s ease-out forwards;
+  }
+
+  /* Chart area — vertical bars */
+  .chart-area {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-around;
+    margin-top: 60px;
+    padding-bottom: 20px;
+  }
+  .bar-col {
+    display: flex; flex-direction: column;
+    align-items: center;
+    width: 120px;
+  }
+  .bar-value {
+    font-size: 32px; font-weight: 700;
+    color: #1a1a1a;
+    margin-bottom: 12px;
+    opacity: 0;
+  }
+  .bar {
+    width: 80px;
+    background: #a91d1d;
+    border-radius: 6px 6px 0 0;
+    height: 0;
+    animation: barGrow 0.8s cubic-bezier(.22,1,.36,1) forwards;
+  }
+  .bar-col:nth-child(1) .bar { animation-delay: 0.6s; }
+  .bar-col:nth-child(2) .bar { animation-delay: 0.75s; }
+  .bar-col:nth-child(3) .bar { animation-delay: 0.9s; }
+  .bar-col:nth-child(4) .bar { animation-delay: 1.05s; }
+  .bar-col:nth-child(5) .bar { animation-delay: 1.2s; }
+  .bar-col:nth-child(1) .bar-value { animation: fadeUp 0.3s 1.0s ease-out forwards; }
+  .bar-col:nth-child(2) .bar-value { animation: fadeUp 0.3s 1.15s ease-out forwards; }
+  .bar-col:nth-child(3) .bar-value { animation: fadeUp 0.3s 1.3s ease-out forwards; }
+  .bar-col:nth-child(4) .bar-value { animation: fadeUp 0.3s 1.45s ease-out forwards; }
+  .bar-col:nth-child(5) .bar-value { animation: fadeUp 0.3s 1.6s ease-out forwards; }
+
+  @keyframes barGrow {
+    to { height: var(--h); }
+  }
+  @keyframes fadeUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .bar-label {
+    font-size: 24px; font-weight: 500;
+    color: #555;
+    margin-top: 16px;
+    opacity: 0; transform: translateY(8px);
+  }
+  .bar-col:nth-child(1) .bar-label { animation: fadeUp 0.3s 1.0s ease-out forwards; }
+  .bar-col:nth-child(2) .bar-label { animation: fadeUp 0.3s 1.15s ease-out forwards; }
+  .bar-col:nth-child(3) .bar-label { animation: fadeUp 0.3s 1.3s ease-out forwards; }
+  .bar-col:nth-child(4) .bar-label { animation: fadeUp 0.3s 1.45s ease-out forwards; }
+  .bar-col:nth-child(5) .bar-label { animation: fadeUp 0.3s 1.6s ease-out forwards; }
+
+  /* Baseline */
+  .baseline {
+    width: 100%; height: 2px;
+    background: #ccc;
+    margin-top: 0;
+  }
+
+  /* Source */
+  .source {
+    margin-top: auto;
+    padding-top: 40px;
+    font-size: 18px;
+    color: #888;
+    opacity: 0;
+    animation: fadeUp 0.4s 1.8s ease-out forwards;
+  }
+
+  /* Decorative rule */
+  .rule {
+    width: 60px; height: 3px;
+    background: #a91d1d;
+    margin-top: 24px;
+    opacity: 0;
+    animation: fadeUp 0.3s 0.5s ease-out forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .kicker, .title, .bar, .bar-value, .bar-label, .source, .rule { animation: none; opacity: 1; transform: none; }
+    .bar { height: var(--h); }
+  }
+</style>
+</head>
+<body>
+<div id="scene"
+     data-width="1080" data-height="1920"
+     data-duration="PLACEHOLDER_DURATION">
+
+  <div class="kicker">PLACEHOLDER_KICKER</div>
+  <div class="title">PLACEHOLDER_TITLE</div>
+  <div class="rule"></div>
+
+  <!-- Vertical bar chart -->
+  <div class="chart-area">
+    <div class="bar-col">
+      <div class="bar-value mono" data-target="320">0</div>
+      <div class="bar" style="--h:480px"></div>
+      <div class="bar-label">2021</div>
+    </div>
+    <div class="bar-col">
+      <div class="bar-value mono" data-target="480">0</div>
+      <div class="bar" style="--h:640px"></div>
+      <div class="bar-label">2022</div>
+    </div>
+    <div class="bar-col">
+      <div class="bar-value mono" data-target="560">0</div>
+      <div class="bar" style="--h:750px"></div>
+      <div class="bar-label">2023</div>
+    </div>
+    <div class="bar-col">
+      <div class="bar-value mono" data-target="720">0</div>
+      <div class="bar" style="--h:900px"></div>
+      <div class="bar-label">2024</div>
+    </div>
+    <div class="bar-col">
+      <div class="bar-value mono" data-target="950">0</div>
+      <div class="bar" style="--h:1050px"></div>
+      <div class="bar-label">2025</div>
+    </div>
+  </div>
+
+  <div class="baseline"></div>
+
+  <div class="source">数据来源：PLACEHOLDER_SOURCE</div>
+</div>
+
+<script>
+  // Counter animation for bar values
+  (function() {
+    var els = document.querySelectorAll('.bar-value[data-target]');
+    var delays = [1000, 1150, 1300, 1450, 1600];
+    els.forEach(function(el, i) {
+      var target = parseInt(el.getAttribute('data-target'), 10);
+      var start = performance.now() + delays[i];
+      var duration = 600;
+      function tick(now) {
+        var t = Math.min(Math.max((now - start) / duration, 0), 1);
+        var ease = 1 - Math.pow(1 - t, 3);
+        el.textContent = Math.round(target * ease);
+        if (t < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+  })();
+</script>
+</body>
+</html>

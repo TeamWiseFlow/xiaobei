@@ -1,0 +1,13 @@
+{
+  "schema_version": 3,
+  "scope": "platform",
+  "platform": "wx_mp",
+  "enabled": true,
+  "content_form": "长文",
+  "baseline_plays": null,
+  "typical_word_count": 2000,
+  "enabled_perf_adapters": [
+    "wx_mp"
+  ],
+  "created_at": "2026-06-14T00:00:00+08:00"
+}

@@ -1,0 +1,12 @@
+diff --git a/src/plugins/tool-types.ts b/src/plugins/tool-types.ts
+index a120ba61d2..478fa6bdd6 100644
+--- a/src/plugins/tool-types.ts
++++ b/src/plugins/tool-types.ts
+@@ -33,7 +33,6 @@ export type OpenClawPluginToolContext = {
+    */
+   activeModel?: OpenClawPluginActiveModelContext;
+   browser?: {
+-    sandboxBridgeUrl?: string;
+     allowHostControl?: boolean;
+   };
+   messageChannel?: string;

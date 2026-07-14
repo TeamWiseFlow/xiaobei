@@ -1,0 +1,32 @@
+{
+  "skills": [
+    "customer-db",
+    "demo-send",
+    "exp-invite",
+    "nano-pdf",
+    "proactive-send",
+    "session-logs"
+  ],
+  "heartbeat": {
+    "every": "1h",
+    "target": "none",
+    "isolatedSession": true,
+    "activeHours": {
+      "start": "08:00",
+      "end": "24:00",
+      "timezone": "user"
+    }
+  },
+  "tools": {
+    "exec": {
+      "host": "gateway",
+      "security": "allowlist",
+      "ask": "off"
+    }
+  },
+  "subagents": {
+    "allowAgents": [
+      "sales-cs"
+    ]
+  }
+}

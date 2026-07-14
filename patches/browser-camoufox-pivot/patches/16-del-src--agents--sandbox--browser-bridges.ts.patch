@@ -1,0 +1,22 @@
+diff --git a/src/agents/sandbox/browser-bridges.ts b/src/agents/sandbox/browser-bridges.ts
+deleted file mode 100644
+index d44cf52abe..0000000000
+--- a/src/agents/sandbox/browser-bridges.ts
++++ /dev/null
+@@ -1,16 +0,0 @@
+-/**
+- * In-process browser bridge registry keyed by sandbox session.
+- *
+- * The prune path uses this table to stop bridge servers when backing containers expire.
+- */
+-import type { BrowserBridge } from "../../plugin-sdk/browser-bridge.js";
+-
+-export const BROWSER_BRIDGES = new Map<
+-  string,
+-  {
+-    bridge: BrowserBridge;
+-    containerName: string;
+-    authToken?: string;
+-    authPassword?: string;
+-  }
+->();

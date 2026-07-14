@@ -6,5 +6,5 @@
 #   git clone https://github.com/openclaw/openclaw openclaw
 #   git -C openclaw checkout $OPENCLAW_COMMIT
 #
-OPENCLAW_VERSION=2026.6.10
-OPENCLAW_COMMIT=aa69b12d0086b631b139c1435c9621a5783e3a40
+OPENCLAW_VERSION=2026.6.11
+OPENCLAW_COMMIT=e085fa1a3ffd32d0ea6917e1e6fb4ecbffbb77d2

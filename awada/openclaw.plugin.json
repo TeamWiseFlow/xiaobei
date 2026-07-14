@@ -1,0 +1,56 @@
+{
+  "id": "awada",
+  "channels": ["awada"],
+  "channelConfigs": {
+    "awada": {
+      "label": "Awada",
+      "description": "Awada channel via relay gateway (HTTP/WS transport)",
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "relayBaseUrl": { "type": "string" },
+          "ofbKey": { "type": "string" },
+          "lane": { "type": "string" },
+          "platform": { "type": "string" },
+          "dmPolicy": { "type": "string", "enum": ["open", "pairing", "allowlist"] },
+          "allowFrom": { "type": "array", "items": { "type": "string" } },
+          "perMsgMaxLen": { "type": "integer", "minimum": 1 },
+          "agents": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": { "type": "boolean" },
+      "relayBaseUrl": { "type": "string" },
+      "ofbKey": { "type": "string" },
+      "lane": { "type": "string" },
+      "platform": { "type": "string" },
+      "dmPolicy": { "type": "string", "enum": ["open", "pairing", "allowlist"] },
+      "allowFrom": { "type": "array", "items": { "type": "string" } },
+      "perMsgMaxLen": { "type": "integer", "minimum": 1 },
+      "customerdb": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "agentId": { "type": "string" },
+          "workspaceDir": { "type": "string" }
+        }
+      }
+    }
+  }
+}

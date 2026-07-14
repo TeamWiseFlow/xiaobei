@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1080, height=1920" />
+<title>Video Clip 9:16</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+    background: #000;
+    font-family: 'Noto Sans SC', system-ui, sans-serif;
+    color: #fff;
+  }
+  #scene {
+    position: relative;
+    width: 1080px;
+    height: 1920px;
+    overflow: hidden;
+  }
+  #bg-video {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    z-index: 0;
+  }
+  /* 文字叠加层 */
+  #overlay {
+    position: absolute;
+    left: 5%; right: 5%;
+    z-index: 10;
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  #overlay.position-bottom { bottom: 12%; }
+  #overlay.position-center { top: 40%; }
+  #overlay.position-top { top: 12%; }
+  #overlay .title {
+    font-size: 64px;
+    font-weight: 900;
+    line-height: 1.2;
+    text-shadow: 0 4px 20px rgba(0,0,0,0.7);
+    letter-spacing: -0.01em;
+  }
+  #overlay .subtitle {
+    font-size: 36px;
+    font-weight: 500;
+    line-height: 1.4;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+    opacity: 0.8;
+    margin-top: 12px;
+  }
+  /* 半透明渐变遮罩（增强文字可读性） */
+  #gradient-mask {
+    position: absolute;
+    left: 0; right: 0;
+    height: 40%;
+    z-index: 5;
+    pointer-events: none;
+  }
+  #gradient-mask.mask-bottom {
+    bottom: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%);
+  }
+  #gradient-mask.mask-center {
+    top: 30%;
+    background: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.5) 30%, rgba(0,0,0,0.5) 70%, transparent 100%);
+  }
+  #gradient-mask.mask-top {
+    top: 0;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%);
+  }
+</style>
+</head>
+<body>
+<div id="scene"
+     data-width="1080" data-height="1920"
+     data-duration="PLACEHOLDER_DURATION">
+
+  <video id="bg-video"
+         src="PLACEHOLDER_VIDEO_SRC"
+         autoplay muted playsinline>
+  </video>
+
+  <div id="gradient-mask" class="mask-PLACEHOLDER_OVERLAY_POSITION"></div>
+
+  <div id="overlay" class="position-PLACEHOLDER_OVERLAY_POSITION">
+    <div class="title">PLACEHOLDER_TITLE</div>
+    <div class="subtitle">PLACEHOLDER_SUBTITLE</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script>
+  window.__timelines = window.__timelines || {};
+  const tl = gsap.timeline({ paused: true });
+
+  // 文字叠加淡入
+  const hasTitle = document.querySelector('#overlay .title').textContent.trim() !== 'PLACEHOLDER_TITLE';
+  if (hasTitle) {
+    tl.to('#overlay', {
+      opacity: 1,
+      y: 0,
+      duration: 0.6,
+      ease: 'power2.out'
+    }, 0.3);
+  } else {
+    // 无文字叠加时隐藏 overlay
+    document.getElementById('overlay').style.display = 'none';
+    document.getElementById('gradient-mask').style.display = 'none';
+  }
+
+  window.__timelines['video-clip'] = tl;
+</script>
+</body>
+</html>

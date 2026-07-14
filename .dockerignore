@@ -1,0 +1,7 @@
+# 避免本地 node_modules / 构建产物打进镜像（镜像内统一重新 install）
+**/node_modules
+**/dist
+**/.git
+awada/node_modules
+openclaw/node_modules
+*.log

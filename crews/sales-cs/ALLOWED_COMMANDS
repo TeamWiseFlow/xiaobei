@@ -1,0 +1,23 @@
+# customer-service ALLOWED_COMMANDS
+# 对外 crew 默认 deny，本文件用 + 条目精确放行声明式技能所需脚本（在 deny 上凿洞）
+# 格式：+<command> 追加允许（相对于 workspace 根目录）
+# customer-db 具名操作脚本（无原子 SQL 访问权限）
++./skills/customer-db/scripts/cs-update.sh
++./skills/customer-db/scripts/follow-up-create.sh
++./skills/customer-db/scripts/follow-up-cancel-pending.sh
++./skills/customer-db/scripts/follow-up-due.sh
++./skills/customer-db/scripts/follow-up-mark-sent.sh
++./skills/customer-db/scripts/follow-up-complete.sh
++./skills/customer-db/scripts/follow-up-expire.sh
++exp-invite
++./skills/exp-invite/scripts/invite.sh
++proactive-send
++./skills/proactive-send/scripts/send.mjs
++nano-pdf
++jq
++rg
++node
+# PDF image extraction utilities (added 2026-07-01 by IT Engineer, all 3 at /usr/bin/)
++pdfimages
++pdftoppm
++pdftocairo

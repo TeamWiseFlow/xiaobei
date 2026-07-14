@@ -1,0 +1,79 @@
+diff --git a/src/agents/sandbox/prune.ts b/src/agents/sandbox/prune.ts
+index cd9ac89b5a..3781973a9e 100644
+--- a/src/agents/sandbox/prune.ts
++++ b/src/agents/sandbox/prune.ts
+@@ -1,21 +1,18 @@
+ /**
+  * Sandbox registry pruning.
+  *
+- * Removes stale runtime containers and browser bridges on a best-effort schedule.
++ * Removes stale runtime containers on a best-effort schedule.
++ *
++ * Browser bridge pruning was removed (camoufox-cli pivot, see
++ * docs/browser-extension-replacement-research.md §12).
+  */
+ import { getRuntimeConfig } from "../../config/config.js";
+-import { stopBrowserBridgeServer } from "../../plugin-sdk/browser-bridge.js";
+ import { defaultRuntime } from "../../runtime.js";
+ import { asDateTimestampMs } from "../../shared/number-coercion.js";
+ import { getSandboxBackendManager } from "./backend.js";
+-import { BROWSER_BRIDGES } from "./browser-bridges.js";
+-import { dockerSandboxBackendManager } from "./docker-backend.js";
+ import {
+-  readBrowserRegistry,
+   readRegistry,
+-  removeBrowserRegistryEntry,
+   removeRegistryEntry,
+-  type SandboxBrowserRegistryEntry,
+   type SandboxRegistryEntry,
+ } from "./registry.js";
+ import type { SandboxConfig } from "./types.js";
+@@ -96,40 +93,6 @@ async function pruneSandboxContainers(cfg: SandboxConfig) {
+   });
+ }
+ 
+-/** Prunes browser bridge containers and closes matching in-process bridge servers. */
+-async function pruneSandboxBrowsers(cfg: SandboxConfig) {
+-  const config = getRuntimeConfig();
+-  await pruneSandboxRegistryEntries<
+-    SandboxBrowserRegistryEntry & {
+-      backendId?: string;
+-      runtimeLabel?: string;
+-      configLabelKind?: string;
+-    }
+-  >({
+-    cfg,
+-    read: readBrowserRegistry,
+-    remove: removeBrowserRegistryEntry,
+-    removeRuntime: async (entry) => {
+-      await dockerSandboxBackendManager.removeRuntime({
+-        entry: {
+-          ...entry,
+-          backendId: "docker",
+-          runtimeLabel: entry.containerName,
+-          configLabelKind: "Image",
+-        },
+-        config,
+-      });
+-    },
+-    onRemoved: async (entry) => {
+-      const bridge = BROWSER_BRIDGES.get(entry.sessionKey);
+-      if (bridge?.containerName === entry.containerName) {
+-        await stopBrowserBridgeServer(bridge.bridge.server).catch(() => undefined);
+-        BROWSER_BRIDGES.delete(entry.sessionKey);
+-      }
+-    },
+-  });
+-}
+-
+ /** Runs sandbox pruning at most once per throttle window. */
+ export async function maybePruneSandboxes(cfg: SandboxConfig) {
+   const now = Date.now();
+@@ -139,7 +102,6 @@ export async function maybePruneSandboxes(cfg: SandboxConfig) {
+   lastPruneAtMs = now;
+   try {
+     await pruneSandboxContainers(cfg);
+-    await pruneSandboxBrowsers(cfg);
+   } catch (error) {
+     const message =
+       error instanceof Error

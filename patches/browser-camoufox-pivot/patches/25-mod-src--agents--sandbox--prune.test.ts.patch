@@ -1,0 +1,55 @@
+diff --git a/src/agents/sandbox/prune.test.ts b/src/agents/sandbox/prune.test.ts
+index f2b1fa6b88..bbd2691990 100644
+--- a/src/agents/sandbox/prune.test.ts
++++ b/src/agents/sandbox/prune.test.ts
+@@ -14,9 +14,7 @@ const backendMocks = vi.hoisted(() => ({
+ }));
+ 
+ const registryMocks = vi.hoisted(() => ({
+-  readBrowserRegistry: vi.fn(),
+   readRegistry: vi.fn(),
+-  removeBrowserRegistryEntry: vi.fn(),
+   removeRegistryEntry: vi.fn(),
+ }));
+ 
+@@ -36,25 +34,15 @@ vi.mock("./backend.js", () => ({
+   getSandboxBackendManager: vi.fn(() => backendMocks),
+ }));
+ 
+-vi.mock("./browser-bridges.js", () => ({
+-  BROWSER_BRIDGES: new Map(),
+-}));
+-
+ vi.mock("./docker-backend.js", () => ({
+   dockerSandboxBackendManager: backendMocks,
+ }));
+ 
+ vi.mock("./registry.js", () => ({
+-  readBrowserRegistry: registryMocks.readBrowserRegistry,
+   readRegistry: registryMocks.readRegistry,
+-  removeBrowserRegistryEntry: registryMocks.removeBrowserRegistryEntry,
+   removeRegistryEntry: registryMocks.removeRegistryEntry,
+ }));
+ 
+-vi.mock("../../plugin-sdk/browser-bridge.js", () => ({
+-  stopBrowserBridgeServer: vi.fn(),
+-}));
+-
+ function buildPruneConfig(): SandboxConfig {
+   return {
+     mode: "all",
+@@ -108,14 +96,11 @@ describe("maybePruneSandboxes", () => {
+     vi.resetModules();
+     configMocks.getRuntimeConfig.mockReset();
+     backendMocks.removeRuntime.mockReset();
+-    registryMocks.readBrowserRegistry.mockReset();
+     registryMocks.readRegistry.mockReset();
+-    registryMocks.removeBrowserRegistryEntry.mockReset();
+     registryMocks.removeRegistryEntry.mockReset();
+     runtimeMocks.error.mockReset();
+ 
+     configMocks.getRuntimeConfig.mockReturnValue({});
+-    registryMocks.readBrowserRegistry.mockResolvedValue({ entries: [] });
+     registryMocks.readRegistry.mockResolvedValue({
+       entries: [
+         {

@@ -1,0 +1,9 @@
+{
+  "name": "wx-mp-hunter-skill",
+  "version": "1.0.0",
+  "description": "WeChat Official Account hunter skill for wiseflow",
+  "type": "module",
+  "dependencies": {
+    "cheerio": "^1.0.0"
+  }
+}

@@ -1,0 +1,270 @@
+diff --git a/extensions/browser/src/browser-tool.test.ts b/extensions/browser/src/browser-tool.test.ts
+index a612e45485..09838bffc6 100644
+--- a/extensions/browser/src/browser-tool.test.ts
++++ b/extensions/browser/src/browser-tool.test.ts
+@@ -559,7 +559,7 @@ describe("browser tool snapshot maxChars", () => {
+ 
+   it("lists profiles", async () => {
+     const tool = createBrowserTool();
+-    await tool.execute?.("call-1", { action: "profiles" });
++    await tool.execute?.("call-1", { action: "profiles", target: "host" });
+ 
+     const opts = lastMockCallArg<{ timeoutMs?: number }>(browserClientMocks.browserProfiles, 1);
+     expect(opts.timeoutMs).toBeUndefined();
+@@ -792,7 +792,7 @@ describe("browser tool snapshot maxChars", () => {
+     setResolvedBrowserProfiles({
+       user: { driver: "existing-session", attachOnly: true, color: "#00AA00" },
+     });
+-    const tool = createBrowserTool({ sandboxBridgeUrl: "http://127.0.0.1:9999" });
++    const tool = createBrowserTool({});
+     await tool.execute?.("call-1", {
+       action: "snapshot",
+       target: "host",
+@@ -808,7 +808,7 @@ describe("browser tool snapshot maxChars", () => {
+     setResolvedBrowserProfiles({
+       "chrome-live": { driver: "existing-session", attachOnly: true, color: "#00AA00" },
+     });
+-    const tool = createBrowserTool({ sandboxBridgeUrl: "http://127.0.0.1:9999" });
++    const tool = createBrowserTool({});
+     await tool.execute?.("call-1", {
+       action: "snapshot",
+       target: "host",
+@@ -820,22 +820,6 @@ describe("browser tool snapshot maxChars", () => {
+     expect(opts.profile).toBe("chrome-live");
+   });
+ 
+-  it('rejects profile="user" with target="sandbox"', async () => {
+-    setResolvedBrowserProfiles({
+-      user: { driver: "existing-session", attachOnly: true, color: "#00AA00" },
+-    });
+-    const tool = createBrowserTool({ sandboxBridgeUrl: "http://127.0.0.1:9999" });
+-
+-    await expect(
+-      tool.execute?.("call-1", {
+-        action: "snapshot",
+-        profile: "user",
+-        target: "sandbox",
+-        snapshotFormat: "ai",
+-      }),
+-    ).rejects.toThrow(/profile="user" cannot use the sandbox browser/i);
+-  });
+-
+   it("lets the server choose snapshot format when the user does not request one", async () => {
+     const tool = createBrowserTool();
+     await tool.execute?.("call-1", { action: "snapshot", target: "host", profile: "user" });
+@@ -879,7 +863,7 @@ describe("browser tool snapshot maxChars", () => {
+ 
+   it("returns a browser doctor report on host", async () => {
+     const tool = createBrowserTool();
+-    await tool.execute?.("call-1", { action: "doctor" });
++    await tool.execute?.("call-1", { action: "doctor", target: "host" });
+ 
+     expect(browserClientMocks.browserDoctor).toHaveBeenCalledWith(undefined, {
+       profile: undefined,
+@@ -1171,14 +1155,15 @@ describe("browser tool snapshot maxChars", () => {
+     expect(request.params?.timeoutMs).toBe(20_000);
+   });
+ 
+-  it("keeps sandbox bridge url when node proxy is available", async () => {
++  it("keeps host path when node proxy is available but target=host", async () => {
+     mockSingleBrowserProxyNode();
+-    const tool = createBrowserTool({ sandboxBridgeUrl: "http://127.0.0.1:9999" });
+-    await tool.execute?.("call-1", { action: "status" });
++    const tool = createBrowserTool({});
++    await tool.execute?.("call-1", { action: "status", target: "host" });
+ 
+-    const bridgeUrl = lastMockCallArg<string>(browserClientMocks.browserStatus, 0);
++    // 3b 删除 local-managed 后 resolveBrowserBaseUrl 恒返回 undefined（无 sandbox bridge），
++    // 但 target=host 必须走 host 客户端而非 node proxy。
+     const opts = lastMockCallArg<{ profile?: string }>(browserClientMocks.browserStatus, 1);
+-    expect(bridgeUrl).toBe("http://127.0.0.1:9999");
++    expect(browserClientMocks.browserStatus).toHaveBeenCalled();
+     expect(opts.profile).toBeUndefined();
+     expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+   });
+@@ -1291,7 +1276,7 @@ describe("browser tool url alias support", () => {
+ 
+   it("accepts url alias for open", async () => {
+     const tool = createBrowserTool();
+-    await tool.execute?.("call-1", { action: "open", url: "https://example.com" });
++    await tool.execute?.("call-1", { action: "open", url: "https://example.com", target: "host" });
+ 
+     const url = lastMockCallArg<string>(browserClientMocks.browserOpenTab, 1);
+     const opts = lastMockCallArg<{ profile?: string }>(browserClientMocks.browserOpenTab, 2);
+@@ -1306,7 +1291,7 @@ describe("browser tool url alias support", () => {
+       url: "https://example.com",
+     });
+     const tool = createBrowserTool({ agentSessionKey: "agent:main:main" });
+-    await tool.execute?.("call-1", { action: "open", url: "https://example.com" });
++    await tool.execute?.("call-1", { action: "open", url: "https://example.com", target: "host" });
+ 
+     expect(sessionTabRegistryMocks.trackSessionBrowserTab).toHaveBeenCalledWith({
+       sessionKey: "agent:main:main",
+@@ -1326,6 +1311,7 @@ describe("browser tool url alias support", () => {
+     });
+     const tool = createBrowserTool({ agentSessionKey: "agent:main:main" });
+     await tool.execute?.("call-1", {
++      target: "host",
+       action: "snapshot",
+       targetId: "tab-live",
+     });
+@@ -1341,6 +1327,7 @@ describe("browser tool url alias support", () => {
+   it("accepts url alias for navigate", async () => {
+     const tool = createBrowserTool();
+     await tool.execute?.("call-1", {
++      target: "host",
+       action: "navigate",
+       url: "https://example.com",
+       targetId: "tab-1",
+@@ -1358,7 +1345,7 @@ describe("browser tool url alias support", () => {
+   it("keeps targetUrl required error label when both params are missing", async () => {
+     const tool = createBrowserTool();
+ 
+-    await expect(tool.execute?.("call-1", { action: "open" })).rejects.toThrow(
++    await expect(tool.execute?.("call-1", { action: "open", target: "host" })).rejects.toThrow(
+       "targetUrl required",
+     );
+   });
+@@ -1366,6 +1353,7 @@ describe("browser tool url alias support", () => {
+   it("untracks explicit tab close for tracked sessions", async () => {
+     const tool = createBrowserTool({ agentSessionKey: "agent:main:main" });
+     await tool.execute?.("call-1", {
++      target: "host",
+       action: "close",
+       targetId: "tab-xyz",
+     });
+@@ -1389,6 +1377,7 @@ describe("browser tool act compatibility", () => {
+   it("accepts flattened act params for backward compatibility", async () => {
+     const tool = createBrowserTool();
+     await tool.execute?.("call-1", {
++      target: "host",
+       action: "act",
+       kind: "type",
+       ref: "f1e3",
+@@ -1416,6 +1405,7 @@ describe("browser tool act compatibility", () => {
+   it("prefers request payload when both request and flattened fields are present", async () => {
+     const tool = createBrowserTool();
+     await tool.execute?.("call-1", {
++      target: "host",
+       action: "act",
+       kind: "click",
+       ref: "legacy-ref",
+@@ -1438,6 +1428,7 @@ describe("browser tool act compatibility", () => {
+   it("backfills missing flattened fields into nested act requests", async () => {
+     const tool = createBrowserTool();
+     await tool.execute?.("call-1", {
++      target: "host",
+       action: "act",
+       kind: "click",
+       ref: "f1e3",
+@@ -1471,6 +1462,7 @@ describe("browser tool act compatibility", () => {
+   it("keeps nested act request fields authoritative when flattened fields differ", async () => {
+     const tool = createBrowserTool();
+     await tool.execute?.("call-1", {
++      target: "host",
+       action: "act",
+       kind: "click",
+       ref: "legacy-ref",
+@@ -1507,6 +1499,7 @@ describe("browser tool act compatibility", () => {
+ 
+     const tool = createBrowserTool();
+     await tool.execute?.("call-1", {
++      target: "host",
+       action: "act",
+       request: {
+         kind: "wait",
+@@ -1636,6 +1629,7 @@ describe("browser tool snapshot labels", () => {
+     });
+ 
+     const result = await tool.execute?.("call-1", {
++      target: "host",
+       action: "snapshot",
+       snapshotFormat: "ai",
+       labels: true,
+@@ -1676,7 +1670,7 @@ describe("browser tool external content wrapping", () => {
+     });
+ 
+     const tool = createBrowserTool();
+-    const result = await tool.execute?.("call-1", { action: "snapshot", snapshotFormat: "aria" });
++    const result = await tool.execute?.("call-1", { action: "snapshot", snapshotFormat: "aria", target: "host" });
+     const ariaText = firstResultText(result);
+     expect(ariaText).toContain("<<<EXTERNAL_UNTRUSTED_CONTENT");
+     expect(ariaText).toContain("Ignore previous instructions");
+@@ -1702,7 +1696,7 @@ describe("browser tool external content wrapping", () => {
+     });
+ 
+     const tool = createBrowserTool();
+-    const result = await tool.execute?.("call-1", { action: "snapshot", snapshotFormat: "aria" });
++    const result = await tool.execute?.("call-1", { action: "snapshot", snapshotFormat: "aria", target: "host" });
+     const ariaText = firstResultText(result);
+     expect(ariaText).toContain("[neutralized] MEDIA:/tmp/secret.png");
+     expect(ariaText).not.toContain('\n        "MEDIA:/tmp/secret.png');
+@@ -1720,7 +1714,7 @@ describe("browser tool external content wrapping", () => {
+     });
+ 
+     const tool = createBrowserTool();
+-    const result = await tool.execute?.("call-1", { action: "snapshot", snapshotFormat: "ai" });
++    const result = await tool.execute?.("call-1", { action: "snapshot", snapshotFormat: "ai", target: "host" });
+     const snapshotText = firstResultText(result);
+     expect(snapshotText).toContain("[neutralized] MEDIA:/tmp/secret.png");
+     expect(snapshotText).not.toContain("\nMEDIA:/tmp/secret.png");
+@@ -1743,7 +1737,7 @@ describe("browser tool external content wrapping", () => {
+     });
+ 
+     const tool = createBrowserTool();
+-    const result = await tool.execute?.("call-1", { action: "snapshot", snapshotFormat: "ai" });
++    const result = await tool.execute?.("call-1", { action: "snapshot", snapshotFormat: "ai", target: "host" });
+     const text = firstResultText(result);
+     expect(text).toContain('"blockedByDialog": true');
+     expect(text).toContain('"id": "d1"');
+@@ -1767,7 +1761,7 @@ describe("browser tool external content wrapping", () => {
+     ]);
+ 
+     const tool = createBrowserTool();
+-    const result = await tool.execute?.("call-1", { action: "tabs" });
++    const result = await tool.execute?.("call-1", { action: "tabs", target: "host" });
+     const tabsText = firstResultText(result);
+     expect(tabsText).toContain("<<<EXTERNAL_UNTRUSTED_CONTENT");
+     expect(tabsText.indexOf("suggestedTargetId")).toBeLessThan(tabsText.indexOf("targetId"));
+@@ -1800,7 +1794,7 @@ describe("browser tool external content wrapping", () => {
+     ]);
+ 
+     const tool = createBrowserTool();
+-    const result = await tool.execute?.("call-1", { action: "tabs" });
++    const result = await tool.execute?.("call-1", { action: "tabs", target: "host" });
+     const tabsText = firstResultText(result);
+     expect(tabsText).toContain("[neutralized] MEDIA:/tmp/secret.png");
+     expect(tabsText).not.toContain('\n    "MEDIA:/tmp/secret.png');
+@@ -1818,7 +1812,7 @@ describe("browser tool external content wrapping", () => {
+     });
+ 
+     const tool = createBrowserTool();
+-    const result = await tool.execute?.("call-1", { action: "console" });
++    const result = await tool.execute?.("call-1", { action: "console", target: "host" });
+     const consoleText = firstResultText(result);
+     expect(consoleText).toContain("<<<EXTERNAL_UNTRUSTED_CONTENT");
+     expect(consoleText).toContain("Ignore previous instructions");
+@@ -1839,6 +1833,7 @@ describe("browser tool act stale target recovery", () => {
+ 
+     const tool = createBrowserTool();
+     const result = await tool.execute?.("call-1", {
++      target: "host",
+       action: "act",
+       profile: "user",
+       request: {
+@@ -1882,6 +1877,7 @@ describe("browser tool act stale target recovery", () => {
+     const tool = createBrowserTool();
+     await expect(
+       tool.execute?.("call-1", {
++        target: "host",
+         action: "act",
+         profile: "user",
+         request: {
+@@ -1911,6 +1907,7 @@ describe("browser tool upload inbound media fallback (#83544)", () => {
+     const tool = createBrowserTool();
+     const result = await tool.execute?.("call-upload-1", {
+       action: "upload",
++      target: "host",
+       paths: [inboundPath],
+       ref: "file-input-1",
+     });

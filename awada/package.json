@@ -1,0 +1,29 @@
+{
+  "name": "@openclaw/awada",
+  "version": "2026.4.0",
+  "description": "OpenClaw Awada channel plugin — WeChat via relay gateway (HTTP/WS transport)",
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.18.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "channel": {
+      "id": "awada",
+      "label": "Awada",
+      "selectionLabel": "Awada (WeChat via relay gateway)",
+      "blurb": "WeChat (enterprise/personal) via awada relay gateway (HTTP/WS transport).",
+      "order": 80
+    },
+    "install": {
+      "localPath": "awada",
+      "defaultChoice": "local"
+    }
+  }
+}

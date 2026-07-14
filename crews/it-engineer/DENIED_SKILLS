@@ -1,22 +1,6 @@
-# IT 工程师专属技能
-github
-gh-issues
-coding-agent
-# 业务拓展专属技能（business-developer 使用）
-connections-optimizer
-email-ops
-pitch-deck
-social-graph-ranker
-# 生图/生视频技能（HRBP 不需要）
-siliconflow-img-gen
-gifgrep
-# 信息采集技能（HRBP 不需要）
-rss-reader
-email-ops
-ppt-maker
-xhs-interact
+# it-engineer 禁用的技能：内容/视觉生产链路（IT 工程师不参与）
+youtube-publish
+weather
 pexels-footage
 pixabay-footage
-xianyu-ops
-login-manager
-wx-mp-hunter
+siliconflow-img-gen

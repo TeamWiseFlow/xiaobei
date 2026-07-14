@@ -1,7 +1,7 @@
 ---
 name: browser-guide
 description: Best practices for using the managed browser — handling login walls,
-  CAPTCHAs, lazy-loaded content, paywalls, and tab cleanup.
+  CAPTCHAs, lazy-loaded content, paywalls, and tab cleanup. Target=camoufox 主力路径。
 metadata:
   openclaw:
     emoji: 🌐
@@ -9,7 +9,44 @@ metadata:
 
 # Browser Best Practices
 
-Follow these rules whenever you use the `browser` tool to interact with web pages.
+Follow these rules whenever you drive a browser against web pages.
+
+## 0. 浏览器后端选择（先读这一节）
+
+本 skill 默认主力路径是 **`target=camoufox`**——即全局可用的 `camoufox-cli` 命令。**下方所有操作命令、示例、selector 都只针对 `target=camoufox`** 写。
+
+如果你当前是 **`target=host`**（existing-session 真机 Chrome + chrome-mcp relay）或 **`target=node`**（remote-cdp 远端 Chrome）：
+
+- **只按本 skill 列出的「流程 / 步骤 / 提示事项」执行**——不要照搬下面的 `camoufox-cli ...` 命令、`snapshot` ref、`eval` 入参等具体操作和示例。
+- 浏览器操作走你当前后端自带的浏览器工具语义（host: chrome-mcp relay；node: remote-cdp + playwright-core），按各后端自身约定调用即可。
+- 何时有头 / 何时无头、登录流程顺序、CAPTCHA 处理原则、lazy-load 滚动节奏、paywall 等用户交互约定是**后端无关**的，照本 skill 执行。
+
+### 0.1 camoufox-cli 基本用法
+
+```
+camoufox-cli --session <name> [--persistent] [--headed] [--json] <command> [args...]
+```
+
+- **`--session <name>`**：会话隔离单元，同名 session 共享一个 profile 目录。**涉及登录的平台用一个且只用一个持久化 session 名**。
+- **`--persistent`**：冻结指纹到 `~/.camoufox-cli/profiles/<name>/camoufox-cli.json`（首次生成后冻结）。持久化平台 session 必带；临时性 session（新闻等不登录站点）**不带**——走默认临时 profile，每次随机指纹，关闭自清。
+- **`--headed`**：有头模式。**需要用户配合过验证码、扫码、收短信的，或者填表场景，必须 `--headed`**（微信公众号wx_mp和微信视频号weixin_channel可以使用无头模式截图含二维码区域发用户登录）。其他场景，包括探活，都可以使用默认的无头模式。
+- **`--json`**：命令输出走 JSON 信封（`{ok, ...}` / `{error, ...}`），agent 解析稳定，推荐常带。
+- 命令集（含 `upload` / `identity export`）：
+  `open / back / forward / reload / url / title / close / snapshot / click / fill / type / select / check / hover / press / text / eval / screenshot / pdf / scroll / wait / tabs / switch / close-tab / sessions / cookies / install / upload / identity`
+
+**fail-first 队列**：同一 session 已有命令在跑时，新命令**直接 fail**，返回文本：
+
+```
+session <name> 正忙，请等待当前操作完成后再试
+```
+
+读到这条 fail 文本说明有其他进程在使用同名session，你应该等待一段时间后再重试，卡死用 `camoufox-cli close --all` 兜底 teardown。
+
+### 0.2 snapshot ref 优先
+
+camoufox-cli 的 `snapshot` 返回带 ref 的语义快照（`@e1` `@e2` …），后续 `click` / `fill` / `type` / `upload` / `hover` / `press` 全部**优先传 ref**，不要自己 hack CSS selector。找不到元素时**先 snapshot 看真实 DOM 结构**再决定 selector 改写，不要盲试。
+
+---
 
 ## 1. Login Prompts
 
@@ -24,15 +61,24 @@ When a page shows a login wall, first identify which login mechanism is offered,
 
 ### 1-B. QR Code login
 
-When the login page shows a QR code (WeChat Official Account backend, Xiaohongshu creator centre, X/Twitter, etc.):
+When the login page shows a QR code (WeChat Official Account backend, WeChat Channels, Xiaohongshu creator centre, X/Twitter, etc.):
 
-1. Use `snapshot` to locate the QR code image element. Download / screenshot it and save it to `/tmp/` (e.g., `/tmp/xhs_qr.png`).
-2. Send the QR code image downloaded in the previous step to the user via message, making sure to send the image itself rather than the local file path.
+1. `camoufox-cli --session <s> --json screenshot /tmp/qr-<platform>.png` 截下 QR 图（或 `snapshot` 拿到 QR 元素 ref 后用 `eval` 取其 `src`/`data URI`）。
+2. Send the QR code image to the user via message — send the image itself, not the local file path.
 3. Notify the user:
    > "**[平台名称]** 登录已失效（或首次使用），请用 **[平台]** APP 扫描以下二维码登录。扫码并在手机上点击确认后，回复"已扫码"。"
 4. **Stop and wait** for the user to reply "已扫码"、"好了"、"扫完了" or any equivalent confirmation before continuing.
-5. While waiting, poll the page every **3 seconds** using `snapshot` for signs of successful login (URL change, QR code disappears, dashboard/avatar appears). If auto-detected, resume immediately without waiting for the user reply.
-6. If no scan occurs within **3 minutes** and no reply arrives, send: _"扫码超时，将继续处理当前可访问的内容。"_ and proceed.
+5. While waiting, poll the page every **3 seconds** (`snapshot` 看 URL 是否跳走 / QR 元素是否消失 / dashboard 是否出现). Auto-detected → resume immediately without waiting for user reply.
+6. If no scan within **3 minutes** and no reply arrives, send: _"扫码超时，将继续处理当前可访问的内容。"_ and proceed.
+
+> **显式有头/无头模式场景规则**：只有以下场景需要显式指定 `camoufox-cli` 的有头/无头参数：
+> 1. **login-manager 登录**（douyin / kuaishou / bilibili / xhs-publish / xhs-browse 5 平台）——强制 `--headed`，用户在浏览器手动扫码/短信/账号密码
+> 2. **需要用户手动过验证**（captcha / 滑块 / 短信）——`--headed`，用户才能在浏览器里手动操作
+> 3. **web-form-fill 表单填报**——强制 `--headed`，便于用户时刻观察填报情况、可随时介入纠正
+>
+> 其他场景默认走 camoufox 持久化 session，**不显式指定有头/无头**——camoufox-cli 默认行为即可。
+>
+> **wx_mp（公众号）无头截图 QR** 是特例，适用于 `wx-mp-hunter` + `wx-mp-engagement` 两技能。
 
 ### 1-C. SMS verification login
 
@@ -63,14 +109,18 @@ If login cannot be completed for any reason (timeout, user unavailable, repeated
 - Continue with whatever content is accessible in the non-logged-in state.
 - At the end, include a note in the result: _"注：[平台名称] 未能完成登录，以下内容来自未登录状态，可能不完整。"_
 
+---
+
 ## 2. Simple Verification / CAPTCHA
 
 When a page shows a one-click verification challenge (e.g., a button labelled "去验证", "Verify", "I'm not a robot", or a simple checkbox):
 
-1. Try clicking the verification button/checkbox directly.
+1. Try clicking the verification button/checkbox directly（`camoufox-cli --session <s> --json click <ref 或 selector>`）.
 2. Wait a few seconds for the page to refresh.
-3. Take a snapshot to check whether normal content has loaded.
+3. `snapshot` 检查正常内容是否已加载.
 4. If the page now shows the expected content, continue your task.
+
+---
 
 ## 3. Complex Verification Fallback
 
@@ -78,24 +128,29 @@ If the simple click in Step 2 above **fails** — the page still shows a challen
 
 1. **Do NOT retry blindly.** Stop attempting automated verification.
 2. Send a message to the user: _"xx 页面有验证码，我无法解决，请在浏览器中完成，完成后请通知我。"_（xx 为页面标题）.
+   > 涉及登录的 session 必须是 **有头模式**，用户才能在浏览器里手动过验证。无头跑出来的 session 遇验证码先 teardown 再换有头重开。
 3. Wait for the user to confirm.
 4. If no response arrives within **5 minutes**, continue with whatever content is accessible.
+
+---
 
 ## 4. Lazy-Loaded Content
 
 When a page uses lazy loading (infinite scroll, "load more" sections, content that appears only after scrolling):
 
 1. Before scrolling, assess whether the not-yet-loaded content is **relevant** to the current task.
-2. If relevant, simulate human-like scrolling: scroll down incrementally, pause briefly between scrolls to allow content to load, then take a snapshot to capture the new content.
+2. If relevant, simulate human-like scrolling: `camoufox-cli --session <s> --json scroll down` 增量滚动，pause briefly between scrolls to allow content to load, then `snapshot` capture new content.
 3. Repeat until the needed content is visible or no more new content loads.
 4. Do NOT scroll too fast, do it as a human would. After 7 times of scrolling, you should stop this turn.
 5. If not relevant, skip scrolling and work with what is already loaded.
 
-## 5. Browser `evaluate` Action — Expression Only
+---
 
-When using the browser tool's `evaluate` (or `act` with `kind: "evaluate"`) to run JavaScript in the page context, the `fn` parameter must be a **single expression**, not a statement block. Declarations (`const`, `let`, `var`), semicolons, `for`/`if` statements, and `function` declarations will all cause `Invalid evaluate function` errors.
+## 5. 页面内 JS 执行（`eval` / `act kind="evaluate"`）
 
-**Wrong** (statement block — will fail):
+camoufox-cli 的 `eval` 在页面上下文跑一段 JS 并回结果。**入参必须是一个单一表达式**，不是语句块。`const`/`let`/`var` 声明、分号、`for`/`if` 语句、`function` 声明都会触发 `Invalid evaluate function` 错误。
+
+**Wrong**（语句块 — 会失败）：
 ```js
 const items = document.querySelectorAll('.msg');
 let found = false;
@@ -105,7 +160,7 @@ for (const item of items) {
 found ? 'ok' : 'no';
 ```
 
-**Correct** (wrap in IIFE):
+**Correct**（IIFE 包裹）：
 ```js
 (function() {
   var items = document.querySelectorAll('.msg');
@@ -116,16 +171,18 @@ found ? 'ok' : 'no';
 })()
 ```
 
-**Correct** (pure expression, for simple lookups):
+**Correct**（纯表达式，简单查询）：
 ```js
 document.querySelector('.reply-btn') ? 'found' : 'not found'
 ```
 
 Rules:
 - Always wrap multi-step logic in an IIFE: `(function(){ ... })()`
-- For DOM queries that only need to click, prefer `click` action on a selector over `evaluate`
-- For reading text, prefer `snapshot` over `evaluate` when possible
+- 只需要点击的 DOM 查询，优先 `click <ref>` 而非 `eval`
+- 读文本优先 `snapshot` 而非 `eval`
 - Never use `const`/`let`/`var` declarations or `;` at the top level of `fn`
+
+---
 
 ## 6. Paywall / Subscription Walls
 

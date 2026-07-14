@@ -28,7 +28,7 @@
 
 - **触发**：访问创作者中心页面
 - **症状**：所有表单元素在 `<wujie-app>::shadow-root` 内，常规 DOM 选择器找不到
-- **workaround**：CDP 操作需使用 shadow DOM 穿透（`DOM.querySelector` 带 pierce 模式），或 `browser evaluate` 中用 `document.querySelector('wujie-app').shadowRoot.querySelector(selector)`
+- **workaround**：`camoufox-cli snapshot` 默认穿透 shadow DOM 拿 ref，后续 `click` / `type` / `upload` 按 ref 操作即可。fallback 才需要 `eval` 里手写 `document.querySelector('wujie-app').shadowRoot.querySelector(selector)`
 
 ### pitfall: login_via_qr_only
 
@@ -36,11 +36,11 @@
 - **症状**：跳转到扫码登录页，无用户名/密码选项
 - **workaround**：等待用户在手机微信扫码确认，最长等 2 分钟
 
-### pitfall: video_upload_via_cdp
+### pitfall: video_upload_in_shadow_dom
 
 - **触发**：上传视频文件到发布页
-- **症状**：普通 `browser act` 无法触发 `<input type="file">`（在 shadow DOM 内）
-- **workaround**：需用 CDP `DOM.setFileInputFiles` 注入文件，或 DataTransfer base64 分块注入（大文件分 50KB 块避免超出 bridge 限制）
+- **症状**：`<input type="file">` 在 shadow DOM 内
+- **workaround**：`camoufox-cli upload <ref> <video-path>`（fork 加的 upload 命令，底层 Playwright `setInputFiles`，穿透 shadow DOM）。snapshot 拿到上传 input 的 ref 后直接 upload
 
 ## Fallback
 

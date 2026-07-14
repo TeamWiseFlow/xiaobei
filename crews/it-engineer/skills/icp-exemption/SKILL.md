@@ -61,7 +61,7 @@ metadata:
 收集好所有信息后，运行以下命令生成 PDF：
 
 ```bash
-python3 ./skills/icp-exemption/scripts/generate_pdf.py \
+icp-exemption \
   --team-id "TEAM_ID" \
   --name "法定姓名" \
   --app-id "APP_ID" \

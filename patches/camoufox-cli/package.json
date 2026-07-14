@@ -1,0 +1,48 @@
+{
+  "name": "camoufox-cli",
+  "version": "0.6.2-wiseflow.1",
+  "description": "Anti-detect headless browser automation CLI & Skills for AI agents, powered by Camoufox (wiseflow fork)",
+  "type": "module",
+  "bin": {
+    "camoufox-cli": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "keywords": [
+    "browser",
+    "automation",
+    "anti-detect",
+    "camoufox",
+    "ai-agent",
+    "headless"
+  ],
+  "author": "Benn Huang",
+  "license": "MIT",
+  "repository": "https://github.com/Bin-Huang/camoufox-cli",
+  "homepage": "https://github.com/Bin-Huang/camoufox-cli",
+  "bugs": "https://github.com/Bin-Huang/camoufox-cli/issues",
+  "wiseflowFork": true,
+  "wiseflowForkBaseline": "0.6.2",
+  "dependencies": {
+    "camoufox-js": "^0.11.1",
+    "pdf-lib": "^1.17.1",
+    "playwright-core": "1.52.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist",
+    "scripts",
+    "LICENSE"
+  ]
+}

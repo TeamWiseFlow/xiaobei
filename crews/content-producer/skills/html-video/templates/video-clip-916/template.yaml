@@ -1,0 +1,76 @@
+spec_version: 1
+id: video-clip-916
+name: Video Clip 9:16
+description: >
+  素材视频播放模板。将 MP4 视频片段包装为 HTML 帧，
+  可选文字叠加（标题/副标题），统一纳入 html-video 渲染管线。
+  用于：用户提供素材 / AI 生成视频 / 素材库下载片段。
+
+engine: hyperframes
+engine_version: ^0.4.0
+source_entry: source/index.html
+
+category: video-clip
+subcategory: wrapper
+tags: [video, clip, stock, wrapper, 9:16]
+
+best_for:
+  - "素材视频片段"
+  - "AI 生成视频"
+  - "用户提供视频"
+  - "产品展示实拍"
+
+output:
+  formats: [mp4, webm]
+  default_format: mp4
+  resolution:
+    default: { width: 1080, height: 1920 }
+    supported_aspects: ["9:16"]
+  fps:
+    default: 30
+    supported: [24, 30, 60]
+  duration:
+    type: variable
+    min_sec: 3
+    max_sec: 30
+  alpha: false
+  audio:
+    supported: true
+    expected_inputs: [narration]
+
+inputs:
+  schema:
+    type: object
+    required: [videoSrc, durationSec]
+    properties:
+      videoSrc:
+        type: string
+        description: "视频文件路径（相对于项目目录或绝对路径）"
+      durationSec:
+        type: number
+        minimum: 3
+        maximum: 30
+        description: "视频时长（秒），用于 data-duration"
+      title:
+        type: string
+        maxLength: 30
+        description: "可选：叠加标题文字"
+      subtitle:
+        type: string
+        maxLength: 60
+        description: "可选：叠加副标题文字"
+      overlayPosition:
+        type: string
+        enum: [bottom, center, top]
+        default: bottom
+        description: "文字叠加位置"
+  examples:
+    - { "videoSrc": "assets/clip.mp4", "durationSec": 8, "title": "一键搞定", "overlayPosition": "bottom" }
+
+license:
+  spdx: Apache-2.0
+  attribution_required: false
+  redistribution_allowed: true
+  commercial_use: true
+
+version: 0.1.0

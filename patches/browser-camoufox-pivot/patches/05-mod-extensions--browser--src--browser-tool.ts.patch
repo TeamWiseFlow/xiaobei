@@ -1,0 +1,208 @@
+diff --git a/extensions/browser/src/browser-tool.ts b/extensions/browser/src/browser-tool.ts
+index 330a0b6f3c..f81002675a 100644
+--- a/extensions/browser/src/browser-tool.ts
++++ b/extensions/browser/src/browser-tool.ts
+@@ -5,6 +5,8 @@
+  * maps high-level actions onto browser control client calls.
+  */
+ import crypto from "node:crypto";
++import os from "node:os";
++import path from "node:path";
+ import {
+   executeActAction,
+   executeConsoleAction,
+@@ -57,6 +59,7 @@ import { DEFAULT_BROWSER_SCREENSHOT_TIMEOUT_MS } from "./browser/constants.js";
+ import { normalizeBrowserScreenshot } from "./browser/screenshot.js";
+ import { describeBrowserScreenshot, neutralizeMediaDirectives } from "./browser/vision.js";
+ import { wrapExternalContent } from "./sdk-security-runtime.js";
++import { executeCamoufoxCliAction, type CamoufoxCliSessionConfig } from "./camoufox-cli.adapter.js";
+ 
+ const browserToolDeps = {
+   browserAct,
+@@ -260,8 +263,7 @@ function isBrowserNode(node: NodeListNode) {
+ 
+ async function resolveBrowserNodeTarget(params: {
+   requestedNode?: string;
+-  target?: "sandbox" | "host" | "node";
+-  sandboxBridgeUrl?: string;
++  target?: "host" | "node" | "camoufox";
+ }): Promise<BrowserNodeTarget | null> {
+   const cfg = browserToolDeps.getRuntimeConfig();
+   const policy = cfg.gateway?.nodes?.browser;
+@@ -272,9 +274,6 @@ async function resolveBrowserNodeTarget(params: {
+     }
+     return null;
+   }
+-  if (params.sandboxBridgeUrl?.trim() && params.target !== "node" && !params.requestedNode) {
+-    return null;
+-  }
+   if (params.target && params.target !== "node") {
+     return null;
+   }
+@@ -389,23 +388,11 @@ function applyProxyPaths(result: unknown, mapping: Map<string, string>) {
+ }
+ 
+ function resolveBrowserBaseUrl(params: {
+-  target?: "sandbox" | "host";
+-  sandboxBridgeUrl?: string;
++  target?: "host";
+   allowHostControl?: boolean;
+ }): string | undefined {
+   const cfg = getRuntimeConfig();
+   const resolved = resolveBrowserConfig(cfg.browser, cfg);
+-  const normalizedSandbox = params.sandboxBridgeUrl?.trim() ?? "";
+-  const target = params.target ?? (normalizedSandbox ? "sandbox" : "host");
+-
+-  if (target === "sandbox") {
+-    if (!normalizedSandbox) {
+-      throw new Error(
+-        'Sandbox browser is unavailable. Enable agents.defaults.sandbox.browser.enabled or use target="host" if allowed.',
+-      );
+-    }
+-    return normalizedSandbox.replace(/\/$/, "");
+-  }
+ 
+   if (params.allowHostControl === false) {
+     throw new Error("Host browser control is disabled by sandbox policy.");
+@@ -469,9 +456,41 @@ function readToolTimeoutMs(params: Record<string, unknown>) {
+   });
+ }
+ 
++/**
++ * Build camoufox-cli daemon session config from tool opts + runtime config.
++ *
++ * session 命名优先级（spec §3 session 名即共享契约）：action 显式传入的平台名
++ * （如 "xhs-publish"）> agentSessionKey（每 agent 独立）> "openclaw"。
++ * 同一 session 名 = 同一 socket + 同一 persistent profile = 同一登录态/指纹，
++ * 这让 adapter 路与直接 `camoufox-cli --session <name> --persistent` CLI 路等价。
++ *
++ * persistentDir 默认指 ~/.camoufox-cli/profiles/<session>——与 cli.ts 里
++ * `--persistent` 无参数时的默认值完全一致（cli.ts:411-414），故 adapter 启的
++ * daemon 与 login-manager 直接 CLI 启的 daemon 共享同一 profile/登录态。
++ * spec §11 阶段一 step 3a；§3 持久化适用于所有涉及登录的平台（非仅 login-manager 的 5 个）。
++ */
++function resolveCamoufoxSessionConfig(opts?: {
++  agentSessionKey?: string;
++  workspaceDir?: string;
++  platformSession?: string;
++}): CamoufoxCliSessionConfig {
++  const cfg = browserToolDeps.getRuntimeConfig();
++  // proxy/locale/geoip 暂不从 openclaw 配置读（BrowserConfig 无这些字段）；
++  // adapter 默认 geoip=true、无代理、无 locale。后续如需可扩 BrowserConfig。
++  const session = (opts?.platformSession ?? opts?.agentSessionKey ?? "openclaw").replace(
++    /[^a-zA-Z0-9_-]/g,
++    "-",
++  );
++  return {
++    session,
++    headless: cfg.browser?.headless === true,
++    geoip: true,
++    persistentDir: path.join(os.homedir(), ".camoufox-cli", "profiles", session),
++  };
++}
++
+ /** Create the Browser tool exposed to agents. */
+ export function createBrowserTool(opts?: {
+-  sandboxBridgeUrl?: string;
+   allowHostControl?: boolean;
+   agentSessionKey?: string;
+   agentDir?: string;
+@@ -486,7 +505,6 @@ export function createBrowserTool(opts?: {
+     chatType?: string;
+   };
+ }): AnyAgentTool {
+-  const targetDefault = opts?.sandboxBridgeUrl ? "sandbox" : "host";
+   const hostHint =
+     opts?.allowHostControl === false ? "Host target blocked by policy." : "Host target allowed.";
+   return {
+@@ -502,7 +520,8 @@ export function createBrowserTool(opts?: {
+       "For multi-step browser work, login checks, stale refs, duplicate tabs, or Google Meet flows, use the bundled browser-automation skill when it is available.",
+       'For stable, self-resolving refs across calls, use snapshot with refs="aria" (Playwright aria-ref ids). Default refs="role" are role+name-based.',
+       "Use snapshot+act for UI automation. Avoid act:wait by default; use only in exceptional cases when no reliable UI state exists.",
+-      `target selects browser location (sandbox|host|node). Default: ${targetDefault}.`,
++      'target selects browser location (camoufox|host|node). Default: camoufox (forked camoufox-cli, anti-detect Firefox via unix-socket). Use target="host" for existing-session real Chrome (profile="user"), or target="node" for a remote browser node.',
++      'For target=camoufox, session=<platform> pins the persistent browser profile/登录态 to a named platform session (e.g. session="xhs-publish"); same session name reuses the same fingerprint + cookies across calls and agents. Omit to fall back to the per-agent session.',
+       hostHint,
+     ].join(" "),
+     parameters: BrowserToolSchema,
+@@ -510,9 +529,14 @@ export function createBrowserTool(opts?: {
+       const params = args as Record<string, unknown>;
+       const action = readStringParam(params, "action", { required: true });
+       const profile = readStringParam(params, "profile");
++      const platformSession = readStringParam(params, "session");
+       const requestedNode = readStringParam(params, "node");
+       const requestedTimeoutMs = readToolTimeoutMs(params);
+-      let target = readStringParam(params, "target") as "sandbox" | "host" | "node" | undefined;
++      let target = readStringParam(params, "target") as
++        | "host"
++        | "node"
++        | "camoufox"
++        | undefined;
+       const configuredNode = browserToolDeps
+         .getRuntimeConfig()
+         .gateway?.nodes?.browser?.node?.trim();
+@@ -520,15 +544,42 @@ export function createBrowserTool(opts?: {
+       if (requestedNode && target && target !== "node") {
+         throw new Error('node is only supported with target="node".');
+       }
+-      // existing-session profiles can attach through the selected host or browser node,
+-      // but they must never fall back into the sandbox browser.
++      // existing-session profiles attach through the host or a browser node (线 2).
+       const isUserBrowserProfile = shouldPreferHostForProfile(profile);
+-      if (isUserBrowserProfile) {
+-        if (target === "sandbox") {
+-          throw new Error(
+-            `profile="${profile}" cannot use the sandbox browser; use target="host" or omit target.`,
++      // camoufox is the default daily driver (线 1, spec §11 阶段一 step 3a).
++      // Route to the forked camoufox-cli adapter (unix-socket, 旁路 baseUrl/proxy)
++      // when explicitly requested, or when target/node are omitted AND no existing-session
++      // profile (real Chrome with logins → host) AND no node configured as operator default.
++      // 3b 删了 local-managed 分支，故无 target 无 profile 的旧默认路径已死——camoufox 接管。
++      const isCamoufoxRoute =
++        target === "camoufox" ||
++        (!target && !requestedNode && !configuredNode && !isUserBrowserProfile);
++      if (isCamoufoxRoute) {
++        // upload 路径校验是安全边界（仅允许 uploads/ + inbound media 目录），
++        // 原本在 host action switch 里，camoufox 早返回会绕过——这里前置对 camoufox 路径
++        // 也生效（host 路径仍由 switch 内的同一调用兜底，幂等）。
++        if (action === "upload") {
++          const uploadPaths = Array.isArray(params.paths)
++            ? params.paths.map((p) => String(p))
++            : [];
++          if (uploadPaths.length === 0) {
++            throw new Error("paths required");
++          }
++          const uploadResolved = await resolveExistingUploadPaths({
++            requestedPaths: uploadPaths,
++          });
++          if (!uploadResolved.ok) {
++            throw new Error(uploadResolved.error);
++          }
++          return await executeCamoufoxCliAction(
++            { ...params, paths: uploadResolved.paths },
++            resolveCamoufoxSessionConfig({ ...opts, platformSession }),
+           );
+         }
++        return await executeCamoufoxCliAction(
++          params,
++          resolveCamoufoxSessionConfig({ ...opts, platformSession }),
++        );
+       }
+ 
+       let nodeTarget: BrowserNodeTarget | null = null;
+@@ -536,7 +587,6 @@ export function createBrowserTool(opts?: {
+         nodeTarget = await resolveBrowserNodeTarget({
+           requestedNode: requestedNode ?? undefined,
+           target,
+-          sandboxBridgeUrl: opts?.sandboxBridgeUrl,
+         });
+       } catch (error) {
+         // Keep the logged-in user browser usable on the host when auto-discovery
+@@ -554,7 +604,6 @@ export function createBrowserTool(opts?: {
+         ? undefined
+         : resolveBrowserBaseUrl({
+             target: resolvedTarget,
+-            sandboxBridgeUrl: opts?.sandboxBridgeUrl,
+             allowHostControl: opts?.allowHostControl,
+           });
+ 

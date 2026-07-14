@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1080, height=1920" />
+<title>Glitch Title 9:16</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@500;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 1080px; height: 1920px;
+    overflow: hidden;
+    font-family: 'Noto Sans SC', sans-serif;
+    background: #0d0e10; color: #f5f5f7;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* 扫描线 */
+  body::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 3;
+    background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0px, rgba(0,0,0,0.18) 1px, transparent 1px, transparent 3px);
+    mix-blend-mode: multiply; opacity: 0.6;
+  }
+  /* 网格 */
+  body::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+    background-image: linear-gradient(rgba(0,255,180,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,180,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  /* 噪点 */
+  .grain {
+    position: absolute; inset: 0; opacity: 0.1; mix-blend-mode: overlay; z-index: 4; pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Glitch 动画 */
+  @keyframes glitch {
+    0%, 92%, 100% { transform: translate(0,0); filter: none }
+    93% { transform: translate(-4px, 1px); filter: url(#rgb) }
+    94% { transform: translate(6px, -2px); filter: url(#rgb) }
+    95% { transform: translate(-3px, 2px); }
+    96% { transform: translate(3px, -1px); filter: url(#rgb) }
+    97% { transform: translate(0,0) }
+  }
+  .glitch-host { position: relative; animation: glitch 4s infinite; }
+  .layer { position: absolute; inset: 0; mix-blend-mode: screen; }
+  .layer-c { color: #00f0ff; transform: translate(-2px, 1px); }
+  .layer-m { color: #ff2bd6; transform: translate(2px, -1px); }
+
+  /* 暗角 */
+  .vignette {
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at center, transparent 50%, rgba(0,0,0,0.7) 100%);
+    z-index: 5; pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) { .glitch-host { animation: none } }
+</style>
+</head>
+<body class="flex flex-col items-center justify-center relative">
+
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <filter id="rgb">
+        <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/>
+        <feOffset in="SourceGraphic" dx="2" dy="0" result="r"/>
+        <feOffset in="SourceGraphic" dx="-2" dy="0" result="b"/>
+        <feMerge><feMergeNode in="r"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+  </svg>
+
+  <!-- 顶部状态栏 -->
+  <header class="absolute top-8 left-8 right-8 flex items-baseline justify-between mono text-[10px] opacity-70 z-10 tracking-[0.16em]">
+    <span>&gt;&gt; GLITCH · CH-04</span>
+    <span>REC ●</span>
+  </header>
+
+  <!-- 主标题区域 -->
+  <main class="relative z-10 text-center px-8">
+    <div class="mono text-[12px] opacity-60 tracking-[0.22em] mb-8 uppercase">— PLACEHOLDER_SUBTITLE —</div>
+    <div class="glitch-host relative inline-block">
+      <h1 class="font-black tracking-[-0.02em] leading-[1.1]" style="font-size:clamp(60px,8vw,160px)">
+        PLACEHOLDER_TITLE
+      </h1>
+      <h1 class="layer layer-c font-black tracking-[-0.02em] leading-[1.1]" style="font-size:clamp(60px,8vw,160px)">
+        PLACEHOLDER_TITLE
+      </h1>
+      <h1 class="layer layer-m font-black tracking-[-0.02em] leading-[1.1]" style="font-size:clamp(60px,8vw,160px)">
+        PLACEHOLDER_TITLE
+      </h1>
+    </div>
+  </main>
+
+  <div class="grain"></div>
+  <div class="vignette"></div>
+
+  <!-- 底部信息栏 -->
+  <footer class="absolute bottom-8 left-8 right-8 flex items-baseline justify-between mono text-[10px] opacity-50 z-10 tracking-[0.16em]">
+    <span>HTML-VIDEO / GLITCH</span>
+    <span style="color:#ff2bd6">CHROMATIC · CYAN × MAGENTA</span>
+  </footer>
+</body>
+</html>

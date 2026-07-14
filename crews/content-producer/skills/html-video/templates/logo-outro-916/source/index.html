@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1080, height=1920" />
+<title>Logo Outro 9:16</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 1080px; height: 1920px;
+    overflow: hidden;
+    font-family: 'Noto Sans SC', system-ui, sans-serif;
+    color: #f5f5f7;
+    background: radial-gradient(ellipse at 50% 40%, #1a1a2e 0%, #0a0a14 70%, #050510 100%);
+  }
+  #scene {
+    position: relative;
+    width: 1080px; height: 1920px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+
+  /* Logo assembly — 4 pieces fly in from corners */
+  .logo-wrap {
+    position: relative;
+    width: 200px; height: 200px;
+    margin-bottom: 60px;
+  }
+  .logo-piece {
+    position: absolute;
+    width: 90px; height: 90px;
+    border-radius: 18px;
+    background: #7c5cff;
+    opacity: 0;
+  }
+  .logo-piece.tl { top: 0; left: 0;   transform: translate(-80px, -80px) rotate(-30deg); }
+  .logo-piece.tr { top: 0; right: 0;  transform: translate(80px, -80px) rotate(30deg);  }
+  .logo-piece.bl { bottom: 0; left: 0; transform: translate(-80px, 80px) rotate(30deg);  }
+  .logo-piece.br { bottom: 0; right: 0;transform: translate(80px, 80px) rotate(-30deg); }
+
+  @keyframes pieceIn {
+    0%   { opacity: 0; transform: var(--from); }
+    60%  { opacity: 1; transform: var(--mid); }
+    100% { opacity: 1; transform: translate(0,0) rotate(0deg); }
+  }
+  .logo-piece.tl { --from: translate(-80px,-80px) rotate(-30deg); --mid: translate(4px,4px) rotate(3deg);  animation: pieceIn 0.6s 0.2s cubic-bezier(.22,1,.36,1) forwards; }
+  .logo-piece.tr { --from: translate(80px,-80px) rotate(30deg);   --mid: translate(-4px,4px) rotate(-3deg); animation: pieceIn 0.6s 0.35s cubic-bezier(.22,1,.36,1) forwards; }
+  .logo-piece.bl { --from: translate(-80px,80px) rotate(30deg);   --mid: translate(4px,-4px) rotate(-3deg); animation: pieceIn 0.6s 0.35s cubic-bezier(.22,1,.36,1) forwards; }
+  .logo-piece.br { --from: translate(80px,80px) rotate(-30deg);   --mid: translate(-4px,-4px) rotate(3deg);  animation: pieceIn 0.6s 0.5s cubic-bezier(.22,1,.36,1) forwards; }
+
+  /* Brand name + shimmer */
+  .brand-name {
+    font-size: 72px; font-weight: 900;
+    letter-spacing: -0.02em;
+    background: linear-gradient(90deg, #f5f5f7 40%, #7c5cff 50%, #f5f5f7 60%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    opacity: 0; transform: translateY(20px);
+    animation: fadeUp 0.5s 0.8s ease-out forwards, shimmer 2.5s 1.3s linear infinite;
+  }
+  @keyframes fadeUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Tagline */
+  .tagline {
+    font-size: 32px; font-weight: 500;
+    color: rgba(245,245,247,0.7);
+    margin-top: 24px;
+    opacity: 0; transform: translateY(16px);
+    animation: fadeUp 0.5s 1.1s ease-out forwards;
+  }
+
+  /* CTA */
+  .cta {
+    margin-top: 80px;
+    padding: 20px 56px;
+    border: 2px solid #7c5cff;
+    border-radius: 12px;
+    font-size: 28px; font-weight: 700;
+    color: #7c5cff;
+    letter-spacing: 0.04em;
+    opacity: 0; transform: translateY(16px);
+    animation: fadeUp 0.5s 1.5s ease-out forwards, ctaPulse 2s 2s ease-in-out infinite;
+  }
+  @keyframes ctaPulse {
+    0%, 100% { border-color: #7c5cff; color: #7c5cff; }
+    50%      { border-color: #a78bfa; color: #a78bfa; }
+  }
+
+  /* Accent line */
+  .accent-line {
+    position: absolute; bottom: 160px;
+    width: 120px; height: 3px;
+    background: #7c5cff; border-radius: 2px;
+    opacity: 0;
+    animation: fadeUp 0.4s 1.8s ease-out forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .logo-piece, .brand-name, .tagline, .cta, .accent-line { animation: none; opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<div id="scene"
+     data-width="1080" data-height="1920"
+     data-duration="PLACEHOLDER_DURATION">
+
+  <!-- Logo assembly -->
+  <div class="logo-wrap">
+    <div class="logo-piece tl"></div>
+    <div class="logo-piece tr"></div>
+    <div class="logo-piece bl"></div>
+    <div class="logo-piece br"></div>
+  </div>
+
+  <!-- Brand name -->
+  <div class="brand-name">PLACEHOLDER_BRAND_NAME</div>
+
+  <!-- Tagline -->
+  <div class="tagline">PLACEHOLDER_TAGLINE</div>
+
+  <!-- CTA -->
+  <div class="cta">PLACEHOLDER_CTA</div>
+
+  <!-- Bottom accent -->
+  <div class="accent-line"></div>
+</div>
+</body>
+</html>

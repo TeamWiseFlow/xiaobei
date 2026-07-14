@@ -1,7 +1,0 @@
-{
-  "skills": ["github", "gh-issues", "coding-agent", "session-logs"],
-  "subagents": {
-    "allowAgents": []
-  },
-  "tools": {}
-}

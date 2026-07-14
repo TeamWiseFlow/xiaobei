@@ -12,10 +12,9 @@ OPENCLAW_HOME="$HOME/.openclaw"
 CONFIG_PATH="$OPENCLAW_HOME/openclaw.json"
 FORCE=false
 
-# 内置 Crew 列表（全局唯一，不可删除，不可多实例）
-# 这些都是对内 Crew（crew-type: internal）
-BUILTIN_CREWS="main hrbp it-engineer"
-
+# 内置 Crew（main / it-engineer）在 §4 中强制注册进 openclaw.json agents.list；
+# content-producer 已在 config-templates/openclaw.json agents.list 预注册（§4 仅规范化）；
+# 其余对外 crew（sales-cs / ...）的 workspace 在 §1 预建，运行时由 main agent 招募时注册。
 source "$SCRIPT_DIR/lib/agent-skills.sh"
 source "$SCRIPT_DIR/lib/exec-tiers.sh"
 source "$SCRIPT_DIR/lib/crew-workspaces.sh"
@@ -32,8 +31,8 @@ usage() {
   echo "Examples:"
   echo "  $0"
   echo "  $0 --force"
-  echo "  $0 --denied-skills hrbp:apple-notes,slack"
-  echo "  $0 --denied-skills main:slack --denied-skills hrbp:github,coding-agent"
+  echo "  $0 --denied-skills main:apple-notes,slack"
+  echo "  $0 --denied-skills main:slack --denied-skills it-engineer:github,coding-agent"
   exit 1
 }
 
@@ -230,6 +229,23 @@ sync_agent_skill_filter() {
   "
 }
 
+# 输出 openclaw.json 中所有 agent 的 "id<TAB>workspace" 行（workspace 解析 ~ → $HOME）。
+# 供 §4b/4b.5/4d/4e/4f 的 while 循环消费——原同一 node -e 块在此处之前重复了 5 次。
+list_agent_workspaces() {
+  node -e "
+    const fs = require('fs');
+    const home = process.env.HOME || '';
+    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
+    for (const a of (c.agents?.list || [])) {
+      if (!a?.id) continue;
+      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
+        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
+        .replace(/^~(?=\/|\$)/, home);
+      console.log(a.id + '\t' + ws);
+    }
+  " 2>/dev/null
+}
+
 if [ ! -d "$CREWS_DIR" ]; then
   echo "❌ crews/ directory not found at $CREWS_DIR"
   exit 1
@@ -247,102 +263,48 @@ fi
 
 echo "📦 Setting up Agent System (crews)..."
 
-# ─── 1. 安装内置 Crew workspace（main / hrbp / it-engineer） ────
-for agent_id in $BUILTIN_CREWS; do
-  agent_dir="$CREWS_DIR/$agent_id"
+# ─── 1. 部署所有 Crew workspace（扫 crews/ 顶层，幂等） ──────────
+# D8 扁平化后不再经 crew_templates/hrbp_templates 中转，直接把 crews/<id>/ 同步到
+# ~/.openclaw/workspace-<id>/。已存在则跳过（保留用户编辑），仅做幂等 guide 注入。
+# main / it-engineer 在 §4 中额外强制注册进 openclaw.json；content-producer 已在模板
+# agents.list 预注册（§4 仅规范化其 skills / allowAgents）；sales-cs 等对外 crew 的
+# workspace 在此预建，运行时由 main agent 招募时注册进 openclaw.json。
+for agent_dir in "$CREWS_DIR"/*/; do
   [ -d "$agent_dir" ] || continue
+  agent_dir="${agent_dir%/}"
+  agent_id="$(basename "$agent_dir")"
+  # 跳过脚手架模板与非合法目录
+  [ "$agent_id" = "_template" ] && continue
+  [ -f "$agent_dir/SOUL.md" ] || continue
   dest="$OPENCLAW_HOME/workspace-$agent_id"
 
   if [ -d "$dest" ] && [ "$FORCE" != "true" ]; then
     echo "  ⚠️  workspace-$agent_id already exists, keeping user files (use --force to overwrite)"
+    # §2.3：已部署 workspace 仍同步 crew 专属 skill（覆盖），但不碰 AGENTS.md/TOOLS.md/Memory
+    # 及部署实例自定义 skill（sync_crew_skills 只覆盖仓库里同名的 skill）
+    sync_crew_skills "$agent_dir" "$dest"
     # 仅做幂等注入（有标记则跳过，不覆盖用户编辑的内容）
     inject_file_edit_guide "$dest/TOOLS.md"
     inject_exec_guide "$dest/TOOLS.md" "$dest"
-    inject_python_exec_guide "$dest/TOOLS.md"
     inject_agents_md_sections "$dest/AGENTS.md"
     inject_feishu_media_guide "$dest/USER.md"
     continue
   fi
 
   copy_crew_template_contents "$agent_dir" "$dest"
-  # 安装有 package.json 的 skill 的 npm 依赖
-  for skill_pkg in "$dest/skills"/*/package.json; do
-    [ -f "$skill_pkg" ] || continue
-    skill_dir="$(dirname "$skill_pkg")"
-    skill_name="$(basename "$skill_dir")"
-    echo "  📦 installing deps for skill: $skill_name"
-    (cd "$skill_dir" && npm install --production --silent 2>/dev/null) || \
-      echo "  ⚠️  npm install failed for skill: $skill_name" >&2
-  done
+  # §2.3：统一走 sync_crew_skills 装 skill + npm 依赖（fresh 分支 copy_crew_template_contents
+  # 已把 skills/ 拷过去，这里再刷一遍保证与仓库一致并装依赖）
+  sync_crew_skills "$agent_dir" "$dest"
   echo "  ✅ workspace-$agent_id installed"
   inject_file_edit_guide "$dest/TOOLS.md"
   inject_exec_guide "$dest/TOOLS.md" "$dest"
-  inject_python_exec_guide "$dest/TOOLS.md"
   inject_agents_md_sections "$dest/AGENTS.md"
   inject_feishu_media_guide "$dest/USER.md"
 done
 
-# ─── 2. 复制共享协议到每个已安装的内置 workspace ─────────────────
-for agent_id in $BUILTIN_CREWS; do
-  dest="$OPENCLAW_HOME/workspace-$agent_id"
-  if [ -d "$dest" ] && [ -d "$CREWS_DIR/shared" ]; then
-    cp "$CREWS_DIR/shared/"*.md "$dest/"
-  fi
-done
-echo "  ✅ Shared protocols (CREW_TYPES.md) copied"
-
-# ─── 3a. 同步对内 crew 模板库到 crew_templates/（供 Main Agent 运行时参考） ──
-CREW_TEMPLATES_DEST="$OPENCLAW_HOME/crew_templates"
-mkdir -p "$CREW_TEMPLATES_DEST"
-# 清空旧模板目录，防止类型迁移时残留
-find "$CREW_TEMPLATES_DEST" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
-# 复制所有声明为 internal 的模板（含 addon 引入模板）
-for template_dir in "$CREWS_DIR"/*/; do
-  [ -d "$template_dir" ] || continue
-  template_id="$(basename "$template_dir")"
-  [ "$template_id" = "shared" ] && continue
-  crew_type="$(resolve_template_crew_type "$template_dir")"
-  [ "$crew_type" = "internal" ] || continue
-  cp -r "$template_dir" "$CREW_TEMPLATES_DEST/$template_id"
-done
-sync_addon_templates_to_runtime "internal" "$CREW_TEMPLATES_DEST"
-# 同步 shared/ 协议到 crew_templates/
-if [ -d "$CREWS_DIR/shared" ]; then
-  cp "$CREWS_DIR/shared/"*.md "$CREW_TEMPLATES_DEST/"
-fi
-# 同步对内专属索引（crew_index.md → index.md，由 Main Agent 维护）
-if [ -f "$CREWS_DIR/crew_index.md" ]; then
-  cp "$CREWS_DIR/crew_index.md" "$CREW_TEMPLATES_DEST/index.md"
-fi
-echo "  ✅ Internal crew templates synced to $CREW_TEMPLATES_DEST"
-
-# ─── 3b. 同步对外 crew 模板库到 hrbp_templates/（供 HRBP 运行时参考） ──
-HRBP_TEMPLATES_DEST="$OPENCLAW_HOME/hrbp_templates"
-mkdir -p "$HRBP_TEMPLATES_DEST"
-# 清空旧模板目录，防止类型迁移时残留
-find "$HRBP_TEMPLATES_DEST" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
-# 复制所有声明为 external 的模板（含脚手架与 addon 引入模板）
-for template_dir in "$CREWS_DIR"/*/; do
-  [ -d "$template_dir" ] || continue
-  template_id="$(basename "$template_dir")"
-  [ "$template_id" = "shared" ] && continue
-  crew_type="$(resolve_template_crew_type "$template_dir")"
-  [ "$crew_type" = "external" ] || continue
-  cp -r "$template_dir" "$HRBP_TEMPLATES_DEST/$template_id"
-done
-sync_addon_templates_to_runtime "external" "$HRBP_TEMPLATES_DEST"
-# 同步对外专属索引（hrbp_index.md → index.md，由 HRBP 维护）
-if [ -f "$CREWS_DIR/hrbp_index.md" ]; then
-  cp "$CREWS_DIR/hrbp_index.md" "$HRBP_TEMPLATES_DEST/index.md"
-fi
-echo "  ✅ External crew templates synced to $HRBP_TEMPLATES_DEST"
-
-# ─── 3c. 注入渠道回复规则到所有对外 crew 模板 ────────────────────
-for template_dir in "$HRBP_TEMPLATES_DEST"/*/; do
-  [ -d "$template_dir" ] || continue
-  inject_channel_reply_rules "$template_dir/AGENTS.md"
-done
-echo "  ✅ Channel reply rules injected into external crew templates"
+# 注：原 §2/§3（shared 协议 / crew_templates / hrbp_templates 模板库同步）已移除。
+# D8 扁平化 + 去 hrbp 化后 crews/shared/ 不存在、无 agent 消费 crew_templates/，
+# 对外 crew 的 channel reply rules 注入改在 §4 对 workspace 直接做（见 inject_channel_reply_rules 调用）。
 
 # ─── 4. 更新 openclaw.json（合并内置 Crew + skills 过滤） ────────
 if [ -f "$CONFIG_PATH" ]; then
@@ -413,7 +375,7 @@ if [ -f "$CONFIG_PATH" ]; then
     "$PROJECT_ROOT" \
     "$OPENCLAW_HOME")"
 
-  MAIN_SKILLS_RESULT="$MAIN_SKILLS_RESULT" IT_SKILLS_RESULT="$IT_SKILLS_RESULT" OPENCLAW_HOME="$OPENCLAW_HOME" node -e "
+  MAIN_SKILLS_RESULT="$MAIN_SKILLS_RESULT" IT_SKILLS_RESULT="$IT_SKILLS_RESULT" OPENCLAW_HOME="$OPENCLAW_HOME" PROJECT_ROOT="$PROJECT_ROOT" node -e "
     const fs = require('fs');
     const path = require('path');
     const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
@@ -435,7 +397,7 @@ if [ -f "$CONFIG_PATH" ]; then
     };
 
     const getCrewType = (id) => {
-      if (id === 'main' || id === 'hrbp' || id === 'it-engineer') return 'internal';
+      if (id === 'main' || id === 'it-engineer') return 'internal';
       const agent = c.agents.list.find((entry) => entry.id === id);
       if (!agent) return 'external';
       const wsRaw = typeof agent.workspace === 'string' && agent.workspace.trim()
@@ -454,7 +416,7 @@ if [ -f "$CONFIG_PATH" ]; then
 
     upsertAgent('main', (prev) => {
       // Main Agent 只能 spawn 它招募的非内置 internal agent + it-engineer（固定）
-      const BUILTIN_IDS = new Set(['main', 'hrbp', 'it-engineer']);
+      const BUILTIN_IDS = new Set(['main', 'it-engineer']);
       const prevAllowAgents = Array.isArray(prev?.subagents?.allowAgents) ? prev.subagents.allowAgents : [];
       const filteredAllowAgents = prevAllowAgents.filter(
         (id) => !BUILTIN_IDS.has(id) && getCrewType(id) === 'internal'
@@ -467,7 +429,8 @@ if [ -f "$CONFIG_PATH" ]; then
         default: prev.default ?? true,
         name: prev.name || 'Main Agent',
         workspace: prev.workspace || openclawHome + '/workspace-main',
-        thinkingDefault: 'high',
+        // thinkingDefault 不显式设——main 继承 agents.defaults.thinkingDefault（medium）；
+        // 若用户在 openclaw.json 手动给 main 设过则 prev 保留（...prev 已带）。
         reasoningDefault: 'off',
         subagents: {
           ...(prev.subagents || {}),
@@ -491,7 +454,7 @@ if [ -f "$CONFIG_PATH" ]; then
 
     // 为所有其他对内 Crew 实例也追加 it-engineer spawn 权限
     // （它们在 depth=1 时需要 maxSpawnDepth>=2，由 agents.defaults.subagents.maxSpawnDepth 保证）
-    const PROTECTED_IDS = new Set(['main', 'hrbp', 'it-engineer']);
+    const PROTECTED_IDS = new Set(['main', 'it-engineer']);
     for (const agent of c.agents.list) {
       if (PROTECTED_IDS.has(agent.id)) continue;
       const crewType = getCrewType(agent.id);
@@ -535,6 +498,27 @@ if [ -f "$CONFIG_PATH" ]; then
       );
     }
 
+    // 注入 skill 软链 target 白名单（软链方案，spec §2.3 演进）
+    // crew skills 软链到 ~/.openclaw/workspace-<id>/skills/，source="openclaw-workspace"
+    // 走 containment gate（shouldEnforceConfiguredSkillRootContainment=true），
+    // 软链 target（仓路径）必须在 allowSymlinkTargets 里才不被拒（否则 warn escaped skill path）。
+    // managed skills（~/.openclaw/skills）走 "openclaw-managed" 无 gate，不需要，但加上无害且未来对齐。
+    // 仅源码部署生效（Docker 不跑 setup-crew.sh，Docker 用 COPY 不软链）。
+    const projectRoot = process.env.PROJECT_ROOT;
+    if (projectRoot) {
+      const targets = [
+        path.join(projectRoot, 'crews'),
+        path.join(projectRoot, 'skills'),
+      ].map((d) => { try { return fs.realpathSync(d); } catch { return null; } })
+        .filter((d) => typeof d === 'string');
+      if (targets.length) {
+        if (!c.skills) c.skills = {};
+        if (!c.skills.load) c.skills.load = {};
+        const existing = Array.isArray(c.skills.load.allowSymlinkTargets) ? c.skills.load.allowSymlinkTargets : [];
+        c.skills.load.allowSymlinkTargets = [...new Set([...existing, ...targets])];
+      }
+    }
+
     fs.writeFileSync('$CONFIG_PATH', JSON.stringify(c, null, 2) + '\\n');
   "
 
@@ -566,18 +550,7 @@ if [ -f "$CONFIG_PATH" ]; then
         grep -qxF "$line" "$workspace_ac" || echo "$line" >> "$workspace_ac"
       done < "$template_ac"
     fi
-  done < <(node -e "
-    const fs = require('fs');
-    const home = process.env.HOME || '';
-    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
-    for (const a of (c.agents?.list || [])) {
-      if (!a?.id) continue;
-      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
-        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
-        .replace(/^~(?=\/|\$)/, home);
-      console.log(a.id + '\t' + ws);
-    }
-  " 2>/dev/null)
+  done < <(list_agent_workspaces)
 
   # ─── 4b.5. 自动注入 skill scripts → ALLOWED_COMMANDS（幂等）──
   # 扫描每个 agent 的 skill 列表，将带 scripts/ 的技能脚本路径追加到 ALLOWED_COMMANDS。
@@ -629,18 +602,7 @@ if [ -f "$CONFIG_PATH" ]; then
     done <<< "$script_entries"
 
     [ "$added_count" -gt 0 ] && echo "    ✅ $a_id: +${added_count} script entries injected"
-  done < <(node -e "
-    const fs = require('fs');
-    const home = process.env.HOME || '';
-    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
-    for (const a of (c.agents?.list || [])) {
-      if (!a?.id) continue;
-      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
-        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
-        .replace(/^~(?=\/|\$)/, home);
-      console.log(a.id + '\t' + ws);
-    }
-  " 2>/dev/null)
+  done < <(list_agent_workspaces)
   echo "  ✅ Skill script commands synced to ALLOWED_COMMANDS"
 
   # ─── 4c. 应用 Command Tier → exec-approvals + tools.exec ──────
@@ -657,19 +619,7 @@ if [ -f "$CONFIG_PATH" ]; then
     inject_agents_md_sections "$a_ws/AGENTS.md"
     inject_file_edit_guide "$a_ws/TOOLS.md"
     inject_exec_guide "$a_ws/TOOLS.md" "$a_ws"
-    inject_python_exec_guide "$a_ws/TOOLS.md"
-  done < <(node -e "
-    const fs = require('fs');
-    const home = process.env.HOME || '';
-    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
-    for (const a of (c.agents?.list || [])) {
-      if (!a?.id) continue;
-      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
-        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
-        .replace(/^~(?=\/|\$)/, home);
-      console.log(a.id + '\t' + ws);
-    }
-  " 2>/dev/null)
+  done < <(list_agent_workspaces)
   echo "  ✅ Channel reply rules synced to deployed external crew workspaces"
 
   # ─── 4e. 注入标准 AGENTS.md sections 到已部署的对内 crew workspaces ──
@@ -680,19 +630,7 @@ if [ -f "$CONFIG_PATH" ]; then
     inject_feishu_media_guide "$a_ws/USER.md"
     inject_file_edit_guide "$a_ws/TOOLS.md"
     inject_exec_guide "$a_ws/TOOLS.md" "$a_ws"
-    inject_python_exec_guide "$a_ws/TOOLS.md"
-  done < <(node -e "
-    const fs = require('fs');
-    const home = process.env.HOME || '';
-    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
-    for (const a of (c.agents?.list || [])) {
-      if (!a?.id) continue;
-      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
-        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
-        .replace(/^~(?=\/|\$)/, home);
-      console.log(a.id + '\t' + ws);
-    }
-  " 2>/dev/null)
+  done < <(list_agent_workspaces)
   echo "  ✅ Standard AGENTS.md sections synced to all deployed workspaces"
 
   # ─── 4f. 确保所有 skill 脚本有执行权限 ──────────────────────────
@@ -701,25 +639,18 @@ if [ -f "$CONFIG_PATH" ]; then
     [ -d "$a_ws/skills" ] || continue
     chmod_count="$(find "$a_ws/skills" -name '*.sh' -not -executable -exec chmod +x {} + -print | wc -l)"
     [ "$chmod_count" -gt 0 ] && echo "    ✅ $a_id: chmod +x on $chmod_count scripts"
-  done < <(node -e "
-    const fs = require('fs');
-    const home = process.env.HOME || '';
-    const c = JSON.parse(fs.readFileSync('$CONFIG_PATH', 'utf8'));
-    for (const a of (c.agents?.list || [])) {
-      if (!a?.id) continue;
-      const ws = (typeof a.workspace === 'string' && a.workspace.trim()
-        ? a.workspace.trim() : ('~/.openclaw/workspace-' + a.id))
-        .replace(/^~(?=\/|\$)/, home);
-      console.log(a.id + '\t' + ws);
-    }
-  " 2>/dev/null)
+  done < <(list_agent_workspaces)
   echo "  ✅ Skill scripts ensured executable"
 else
   echo "  ⚠️  openclaw.json not found at $CONFIG_PATH"
   echo "     Will be created on first start (dev.sh / reinstall-daemon.sh)"
 fi
 
-# ─── 5. 写入 OFB_ENV.md（同时为 it-engineer 和 hrbp 写入） ──────
+# ─── 5. 写入 OFB_ENV.md（仅 it-engineer） ──────────────────────
+# 仅源码部署需要：路径随机器可变，故记录成文件供 IT engineer AGENTS.md 读取。
+# Docker 部署不跑 setup-crew.sh，路径固定（/opt/openclaw + /root/.openclaw），
+# AGENTS.md 已环境自感知，无需 OFB_ENV.md。
+# main agent 不持有此文件：环境变量运维归 IT engineer，main 需加变量时 spawn it-engineer。
 generate_ofb_env_md() {
   local workspace_dir="$1"
   local agent_label="$2"
@@ -742,10 +673,6 @@ generate_ofb_env_md() {
 - **wiseflow 项目路径**：$PROJECT_ROOT
 - **openclaw 子目录**：$PROJECT_ROOT/openclaw
 - **配置文件**：$OPENCLAW_HOME/openclaw.json
-- **对内 Crew 通讯录**：$OPENCLAW_HOME/crew_templates/TEAM_DIRECTORY.md
-- **对外 Crew 注册表**：$OPENCLAW_HOME/workspace-hrbp/EXTERNAL_CREW_REGISTRY.md
-- **对内 Crew 模板目录**：$OPENCLAW_HOME/crew_templates/
-- **对外 Crew 模板目录**：$OPENCLAW_HOME/hrbp_templates/
 
 ## 环境变量文件
 
@@ -802,43 +729,14 @@ ENVEOF
   fi
 }
 
-generate_ofb_env_md "$OPENCLAW_HOME/workspace-main" "main"
+# OFB_ENV.md 仅写入 it-engineer workspace：环境变量 / 路径运维是 IT engineer 职责，
+# main agent 不直接编辑 daemon.env，需要加环境变量时 spawn it-engineer 执行。
 generate_ofb_env_md "$OPENCLAW_HOME/workspace-it-engineer" "it-engineer"
-generate_ofb_env_md "$OPENCLAW_HOME/workspace-hrbp" "hrbp"
-
-# --- 注入 env 文件路径指引到 TOOLS.md ---
-_OFB_ENV_FILE=""
-if [ "$(uname -s)" = "Darwin" ]; then
-  _OFB_ENV_FILE="$HOME/.openclaw/service-env/ai.openclaw.gateway.env"
-else
-  _OFB_ENV_FILE="$HOME/.openclaw/daemon.env"
-fi
-inject_env_file_guide "$OPENCLAW_HOME/workspace-main/TOOLS.md" "$_OFB_ENV_FILE"
-inject_env_file_guide "$OPENCLAW_HOME/workspace-it-engineer/TOOLS.md" "$_OFB_ENV_FILE"
-inject_env_file_guide "$OPENCLAW_HOME/workspace-hrbp/TOOLS.md" "$_OFB_ENV_FILE"
-
-# ─── 5b. 拷贝 README.md 为项目背景.md（每次运行都覆盖，保持最新） ──
-copy_project_readme() {
-  local workspace_dir="$1"
-  local agent_label="$2"
-  if [ -d "$workspace_dir" ]; then
-    cp "$PROJECT_ROOT/README.md" "$workspace_dir/项目背景.md"
-    echo "  ✅ 项目背景.md updated in $agent_label workspace"
-  fi
-}
-
-copy_project_readme "$OPENCLAW_HOME/workspace-main" "main"
-copy_project_readme "$OPENCLAW_HOME/workspace-it-engineer" "it-engineer"
-copy_project_readme "$OPENCLAW_HOME/workspace-hrbp" "hrbp"
 
 # ─── 6. 完成 ──────────────────────────────────────────────────────
 echo ""
 echo "✅ Agent System installed!"
 echo ""
 echo "Installed locations:"
-echo "  Workspaces:          $OPENCLAW_HOME/workspace-main/, workspace-hrbp/, workspace-it-engineer/"
-echo "  Internal templates:  $OPENCLAW_HOME/crew_templates/"
-echo "  External templates:  $OPENCLAW_HOME/hrbp_templates/"
+echo "  Workspaces:          $OPENCLAW_HOME/workspace-<crew-id>/ (one per crews/*, _template 除外)"
 echo "  Config:              $CONFIG_PATH"
-
-# TEAM_DIRECTORY.md 由 main agent 自行管理，不再由 setup-crew.sh 生成
