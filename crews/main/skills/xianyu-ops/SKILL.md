@@ -22,7 +22,7 @@ metadata:
    - `camoufox-cli --session xianyu --persistent --headed --json open "https://www.goofish.com"`
    - 告知用户「**闲鱼** 浏览器已打开，请在窗口里手动扫码登录，完成后告诉我」
    - 等用户回复后 `snapshot` 零登录态就位
-   - 登录后**不关 session**——持久化 session `xianyu` 登录态留着给本 skill 下次用，主动 close 会破坏复用。
+   - 登录后**close session**——登录态落磁盘 profile，不留进程占内存；本 skill 下次 `--session xianyu --persistent` 重起无头即恢复，用完再 close。
 
 > **不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export` / `cookies import`。
 
@@ -33,7 +33,7 @@ metadata:
 - 每次操作之间保持 3-5 秒间隔，避免风控触发验证码。
 - 发送私信时不要连续发送超过 10 条，每条间隔 30 秒以上。
 - 出现"请先登录"、"验证码"、"安全验证"、"异常访问"等提示时，立即停止操作并告知用户需要重新登录。
-- **不主动 close 持久化 session `xianyu`**——登录态 + 指纹冻结留着下次用。只在 session 卡死时 `camoufox-cli --session xianyu --json close` teardown。
+- **用完即 close 持久化 session `xianyu`**——登录态 + 指纹冻结在磁盘 profile，不留进程占内存；下次操作 `--session xianyu --persistent` 重起无头即恢复。只在 session 卡死时 `camoufox-cli --session xianyu --json close` teardown。
 - 同 session 已有命令在跑时，新命令 fail-first（返回 `session xianyu 正忙，请等待当前操作完成后再试`）——读到这条文本就等当前操作完成再重试，不要盲试。
 
 ---

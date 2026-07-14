@@ -5,7 +5,7 @@
 - 4 个子命令路由（upload / fill / publish / get-link）+ run 一键全流程
 - 纯浏览器操作：本 skill 不自管探活/登录，交 login-manager；脚本只复用持久化 session `douyin` 做发布
 - camoufox-cli 调用模式（open / eval / click / type / set_file / wait）
-- 持久化 session 复用（不主动 close，登录态留着下次用）
+- 持久化 session 复用（用完即 close，登录态在磁盘 profile，下次重起无头即恢复）
 - file 不存在 / 按钮找不到等失败模式
 
 All camoufox-cli / subprocess calls are mocked.

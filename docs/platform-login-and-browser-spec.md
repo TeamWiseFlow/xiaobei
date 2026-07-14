@@ -139,7 +139,7 @@ camoufox-cli --session wx_mp --persistent --json identity export ~/.openclaw/log
 2. **探活 / 有头登录 / 导出 Cookie+UA 全交 login-manager**——本 skill 不自管，不调用 `cookies export` / `identity export` / `cookies import`。
 3. **自身不吃 Cookie**：发布脚本直接复用 login-manager 准备好的持久化 session `douyin`（`--session douyin --persistent`），不开临时 session、不 import cookie。
 4. **导出的 Cookie+UA 落中央存储仅供脚本类下游消费**（`viral-chaser` / `published-track`）——douyin-publish 自身不读这两个文件。
-5. **发布任务跑完不主动 close 持久化 session `douyin`**——登录态留着下次用；只在 session 卡死时 `camoufox-cli --session douyin --json close` teardown。
+5. **发布任务跑完即 close 持久化 session `douyin`**——登录态在磁盘 profile，不留进程占内存，下次发布 `--session douyin --persistent` 重起无头即恢复；只在 session 卡死时 `camoufox-cli --session douyin --json close` teardown。
 6. 子命令清单**无 `login`**：`upload` / `fill` / `publish` / `get-link` / `cleanup` / `run`（run 一键跑 upload → fill → publish → get-link，**不**自管探活）。
 
 ## 7. 显式有头/无头模式的场景规则（browser-guide 澄清点）

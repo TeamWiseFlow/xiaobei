@@ -315,8 +315,9 @@ async function cmdCheck(): Promise<void> {
     await camoufox("open", `${MP_BASE}/`);
     await sleep(3000);
     const url = await camoufoxCurrentUrl();
-    // 不 close wx_mp 挧愿化 session——留着给 wx-mp-engagement / 下游 fetch 命令接力复用；
-    // 仅在 session 卡死时由调用方手动 logout 子命令 teardown。
+    // 探活读完 URL 即 close——登录态在磁盘 profile，不留进程占内存；
+    // 下游（wx-mp-engagement / 业务命令）按需重起无头 session，profile 桥接登录态。
+    try { await camoufox("close"); } catch { /* session 已退或卡死，忽略 */ }
     if (url.includes("login") || url.includes("scanloginqrcode")) {
       authExit("SESSION_EXPIRED");
     }
@@ -383,10 +384,11 @@ async function cmdLoginConfirm(): Promise<void> {
       updated_at: timestampLocal(),
     };
     await writeJsonFile(SESSION_FILE, sessionData);
-    // 不 close wx_mp 持久化 session——登录态留着给 wx-mp-engagement 复用（两 skill 共用同一 session）；
-    // 仅当 session 卡死时由调用方手动 logout 子命令 teardown。
+    // 导出落盘后 close 掉无头浏览器——登录态已在磁盘 profile + 中央存储，不留进程占内存。
+    // 下游（wx-mp-engagement / 业务命令）按需重起无头 session，profile 桥接登录态。
+    try { await camoufox("close"); } catch { /* session 已退或卡死，忽略 */ }
 
-    printJson({ ok: true, message: "登录成功，cookie + UA + token 已落中央存储（session 未关，留给下游复用）", token });
+    printJson({ ok: true, message: "登录成功，cookie + UA + token 已落中央存储（session 已关，登录态在磁盘 profile）", token });
   } catch (e: any) {
     errExit(`camoufox-cli 登录确认失败: ${e?.message ?? String(e)}`);
   }

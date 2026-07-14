@@ -60,18 +60,18 @@ camoufox-cli --session twitter --persistent --json open "https://x.com/"
 sleep 3
 camoufox-cli --session twitter --json snapshot
 # snapshot 看页面是否跳到登录页 / 出现登录按钮 / 推文是否正常可见
-# → 没跳登录页、内容正常 = 登录态有效，不 close session（留着给后续操作 + twitter-post 复用）
+# → 没跳登录页、内容正常 = 登录态有效，探活完即 close session（登录态在磁盘 profile，后续操作按需重起无头复用）
 # → 跳到登录页 / 出现登录按钮 = 登录态失效，走重登
 ```
 
-重登流程（失效时）——登录流程按 `browser-guide` skill 走有头手动登录（手机号+验证码 / Twitter APP 扫码），登录后**不关 session**——持久化 session `twitter` 登录态留着给本 skill 做互动操作 + `twitter-post` 做发布操作复用，主动 close 会破坏复用。只在 session 卡死时由调用方手动 `camoufox-cli --session twitter --json close` teardown。
+重登流程（失效时）——登录流程按 `browser-guide` skill 走有头手动登录（手机号+验证码 / Twitter APP 扫码），登录后**close session**——登录态落磁盘 profile，不留进程占内存。本 skill 做互动操作 + `twitter-post` 做发布操作时用 `--session twitter --persistent` 重起无头即恢复，用完再 close。只在 session 卡死时由调用方手动 `camoufox-cli --session twitter --json close` teardown。
 
 ```bash
 # X 登录风控对无头 + QR 识别严格，有头人工登录最稳
 camoufox-cli --session twitter --persistent --headed --json open "https://x.com/login"
 # 告知用户「**Twitter/X** 浏览器已打开，请在窗口里手动完成登录（账号密码 / 手机 APP 扫码），完成后告诉我」
 # 等用户回复后 snapshot 验登录态就位
-# 登录就位后不 close session——留着给本 skill + twitter-post 复用
+# 登录就位后 close session——登录态落磁盘 profile，本 skill + twitter-post 按需重起无头复用
 ```
 
 **不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`。
@@ -118,7 +118,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 ```bash
 # 单一 session twitter，并发调用由 forked cli fail-first 队列拒绝
 # 脚本读到 "session twitter 正忙" → exit 3，agent 应等待重试（不自动排队）
-# 串行使用：上一次操作完后 session 留着（不 close），下一次直接复用
+# 串行使用：每次操作用完即 close session（登录态在磁盘 profile），下一次重起无头复用同一 profile
 ```
 
 ---
@@ -136,14 +136,14 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 ```
 1. 探活（见「探活与登录」段）→ 登录态有效继续，失效走重登
 2. camoufox-cli --session twitter --persistent open https://x.com/i/web/status/<id>
-   └─ 若 session 正忙 → forked cli fail-first → 脚本 exit 3（不 close，不排队）
+   └─ 若 session 正忙 → forked cli fail-first → 脚本 exit 3（不 close 正在跑的 session，不排队）
    注：操作执行 + 探活都走默认无头（自动化操作无需用户在场）；只有登录走有头
 3. 脚本 _poll_probe(tid, ["unlike","like"])：
    ├─ unlike 在 → 已点赞，输出 note + exit 0（不记频率）
    ├─ like 在 → _click_scoped(tid,"like") → _poll_probe(tid,["unlike"]) 验翻转 → record + 输出
    └─ 10s 内都没找到 → exit 1（DOM 未加载或未登录）
 4. check_freq_limit（操作前已校验）→ 通过则 record_action
-5. 不 close 持久化 session（留给下次 / twitter-post 复用）
+5. close session（登录态在磁盘 profile，下次 / twitter-post 按需重起无头复用）
 6. 输出 {ok, tweet_id, action, session}
 ```
 
@@ -167,7 +167,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
    ├─ -follow 在 → _click_suffix("-follow") → sleep 1s → _poll_suffix(["-unfollow"]) 验翻转 → record
    └─ 都没找到 → exit 1
 4. check_freq_limit (follow: 5 min, 50/day)
-5. record_action + 不 close
+5. record_action + close session（登录态在磁盘 profile）
 ```
 
 ### unfollow（带 confirm 菜单）
@@ -178,7 +178,7 @@ twitter_interact run --user <handle> --action <follow|unfollow>
 4. _click_suffix("-unfollow") → 弹 confirm
 5. _click_confirm("confirmationSheetConfirm")：轮询找 [data-testid="confirmationSheetConfirm"] 并 click
 6. sleep 1s → _poll_suffix(["-follow"]) 验翻转
-7. 不 close
+7. close session（登录态在磁盘 profile）
 ```
 
 ---

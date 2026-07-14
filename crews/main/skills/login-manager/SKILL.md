@@ -99,7 +99,7 @@ camoufox-cli --session "$SESSION" --persistent --json open "<平台首页 URL>"
 sleep 3
 camoufox-cli --session "$SESSION" --json snapshot
 # snapshot 看页面是否跳到登录页 / 出现登录按钮 / 互动数据是否正常
-# → 没跳登录页、内容正常 = 登录态有效，不 close session（留着给下游 skill 复用）
+# → 没跳登录页、内容正常 = 登录态有效，探活完即 close session（登录态在磁盘 profile，下游按需重起无头复用）
 # → 跳到登录页 / 出现登录按钮 = 登录态失效，走步骤 1 重登
 ```
 
@@ -131,13 +131,13 @@ camoufox-cli --session <platform> --persistent --json cookies export ~/.openclaw
 camoufox-cli --session <platform> --persistent --json identity export ~/.openclaw/logins/<platform>.ua.json
 ```
 
-两个文件都写成功后，login-manager 流程结束。**不主动 close session**——持久化 session 登录态留着给下游浏览器类 skill（`xhs-interact` / `douyin-publish` 等）复用，主动 close 会破坏复用。只在 session 卡死时由调用方手动 `camoufox-cli --session <platform> --json close` teardown。
+两个文件都写成功后，login-manager 流程结束。**随即 close session**——登录态已落两处：磁盘 profile（`~/.camoufox-cli/profiles/<platform>/`）+ 中央 cookie/UA 文件，不留浏览器进程占内存。下游浏览器类 skill（`xhs-interact` / `douyin-publish` 等）用 `--session <platform> --persistent` 重起**无头** session 即从磁盘 profile 恢复登录态，用完再 close。session 卡死时由调用方手动 `camoufox-cli --session <platform> --json close` teardown。
 
 > **严禁**：**严禁 camoufox-cli（浏览器方案）通过 `cookies import` 导入 cookie 造一个登录会话**。浏览器操作一律走 login-manager 真实登录后的**持久化 session**（登录态 + 指纹冻结在 session profile 里），不开临时 session 再 import cookie 那一套。xhs `a1`/`websectiga` 等设备指纹 cookie 导入到不同指纹的浏览器会话会错配 → 被风控检测。
 >
 > **cookie 导入仅供脚本 / 纯 HTTP 消费**：中央存储的 cookie + UA 文件只给下游**脚本**（`viral-chaser` / `xhs-content-ops` / `published-track` / `douyin-publish` / `xhs-publish` 等的 Python / TS 脚本）做 raw HTTP 抓取用——脚本侧把 cookie 拼进 `Cookie` header、把 UA 填进 `User-Agent` header 直接发 HTTP 请求，**不经浏览器**。脚本**必须同时导入 cookie 和 UA**（同一指纹下的 cookie 才不会被风控错配）。
 >
-> **浏览器类下游 skill**（如 `xhs-interact` 这类纯 camoufox-cli 操作技能）共享持久化 session 即可——复用本 skill 登录后留下的 `xhs-browse` / `douyin` 等持久化 session（`--session <平台 key> --persistent`），**不开独立 session、不 import cookie**。
+> **浏览器类下游 skill**（如 `xhs-interact` 这类纯 camoufox-cli 操作技能）共享同一持久化 session 名即可——用 `--session <平台 key> --persistent` 重起无头 session，从磁盘 profile 恢复本 skill 登录态，**不开独立 session、不 import cookie、用完即 close**。
 
 ---
 
@@ -147,7 +147,7 @@ camoufox-cli --session <platform> --persistent --json identity export ~/.opencla
 
 > 该同时导入已由各下游脚本在代码里硬保证**——每个脚本都显式读 `{platform}.json` 的 `cookies` 数组 + `{platform}.ua.json` 的 `userAgent` 字段，拼进 HTTP `Cookie` / `User-Agent` header，UA 缺失时回退 DEFAULT_UA。
 
-**浏览器类下游 skill 不走本节**：camoufox-cli 操作的技能（如 `xhs-interact`）直接复用本 skill 登录后的持久化 session（`--session <平台 key> --persistent`），不另开临时 session、不 import cookie。
+**浏览器类下游 skill 不走本节**：camoufox-cli 操作的技能（如 `xhs-interact`）用 `--session <平台 key> --persistent` 重起无头 session 复用本 skill 落盘的登录态，不另开临时 session、不 import cookie、用完即 close。
 
 ### HTML 登录墙检测（脚本 / 纯 HTTP 用，大小写不敏感）
 
@@ -161,7 +161,7 @@ camoufox-cli --session <platform> --persistent --json identity export ~/.opencla
 
 ## 并发约束
 
-- **每平台一个持久化 session**：session 名 = 平台 key。同一平台的重登 / 多个浏览器类 skill 共用 session 时走 fail-first 队列（同 session 已有命令在跑时新命令直接 fail）——不要在同一 platform session 上并发开多个登录流；浏览器操作 skill 串行排队，不自动 close 正在跑的 session。
+- **每平台一个持久化 session**：session 名 = 平台 key。同一平台的重登 / 多个浏览器类 skill 共用 session 名时走 fail-first 队列（同 session 已有命令在跑时新命令直接 fail）——不要在同一 platform session 上并发开多个登录流；浏览器操作 skill 串行排队，各自用完即 close（登录态在磁盘 profile，不靠常驻进程）。
 - 不同 agent / 不同登录流程 → 各自独立 session，独立 profile dir。
 
 ---

@@ -40,7 +40,7 @@ metadata:
 SESSION="xhs-browse"
 ```
 
-任务结束后**不要 close 该 session**——它是持久化 session，留给后续自己 / 其他浏览器操作技能复用。除非明确要重登，才走 login-manager 有头重登流。
+任务结束后**close 该 session**——持久化 session 登录态在磁盘 profile，不留进程占内存；后续自己 / 其他浏览器操作技能用 `--session <平台 key> --persistent` 重起无头即恢复。除非明确要重登，才走 login-manager 有头重登流。
 
 ---
 

@@ -31,18 +31,18 @@ camoufox-cli --session twitter --persistent --json open "https://x.com/"
 sleep 3
 camoufox-cli --session twitter --json snapshot
 # snapshot 看页面是否跳到登录页 / 出现登录按钮 / 推文是否正常可见
-# → 没跳登录页、内容正常 = 登录态有效，不 close session（留着给后续操作 + twitter-interact 复用）
+# → 没跳登录页、内容正常 = 登录态有效，探活完即 close session（登录态在磁盘 profile，后续操作按需重起无头复用）
 # → 跳到登录页 / 出现登录按钮 = 登录态失效，走重登
 ```
 
-重登流程（失效时）——登录流程按 `browser-guide` skill 走有头手动登录（手机号+验证码 / Twitter APP 扫码），登录后**不关 session**——持久化 session `twitter` 登录态留着给本 skill 做发布操作 + `twitter-interact` 做互动操作复用，主动 close 会破坏复用。只在 session 卡死时由调用方手动 `camoufox-cli --session twitter --json close` teardown。
+重登流程（失效时）——登录流程按 `browser-guide` skill 走有头手动登录（手机号+验证码 / Twitter APP 扫码），登录导出后**close session**——登录态落磁盘 profile + 中央存储，不留进程占内存。本 skill 做发布操作 + `twitter-interact` 做互动操作时用 `--session twitter --persistent` 重起无头即恢复，用完再 close。只在 session 卡死时由调用方手动 `camoufox-cli --session twitter --json close` teardown。
 
 ```bash
 # X 登录风控对无头 + QR 识别严格，有头人工登录最稳
 camoufox-cli --session twitter --persistent --headed --json open "https://x.com/login"
 # 告知用户「**Twitter/X** 浏览器已打开，请在窗口里手动完成登录（账号密码 / 手机 APP 扫码），完成后告诉我」
 # 等用户回复后 snapshot 验登录态就位
-# 登录就位后不 close session——留着给本 skill + twitter-interact 复用
+# 登录就位后 close session——登录态落磁盘 profile，本 skill + twitter-interact 按需重起无头复用
 ```
 
 **不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`。

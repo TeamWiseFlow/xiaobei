@@ -72,7 +72,7 @@ wx-mp-hunter check-session
 wx-mp-hunter login
 ```
 
-脚本内部走 camoufox-cli：`--session wx_mp --persistent open "https://mp.weixin.qq.com/"`（默认 headless）+ `screenshot /tmp/qr-wx-mp.png`，**不 close session**（留着给 `login-confirm` 继续用）。等待脚本输出 JSON：
+脚本内部走 camoufox-cli：`--session wx_mp --persistent open "https://mp.weixin.qq.com/"`（默认 headless）+ `screenshot /tmp/qr-wx-mp.png`，**不 close session**（仅此一处例外：留给紧接的 `login-confirm` 复用同一进程，login-confirm 导出后即 close）。等待脚本输出 JSON：
 
 ```json
 {
@@ -100,10 +100,10 @@ wx-mp-hunter login
 wx-mp-hunter login-confirm
 ```
 
-脚本内部走 camoufox-cli：复用已开的 `wx_mp` session `open "https://mp.weixin.qq.com/"` → 读 redirect URL 验登录态就位（跳到 `/cgi-bin/home?...&token=xxx` = 就位）→ 从 URL 提 token → `cookies export ~/.openclaw/logins/wx_mp.json` + `identity export ~/.openclaw/logins/wx_mp.ua.json` → 把 token 合写进 `wx_mp.json`（cookie + token + ua + updated_at 同文件）→ **不 close session**（wx_mp 持久化 session 留给 wx-mp-engagement 复用，两 skill 共用同一 session）。等待脚本返回：
+脚本内部走 camoufox-cli：复用已开的 `wx_mp` session `open "https://mp.weixin.qq.com/"` → 读 redirect URL 验登录态就位（跳到 `/cgi-bin/home?...&token=xxx` = 就位）→ 从 URL 提 token → `cookies export ~/.openclaw/logins/wx_mp.json` + `identity export ~/.openclaw/logins/wx_mp.ua.json` → 把 token 合写进 `wx_mp.json`（cookie + token + ua + updated_at 同文件）→ **close session**（登录态已落磁盘 profile + 中央存储，wx-mp-engagement 下次 `--session wx_mp --persistent` 重起无头即恢复，不留进程占内存）。等待脚本返回：
 
 ```json
-{"ok": true, "message": "登录成功，cookie + UA + token 已落中央存储（session 未关，留给下游复用）", "token": "..."}
+{"ok": true, "message": "登录成功，cookie + UA + token 已落中央存储（session 已关，登录态在磁盘 profile）", "token": "..."}
 ```
 
 | 情况 | 处理 |

@@ -25,7 +25,7 @@
 
 与 login-manager **完全无关**——Twitter 互动是纯浏览器操作，登录态在 session profile 里闭环，
 不导出 cookie/UA 落中央存储。探活走 camoufox-cli open + snapshot 看 session 内登录态，失效时
-按 `browser-guide` skill 走有头手动登录，登录后不关 session（留着下次操作 + twitter-post 复用）。
+按 `browser-guide` skill 走有头手动登录，登录后 close session（登录态落磁盘 profile，下次操作 + twitter-post 按需重起无头复用）。
 
 交互能力（移植自 OpenCLI shared.js）：article-scoped 探针（按 tweet_id 定位 article 避免抓到父推）、
 testid 确认菜单（retweetConfirm/confirmationSheetConfirm 替代 text match）、Python 侧晚水合轮询、
@@ -136,8 +136,8 @@ def camoufox_eval(session: str, js: str, timeout: int = 30) -> Optional[str]:
 
 
 def camoufox_close(session: str) -> None:
-    """关闭 camoufox session——仅供 session 卡死时手动 teardown，不主动调。
-    持久化 session `twitter` 登录态留着给下次操作复用，主动 close 会破坏复用。"""
+    """关闭 camoufox session——业务操作用完即调（登录态在磁盘 profile，下次重起无头即恢复），
+    也可供 session 卡死时手动 teardown。"""
     subprocess.run(
         [CAMOUFOX_BIN, "--session", session, "--json", "close"],
         capture_output=True, text=True, timeout=10, check=False,
@@ -166,18 +166,27 @@ def _check_session_alive() -> bool:
 def twitter_session():
     """单一持久化 session `twitter` 的生命周期（单一 session）。
 
-    - 正常退出：**不 close** session——登录态留着下次操作复用（与 twitter-post 共用同一 session）
+    - 正常退出 / 一般错误：**close** session——登录态在磁盘 profile，不留进程占内存；
+      下次操作（本 skill / twitter-post）按需重起无头 session，profile 桥接登录态。
     - SessionBusyError：**不 close**（close 会 tear down 正在跑的另一个操作），透传 exit 3
     """
     session = TWITTER_SESSION
+    busy = False
     try:
         yield session
     except SessionBusyError as e:
+        busy = True
         sys.stderr.write(
             f"error: session {session} 正忙 — {e}\n"
             f"  forked cli fail-first 队列拒绝。请等待当前操作完成后再试。\n"
         )
         raise SystemExit(3)
+    finally:
+        if not busy:
+            try:
+                camoufox_close(session)
+            except Exception:
+                pass
 
 
 def _emit(**fields) -> None:
@@ -635,7 +644,7 @@ def cmd_run(*, tweet_url: str = "", action: str = "like", user: str = "") -> Non
     if not _check_session_alive():
         sys.stderr.write(
             f"error: twitter session 失效；先按 browser-guide skill 走有头手动登录\n"
-            f"  流程：camoufox-cli --session twitter --persistent --headed open \"https://x.com/\" → 用户在浏览器完成登录 → 不 close session（留着下次用）。\n"
+            f"  流程：camoufox-cli --session twitter --persistent --headed open \"https://x.com/\" → 用户在浏览器完成登录 → close session（登录态落磁盘 profile，下次用按需重起无头）。\n"
         )
         sys.exit(2)
 

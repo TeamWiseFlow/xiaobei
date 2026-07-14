@@ -31,7 +31,7 @@ metadata:
    - 登录就位后**同时导出 cookie + UA**：
      - `camoufox-cli --session xhs-publish --persistent --json cookies export ~/.openclaw/logins/xhs-publish.json`
      - `camoufox-cli --session xhs-publish --persistent --json identity export ~/.openclaw/logins/xhs-publish.ua.json`
-   - 登录后**不关 session**——持久化 session `xhs-publish` 登录态留着给本 skill 下次用，主动 close 会破坏复用。
+   - 登录后**close session**——登录态落磁盘 profile，不留进程占内存；本 skill 下次 `--session xhs-publish --persistent` 重起无头即恢复，用完再 close。
 3. 确保 `Pillow` 已安装（用于读取图片尺寸）：`pip install Pillow`
 
 > **同时导入 cookie 和 UA**：xhs 的 `a1`/`websectiga` 等设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。本 skill 的 `publish_xhs.py` 已同时读 `xhs-publish.json` + `xhs-publish.ua.json`。

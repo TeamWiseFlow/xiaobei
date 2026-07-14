@@ -167,8 +167,8 @@ class TestCmdLike(unittest.TestCase):
         self.assertEqual(result["action"], "like")
         self.assertEqual(result["tweet_id"], "123")
         mock_record.assert_called_once()
-        # 持久化 session 不 close（登录态留着下次复用）
-        mock_close.assert_not_called()
+        # 用完即 close session（登录态在磁盘 profile，下次重起无头复用）
+        mock_close.assert_called_once()
 
     @mock.patch("twitter_interact._poll_probe")
     @mock.patch("twitter_interact.camoufox_open")

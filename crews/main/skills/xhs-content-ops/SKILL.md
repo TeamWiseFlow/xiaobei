@@ -117,7 +117,7 @@ metadata:
    - 登录就位后**同时导出 cookie + UA**：
      - `camoufox-cli --session xhs-browse --persistent --json cookies export ~/.openclaw/logins/xhs-browse.json`
      - `camoufox-cli --session xhs-browse --persistent --json identity export ~/.openclaw/logins/xhs-browse.ua.json`
-   - 登录后**不关 session**——持久化 session `xhs-browse` 登录态留着给本 skill 及复用同 session 的其他技能（xhs-interact / viral-chaser / published-track）下次用，主动 close 会破坏多方复用。
+   - 登录后**close session**——登录态已落磁盘 profile + 中央 cookie/UA 文件，不留进程占内存。本 skill 及复用同 session 名的其他技能（xhs-interact / viral-chaser / published-track）下次 `--session xhs-browse --persistent` 重起无头即从 profile 恢复登录态，用完再 close。
 
 > **同时导入 cookie 和 UA**：xhs 的 `a1`/`websectiga` 等设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。本 skill 的 `fetch_note_content.ts` 已同时读 `xhs-browse.json` + `xhs-browse.ua.json`。
 
