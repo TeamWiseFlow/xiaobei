@@ -151,6 +151,14 @@ camoufox-cli --session <platform> --persistent --json identity export ~/.opencla
 
 **浏览器类下游 skill 不走本节**：camoufox-cli 操作的技能（如 `xhs-interact`）直接复用本 skill 登录后的持久化 session（`--session <平台 key> --persistent`），不另开临时 session、不 import cookie。
 
+### HTML 登录墙检测（脚本 / 纯 HTTP 用，大小写不敏感）
+
+下游脚本做 raw HTTP fetch 期望 JSON 时，若 session 失效，平台可能返回 **HTML 登录页**（200 `text/html` 或 302→login）而非 JSON error code。此时 `resp.json()` 会抛 "Unexpected token <" 乱码错，agent 看不懂、不会触发重登。
+
+`_shared/relay-sign.ts` 的 `xhsFetch` 已内置登录墙检测：响应 content-type 含 `text/html` 或 body 以 HTML 标签开头 → 抛 `LoginWallError`（消息以 `SESSION_EXPIRED:` 起头），下游脚本捕获后 emit `{ok:false, error:"SESSION_EXPIRED", platform}` + exit 2，交本 skill 重登。
+
+**检测正则大小写不敏感**（借鉴 OpenCLI 229b3b0）：`/^<(?:!doctype|html|head|body|title)(?:[\s>/]|$)/i`——覆盖 `<!DOCTYPE`/`<!doctype`/`<!Doctype`/`<html`/`<HTML`/`<Html`/`<head`/`<HEAD`/`<body`/`<title>` 等所有大小写变体，末尾 `[\s>/]` 做 word boundary 防 `<htmlfoo>` 误匹配。新增的 raw-HTTP 脚本若不走 `xhsFetch`，应复用同款检测，别只 `startsWith('<!DOCTYPE')` 几种硬大小写。
+
 ---
 
 ## 并发约束

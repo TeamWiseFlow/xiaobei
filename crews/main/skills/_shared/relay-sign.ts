@@ -53,6 +53,25 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return env.data as T;
 }
 
+// ── 登录墙检测（借鉴 OpenCLI 229b3b0） ──────────────────────────────────────
+//
+// 期望 JSON 的平台 API 在 session 失效时可能返回 HTML 登录页（200 text/html 或 302→login）。
+// 旧检测只匹配 `<!DOCTYPE`/`<!doctype`/`<html`/`<HTML` 几种大小写，漏 `<!Doctype`/`<Html`/`<HEAD`/
+// `<body`/`<title` 等；这里用大小写不敏感正则，且覆盖 `<head`/`<body`/`<title` 开头（登录页常以
+// `<head>` 起步）。命中 → 抛 LoginWallError（SESSION_EXPIRED），交下游脚本触发 login-manager
+// 重登，而非让 resp.json() 抛 "Unexpected token <" 乱码错。
+const HTML_LOGIN_WALL_RE = /^<(?:!doctype|html|head|body|title)(?:[\s>/]|$)/i;
+
+/** 平台返回 HTML 登录墙（期望 JSON）。下游脚本应捕获并触发 login-manager 重登。 */
+export class LoginWallError extends Error {
+  readonly platform: string;
+  constructor(platform: string, uri: string) {
+    super(`SESSION_EXPIRED: ${platform} 返回 HTML 登录墙（期望 JSON）@ ${uri}`);
+    this.name = "LoginWallError";
+    this.platform = platform;
+  }
+}
+
 // ── xhs ─────────────────────────────────────────────────────────────────────
 
 export interface XhsSignInput {
@@ -131,7 +150,23 @@ export async function xhsFetch<T = unknown>(input: XhsFetchInput): Promise<T> {
     const text = await resp.text().catch(() => "");
     throw new Error(`xhs ${method.toUpperCase()} ${uri} 失败 (${resp.status}): ${text.slice(0, 200)}`);
   }
-  return (await resp.json()) as T
+  // 登录墙检测：期望 JSON，若拿到 HTML 登录页 → LoginWallError（SESSION_EXPIRED）。
+  // 读一次 text 复用：先查 content-type + HTML 开头，再 JSON.parse，parse 失败再查一次 HTML。
+  const contentType = (resp.headers.get("content-type") ?? "").toLowerCase();
+  const body = await resp.text().catch(() => "");
+  const head = body.trimStart().slice(0, 256);
+  const looksLikeHtml = contentType.includes("text/html") || HTML_LOGIN_WALL_RE.test(head);
+  if (looksLikeHtml) {
+    throw new LoginWallError("xhs", `${method.toUpperCase()} ${uri}`);
+  }
+  try {
+    return JSON.parse(body) as T;
+  } catch {
+    if (HTML_LOGIN_WALL_RE.test(head)) {
+      throw new LoginWallError("xhs", `${method.toUpperCase()} ${uri}`);
+    }
+    throw new Error(`xhs ${method.toUpperCase()} ${uri} 返回非 JSON: ${body.slice(0, 200)}`);
+  }
 }
 
 // ── douyin ──────────────────────────────────────────────────────────────────

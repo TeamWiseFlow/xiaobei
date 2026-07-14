@@ -63,20 +63,30 @@ metadata:
 
 ## 工作流程
 
-### 搜索商品
+### 搜索商品（mtop API + 服务端筛选）
+
+> **借鉴 OpenCLI `clis/xianyu/search.js`（df8ca8d）**：在已登录 session 的页面里调 goofish 自己的 `mtop.taobao.idlemtopsearch.pc.search`（页面自带 `window.lib.mtop` 签名，无需手搓），价格区间 / 地区交给**服务端**筛 + 分页，而非抓一屏 DOM 本地过滤——更准、更稳、不漏筛。
 
 ```
-1. camoufox-cli --session xianyu --persistent --headless --json open "https://www.goofish.com/search?q={关键词}"
-2. sleep 3-4 加载，snapshot 检测登录状态
-3. snapshot 拿到商品卡片 ref（a[href*="/item?id="]）
-   - 标题：[class*="row1-wrap-title"] 或 [class*="main-title"]
-   - 价格：[class*="price-wrap"] 内 [class*="number"] + [class*="decimal"]
-   - 原价：[class*="price-desc"] 内 [title] 或 [style*="line-through"]
-   - 成色/品牌：[class*="row2-wrap-cpv"] span[class*="cpv--"]
-   - 地区：[class*="row4-wrap-seller"] [class*="seller-text"]
-   - 信用标签：[class*="credit-container"] [title] 或 span
-4. 从卡片 href 中提取 item_id（eval 匹配 [?&]id=(\d+)）
+python3 /<workspace 绝对路径>/crews/main/skills/xianyu-ops/scripts/xianyu_search.py \
+  --query "iPhone 15" \
+  [--min-price 1000] [--max-price 5000] \
+  [--province 广东] [--city 深圳] \
+  [--limit 30]
 ```
+
+脚本内部：open 搜索页加载 mtop lib → 逐页 `camoufox-cli eval` 调 `window.lib.mtop.request` → 解析 `data.resultList` → 输出 JSON。
+
+**服务端筛选编码**（脚本内做，agent 不用管）：
+- `--min-price` / `--max-price`（元）→ `propValueStr.searchFilter = "priceRange:<min>,<max>;"`，单边用 0 / 99999999 兜底
+- `--province` / `--city` → `extraFilterValue = JSON({divisionList:[{province,city}],...})`，city 可单独用
+- 任一筛选生效时 `fromFilter=true`，`--limit` 最多 60
+
+**输出**：`{ok, query, filters, count, items:[{item_id,title,price,condition,brand,location,want,url}]}`
+
+**退出码**：0 成功 / 1 通用错（mtop 未就绪 / 响应异常 / 参数错）/ 2 登录态失效 / 3 session 正忙。
+
+**手动 / 后端非 camoufox**：`target=host`/`target=node` 时，按上方筛选语义用当前后端的浏览器工具调 goofish 搜索接口或 DOM，筛选条件同样交服务端（拼 URL 参数或调等价 API），不要抓全量本地过滤。
 
 ### 查看商品详情
 

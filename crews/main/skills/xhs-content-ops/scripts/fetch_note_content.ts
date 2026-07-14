@@ -140,7 +140,7 @@ if (!cookieDict.a1 || !cookieDict.web_session) {
 // ── Feed API：relay 只签名，client 自行 fetch xhs.com ────────────────────
 // xhsFetch = relay xhsHeaders 拿签名头 + 本机 fetch feed，本文件做 parse。
 
-import { xhsFetch } from "../../_shared/relay-sign.ts"
+import { xhsFetch, LoginWallError } from "../../_shared/relay-sign.ts"
 
 const XHS_BROWSE_BASE = "https://www.xiaohongshu.com"
 
@@ -366,6 +366,12 @@ async function main(): Promise<void> {
 }
 
 main().catch(e => {
+  // 登录墙（HTML 代替 JSON）→ SESSION_EXPIRED + exit 2，交 login-manager 重登
+  if (e instanceof LoginWallError || String(e).startsWith("SESSION_EXPIRED")) {
+    process.stderr.write(`[xhs-content-ops] 🔒 cookie 失效（HTML 登录墙）: ${e}\n`)
+    process.stdout.write(JSON.stringify({ ok: false, error: "SESSION_EXPIRED", platform: "xhs-browse" }) + "\n")
+    process.exit(2)
+  }
   process.stderr.write(`[xhs-content-ops] ❌ ${e}\n`)
   process.stdout.write(JSON.stringify({ ok: false, error: String(e) }) + "\n")
   process.exit(1)
