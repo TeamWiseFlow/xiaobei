@@ -288,7 +288,7 @@ async function camoufoxCurrentUrl(): Promise<string> {
 
 function checkRet(data: JsonMap): void {
   const baseResp = (data.base_resp as JsonMap | undefined) ?? {};
-  const ret = Number(baseResp0 ?? 0);
+  const ret = Number(baseResp.ret ?? 0);
   if (ret === 200003) {
     authExit("SESSION_EXPIRED");
   }
