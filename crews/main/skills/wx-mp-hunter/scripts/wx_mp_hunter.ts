@@ -278,10 +278,12 @@ async function camoufox(...args: string[]): Promise<JsonMap> {
   }
 }
 
-/** camoufox-cli snapshot 拿页面 URL，看是否跳 login */
+/** camoufox-cli eval 拿页面 URL，看是否跳 login。
+ * eval 信封形如 {id, success, data: {result: "<href>"}}——值在 data.result。 */
 async function camoufoxCurrentUrl(): Promise<string> {
   const r = await camoufox("eval", "window.location.href");
-  return String(r.result ?? "");
+  const data = (r.data as JsonMap | undefined) ?? {};
+  return String(data.result ?? "");
 }
 
 function checkRet(data: JsonMap): void {

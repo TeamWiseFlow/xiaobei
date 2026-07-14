@@ -181,7 +181,11 @@ async function main(): Promise<void> {
   for (let screen = 0; screen < 3; screen++) {
     const raw = camoufox(["--session", SESSION, "--json", "eval", FLATTEN_JS])
     try {
-      const parsed = JSON.parse(raw) as Record<string, { xsec_token: string; xsec_source: string }>
+      // eval 信封 {id, success, data: {result: "<map json>"}}——真实 map 在 data.result 里
+      const env = JSON.parse(raw) as { data?: { result?: string } }
+      const resultStr = env?.data?.result
+      if (!resultStr) throw new Error("eval 信封缺 data.result")
+      const parsed = JSON.parse(resultStr) as Record<string, { xsec_token: string; xsec_source: string }>
       mapping = { ...mapping, ...parsed }
     } catch {
       // eval 返非 JSON（页面没渲染好）——下一屏重试
