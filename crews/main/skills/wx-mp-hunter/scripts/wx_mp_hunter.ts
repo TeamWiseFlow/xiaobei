@@ -2,13 +2,14 @@
 /**
  * wx_mp_hunter.ts — WeChat Official Account Hunter CLI (TypeScript)
  *
- * 探活/登录走 camoufox-cli + 持久化 session `wx_mp`（无头截 QR 登录），
+ * 登录走 camoufox-cli + 持久化 session `wx_mp`（无头截 QR 登录），
  * 登录就位后导出 cookie + UA + token 落中央存储 `~/.openclaw/logins/wx_mp.json`
  * + `wx_mp.ua.json`，业务命令（search/account-posts/fetch）走 mpFetch 纯 HTTP，
  * cookie + token + UA 从中央存储读。
+ * 探活（check）也走 mpFetch 纯 HTTP（wx_mp _ping：GET /cgi-bin/home 解析 <h2>），不起浏览器。
  *
  * Commands:
- *   check                          探活（camoufox open + snapshot 看跳登录页）
+ *   check                          探活（HTTP _ping /cgi-bin/home 解析 <h2>）
  *   login                          无头截 QR 登录 → 导出 cookie+UA+token 落中央存储
  *   search <keyword>               搜索公众号
  *   account-posts <fakeid>         拉账号最新文章列表
@@ -259,9 +260,9 @@ async function mergeAccountsToCache(
 
 // ── camoufox-cli 辅助 ──────────────────────────────────────────────────────────
 //
-// 探活/登录走 camoufox-cli + 持久化 session `wx_mp`（无头模式）。
-// 业务命令（search/account-posts/fetch）仍走 mpFetch 纯 HTTP，cookie + token + UA
-// 从中央存储 SESSION_FILE / UA_FILE 读。
+// 登录走 camoufox-cli + 持久化 session `wx_mp`（无头模式）。
+// 业务命令（search/account-posts/fetch）与探活（check）均走 mpFetch 纯 HTTP，
+// cookie + token + UA 从中央存储 SESSION_FILE / UA_FILE 读。
 
 /** camoufox-cli 调用封装：固定 --session wx_mp --persistent --json（默认即 headless） */
 async function camoufox(...args: string[]): Promise<JsonMap> {
@@ -730,12 +731,13 @@ function usage(): void {
   const lines = [
     "WeChat Official Account Hunter — 微信公众号内容获取工具",
     "",
-    "探活/登录走 camoufox-cli + �持久化 session `wx_mp`（无头截 QR），",
+    "登录走 camoufox-cli + 持久化 session `wx_mp`（无头截 QR），",
     "登录就位后导出 cookie + UA + token 落 ~/.openclaw/logins/wx_mp.{json,ua.json}。",
+    "探活（check）走 mpFetch 纯 HTTP（_ping /cgi-bin/home 解析 <h2>），不起浏览器。",
     "",
     "Usage:",
     "  node --experimental-strip-types wx_mp_hunter.ts check",
-    "    探活（camoufox open + snapshot 看跳登录页）；exit 0=有效 / 2=失效",
+    "    探活（HTTP _ping /cgi-bin/home 解析 <h2>）；exit 0=有效 / 2=失效",
     "  node --experimental-strip-types wx_mp_hunter.ts login",
     "    无头截 QR 登录 → 导出 cookie+UA+token 落中央存储",
     "    （agent 拿 /tmp/qr-wx-mp.png 发用户扫码，用户回复「已扫码」后再 login-confirm）",
