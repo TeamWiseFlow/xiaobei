@@ -299,33 +299,52 @@ function checkRet(data: JsonMap): void {
 }
 
 /**
- * 探活：camoufox-cli open 公众号首页 + eval window.location.href 看是否跳 login。
- * 不验 SESSION_FILE TTL——camoufox session profile 自管登录态生命周期。
- * exit 0 = 有效；exit 2 = 失效（camoufox session 跳登录页 / SESSION_FILE 不存在）
+ * 探活：wx_mp `_ping`——带 cookie+token GET 公众号后台首页，解析 <h2> 判登录态。
+ * 借鉴 ~/wiseflow-pro/wiseflow4-pro/core/wis/wx_crawler.py _ping：
+ *   GET /cgi-bin/home?t=home/index&lang=zh_CN&token=<token>
+ *   <h2> 含「新的创作」→ 有效；含「请重新」→ 失效。
+ * 纯 HTTP，不起 camoufox，不依赖磁盘 profile，与 fetch/search 走同一 mpFetch 通道。
+ * exit 0 = 有效；exit 2 = 失效（token 缺失 / 服务端判未登录 / 网络错）
  */
 async function cmdCheck(): Promise<void> {
-  // 先验 SESSION_FILE 存在（业务命令要 token + cookies）
   const data = await loadSession();
   if (!data || !data.token) {
     authExit("SESSION_EXPIRED");
   }
-
-  // 再验 camoufox session 内登录态是否真就位
-  try {
-    await camoufox("open", `${MP_BASE}/`);
-    await sleep(3000);
-    const url = await camoufoxCurrentUrl();
-    // 探活读完 URL 即 close——登录态在磁盘 profile，不留进程占内存；
-    // 下游（wx-mp-engagement / 业务命令）按需重起无头 session，profile 桥接登录态。
-    try { await camoufox("close"); } catch { /* session 已退或卡死，忽略 */ }
-    if (url.includes("login") || url.includes("scanloginqrcode")) {
-      authExit("SESSION_EXPIRED");
-    }
-    printJson({ ok: true, message: "session 有效", url });
-  } catch (e: any) {
-    // camoufox-cli 调用失败（命令不可用 / session 卡死等）——视为失效让调用方重登
+  const cookieJar = cookieDictFromSession(data);
+  if (Object.keys(cookieJar).length === 0) {
     authExit("SESSION_EXPIRED");
   }
+
+  let resp: Response;
+  try {
+    resp = await mpFetch({
+      method: "GET",
+      endpoint: `${MP_BASE}/cgi-bin/home`,
+      query: { t: "home/index", lang: "zh_CN", token: data.token },
+      cookieJar,
+      timeoutMs: 15000,
+    });
+  } catch {
+    authExit("SESSION_EXPIRED");
+  }
+
+  if (!resp.ok) {
+    authExit("SESSION_EXPIRED");
+  }
+  const html = await resp.text();
+  // 抽 <h2>...</h2> 文本：登录有效页有「新的创作」；失效页提示「请重新登录」
+  const h2Match = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+  const h2 = h2Match ? h2Match[1].replace(/<[^>]+>/g, "").trim() : "";
+  if (h2.includes("新的创作")) {
+    printJson({ ok: true, message: "session 有效", ping: "home", h2 });
+    return;
+  }
+  if (h2.includes("请重新") || html.includes("请重新登录") || html.includes("scanloginqrcode")) {
+    authExit("SESSION_EXPIRED");
+  }
+  // 兜底：没命中已知标志，按失效处理让调用方重登（避免误报有效）
+  authExit("SESSION_EXPIRED");
 }
 
 /**
