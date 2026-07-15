@@ -167,21 +167,25 @@ for cp in $COOKIE_PLATFORMS; do
 done
 
 if [ "$NEEDS_COOKIE" = true ]; then
-  if ! command -v "$CAMOUFOX_CLI" >/dev/null 2>&1; then
-    echo "{\"ok\":false,\"error\":\"CAMOUFOX_CLI_NOT_FOUND\",\"platform\":\"$PLATFORM\",\"hint\":\"camoufox-cli 未找到，请确认已全局可用\"}"
+  # 探活：按平台 cookie 关键字段判（借鉴 docs/nodriver_helper_reference._check_login_status），
+  # 读 ~/.openclaw/logins/<session>.json，不再开 camoufox + snapshot grep——已登录页面里
+  # 「登录」文案会假阳性误报 SESSION_EXPIRED。cookie 关键字段缺失必失效；真伪交
+  # fetch-retro-data 实请求验证，本步只做 cheap gate。探活与取数读同一份 cookie，状态对齐。
+  CHECK_LOGIN="$SCRIPT_DIR/check-login.ts"
+  if [ ! -f "$CHECK_LOGIN" ]; then
+    echo "{\"ok\":false,\"error\":\"CHECK_LOGIN_SCRIPT_NOT_FOUND\",\"platform\":\"$PLATFORM\",\"hint\":\"check-login.ts 不存在于 $SCRIPT_DIR/\"}"
     exit 1
   fi
-
-  # 探活：开持久化 session open 平台首页 + snapshot 看是否跳登录页（spec §11-6，对齐 login-manager 步骤 0）
-  "$CAMOUFOX_CLI" --session "$LM_PLATFORM" --persistent --json open "$PLATFORM_HOME" >/dev/null 2>&1 || true
-  sleep 3
-  SNAP=$("$CAMOUFOX_CLI" --session "$LM_PLATFORM" --json snapshot 2>/dev/null || echo "")
-  "$CAMOUFOX_CLI" --session "$LM_PLATFORM" --json close >/dev/null 2>&1 || true
-
-  # snapshot 输出含登录标志 = 失效（跳登录页 / 出登录按钮 / 「请登录」文案）
-  if echo "$SNAP" | grep -qE "login|登录|扫码|请登录|sign ?in"; then
-    echo "{\"ok\":false,\"error\":\"SESSION_EXPIRED\",\"platform\":\"$PLATFORM\",\"login_platform\":\"$LM_PLATFORM\",\"method\":\"script\",\"hint\":\"Cookie 已失效，请使用 login-manager 技能引导用户重新登录 $LM_PLATFORM（camoufox-cli --session $LM_PLATFORM --persistent --headed open $PLATFORM_HOME → 用户手动登录 → cookies export + identity export 落中央存储）\"}"
+  CHECK_OUT=$(node --experimental-strip-types "$CHECK_LOGIN" --platform "$PLATFORM" 2>/dev/null) || CHECK_EXIT=$?
+  CHECK_EXIT=${CHECK_EXIT:-0}
+  if [ "$CHECK_EXIT" -eq 2 ]; then
+    CHECK_REASON=$(printf '%s' "$CHECK_OUT" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).reason||"")}catch{}})' 2>/dev/null)
+    echo "{\"ok\":false,\"error\":\"SESSION_EXPIRED\",\"platform\":\"$PLATFORM\",\"login_platform\":\"$LM_PLATFORM\",\"method\":\"script\",\"reason\":\"$CHECK_REASON\",\"hint\":\"Cookie 关键字段缺失/过期，请使用 login-manager 技能引导用户重新登录 $LM_PLATFORM（camoufox-cli --session $LM_PLATFORM --persistent --headed open $PLATFORM_HOME → 用户手动登录 → cookies export + identity export 落中央存储）\"}"
     exit 2
+  fi
+  if [ "$CHECK_EXIT" -ne 0 ]; then
+    echo "{\"ok\":false,\"error\":\"CHECK_LOGIN_FAILED\",\"platform\":\"$PLATFORM\",\"hint\":\"check-login.ts 执行异常 (exit $CHECK_EXIT): $CHECK_OUT\"}"
+    exit 1
   fi
 fi
 
