@@ -199,6 +199,14 @@ async function pong(platform: string, map: CookieMap): Promise<{ ok: boolean; re
   }
 }
 
+/** 需 relay 签名的平台：pong 前必须有 OFB_KEY，否则判 SIGN_UNAVAILABLE 而非 SESSION_EXPIRED */
+const SIGNING_PLATFORMS = new Set(["xhs", "douyin"]);
+
+function ofbKeyAvailable(): boolean {
+  const k = process.env.OFB_KEY;
+  return typeof k === "string" && k.length > 0;
+}
+
 // ── pong 缓存 ────────────────────────────────────────────────────────────────
 
 interface CacheEntry {
@@ -263,6 +271,19 @@ async function main(): Promise<void> {
   }
 
   // Tier 2: pong（带缓存）
+  // 签名平台缺 OFB_KEY → 签名基础设施不可用，判 SIGN_UNAVAILABLE（exit 1），
+  // 不混入 SESSION_EXPIRED（exit 2）以免误导 heartbeat 触发重登——重登救不了缺凭证。
+  if (SIGNING_PLATFORMS.has(platform) && !ofbKeyAvailable()) {
+    out({
+      ok: false,
+      error: "SIGN_UNAVAILABLE",
+      platform,
+      session: sessionName(platform),
+      reason: "OFB_KEY 未配置（relay 签名缺凭证，pong 与业务 fetch 均会失败；请 IT engineer 写入 daemon.env 后重启，非 cookie 问题）",
+    });
+    process.exit(1);
+  }
+
   const cached = readCache(platform);
   if (cached) {
     if (cached.ok) {

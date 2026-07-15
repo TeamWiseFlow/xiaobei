@@ -184,6 +184,14 @@ if [ "$NEEDS_COOKIE" = true ]; then
     exit 2
   fi
   if [ "$CHECK_EXIT" -ne 0 ]; then
+    # exit 1 区分 SIGN_UNAVAILABLE（签名基础设施缺凭证，非 cookie 问题，不触发重登）
+    # 与真·CHECK_LOGIN_FAILED（脚本异常）
+    CHECK_ERROR=$(printf '%s' "$CHECK_OUT" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).error||"")}catch{}})' 2>/dev/null)
+    if [ "$CHECK_ERROR" = "SIGN_UNAVAILABLE" ]; then
+      CHECK_REASON=$(printf '%s' "$CHECK_OUT" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).reason||"")}catch{}})' 2>/dev/null)
+      echo "{\"ok\":false,\"error\":\"SIGN_UNAVAILABLE\",\"platform\":\"$PLATFORM\",\"login_platform\":\"$LM_PLATFORM\",\"reason\":\"$CHECK_REASON\",\"hint\":\"签名基础设施不可用（如 OFB_KEY 未配置），非 cookie 失效——重登无益，请 IT engineer 修 relay 凭证后重跑\"}"
+      exit 1
+    fi
     echo "{\"ok\":false,\"error\":\"CHECK_LOGIN_FAILED\",\"platform\":\"$PLATFORM\",\"hint\":\"check-login.ts 执行异常 (exit $CHECK_EXIT): $CHECK_OUT\"}"
     exit 1
   fi
