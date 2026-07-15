@@ -68,7 +68,12 @@ function readSession(platform: string): SessionData | null {
   const path = join(SESSIONS_DIR, `${platform}.json`)
   if (!existsSync(path)) return null
   try {
-    return JSON.parse(readFileSync(path, "utf-8")) as SessionData
+    const raw = JSON.parse(readFileSync(path, "utf-8"))
+    // camoufox-cli `cookies export` 写的是裸数组（见 patches/camoufox-cli/src/commands.ts
+    // `writeFileSync(path, JSON.stringify(cookies))`），消费方统一归一化为 {cookies: [...]}，
+    // 否则 requireSession 的 `!data.cookies` 判空会把有效 cookie 误报 SESSION_EXPIRED。
+    if (Array.isArray(raw)) return { platform, cookies: raw } as SessionData
+    return raw as SessionData
   } catch {
     return null
   }
