@@ -278,6 +278,9 @@ async function downloadImage(url: string, filePath: string): Promise<boolean> {
 async function main(): Promise<void> {
   mkdirSync(outputDir, { recursive: true })
 
+  // 抓取前探活（pong）不在此自动跑——批量抓多条笔记时 Agent 先跑一次 check-login 探活即可，
+  // 不必每条机械探活（见 SKILL.md「抓取前探活」）。此处只做 cheap 字段门（a1/web_session，已在上方）。
+
   process.stderr.write(`[xhs-content-ops] 获取笔记详情 (noteId=${noteId})...\n`)
 
   // 1. Fetch note detail via relay sign proxy

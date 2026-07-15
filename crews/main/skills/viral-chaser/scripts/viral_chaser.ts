@@ -121,6 +121,9 @@ async function main(): Promise<void> {
   // 2. Load session (exit 2 if missing)
   // XHS uses xhs-browse cookie (consumer domain www.xiaohongshu.com)
   const sessionPlatform = platform === "xhs" ? "xhs-browse" as Platform : platform
+  // requireSession：只做 cheap 字段门（cookie 文件存在 + 非空 + 关键字段）。
+  // 抓取前探活（pong）不在此自动跑——批量场景 Agent 先跑一次 check-login 探活即可，
+  // 不必每条机械探活。见 SKILL.md「抓取前探活」。
   const session = requireSession(sessionPlatform)
 
   // 3. Fetch video metadata from platform API

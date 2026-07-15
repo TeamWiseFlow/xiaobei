@@ -55,6 +55,11 @@ extract_content_id() {
   esac
 }
 
+# 从 xhs publish_url 的 query 里抽 xsec_token（feed/HTML 路线都用得到）
+extract_xsec_token() {
+  echo "$1" | sed -n 's/.*xsec_token=\([^&]*\).*/\1/p'
+}
+
 # ─── 平台配置 ──────────────────────────────────────────────────────────────
 
 # 脚本支持的平台（fetch-retro-data.ts 能处理的）
@@ -247,6 +252,15 @@ if [ -z "$CONTENT_ID" ]; then
     echo "{\"ok\":false,\"error\":\"CANNOT_EXTRACT_CONTENT_ID\",\"platform\":\"$PLATFORM\",\"publish_url\":\"$PUBLISH_URL\",\"hint\":\"无法从 publish_url 提取 content_id，请用 --content-id 参数直接提供\"}"
     exit 1
   fi
+
+  # xhs：publish_url 若带 xsec_token 则抽出透传（HTML 路线有 token 更稳；
+  # 当前发布侧多数未落 token，此处无则空，fetch-retro-data 仍可仅凭 cookie 走 HTML）
+  if [ "$PLATFORM" = "xhs" ] && [ -z "$XSEC_TOKEN" ]; then
+    XSEC_TOKEN=$(extract_xsec_token "$PUBLISH_URL")
+    if [ -n "$XSEC_TOKEN" ] && [ -z "$XSEC_SOURCE" ]; then
+      XSEC_SOURCE="pc_feed"
+    fi
+  fi
 fi
 
 # Step 3: 调 fetch-retro-data.ts
@@ -312,12 +326,7 @@ for (const [k, v] of Object.entries(stats)) {
     args.push('--' + mapped + '=' + v);
   }
 }
-const comments = data.comments || [];
-if (comments.length > 0) {
-  const top = comments[0];
-  const text = (top.text || '').substring(0, 200).replace(/[\"']/g, '');
-  args.push('--top_comment=' + text);
-}
+// 只取互动计数，不抓评论（参考 wiseflow4-pro 各平台 processor：detail-only，风控最低）。
 // 即使无 stats 也输出 __empty__ 标记，避免被 bash 判为空
 if (args.length === 0) {
   console.log('__no_metrics__');

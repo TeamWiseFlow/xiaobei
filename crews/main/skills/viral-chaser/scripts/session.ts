@@ -98,3 +98,10 @@ export function requireSession(platform: Platform): SessionData {
   }
   return data
 }
+
+/**
+ * 抓取前探活（pong）不自动跑——批量场景 Agent 先跑一次 check-login 探活即可，
+ * 不必每条机械探活。见 viral-chaser SKILL.md「抓取前探活」。
+ * 探活 CLI：published-track/scripts/check-login.ts --platform <p>（共用 _shared/check-session.ts）。
+ */
+

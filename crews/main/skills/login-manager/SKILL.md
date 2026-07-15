@@ -1,41 +1,74 @@
 ---
 name: login-manager
-description: 平台登录态管理指导文件。约定各平台登录流程（强制有头手动登录）、探活规则、中央 cookie+UA 存储路径约定。仅管 5 个平台（douyin/kuaishou/bilibili/xhs-publish/xhs-browse），其他平台完全不涉及。实际 cookie/UA 导出由 camoufox-cli 的 cookies export + identity export 完成，本 skill 无脚本。
+description: 平台登录态管理。约定各平台登录流程（强制有头手动登录）、探活规则、中央 cookie+UA 存储路径约定。仅管 4 个平台（douyin/kuaishou/bilibili/xhs-browse），其他平台完全不涉及（xhs-publish 自管登录，见 xhs-publish SKILL.md）。Agent 有头打开登录页+通知用户登录+确认后调 login-manager --platform <p> 导出 cookie+UA 并两层探活验证，验证不过直接报错不重试。
 metadata:
   openclaw:
     emoji: 🔑
+    requires:
+      bins:
+      - node
 ---
 
-# Login Manager（平台登录态管理 — 纯指导文件）
+# Login Manager（平台登录态管理）
 
-本 skill 是**纯 SKILL.md 指导文件**，无脚本。cookie / UA 的导出/导入由 **camoufox-cli** 的 `cookies export` / `cookies import` / `identity export` 命令完成（全局可用的 `camoufox-cli` 命令）。
+本 skill 提供**导出+验证脚本** `login-manager --platform <p>`（wrapper → `scripts/export-and-verify.ts`）：导出 cookie 到临时 → 两层探活验证（cookie 字段 + 平台 pong，借 `_shared/check-session.ts` `verifyCookies`）→ 通过才 commit 到中央存储 + identity export → close session。验证不过直接报错（exit 2），**不重试**，避免风控。
+
+> **打开浏览器 + 通知用户登录这一步不放进脚本**——涉及通知用户、对话确认，脚本化会卡住对话。Agent 自己 `camoufox-cli --session <p> --persistent --headed open <loginUrl>`，告知用户在窗口内登录，与用户对话确认登录完成后，再调 `login-manager --platform <p>` 导出+验证。cookie / UA 的底层导出仍由 **camoufox-cli** 的 `cookies export` / `identity export` 完成。
 
 > **主力后端 = `target=camoufox`**。下方命令 / 示例只针对 `target=camoufox`。
 > **`target=host` / `target=node`**：只按本 skill 的「流程 + 提示事项」走——何时有头 / 探活节奏 / 中央存储路径约定是**后端无关**的，照本 skill 执行。不要照搬 `camoufox-cli ...` 命令，用你当前后端自带的浏览器工具语义登录 + 导出 cookie/UA 即可。
 
 ---
 
-## 支持的平台（仅这 5 个）
+## 导出+验证脚本（Agent 确认登录后调用）
+
+`login-manager --platform <p>`（wrapper 直调 `scripts/export-and-verify.ts`，绝对路径见 TOOLS.md）。
+
+平台 ∈ `douyin` / `bilibili` / `kuaishou` / `xhs-browse`。
+
+**前置（Agent自己做，不进脚本）**：
+1. `camoufox-cli --session <p> --persistent --headed --json open <平台登录页 URL>`
+2. 告知用户「**[平台]** 浏览器已打开，请在窗口里手动完成登录，完成后告诉我」
+3. 与用户对话，等用户确认登录完成（Stop and wait，不盲轮询）
+
+**然后调脚本**，脚本流程：
+1. `camoufox cookies export <tmp>` 导出 cookie 到临时文件（不直接落中央存储——先验过再 commit）。
+2. **两层探活验证**（`_shared/check-session.ts` `verifyCookies`，新鲜 pong 不读缓存）：
+   - Tier 1 cookie 关键字段（借鉴 `nodriver_helper_reference.py` `_check_login_status`）：douyin→sessionid+sid_tt+uid_tt、bilibili→SESSDATA/DedeUserID、kuaishou→webday7/userId/passToken、xhs-browse→web_session。
+   - Tier 2 平台 pong：bilibili `/x/web-interface/nav`、kuaishou graphql `visionProfileUserList`、xhs-browse `edith.xiaohongshu.com/api/sns/web/v2/user/me`（Ai2Earn getUserInfo 方案，签名）、douyin `/aweme/v1/web/history/read/`。
+   - 签名平台缺 `OFB_KEY` → `SIGN_UNAVAILABLE` 仅警告（presence 已过，登录本身成功），不 fail。
+   - 验证不过 → exit 2，**未 commit 中央存储**，不重试。
+3. 验过 → commit `~/.openclaw/logins/<p>.json` + `identity export <p>.ua.json`。
+4. **close session**——登录态已落磁盘 profile + 中央存储，不留浏览器进程占内存。
+
+Exit：`0`=成功 / `1`=参数错·crash / `2`=SESSION_EXPIRED（探活不过，未 commit）。
+
+> Agent 不必再分两次构造 `cookies export` / `identity export` 命令——确认登录后一条 `login-manager --platform <p>` 闭环导出+验证。下方「登录流程（agent 操作手册）」是分步说明，供排故 / `target=host` 后端参考。
+
+---
+
+## 支持的平台（仅这 4 个）
 
 | 平台 key | 登录模式 | 中央存储文件 |
 |----------|---------|---------|
 | `douyin` | **有头手动** | `~/.openclaw/logins/douyin.json` + `~/.openclaw/logins/douyin.ua.json` |
 | `bilibili` | **有头手动** | `~/.openclaw/logins/bilibili.json` + `~/.openclaw/logins/bilibili.ua.json` |
 | `kuaishou` | **有头手动** | `~/.openclaw/logins/kuaishou.json` + `~/.openclaw/logins/kuaishou.ua.json` |
-| `xhs-publish` | **有头手动**（创作者域 `creator.xiaohongshu.com`） | `~/.openclaw/logins/xhs-publish.json` + `~/.openclaw/logins/xhs-publish.ua.json` |
 | `xhs-browse` | **有头手动**（消费者域 `www.xiaohongshu.com`） | `~/.openclaw/logins/xhs-browse.json` + `~/.openclaw/logins/xhs-browse.ua.json` |
 
-> **不在这 5 个之内的平台**（twitter / weibo / zhihu / xianyu / weixin-channel / wx_mp 等）的登录态管理**不走本 skill**——各平台专属 skill 自管登录（持久化 session 内闭环，见各 skill SKILL.md）。本 skill 不为它们落中央 cookie。
+> **不在这 4 个之内的平台**（twitter / weibo / zhihu / xianyu / weixin-channel / wx_mp / xhs-publish 等）的登录态管理**不走本 skill**——各平台专属 skill 自管登录（持久化 session 内闭环，见各 skill SKILL.md）。本 skill 不为它们落中央 cookie。
 >
 > **wx_mp（公众号）特例**：wx_mp 不归本 skill 管，自己一套独立的探活/登录/导出体系，由 `wx-mp-hunter` + `wx-mp-engagement` 两技能共用（走 camoufox-cli + 无头截 QR）。导出的 `wx_mp.json` + `wx_mp.ua.json` 依然落 `~/.openclaw/logins/` 同目录，只是管理自管、本 skill 不沾。
+>
+> **xhs-publish（小红书发布）特例**：xhs-publish 走创作者域 `creator.xiaohongshu.com`，cookie 与 xhs-browse 消费者域是两套独立登录、不能共用。发布端登录 + 探活由 `xhs-publish` 技能**自管**（`scripts/login-and-verify.ts` + `check-login.ts`，探活走创作者域 `personal_info` 裸 GET，无需签名）。本 skill 不沾 xhs-publish。
 
 > **xhs 双平台说明**：小红书的浏览/互动和发布使用不同的 cookie 域，因此拆为两个独立平台：
-> - `xhs-publish`：创作者平台（`creator.xiaohongshu.com`），用于发布笔记/视频
-> - `xhs-browse`：消费者端（`www.xiaohongshu.com`），用于搜索、浏览、互动
+> - `xhs-publish`：创作者平台（`creator.xiaohongshu.com`），用于发布笔记/视频——**自管登录**（见 xhs-publish SKILL.md）
+> - `xhs-browse`：消费者端（`www.xiaohongshu.com`），用于搜索、浏览、互动——本 skill 管
 
 ### 登录模式约定（强制统一有头）
 
-- **有头手动**：所有 5 个平台一律 `--headed` 启 session，用户在浏览器里手动扫码 / 短信 / 账号密码完成登录。agent 不主动触发登录动作，只开浏览器等用户。
+- **有头手动**：所有 4 个平台一律 `--headed` 启 session，用户在浏览器里手动扫码 / 短信 / 账号密码完成登录。agent 不主动触发登录动作，只开浏览器等用户。
 - 本 skill **不再有无头特例**——历史上 wx_mp 曾用无头截图 QR，现 wx_mp 已移出本 skill 自管，本 skill 内全部平台强制有头。
 
 ---
@@ -106,12 +139,12 @@ camoufox-cli --session "$SESSION" --json snapshot
 ### 步骤 1：启 session 打开登录页（强制有头手动）
 
 ```bash
-# 所有 5 平台一律有头
+# 所有 4 平台一律有头
 camoufox-cli --session <platform> --persistent --headed --json open "<平台登录页 URL>"
 # 有头窗口弹出后，告知用户在浏览器里手动登录（扫码 / 短信 / 账号密码）
 ```
 
-**持久化 session 命名约定**：session 名 = 平台 key（`douyin` / `bilibili` / `kuaishou` / `xhs-publish` / `xhs-browse`）。每个平台**一个且只有一个持久化 session**（fail-first 队列：同 session 已有命令在跑时新命令直接 fail）。
+**持久化 session 命名约定**：session 名 = 平台 key（`douyin` / `bilibili` / `kuaishou` / `xhs-browse`）。每个平台**一个且只有一个持久化 session**（fail-first 队列：同 session 已有命令在跑时新命令直接 fail）。
 
 ### 步骤 2：等用户完成登录
 

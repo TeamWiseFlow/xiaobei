@@ -52,7 +52,7 @@ metadata:
 
 ## 使用场景
 
-> **三个场景统一前置**（第一步都一样）：login-manager 探活——`camoufox-cli --session xhs-browse --persistent --json open "https://www.xiaohongshu.com/"`（默认 headless）+ `snapshot` 看是否跳登录页。跳登录页 = 未登录 → 走 login-manager 有头手动登录流（在同一个 `xhs-browse` 持久化 session 上 `--headed open` + 告知用户手动扫码 + 登录就位后**同时导出 cookie + UA** 落 `~/.openclaw/logins/xhs-browse.json` + `~/.openclaw/logins/xhs-browse.ua.json`，给本技能脚本做 raw HTTP 抓取用；详见下方「前置条件」段）。
+> **三个场景统一前置**（第一步都一样）：**抓取前探活一次**（批量抓多篇笔记时只探活一次，不每条机械探活）——跑共用探活 CLI `node <workspace>/crews/main/skills/published-track/scripts/check-login.ts --platform xhs-browse`（workspace 绝对路径见 TOOLS.md；exit 0=有效 / 2=SESSION_EXPIRED / 1=SIGN_UNAVAILABLE）。exit 2 → 走 login-manager 有头手动登录流（`camoufox-cli --session xhs-browse --persistent --headed open "https://www.xiaohongshu.com/"` + 告知用户手动扫码 + 确认登录后 `login-manager --platform xhs-browse` 导出+验证，落 `~/.openclaw/logins/xhs-browse.json` + `~/.openclaw/logins/xhs-browse.ua.json`，给本技能脚本做 raw HTTP 抓取用；详见下方「前置条件」段）。探活逻辑见 `_shared/check-session.ts`（Tier1 web_session 字段 + Tier2 user/me pong，Ai2Earn 方案）。
 >
 > **场景 B/C 的浏览器搜索部分**走 **camoufox-cli**（复用 `xhs-browse` 持久化 session，`--session xhs-browse --persistent`，不开独立 session、不 import cookie）——`open` 搜索页 + `snapshot` 读搜索结果列表 + `eval` 拿笔记 URL 提 note_id/xsec_token。拿到 note_id 后切脚本下载。
 

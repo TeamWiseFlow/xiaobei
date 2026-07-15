@@ -73,6 +73,7 @@ wx-mp-publisher <markdown_file> [theme] [--account ALIAS]
 | `rainbow` | 多彩活泼 | 亲子、宠物、娱乐 |
 | `phycat` | 薄荷清爽 | 科普、知识型内容 |
 | `<custom-theme>` | 用户自定义主题占位（由 `generate-wenyan-theme` 生成后更新，文件：`<custom-theme>.css`） | 用户明确指定参考该主题时优先采用；相似内容可优先建议 |
+| `waytoagi-theme` | 用户自定义：参考「通往AGI之路」风格--紫色主调(#6c5ce7)、深灰蓝正文、1.85行高、0.5px字间距、圆角引用块+浅灰背景、紫色行内代码高亮、浅灰分割线（文件：`waytoagi-theme.css`） | 用户明确指定参考该主题时优先采用；AI/科技/社区类内容可优先建议 |
 
 **智能选择决策树**（用户未指定主题时）：
 

@@ -300,22 +300,18 @@ function checkRet(data: JsonMap): void {
 }
 
 /**
- * 探活：wx_mp `_ping`——带 cookie+token GET 公众号后台首页，解析 <h2> 判登录态。
+ * wx_mp `_ping`——带 cookie+token GET 公众号后台首页，解析 <h2> 判登录态。
  * 借鉴 ~/wiseflow-pro/wiseflow4-pro/core/wis/wx_crawler.py _ping：
  *   GET /cgi-bin/home?t=home/index&lang=zh_CN&token=<token>
- *   <h2> 含「新的创作」→ 有效；含「请重新」→ 失效。
+ *   <h2> 含「新的创作」→ 有效；含「请重新」/scanloginqrcode → 失效。
  * 纯 HTTP，不起 camoufox，不依赖磁盘 profile，与 fetch/search 走同一 mpFetch 通道。
- * exit 0 = 有效；exit 2 = 失效（token 缺失 / 服务端判未登录 / 网络错）
+ * cmdCheck（探活）与 cmdLoginConfirm（登录后验证）共用，避免两处判据漂移。
+ * 不抛——返回 {ok, reason, h2}，调用方决定 exit。
  */
-async function cmdCheck(): Promise<void> {
-  const data = await loadSession();
-  if (!data || !data.token) {
-    authExit("SESSION_EXPIRED");
-  }
+async function pingWxMp(data: SessionData): Promise<{ ok: boolean; reason?: string; h2?: string }> {
+  if (!data.token) return { ok: false, reason: "missing token" };
   const cookieJar = cookieDictFromSession(data);
-  if (Object.keys(cookieJar).length === 0) {
-    authExit("SESSION_EXPIRED");
-  }
+  if (Object.keys(cookieJar).length === 0) return { ok: false, reason: "empty cookie jar" };
 
   let resp: Response;
   try {
@@ -326,26 +322,36 @@ async function cmdCheck(): Promise<void> {
       cookieJar,
       timeoutMs: 15000,
     });
-  } catch {
-    authExit("SESSION_EXPIRED");
+  } catch (e) {
+    return { ok: false, reason: `home fetch error: ${(e as Error).message.slice(0, 120)}` };
   }
+  if (!resp.ok) return { ok: false, reason: `home HTTP ${resp.status}` };
 
-  if (!resp.ok) {
-    authExit("SESSION_EXPIRED");
-  }
   const html = await resp.text();
   // 抽 <h2>...</h2> 文本：登录有效页有「新的创作」；失效页提示「请重新登录」
   const h2Match = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
   const h2 = h2Match ? h2Match[1].replace(/<[^>]+>/g, "").trim() : "";
-  if (h2.includes("新的创作")) {
-    printJson({ ok: true, message: "session 有效", ping: "home", h2 });
+  if (h2.includes("新的创作")) return { ok: true, h2 };
+  if (h2.includes("请重新") || html.includes("请重新登录") || html.includes("scanloginqrcode")) {
+    return { ok: false, reason: "home 页提示请重新登录", h2 };
+  }
+  // 兜底：没命中已知标志，按失效处理（避免误报有效）
+  return { ok: false, reason: "home 页未出现「新的创作」标志", h2 };
+}
+
+/**
+ * 探活：读中央存储 session → pingWxMp。
+ * exit 0 = 有效；exit 2 = 失效（session 文件缺 / token 缺 / 服务端判未登录 / 网络错）
+ */
+async function cmdCheck(): Promise<void> {
+  const data = await loadSession();
+  if (!data) authExit("SESSION_EXPIRED");
+  const r = await pingWxMp(data);
+  if (r.ok) {
+    printJson({ ok: true, message: "session 有效", ping: "home", h2: r.h2 });
     return;
   }
-  if (h2.includes("请重新") || html.includes("请重新登录") || html.includes("scanloginqrcode")) {
-    authExit("SESSION_EXPIRED");
-  }
-  // 兜底：没命中已知标志，按失效处理让调用方重登（避免误报有效）
-  authExit("SESSION_EXPIRED");
+  authExit(`SESSION_EXPIRED (${r.reason})`);
 }
 
 /**
@@ -389,17 +395,17 @@ async function cmdLoginConfirm(): Promise<void> {
       errExit(`无法从 redirect URL 提取 token: ${url}`);
     }
 
-    // 导出 cookies + UA 落中央存储
-    await camoufox("cookies", "export", SESSION_FILE);
-    await camoufox("identity", "export", UA_FILE);
+    // 导出 cookies 到临时文件（不直接落中央存储——先 _ping 验过再 commit）
+    const tmpCookies = "/tmp/wx-mp-login-cookies.json";
+    await camoufox("cookies", "export", tmpCookies);
 
-    // 读导出的 cookies 文件 + token，写回 SESSION_FILE（扩展加 token 字段）
+    // 读导出的 cookies + token 组 sessionData，先 _ping 验证再 commit
     // camoufox-cli `cookies export` 写的是裸数组（见 patches/camoufox-cli/src/commands.ts），
-    // 这里要兼容裸数组与 {cookies:[...]} 两种形状，否则 exported.cookies 为 undefined →
+    // 兼容裸数组与 {cookies:[...]} 两种形状，否则 exported.cookies 为 undefined →
     // cookies 落空，search/account-posts 无 Cookie 必失败。
     const exported = await readJsonFile<
       SessionData["cookies"] | { cookies?: SessionData["cookies"]; updated_at?: string }
-    >(SESSION_FILE);
+    >(tmpCookies);
     const exportedCookies: SessionData["cookies"] = Array.isArray(exported)
       ? exported
       : (exported?.cookies ?? []);
@@ -411,12 +417,26 @@ async function cmdLoginConfirm(): Promise<void> {
       ua: ua || undefined,
       updated_at: timestampLocal(),
     };
+
+    // 导出前验证：_ping 后台首页，确认 cookie+token 真能用，通过才 commit 中央存储。
+    // 落实「验证后再导出」原则——_ping 不过说明 cookie/token 不完整或账号异常，
+    // 不写中央存储（避免把失效 cookie 喂给下游），直接报错让 Agent 人工排查。
+    // 不重试（登录本身已走浏览器，再试只会触风控）。
+    const ping = await pingWxMp(sessionData);
+    if (!ping.ok) {
+      try { await camoufox("close"); } catch { /* 尽力关 session，忽略 */ }
+      errExit(`登录后 _ping 验证失败：${ping.reason}（后台首页未返回「新的创作」，cookie 未落中央存储——请人工检查账号状态，不重试避免风控）`);
+    }
+
+    // 验过 → commit 中央存储：写 SESSION_FILE（含 token）+ identity export UA
     await writeJsonFile(SESSION_FILE, sessionData);
-    // 导出落盘后 close 掉无头浏览器——登录态已在磁盘 profile + 中央存储，不留进程占内存。
+    await camoufox("identity", "export", UA_FILE);
+
+    // close 掉无头浏览器——登录态已在磁盘 profile + 中央存储，不留进程占内存。
     // 下游（wx-mp-engagement / 业务命令）按需重起无头 session，profile 桥接登录态。
     try { await camoufox("close"); } catch { /* session 已退或卡死，忽略 */ }
 
-    printJson({ ok: true, message: "登录成功，cookie + UA + token 已落中央存储（session 已关，登录态在磁盘 profile）", token });
+    printJson({ ok: true, message: "登录成功，cookie + UA + token 已落中央存储（session 已关，登录态在磁盘 profile）", token, ping: "home", h2: ping.h2 });
   } catch (e: any) {
     errExit(`camoufox-cli 登录确认失败: ${e?.message ?? String(e)}`);
   }

@@ -75,12 +75,13 @@ All downloaded files, analysis results, and generated reports will be saved unde
 
 ### Step 2 — Check login (skip for public Bilibili videos)
 
-Use the **login-manager** skill to check the session:
-
-- `platform`: `douyin` | `bilibili` | `xhs`
-- 探活按 login-manager SKILL.md 步骤 0：`camoufox-cli --session <platform> --persistent --json open <首页>`（默认 headless）+ `snapshot` 看是否跳登录页（XHS 用 `xhs-browse`）
-- If exit code 2 (session expired), execute the login flow described in the login-manager skill (原则 3：douyin / xhs-browse 有头手动登录；bilibili 有头登录；login-manager 管的 5 平台之一)，then retry 探活
-- 登录就位后**同时导出 cookie + UA**（原则 4）：`camoufox-cli cookies export ~/.openclaw/logins/<platform>.json` + `camoufox-cli identity export ~/.openclaw/logins/<platform>.ua.json`
+- `platform`: `douyin` | `bilibili` | `xhs`（XHS 用 `xhs-browse`）
+- **抓取前探活一次**（批量分析多个视频时只探活一次，不每条机械探活）：跑共用探活 CLI
+  `node <workspace>/crews/main/skills/published-track/scripts/check-login.ts --platform <platform>`（workspace 绝对路径见 TOOLS.md）
+  - exit 0 = 有效 → 进 Step 3
+  - exit 2 = SESSION_EXPIRED → 走 login-manager 重登（有头打开登录页 + 通知用户 + 确认后 `login-manager --platform <p>` 导出+验证），再探活一次
+  - exit 1 = SIGN_UNAVAILABLE → 签名缺 OFB_KEY（重登救不了，交 IT engineer 配凭证）
+- 探活逻辑（`_shared/check-session.ts`）：Tier1 cookie 关键字段 + Tier2 平台 pong，pong 带 TTL 缓存。借鉴 MediaCrawlerPro 各平台 client.py pong + nodriver_helper_reference `_check_login_status`。
 
 ### Step 3 — Run the analyzer
 

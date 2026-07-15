@@ -2,7 +2,7 @@
 name: xhs-publish
 description: Publish image-text notes and video notes to Xiaohongshu (小红书) via
   creator COS upload + web_api v2. Supports image posts (up to 18 images),
-  video posts, topics/hashtags. Uses login-manager for cookie-based authentication.
+  video posts, topics/hashtags. Self-managed creator-domain login + 探活 (see 前置条件).
 metadata:
   openclaw:
     emoji: 📕
@@ -13,7 +13,7 @@ metadata:
 
 # 小红书发布（xhs-publish）
 
-通过 creator 平台 COS 上传 + `/web_api/sns/v2/note` 创建笔记，支持图文和视频两种模式。使用 login-manager 管理 cookie 认证。签名使用 relay sign 服务。
+通过 creator 平台 COS 上传 + `/web_api/sns/v2/note` 创建笔记，支持图文和视频两种模式。cookie 认证由本技能自管（创作者域登录 + 探活，见前置条件）。签名使用 relay sign 服务。
 
 上传流程：
 1. 获取 COS 上传许可证：`creator.xiaohongshu.com/api/media/v1/upload/web/permit`
@@ -24,13 +24,14 @@ metadata:
 
 ## 前置条件
 
-1. 探活按 login-manager SKILL.md 步骤 0：`camoufox-cli --session xhs-publish --persistent --json open "https://creator.xiaohongshu.com/"`（默认 headless）+ `snapshot` 看是否跳登录页（登录态有效 = 没跳登录页；跳登录页 = 失效）。
-2. 若 exit 2，按 login-manager skill 的流程完成**有头手动**登录（xhs-publish 走有头登录）：
+> **xhs-publish 自管登录 + 探活**（不进 login-manager）：xhs-publish cookie 是创作者域 `creator.xiaohongshu.com` 会话，与 xhs-browse 消费者域是两套独立登录、不能共用，且仅供本技能使用，故登录 + 探活在本技能内闭环。探活走创作者域 `personal_info` **裸 GET**，无需 xhs 签名 / OFB_KEY（见 `scripts/creator-session.ts`）。
+
+1. **发布前探活一次**（批量发布多篇时只探活一次，不每条机械探活）：跑本技能探活 CLI `xhs-publish check`（PATH wrapper → `scripts/check-login.ts`；绝对路径见 TOOLS.md）。
+   探活：Tier1 创作者会话字段（a1 + galaxy_creator_session_id 等）+ Tier2 裸 GET `creator.xiaohongshu.com/api/galaxy/creator/home/personal_info`（Referer: creator，无签名）→ `success && code===0` 即有效。exit 0=有效 / 2=SESSION_EXPIRED / 1=crash。
+2. 若 exit 2，走**有头手动**登录流（本技能自管，不调 login-manager）：
    - 启有头 session：`camoufox-cli --session xhs-publish --persistent --headed --json open "https://creator.xiaohongshu.com/publish/publish?source=official"`
    - 告知用户「**小红书创作者** 浏览器已打开，请在窗口里手动扫码登录，完成后告诉我」
-   - 登录就位后**同时导出 cookie + UA**：
-     - `camoufox-cli --session xhs-publish --persistent --json cookies export ~/.openclaw/logins/xhs-publish.json`
-     - `camoufox-cli --session xhs-publish --persistent --json identity export ~/.openclaw/logins/xhs-publish.ua.json`
+   - 用户确认登录后调 `xhs-publish login-verify` 导出+验证（cookie+UA 落 `~/.openclaw/logins/xhs-publish.json` + `.ua.json`，导出前先 personal_info 验过才 commit）。
    - 登录后**close session**——登录态落磁盘 profile，不留进程占内存；本 skill 下次 `--session xhs-publish --persistent` 重起无头即恢复，用完再 close。
 3. 确保 `Pillow` 已安装（用于读取图片尺寸）：`pip install Pillow`
 
@@ -112,12 +113,12 @@ xhs-publish --body "这里就是实际正文，不是文件路径"
 
 ## Agent 工作流
 
-1. 探活按 login-manager SKILL.md 步骤 0：`camoufox-cli --session xhs-publish --persistent --json open "https://creator.xiaohongshu.com/"`（默认 headless）+ `snapshot` 看是否跳登录页（exit 0 = 有效）
+1. 探活：`xhs-publish check`（exit 0 = 有效；创作者域 personal_info 裸 GET，无签名。批量发布只探活一次）
 2. 准备素材（图片/视频 + 标题 + 正文）
 3. 运行 `publish_xhs.py` 脚本
 4. 检查 stdout JSON 输出：
    - `{"ok": true, "note_id": "xxx", "url": "https://www.xiaohongshu.com/explore/xxx"}` → 发布成功
-   - `{"ok": false, "error": "AUTH_EXPIRED"}` → 触发 login-manager 重新登录，重试一次
+   - `{"ok": false, "error": "AUTH_EXPIRED"}` → 触发本技能自管登录流（前置条件 step 2）重新登录，重试一次
    - `{"ok": false, "error": "..."}` → 其他错误，反馈用户
 
 ---
@@ -126,7 +127,7 @@ xhs-publish --body "这里就是实际正文，不是文件路径"
 
 | 错误 | 原因 | 处理 |
 |------|------|------|
-| AUTH_EXPIRED | cookie 失效 | login-manager 重新登录后重试 |
+| AUTH_EXPIRED | cookie 失效 | 走本技能自管有头登录流（见前置条件 step 2）重新登录后重试 |
 | UPLOAD_FAILED | COS 上传失败 | 检查文件格式和大小，重试一次 |
 | TITLE_TOO_LONG | 标题超 20 字 | 截断标题后重试 |
 | BODY_TOO_LONG | 正文超 1000 字 | 精简正文后重试 |

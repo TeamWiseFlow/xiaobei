@@ -64,8 +64,9 @@ def load_cookies(cookie_file: Path | None = None) -> tuple[dict, str]:
     except json.JSONDecodeError:
         err_exit("AUTH_EXPIRED", 2)
 
-    raw = data.get("cookies", "")
-    # camoufox-cli 原生格式：cookies 是对象数组 [{name, value, domain, ...}]
+    # 兼容两种格式：{platform, cookies:[...], updated_at} 包壳（login-and-verify 写）
+    # 或 camoufox-cli 原生裸数组 [{name, value, domain, ...}]（直接 cookies export 输出）
+    raw = data.get("cookies", "") if isinstance(data, dict) else data
     cookie_dict: dict[str, str] = {}
     if isinstance(raw, list):
         for c in raw:
@@ -96,7 +97,16 @@ def load_cookies(cookie_file: Path | None = None) -> tuple[dict, str]:
         except (json.JSONDecodeError, OSError):
             pass  # UA 文件读失败不阻断，回退 DEFAULT_UA
 
-    if "a1" not in cookie_dict or "web_session" not in cookie_dict:
+    # 创作者域会话字段门（xhs-publish cookie 是 creator.xiaohongshu.com 域，无 web_session）：
+    # a1（设备指纹）+ 任一创作者会话 token。与 creator-session.ts presenceCheckCreator 对齐。
+    # 探活（personal_info pong）由 xhs-publish check-login.ts 在发布前做，此处只做 cheap 字段门。
+    CREATOR_SESSION_KEYS = (
+        "galaxy_creator_session_id",
+        "galaxy.creator.beaker.session.id",
+        "access-token-creator.xiaohongshu.com",
+        "customer-sso-sid",
+    )
+    if "a1" not in cookie_dict or not any(k in cookie_dict for k in CREATOR_SESSION_KEYS):
         err_exit("AUTH_EXPIRED", 2)
 
     return cookie_dict, ua
