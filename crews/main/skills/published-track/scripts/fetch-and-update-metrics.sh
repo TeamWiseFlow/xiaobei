@@ -26,22 +26,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # camoufox-cli 路径（全局可用）
 CAMOUFOX_CLI="${CAMOUFOX_CLI:-camoufox-cli}"
 
-# published-track 平台名 → 持久化 session 名映射
-# 小红书按域拆为 xhs-publish / xhs-browse，取数走消费者端 xhs-browse
-LM_PLATFORM="$PLATFORM"
-if [ "$PLATFORM" = "xhs" ]; then
-  LM_PLATFORM="xhs-browse"
-fi
-
-# 平台首页 URL（探活时 open 用）
-case "$LM_PLATFORM" in
-  douyin)     PLATFORM_HOME="https://www.douyin.com/" ;;
-  bilibili)   PLATFORM_HOME="https://www.bilibili.com/" ;;
-  kuaishou)   PLATFORM_HOME="https://www.kuaishou.com/" ;;
-  xhs-browse) PLATFORM_HOME="https://www.xiaohongshu.com/" ;;
-  *)          PLATFORM_HOME="" ;;
-esac
-
 # ─── 辅助函数 ──────────────────────────────────────────────────────────────
 
 extract_content_id() {
@@ -109,6 +93,22 @@ if [ -z "$PLATFORM" ]; then
   echo '{"ok":false,"error":"missing required arg: --platform"}'
   exit 1
 fi
+
+# published-track 平台名 -> 持久化 session 名映射
+# 小红书按域拆为 xhs-publish / xhs-browse，取数走消费者端 xhs-browse
+LM_PLATFORM="$PLATFORM"
+if [ "$PLATFORM" = "xhs" ]; then
+  LM_PLATFORM="xhs-browse"
+fi
+
+# 平台首页 URL（探活时 open 用）
+case "$LM_PLATFORM" in
+  douyin)     PLATFORM_HOME="https://www.douyin.com/" ;;
+  bilibili)   PLATFORM_HOME="https://www.bilibili.com/" ;;
+  kuaishou)   PLATFORM_HOME="https://www.kuaishou.com/" ;;
+  xhs-browse) PLATFORM_HOME="https://www.xiaohongshu.com/" ;;
+  *)          PLATFORM_HOME="" ;;
+esac
 
 # ─── 平台路由 ──────────────────────────────────────────────────────────────
 
