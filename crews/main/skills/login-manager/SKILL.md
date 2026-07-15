@@ -1,6 +1,6 @@
 ---
 name: login-manager
-description: 平台登录态管理。约定各平台登录流程（强制有头手动登录）、探活规则、中央 cookie+UA 存储路径约定。仅管 4 个平台（douyin/kuaishou/bilibili/xhs-browse），其他平台完全不涉及（xhs-publish 自管登录，见 xhs-publish SKILL.md）。Agent 有头打开登录页+通知用户登录+确认后调 login-manager --platform <p> 导出 cookie+UA 并两层探活验证，验证不过直接报错不重试。
+description: 平台登录态管理。约定各平台登录流程（强制有头手动登录）、探活规则、中央 cookie+UA 存储路径约定。仅管 4 个平台（douyin/kuaishou/bilibili/xhs-browse），其他平台完全不涉及（xhs-publish 自管登录，见 xhs-publish SKILL.md）。
 metadata:
   openclaw:
     emoji: 🔑
@@ -34,8 +34,8 @@ metadata:
 **然后调脚本**，脚本流程：
 1. `camoufox cookies export <tmp>` 导出 cookie 到临时文件（不直接落中央存储——先验过再 commit）。
 2. **两层探活验证**（`_shared/check-session.ts` `verifyCookies`，新鲜 pong 不读缓存）：
-   - Tier 1 cookie 关键字段（借鉴 `nodriver_helper_reference.py` `_check_login_status`）：douyin→sessionid+sid_tt+uid_tt、bilibili→SESSDATA/DedeUserID、kuaishou→webday7/userId/passToken、xhs-browse→web_session。
-   - Tier 2 平台 pong：bilibili `/x/web-interface/nav`、kuaishou graphql `visionProfileUserList`、xhs-browse `edith.xiaohongshu.com/api/sns/web/v2/user/me`（Ai2Earn getUserInfo 方案，签名）、douyin `/aweme/v1/web/history/read/`。
+   - Tier 1 cookie 关键字段：douyin→sessionid+sid_tt+uid_tt、bilibili→SESSDATA/DedeUserID、kuaishou→webday7/userId/passToken、xhs-browse→web_session。
+   - Tier 2 平台 pong：bilibili `/x/web-interface/nav`、kuaishou graphql `visionProfileUserList`、xhs-browse `edith.xiaohongshu.com/api/sns/web/v2/user/me`、douyin `/aweme/v1/web/history/read/`。
    - 签名平台缺 `OFB_KEY` → `SIGN_UNAVAILABLE` 仅警告（presence 已过，登录本身成功），不 fail。
    - 验证不过 → exit 2，**未 commit 中央存储**，不重试。
 3. 验过 → commit `~/.openclaw/logins/<p>.json` + `identity export <p>.ua.json`。

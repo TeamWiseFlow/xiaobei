@@ -26,13 +26,13 @@ metadata:
 
 > **xhs-publish 自管登录 + 探活**（不进 login-manager）：xhs-publish cookie 是创作者域 `creator.xiaohongshu.com` 会话，与 xhs-browse 消费者域是两套独立登录、不能共用，且仅供本技能使用，故登录 + 探活在本技能内闭环。探活走创作者域 `personal_info` **裸 GET**，无需 xhs 签名 / OFB_KEY（见 `scripts/creator-session.ts`）。
 
-1. **发布前探活一次**（批量发布多篇时只探活一次，不每条机械探活）：跑本技能探活 CLI `xhs-publish check`（PATH wrapper → `scripts/check-login.ts`；绝对路径见 TOOLS.md）。
+1. **发布前探活一次**（批量发布多篇时只探活一次，不每条机械探活）：跑本技能探活 CLI `xhs-publish check`（PATH wrapper → `scripts/check-login.ts`）。
    探活：Tier1 创作者会话字段（a1 + galaxy_creator_session_id 等）+ Tier2 裸 GET `creator.xiaohongshu.com/api/galaxy/creator/home/personal_info`（Referer: creator，无签名）→ `success && code===0` 即有效。exit 0=有效 / 2=SESSION_EXPIRED / 1=crash。
 2. 若 exit 2，走**有头手动**登录流（本技能自管，不调 login-manager）：
    - 启有头 session：`camoufox-cli --session xhs-publish --persistent --headed --json open "https://creator.xiaohongshu.com/publish/publish?source=official"`
    - 告知用户「**小红书创作者** 浏览器已打开，请在窗口里手动扫码登录，完成后告诉我」
    - 用户确认登录后调 `xhs-publish login-verify` 导出+验证（cookie+UA 落 `~/.openclaw/logins/xhs-publish.json` + `.ua.json`，导出前先 personal_info 验过才 commit）。
-   - 登录后**close session**——登录态落磁盘 profile，不留进程占内存；本 skill 下次 `--session xhs-publish --persistent` 重起无头即恢复，用完再 close。
+   - 登录后**close session**——登录态落磁盘 profile，不留进程占内存。
 3. 确保 `Pillow` 已安装（用于读取图片尺寸）：`pip install Pillow`
 
 > **同时导入 cookie 和 UA**：xhs 的 `a1`/`websectiga` 等设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。本 skill 的 `publish_xhs.py` 已同时读 `xhs-publish.json` + `xhs-publish.ua.json`。

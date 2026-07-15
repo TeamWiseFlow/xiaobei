@@ -28,6 +28,8 @@
 
 xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 
+官网：[openclaw-for-business.com](https://openclaw-for-business.com/)
+
 ---
 
 ## 🚀 **v5.6.0 更新**
@@ -267,7 +269,7 @@ wiseflow/
 
 有任何问题或建议，欢迎通过 [issue](https://github.com/TeamWiseFlow/xiaobei/issues) 留言。
 
-商务合作（**开放定制开发与 OEM 合作，诚招代理**）请联系"掌柜的"👆，或邮箱 `zm.zhao # foxmail.com`（发送时将 # 替换为 @）。
+商务合作（**开放定制开发与 OEM 合作，诚招代理**）请联系"掌柜的"👆，或访问官网：[openclaw-for-business.com](https://openclaw-for-business.com/pricing)。
 
 ## 🤝 xiaobei 基于如下优秀的开源项目：
 

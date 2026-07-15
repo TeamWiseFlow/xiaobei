@@ -1,6 +1,6 @@
 ---
 name: content-calibrator
-description: 内容校准预测循环——打分+盲预测合一 → 发布 → 记录 → T+3d 复盘 → 进化 rubric。打分/预测/复盘按作品（per-work）归集，rubric 全平台统一，平台差异仅体现在 baseline/audience/benchmark 等预测输入数据上。本技能负责打分+预测（blind sub-agent + score-only.sh + commit-prediction.sh + 阈值门）与校准闭环；发布记录与数据采集由 published-track 统一管理。
+description: 内容校准预测循环——打分+盲预测合一 → 发布 → 记录 → T+3d 复盘 → 进化 rubric。本技能负责打分+预测（blind sub-agent + score-only.sh + commit-prediction.sh + 阈值门）与校准闭环；发布记录与数据采集由 published-track 统一管理。
 metadata:
   openclaw:
     emoji: 🎯
@@ -13,7 +13,6 @@ metadata:
 
 # Content Calibrator — 内容校准预测循环
 
-> 方法论源自 cheat-on-content，适配 openclaw + selfmedia-operator 工作流。
 > **三条不可妥协原则**：
 > 1. **盲预测**：预测必须在看到实际数据之前写完，写完即 immutable
 > 2. **升级 = 全量重打**：rubric 升级时校准池所有样本必须重打分
@@ -96,11 +95,7 @@ metadata:
 
 ### 数据采集由 published-track 统一管理
 
-**content-calibrator 不直接抓取平台数据。** 数据采集流程：
-
-1. **一键获取**：`published-track/scripts/fetch-and-update-metrics.sh`（封装 login-manager 探活 → API 抓取 → DB 写入）
-2. **复盘时**：直接从 published-track DB 读取数据
-3. **深度数据**（完播率、转粉率、评论内容等）：仍需 camoufox-cli 抓取（详见 browser-guide §0.2 抓取流程），由 published-track 心跳任务负责
+**content-calibrator 不直接抓取平台数据**, 详见 `published-track`。
 
 ---
 
