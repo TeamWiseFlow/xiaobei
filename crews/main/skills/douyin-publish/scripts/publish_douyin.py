@@ -47,6 +47,7 @@ CAMOUFOX_BIN = os.environ.get("CAMOUFOX_CLI", "camoufox-cli")
 # 由 login-manager 负责探活/有头登录/导出 cookie+UA 落中央存储；本 skill 只复用此 session 做发布操作
 PERSISTENT_SESSION = "douyin"
 
+UPLOAD_TIMEOUT_S = 300       # 上传最多 5 分钟（大文件）
 TRANSCODE_POLL_S = 3
 TRANSCODE_MAX_WAIT_S = 600    # 转码最多 10 分钟
 POST_PUBLISH_POLL_S = 5
