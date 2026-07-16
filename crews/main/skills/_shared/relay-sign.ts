@@ -117,7 +117,10 @@ export async function xhsHeaders(input: XhsSignInput): Promise<Record<string, st
 export async function xhsFetch<T = unknown>(input: XhsFetchInput): Promise<T> {
   const { baseUrl, uri, method = "post", params = {}, payload, cookies, xsecToken, xsecSource, xRap, timeoutMs = 30_000 } = input;
 
-  // 1) 拿签名 headers（signFormat 透传：xys 默认，xyw 用于 user/me 等 data API）
+  // 1) 拿签名 headers（signFormat 透传）。xhs 两套独立 x-s 算法（见 relay services/sign/xhs.js）：
+  //    - "xys"（默认，XYS_）→ note 创建 / feed / comment / search 等通用 endpoint
+  //    - "xyw"（XYW_）→ data-fetching API：user/me、user_posted、otherinfo
+  //      （这些 endpoint 自 ~2026-03 起对 xys 返回 HTTP 406，必须用 xyw）
   const headers = await xhsHeaders({ uri, method, payload, params, cookies, signFormat: input.signFormat, xRap });
 
   // 2) xsec_token / xsec_source 拼到 URL（xhs 协议）

@@ -53,7 +53,13 @@ def xhs_headers(
     sign_format: str = "xys",
     x_rap: bool = False,
 ) -> dict:
-    """仅签名，返回完整 headers（含 Cookie / UA / 签名头），client 自行发请求"""
+    """仅签名，返回完整 headers（含 Cookie / UA / 签名头），client 自行发请求。
+
+    xhs 两套独立 x-s 算法（见 relay services/sign/xhs.js）：
+      - sign_format="xys"（默认，XYS_）→ note 创建 / feed / comment / search 等通用 endpoint
+      - sign_format="xyw"（XYW_）→ data-fetching API：user/me、user_posted、otherinfo
+        （这些 endpoint 自 ~2026-03 起对 xys 返回 HTTP 406，必须用 xyw）
+    """
     return _post(
         "/api/v1/sign/xhs/headers",
         {
