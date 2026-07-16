@@ -52,24 +52,22 @@ metadata:
 
 ## 使用场景
 
-> **三个场景统一前置**（第一步都一样）：**抓取前探活一次**（批量只探活一次）：
-> ```bash
-> node <workspace>/crews/main/skills/published-track/scripts/check-login.ts --platform xhs-browse
-> ```
-> exit 0 = 有效 → 继续；exit 2 = `SESSION_EXPIRED` → 走 login-manager 重登（`camoufox-cli --session xhs-browse --persistent --headed open "https://www.xiaohongshu.com/"` + 告知用户扫码 + 确认后 `login-manager --platform xhs-browse`），再探活一次；exit 1 = `SIGN_UNAVAILABLE` → 交 IT engineer 配凭证。脚本内部已同时导入 cookie + UA（同一指纹），无需手动传。
->
 > **场景 B/C 的浏览器搜索部分**走 **camoufox-cli**（复用 `xhs-browse` 持久化 session，`--session xhs-browse --persistent`，不开独立 session、不 import cookie）——`open` 搜索页 + `snapshot` 读搜索结果列表 + `eval` 拿笔记 URL 提 note_id/xsec_token。拿到 note_id 后切脚本下载。
+> 期间如果发现登录失效, 则走 login-manager skill 流程，复用 `xhs-browse` 持久化 session（消费者域 `www.xiaohongshu.com`）
 
 ### 场景 A：用户提供小红书帖子 URL
 
 用户直接给出一个或多个小红书图文笔记 URL（含 `xhslink.com/o/xxx` 短链），下载并分析。
 
 ```
-1. login-manager 探活（见上方「三个场景统一前置」）；未登录则走有头手动登录流，登录后同时导出 cookie + UA 落中央存储。
-2. 直接把 URL 传给脚本，脚本内部解析短链、提取 note_id 和 xsec_token：
+1. 直接把 URL 传给脚本，脚本内部解析短链、提取 note_id 和 xsec_token：
    xhs-content-ops --url <url> --output-dir campaign_assets/<slug>/
+
    ⚠️ 脚本内部同时导入 cookie 和 UA（已写死在 fetch_note_content.ts：同时读 ~/.openclaw/logins/xhs-browse.json + ~/.openclaw/logins/xhs-browse.ua.json，喂给 raw HTTP header，不经浏览器）——脚本侧务必同时带，同一指纹下的 cookie 才不会被风控错配。
-3. 读取下载的图片和正文，执行对标分析
+
+   脚本抓取前会自动进行cookie探活，失败按 exit code 交 login-manager 重登（exit 2）或 配凭证（exit 1）。
+
+2. 读取下载的图片和正文，执行对标分析
 ```
 
 `--output-dir` 必须是工作区相对路径（如 `campaign_assets/<slug>/`），不要用 `/tmp`——否则后续 image 工具读不到图片。
@@ -81,12 +79,17 @@ metadata:
 用户给出关键词，搜索小红书找到代表性图文笔记，下载并分析。
 
 ```
-1. login-manager 探活（见上方「三个场景统一前置」）；未登录则走有头手动登录流，登录后同时导出 cookie + UA 落中央存储。
-2. 走 camoufox-cli 浏览器操作（复用 xhs-browse 持久化 session）导航到搜索页，按"最多点赞"排序：
+1.走 camoufox-cli 浏览器操作（复用 xhs-browse 持久化 session）导航到搜索页，按"最多点赞"排序：
    camoufox-cli --session xhs-browse --persistent --json open "https://www.xiaohongshu.com/search_result?keyword=目标关键词"
 3. camoufox-cli snapshot 获取搜索结果列表，选取前 3-5 篇高互动图文笔记；用 eval 从笔记链接里提取 note_id + xsec_token（URL 格式见「小红书 URL 格式参考」段，从 explore/{feed_id}?xsec_token={token} 解）。
+
+  上面过程中，如果发现登录失效, 则走 login-manager skill 流程，复用 `xhs-browse` 持久化 session（消费者域 `www.xiaohongshu.com`）
+
 4. 对每篇笔记，运行图文下载脚本（脚本内部同时导入 cookie 和 UA，已写死，无需手动传）：
    xhs-content-ops --note-id <note_id> --xsec-token <token> --xsec-source pc_feed --output-dir campaign_assets/<slug>/
+
+   脚本抓取前会自动进行cookie探活，失败按 exit code 交 login-manager 重登（exit 2）或 配凭证（exit 1）。
+
 5. 汇总所有下载内容，执行竞品对标分析
 ```
 
@@ -95,10 +98,15 @@ metadata:
 用户要求将自己的内容与小红书上的内容做对标。
 
 ```
-1. login-manager 探活（见上方「三个场景统一前置」）；未登录则走有头手动登录流，登录后同时导出 cookie + UA 落中央存储。
-2. 走 camoufox-cli 浏览器操作（复用 xhs-browse 持久化 session）搜索目标关键词，找到 3-5 篇代表性图文笔记（同场景 B 的 camoufox-cli 搜索流程），用 eval 提 note_id + xsec_token。
+1.走 camoufox-cli 浏览器操作（复用 xhs-browse 持久化 session）搜索目标关键词，找到 3-5 篇代表性图文笔记（同场景 B 的 camoufox-cli 搜索流程），用 eval 提 note_id + xsec_token。
+
+  上面过程中，如果发现登录失效, 则走 login-manager skill 流程，复用 `xhs-browse` 持久化 session（消费者域 `www.xiaohongshu.com`）
+
 3. 对每篇笔记，运行图文下载脚本下载图片和正文（脚本内部同时导入 cookie 和 UA，已写死，无需手动传）：
    xhs-content-ops --note-id <note_id> --xsec-token <token> --xsec-source pc_feed --output-dir campaign_assets/<slug>/
+
+      脚本抓取前会自动进行cookie探活，失败按 exit code 交 login-manager 重登（exit 2）或 配凭证（exit 1）。
+
 4. 与用户提供的内容逐项对标：
    - 标题风格对比
    - 正文结构对比
@@ -112,22 +120,11 @@ metadata:
 
 ## 图文下载脚本
 
-### 前置条件
-
-1. 探活按 login-manager SKILL.md 步骤 0：`camoufox-cli --session xhs-browse --persistent --json open "https://www.xiaohongshu.com/"`（默认 headless）+ `snapshot` 看是否跳登录页（登录态有效 = 没跳登录页；跳登录页 = 失效）。
-2. 若 exit 2，按 login-manager skill 的流程完成**有头手动**登录（xhs-browse 走有头登录）：
-   - 启有头 session：`camoufox-cli --session xhs-browse --persistent --headed --json open "https://www.xiaohongshu.com/"`
-   - 告知用户「**小红书** 浏览器已打开，请在窗口里手动扫码登录，完成后告诉我」
-   - 登录就位后**同时导出 cookie + UA**：
-     - `camoufox-cli --session xhs-browse --persistent --json cookies export ~/.openclaw/logins/xhs-browse.json`
-     - `camoufox-cli --session xhs-browse --persistent --json identity export ~/.openclaw/logins/xhs-browse.ua.json`
-   - 登录后**close session**——登录态已落磁盘 profile + 中央 cookie/UA 文件，不留进程占内存。本 skill 及复用同 session 名的其他技能（xhs-interact / viral-chaser / published-track）下次 `--session xhs-browse --persistent` 重起无头即从 profile 恢复登录态，用完再 close。
-
-> **同时导入 cookie 和 UA**：xhs 的 `a1`/`websectiga` 等设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。本 skill 的 `fetch_note_content.ts` 已同时读 `xhs-browse.json` + `xhs-browse.ua.json`。
-
 ### 运行
 
 通过 PATH 调用 wrapper：`xhs-content-ops <cmd>`，无需手动拼接 node 命令或脚本路径。
+
+> 脚本已内置cookie探活与加载，如果cookie失效，则重走login-manager技能的登录流程。
 
 ```bash
 # 推荐：直接传 URL（支持 xhslink.com 短链和完整 explore 链接，脚本自动解析 note_id + xsec_token）
@@ -144,6 +141,8 @@ xhs-content-ops \
 ```
 
 > **⚠️ `--output-dir` 必须用工作区相对路径**（如 `campaign_assets/<slug>/`），**不要用 `/tmp`**。后续要用 image 工具读取下载的图片做视觉分析，而 image 工具只能读允许目录（工作区）下的文件，`/tmp` 下的图片会被拒绝（`Local media path is not under an allowed directory`），导致整轮分析白跑、还要重跑一次。
+
+> 若脚本 `exit 1`（`SIGN_UNAVAILABLE`）：relay 签名缺 OFB_KEY，重登无益，问用户OFB_KEY后交 IT engineer 配凭证后重跑。
 
 **参数：**
 
@@ -171,11 +170,6 @@ xhs-content-ops \
   "tags": ["话题1", "话题2"]
 }
 ```
-
-**Exit codes：**
-- `0` — 成功
-- `1` — 一般错误
-- `2` — Cookie 无效 → 触发 login-manager 重新登录
 
 ### ⚠️ 视频笔记处理
 

@@ -6,12 +6,16 @@
  *
  * Cookie source: xhs-browse (consumer domain www.xiaohongshu.com)
  *
+ * 内置探活（仿 viral-chaser）：抓取前调 _shared/check-session.ts 的 checkSession，
+ * Tier1 cookie 字段门 + Tier2 user/me pong，pong 带 TTL 缓存（600s），
+ * 批量抓多条时 N 次 pong 压成 1 次，避免批量签名触风控。
+ *
  * Usage:
  *   node fetch_note_content.ts --note-id <id> --output-dir <dir>
  *
  * Exit codes:
  *   0  Success
- *   1  General error
+ *   1  General error / SIGN_UNAVAILABLE（relay 签名缺 OFB_KEY，重登无益）
  *   2  Cookie expired → trigger login-manager
  */
 
@@ -85,62 +89,25 @@ if (!noteId || !outputDir) {
   process.exit(1)
 }
 
-// ── Session ─────────────────────────────────────────────────────────────────
+// ── Session（内置探活，仿 viral-chaser）──────────────────────────────────────
+//
+// 抓取前探活合并进脚本：checkSession 做 Tier1 cookie 字段门 + Tier2 user/me pong，
+// pong 带 TTL 缓存（600s），批量抓多条时 N 次 pong 压成 1 次，避免批量签名触风控。
+// 不再让 Agent 单独跑 check-login.ts 探活。
 //
 // 中央存储格式（forked camoufox-cli 原生输出，= Playwright add_cookies 期望格式）：
 //   ~/.openclaw/logins/xhs-browse.json     → { platform, cookies: [{name, value, domain, ...}], updated_at }
 //   ~/.openclaw/logins/xhs-browse.ua.json  → { userAgent, platform, language, ... }
 // 本脚本同时导入 cookie + UA——同一指纹下的 cookie 才不会被风控错配。
 
-const SESSIONS_DIR = join(homedir(), ".openclaw", "logins")
-const sessionPath = join(SESSIONS_DIR, "xhs-browse.json")
-const uaPath = join(SESSIONS_DIR, "xhs-browse.ua.json")
-
-interface CookieRecord { name: string; value: string; domain?: string }
-interface SessionFile { platform?: string; cookies?: CookieRecord[]; updated_at?: string }
-interface UAFile { userAgent?: string; platform?: string }
-
-let sessionFile: SessionFile
-try {
-  sessionFile = JSON.parse(readFileSync(sessionPath, "utf-8")) as SessionFile
-} catch {
-  process.stderr.write(JSON.stringify({ ok: false, error: "SESSION_EXPIRED", platform: "xhs-browse" }) + "\n")
-  process.exit(2)
-}
-
-const rawCookies = sessionFile.cookies
-if (!Array.isArray(rawCookies) || rawCookies.length === 0) {
-  process.stderr.write(JSON.stringify({ ok: false, error: "SESSION_EXPIRED", platform: "xhs-browse" }) + "\n")
-  process.exit(2)
-}
-
-let userAgent = ""
-try {
-  const uaFile = JSON.parse(readFileSync(uaPath, "utf-8")) as UAFile
-  userAgent = uaFile.userAgent || ""
-} catch {
-  // UA 文件缺失不阻断——回退到硬编码 UA，仅 cookie 走
-  userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-}
-
-function dictFromCookies(records: CookieRecord[]): Record<string, string> {
-  const dict: Record<string, string> = {}
-  for (const c of records) {
-    if (c.name && typeof c.value === "string") dict[c.name] = c.value
-  }
-  return dict
-}
-
-const cookieDict = dictFromCookies(rawCookies)
-if (!cookieDict.a1 || !cookieDict.web_session) {
-  process.stderr.write("[fetch_note_content] xhs-browse cookie 缺少 a1 或 web_session\n")
-  process.exit(2)
-}
-
-// ── Feed API：relay 只签名，client 自行 fetch xhs.com ────────────────────
-// xhsFetch = relay xhsHeaders 拿签名头 + 本机 fetch feed，本文件做 parse。
-
+import { checkSession, loadCookies, loadUa } from "../../_shared/check-session.ts"
 import { xhsFetch, LoginWallError } from "../../_shared/relay-sign.ts"
+
+// 探活 + cookie/UA 加载在 main() 里做（async）。这里只声明，main 里赋值。
+let cookieDict: Record<string, string> = {}
+let userAgent = ""
+
+const XHS_BROWSE_PLATFORM = "xhs-browse"
 
 const XHS_BROWSE_BASE = "https://www.xiaohongshu.com"
 
@@ -278,8 +245,29 @@ async function downloadImage(url: string, filePath: string): Promise<boolean> {
 async function main(): Promise<void> {
   mkdirSync(outputDir, { recursive: true })
 
-  // 抓取前探活（pong）不在此自动跑——批量抓多条笔记时 Agent 先跑一次 check-login 探活即可，
-  // 不必每条机械探活（见 SKILL.md「抓取前探活」）。此处只做 cheap 字段门（a1/web_session，已在上方）。
+  // 抓取前探活（仿 viral-chaser）：checkSession 做 Tier1 字段门 + Tier2 user/me pong，
+  // pong 带 TTL 缓存（600s），批量抓多条时 N 次 pong 压成 1 次，避免批量签名触风控。
+  // 探活失败按 exit code 约定：SESSION_EXPIRED → exit 2（交 login-manager 重登）；
+  // SIGN_UNAVAILABLE → exit 1（relay 签名缺 OFB_KEY，重登无益，交 IT engineer 配凭证）。
+  const probe = await checkSession(XHS_BROWSE_PLATFORM)
+  if (!probe.ok) {
+    const err = probe.error === "SIGN_UNAVAILABLE" ? "SIGN_UNAVAILABLE" : "SESSION_EXPIRED"
+    process.stderr.write(`[xhs-content-ops] 🔒 探活失败: ${err}${probe.reason ? ` (${probe.reason})` : ""}\n`)
+    process.stdout.write(JSON.stringify({ ok: false, error: err, platform: XHS_BROWSE_PLATFORM, reason: probe.reason }) + "\n")
+    process.exit(err === "SESSION_EXPIRED" ? 2 : 1)
+  }
+  process.stderr.write(`[xhs-content-ops] 探活通过 (detail=${probe.detail ?? "n/a"}, ping=${probe.ping ?? "n/a"})\n`)
+
+  // 探活通过后加载 cookie + UA 供 fetch / 下载用
+  const loaded = loadCookies(XHS_BROWSE_PLATFORM)
+  if (!loaded) {
+    process.stderr.write(JSON.stringify({ ok: false, error: "SESSION_EXPIRED", platform: XHS_BROWSE_PLATFORM }) + "\n")
+    process.exit(2)
+  }
+  for (const [k, c] of Object.entries(loaded.map)) {
+    if (c?.value) cookieDict[k] = c.value
+  }
+  userAgent = loadUa(XHS_BROWSE_PLATFORM)
 
   process.stderr.write(`[xhs-content-ops] 获取笔记详情 (noteId=${noteId})...\n`)
 
