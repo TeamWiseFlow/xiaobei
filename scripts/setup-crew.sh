@@ -641,6 +641,52 @@ if [ -f "$CONFIG_PATH" ]; then
     [ "$chmod_count" -gt 0 ] && echo "    ✅ $a_id: chmod +x on $chmod_count scripts"
   done < <(list_agent_workspaces)
   echo "  ✅ Skill scripts ensured executable"
+
+  # ─── 4g. 确保 ~/.openclaw/bin 在 gateway env 的 PATH 里 ──────────
+  # systemd user service 不 source shell rc，PATH 只能经 EnvironmentFile 注入
+  # （Linux: daemon.env / Darwin: service-env/ai.openclaw.gateway.env）。
+  # EnvironmentFile 覆盖 unit 的 Environment=（实测 systemd 255），故在此文件把
+  # $OPENCLAW_HOME/bin 前置到 PATH，gateway 重启后 agent exec 才能解析 skill wrapper。
+  # 幂等：PATH 已含 bin 则跳过。仅改 PATH 行，其余行不动。
+  if [ "$(uname -s)" = "Darwin" ]; then
+    _GW_ENV="$OPENCLAW_HOME/service-env/ai.openclaw.gateway.env"
+  else
+    _GW_ENV="$OPENCLAW_HOME/daemon.env"
+  fi
+  if [ -f "$_GW_ENV" ]; then
+    python3 - "$_GW_ENV" "$OPENCLAW_HOME/bin" <<'PY'
+import re, sys
+path, bin = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    lines = f.readlines()
+out = []
+touched = False
+seen = False
+for ln in lines:
+    m = re.match(r'^export PATH=(["\'])(.*)\1\s*$', ln) or re.match(r'^PATH=(\S*)\s*$', ln)
+    if m and (ln.startswith('export PATH=') or ln.startswith('PATH=')):
+        val = m.group(2) if ln.startswith('export PATH=') else m.group(1)
+        seen = True
+        if bin not in val.split(':'):
+            if ln.startswith('export PATH='):
+                ln = f"export PATH={m.group(1)}{bin}:{val}{m.group(1)}\n"
+            else:
+                ln = f"PATH={bin}:{val}\n"
+            touched = True
+    out.append(ln)
+if not seen:
+    print(f"    ⚠️  no PATH line in {path}; skip")
+elif touched:
+    with open(path, 'w') as f:
+        f.writelines(out)
+    print(f"    ✅ prepended {bin} to PATH in {path}")
+else:
+    print(f"    ✅ {bin} already on PATH in {path}")
+PY
+  else
+    echo "    ⚠️  $_GW_ENV not found; skip (created on first gateway start)"
+  fi
+  unset _GW_ENV
 else
   echo "  ⚠️  openclaw.json not found at $CONFIG_PATH"
   echo "     Will be created on first start (dev.sh / reinstall-daemon.sh)"
