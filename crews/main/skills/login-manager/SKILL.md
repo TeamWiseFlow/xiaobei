@@ -51,28 +51,22 @@ login-manager --platform <platform>
 | Exit | 含义 | Agent 动作 |
 |------|------|-----------|
 | `0` | 成功，cookie+UA 已落中央存储 | 继续下游任务 |
-| `1` | 参数错 / crash / `SIGN_UNAVAILABLE`（签名缺 OFB_KEY） | 交 IT engineer 配凭证 |
-| `2` | `SESSION_EXPIRED`（探活不过，未 commit） | 人工排查账号状态，不重试 |
+| `1` | 参数错 / crash / `SIGN_UNAVAILABLE`（签名缺 OFB_KEY） | 请用户提供 OFB_KEY 后，交 IT engineer 配凭证 |
+| `2` | `SESSION_EXPIRED`（探活不过，未 commit） | 提醒人工排查账号状态，不重试 |
 
 ---
 
-## 抓取前探活（下游脚本用，不重登）
+## 注意事项
 
-下游批量抓取前探活一次，不必每条机械探活：
+**并发约束**：每平台一个持久化 session，session 名 = 平台 key。同一 platform session 上走 fail-first 队列（同 session 已有命令在跑时新命令直接 fail），不要并发开多个登录流。浏览器类下游 skill（如 `xhs-interact`）用 `--session <平台 key> --persistent` 重起无头 session 复用本 skill 落盘的登录态，用完即 close。
 
-```bash
-node <workspace>/crews/main/skills/published-track/scripts/check-login.ts --platform <platform>
-```
+**重登纪律**：不自动重试超过一次——频繁重试有封号风险。cookie 只存 `~/.openclaw/logins/`，不进代码 / 日志。profile 丢失 / 指纹错配 → 重建 + 重登录，绝对不允许导入 cookie 造会话。
 
-- exit 0 = 有效 → 继续抓取
-- exit 2 = `SESSION_EXPIRED` → 走上面 Step 1–3 重登，再探活一次
-- exit 1 = `SIGN_UNAVAILABLE` → 交 IT engineer 配凭证（重登救不了）
-
-探活逻辑见下方「背后的原理」。`viral-chaser` 已把探活合并进下载脚本，无需单独跑这一步。
+本技能只负责登录、导出，导出后的Cookie和UA消费按下游技能约定。
 
 ---
 
-## 背后的原理（供 `target=host` / `target=node` 参考）
+## 背后的原理（供 `target=host` / `target=node` 时参考）
 
 > 主力后端 = `target=camoufox`，上面命令针对 camoufox。`target=host` / `target=node` 只按本 skill 的**流程 + 约定**走——何时有头 / 探活节奏 / 中央存储路径是**后端无关**的，照本 skill 执行；不要照搬 `camoufox-cli ...` 命令，用你当前后端自带的浏览器工具语义登录 + 导出 cookie/UA 即可。
 
@@ -95,7 +89,3 @@ cookie 和 UA **必须同时导出**——同一指纹下的 cookie 才不会被
 **严禁 cookie import 造会话**：浏览器操作一律走真实登录后的**持久化 session**（登录态 + 指纹冻结在 session profile 里），不开临时 session 再 `cookies import`。xhs `a1`/`websectiga` 等设备指纹 cookie 导入到不同指纹的浏览器会话会错配 → 被风控检测。中央存储的 cookie+UA 只给下游**脚本**做 raw HTTP 抓取用（拼进 header 直接发请求，不经浏览器）。
 
 **HTML 登录墙检测**（脚本 / 纯 HTTP 用）：下游 raw HTTP fetch 期望 JSON 时，session 失效平台可能返回 HTML 登录页（200 `text/html` 或 302→login）而非 JSON error，`resp.json()` 抛乱码错。`_shared/relay-sign.ts` 的 `xhsFetch` 已内置登录墙检测（content-type 含 `text/html` 或 body 以 HTML 标签开头 → 抛 `LoginWallError`，消息以 `SESSION_EXPIRED:` 起头），下游捕获后 emit `SESSION_EXPIRED` + exit 2。新增 raw-HTTP 脚本若不走 `xhsFetch` 应复用同款检测（正则大小写不敏感）。
-
-**并发约束**：每平台一个持久化 session，session 名 = 平台 key。同一 platform session 上走 fail-first 队列（同 session 已有命令在跑时新命令直接 fail），不要并发开多个登录流。浏览器类下游 skill（如 `xhs-interact`）用 `--session <平台 key> --persistent` 重起无头 session 复用本 skill 落盘的登录态，用完即 close。
-
-**重登纪律**：不自动重试超过一次——频繁重试有封号风险。cookie 只存 `~/.openclaw/logins/`，不进代码 / 日志。profile 丢失 / 指纹错配 → 重建 + 重登录，绝对不允许导入 cookie 造会话。

@@ -5,11 +5,10 @@
  * 实现「导入 cookie 后验有效性，失效则交 Agent 重登」（见 login-manager SKILL.md）。
  *
  * Tier 1  cookie 关键字段存在性（cheap，无网络）
- *   借鉴 docs/nodriver_helper_reference.py _check_login_status：按平台查关键 cookie。
+ *   _check_login_status：按平台查关键 cookie。
  *   缺失必失效 → 直接判 expired，不必 pong。
  *
  * Tier 2  pong：轻量 authenticated 请求验证 session 服务端是否真有效
- *   借鉴 ~/wiseflow-pro/MediaCrawlerPro-Python media_platform/<p>/client.py pong：
  *     bilibili GET /x/web-interface/nav → code==0 && data.isLogin
  *     kuaishou POST graphql visionProfileUserList → data.visionProfileUserList.result==1
  *     xhs      GET /api/sns/web/v2/user/me（xhsFetch 签名）→ success

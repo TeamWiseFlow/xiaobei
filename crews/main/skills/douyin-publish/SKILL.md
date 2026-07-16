@@ -26,7 +26,7 @@ metadata:
    # 告知用户在窗口里手动完成创作者中心登录，确认后：
    login-manager --platform douyin
    ```
-   login-manager 一条命令闭环导出+验证+落中央存储（供 viral-chaser / published-track 消费）+ close session。本 skill 发布时 `--session douyin --persistent` 重起无头即恢复，用完再 close。
+   login-manager 一条命令闭环导出+验证+落中央存储（供 viral-chaser / published-track 消费）+ close session。本 skill 发布时 douyin-publish run 会使用 `--session douyin --persistent` 重起无头 session。
 2. 视频文件准备好（mp4 / mov）
 3. 抖音创作者中心已实名认证（必须，本人手机号 + 身份证）
 
@@ -43,7 +43,8 @@ douyin-publish run \
   --caption "视频描述 #话题1 #话题2"
 ```
 
-`run` 内部串：upload → fill → publish → get-link。**不**自管 login 探活——探活交 login-manager，由调用方在调 `run` 之前确认 session 已登录。
+`run` 内部串：upload → fill → publish → get-link。
+`run` 之前确认 session 已登录。
 
 ### 分步调用（agent 按需）
 
@@ -122,4 +123,3 @@ douyin-publish get-link --session <s>
 - 限频建议：单抖音号每 24h ≤ 5 条发布；触发风控立即降级
 - 失败回退：浏览器模拟失败 → 维持现状（让用户自己手动发）
 - 抖音创作者中心 DOM 改版频繁：selector 需部署后真机验证（见 `docs/post-deploy-verification.md`）
-- **形态仿 wechat-channels-publish**：5 个子命令（upload / fill / publish / get-link / run），无 login 子命令、无 cleanup 子命令。run 命令一键跑全流程。走持久化 session `douyin`（登录态 + 指纹冻结在磁盘 profile 里），跑完即 close（不留进程占内存，下次重起无头即恢复）。上传走 `camoufox-cli upload` 命令（底层 Playwright `setInputFiles`）。等待页面状态变化（轮询 `body.innerText`）。失败模式：DOM 改版 / 按钮找不到 / 转码超时。

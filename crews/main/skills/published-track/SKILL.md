@@ -116,7 +116,7 @@ metadata:
 
 ### 流程 2A·自动更新（定时任务用）
 
-`fetch-and-update-metrics.sh` 封装 login-manager 探活 → API 抓取 → DB 写入，凌晨复盘心跳调用：
+`fetch-and-update-metrics.sh` 封装探活 → API 抓取 → DB 写入，凌晨复盘心跳调用：
 
 ```bash
 # 通过 source-folder 从 DB 查 publish_url → 抓取 → 写入
@@ -139,7 +139,7 @@ metadata:
 
 Exit codes：0=成功/浏览器/手动（非错误），1=一般错误，2=SESSION_EXPIRED。
 
-- **脚本支持**：xhs、bilibili、douyin、kuaishou（走 `fetch-retro-data.ts` 纯 HTTP + cookie + UA）；wx_mp（走同目录下的 `wx-mp-engagement` skill——已实际验证可直接用，不再作为单独技能，由 `fetch-and-update-metrics.sh` 内部 exec）
+- **脚本支持**：xhs、bilibili、douyin、kuaishou（走 `fetch-retro-data.ts` 纯 HTTP + cookie + UA）；wx_mp（走同目录下的 `wx-mp-engagement` skill
 - **xhs 取数路线**：走 `get_note_by_id_from_html`——GET 笔记详情页 HTML 解析 `window.__INITIAL_STATE__` 拿互动计数，**不走** `/api/sns/web/v1/feed`（feed 需 xsec_token 且极易触发滑块/500）。仅需 cookie + 浏览器头，无需 relay 签名、无需 camoufox。
 - **xsec_token 获取**：feed/HTML 路线均强制要 xsec_token，而 `publish_url` 不带、发布响应也不返，唯一来源是 profile 页 note 列表。`fetch-retro-data.ts` 在未传 `--xsec-token` 时，**纯 HTTP** GET 自己 profile 页（`/user/profile/{user_id}`，user_id 取 `xhs-user-id.cache`）解析 `user.notes` 建 note_id→xsec_token 映射（仅近期 ~20 条可见），查到目标 note 的 token 后再 GET 笔记详情页。`fetch-and-update-metrics.sh` 也会从 `publish_url` query 抽 xsec_token 透传（未来发布侧落 token 时直接生效）。笔记不在 profile 首页范围 → `NOTE_NOT_IN_PROFILE`。
 - **xhs headers**：按 UA 家族区分 sec-ch-ua（camoufox=Firefox 不发 brand 列表，Chrome 发完整 sec-ch-ua），避免指纹破绽；sec-fetch 用 document/navigate（真实页面导航）。评论内容（`top_comment`）暂不抓（comment API 同样依赖 xsec_token，待发布侧落 token 后再补）。

@@ -8,8 +8,6 @@
  * + identity export → close session。验证不过直接报错（不重试，避免风控）。
  *
  * 验证在 commit 前：导出到临时文件验过才落中央存储，避免把失效/不完整 cookie 写给下游。
- * 借鉴 ~/wiseflow-pro/wiseflow/nodriver_helper_reference.py _check_login_status（字段）
- * + MediaCrawlerPro 各平台 client.py pong + Ai2Earn xhs getUserInfo（user/me）。
  *
  * Usage:
  *   node --experimental-strip-types export-and-verify.ts --platform <p>
