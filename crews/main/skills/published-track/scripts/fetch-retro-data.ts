@@ -26,14 +26,18 @@
  *   2  Cookie 无效/未登录 → 调用方应触发 login-manager
  */
 
-const XHS_BROWSE_BASE = "https://www.xiaohongshu.com"
-
 import { readFileSync, existsSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
 import { execFile, execFileSync } from "child_process"
 import { promisify } from "util"
-import vm from "node:vm"
+import {
+  xhsBrowserHeaders,
+  extractInitialState,
+  fetchXhsNoteFromHtml,
+  XhsCaptchaError,
+  XhsNoteInaccessibleError,
+} from "../../_shared/xhs-html-note.ts"
 
 const execFileAsync = promisify(execFile)
 
@@ -295,93 +299,9 @@ async function fetchKuaishou(photoId: string): Promise<RetroResult> {
 // 因是真实页面导航（非 XHR），sec-fetch 用 document/navigate 而非 cors/empty，
 // accept 用 text/html —— 比 MediaCrawlerPro 复用 API 头更贴合真实浏览器，camoufox 造的
 // cookie 本就来自页面导航，保持一致降低风控。
-
-const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms))
-
-/** 构造 xhs 笔记详情页导航请求头（参考 MediaCrawlerPro-Python xhs/client.py headers 属性）。
- * camoufox 造的 cookie 来自 Firefox，故按 UA 家族区分 sec-ch-ua：Firefox 不发 brand 列表，
- * 仅发 platform/mobile；Chrome 发完整 sec-ch-ua。避免 UA 与 sec-ch-ua 不一致的指纹破绽。 */
-function xhsBrowserHeaders(ua: string, cookieStr: string): Record<string, string> {
-  const isFirefox = /Firefox\//.test(ua)
-  const chromeVer = (/Chrome\/(\d+)/.exec(ua)?.[1]) ?? "146"
-  let platform = '"macOS"'
-  if (/Windows/.test(ua)) platform = '"Windows"'
-  else if (/Linux/.test(ua)) platform = '"Linux"'
-  const h: Record<string, string> = {
-    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "accept-language": "zh-CN,zh;q=0.9",
-    "cache-control": "no-cache",
-    "pragma": "no-cache",
-    "priority": "u=1, i",
-    "referer": "https://www.xiaohongshu.com/",
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": platform,
-    "sec-fetch-dest": "document",
-    "sec-fetch-mode": "navigate",
-    "sec-fetch-site": "same-origin",
-    "sec-fetch-user": "?1",
-    "upgrade-insecure-requests": "1",
-    "user-agent": ua,
-    "cookie": cookieStr,
-  }
-  if (!isFirefox) {
-    h["sec-ch-ua"] = `"Chromium";v="${chromeVer}", "Not-A.Brand";v="24", "Google Chrome";v="${chromeVer}"`
-  }
-  return h
-}
-
-/** 解析 xhs 计数串：支持 "12345" / "1.2万" / "3.5亿" / 12345（Number）。 */
-function parseXhsCount(v: unknown): number {
-  if (v == null || v === "") return 0
-  const s = String(v).trim()
-  const m = /^(-?[\d.]+)\s*(万|亿)?$/.exec(s)
-  if (!m) return Number(s) || 0
-  let n = parseFloat(m[1])
-  if (m[2] === "万") n *= 1e4
-  else if (m[2] === "亿") n *= 1e8
-  return Math.round(n)
-}
-
-/**
- * 从笔记详情页 HTML 解析 window.__INITIAL_STATE__ 拿互动计数。
- * MediaCrawlerPro 先 humps.decamelize 再读 snake_case；这里直接读 camelCase（HTML state 原生），
- * 并对 snake_case 做兜底以防格式差异。返回 null 表示未解析到（验证码/笔记不存在/页面未就绪）。
- *
- * state 字面量通常为合法 JSON（MediaCrawlerPro 即 json.loads）；但为兜底 NaN/单引号/未引号键
- * 等非 JSON 构造，JSON.parse 失败时退回 vm 求值（JS 对象字面量）。
- */
-function parseXhsNoteStatsFromHtml(html: string, noteId: string): Record<string, number> | null {
-  if (!html.includes("noteDetailMap") && !html.includes("note_detail_map")) return null
-  const m = html.match(/window\.__INITIAL_STATE__\s*=\s*([\s\S]*?)<\/script>/)
-  if (!m) return null
-  const literal = m[1].trim().replace(/;$/, "")
-  let state: any
-  try {
-    // 快路径：undefined → null 后 JSON.parse
-    state = JSON.parse(literal.replace(/\bundefined\b/g, "null"))
-  } catch {
-    // 慢路径：含非 JSON 构造，用 JS 求值（undefined 在 JS 合法，无需替换）
-    try {
-      state = vm.runInNewContext("(" + literal + ")", {})
-    } catch {
-      return null
-    }
-  }
-  const noteMap = state?.note?.noteDetailMap ?? state?.note?.note_detail_map
-  const note = noteMap?.[noteId]?.note
-  if (!note) return null
-  const ii = note.interactInfo ?? note.interact_info ?? {}
-  const pick = (o: any, ...keys: string[]): number => {
-    for (const k of keys) if (o?.[k] != null && o?.[k] !== "") return parseXhsCount(o[k])
-    return 0
-  }
-  return {
-    likeCount: pick(ii, "likedCount", "liked_count"),
-    collectCount: pick(ii, "collectedCount", "collected_count"),
-    commentCount: pick(ii, "commentCount", "comment_count"),
-    shareCount: pick(ii, "shareCount", "share_count"),
-  }
-}
+//
+// xhsBrowserHeaders / extractInitialState / fetchXhsNoteFromHtml / parseXhsCount 复用
+// _shared/xhs-html-note.ts（与 viral-chaser / xhs-content-ops 同源，避免三处重复解析逻辑）。
 
 /** 解析 profile 页 window.__INITIAL_STATE__.user.notes，解 Vue ref 后建 note_id→xsec_token 映射。
  * 纯 HTTP：GET /user/profile/{user_id}（带 cookie）即可，无需 camoufox。返回 null 表示抓取/解析失败。 */
@@ -399,15 +319,8 @@ async function fetchXhsNoteTokenMapping(
     if (!resp.ok) return null
     const html = await resp.text()
     if (/website-login\/captcha/.test(html)) return null
-    const m = html.match(/window\.__INITIAL_STATE__\s*=\s*([\s\S]*?)<\/script>/)
-    if (!m) return null
-    const literal = m[1].trim().replace(/;$/, "")
-    let state: any
-    try {
-      state = JSON.parse(literal.replace(/\bundefined\b/g, "null"))
-    } catch {
-      try { state = vm.runInNewContext("(" + literal + ")", {}) } catch { return null }
-    }
+    const state = extractInitialState(html)
+    if (!state) return null
     const unref = (v: any): any => (v && v.__v_isRef && v._rawValue !== undefined ? v._rawValue : v)
     const notes = unref(state?.user?.notes)
     const mapping: Record<string, { xsecToken: string; xsecSource: string }> = {}
@@ -491,54 +404,36 @@ async function fetchXhs(noteId: string, xsecToken: string = "", xsecSource: stri
     console.error(`  ✓ 映射命中（共 ${Object.keys(mapping).length} 条），拿到 xsec_token`)
   }
 
-  // 2. GET 笔记详情页 HTML，解析 interactInfo
-  const qs = new URLSearchParams()
-  // token 入参可能已 percent-encoded（从 publish_url 抽出）或 raw（CLI 直传/profile 映射）；
-  // 先 decode 再让 URLSearchParams 编码一次，避免双重编码（%3D → %253D）。
-  let tok = token
-  try { tok = decodeURIComponent(token) } catch { /* 已是 raw 或非法编码，保持原值 */ }
-  qs.set("xsec_token", tok)
-  qs.set("xsec_source", source || "pc_feed")
-  const url = `${XHS_BROWSE_BASE}/explore/${noteId}?${qs.toString()}`
-
-  // 滑块验证检测（借鉴 MediaCrawlerPro get_note_by_id_from_html 的 captcha redirect 正则）
-  const CAPTCHA_RE = /www\.xiaohongshu\.com\/website-login\/captcha\?redirectPath=/
-
+  // 2. GET 笔记详情页 HTML，解析 interactInfo（复用 _shared/xhs-html-note.ts）
   console.error(`  → GET 小红书笔记详情页 HTML（get_note_by_id_from_html 路线）...`)
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    try {
-      const resp = await fetch(url, {
-        headers: xhsBrowserHeaders(ua, cookieStr),
-        signal: AbortSignal.timeout(20_000),
-      })
-      if (!resp.ok) {
-        console.error(`  ⚠️ HTML 请求返回 ${resp.status}（第 ${attempt}/5 次）`)
-        await sleep(800 + Math.random() * 1200)
-        continue
-      }
-      const html = await resp.text()
-      if (CAPTCHA_RE.test(html)) {
-        return { ...result, ok: false, error: "NEED_VERIFY", msg: "小红书出现安全验证滑块，请扫码验证后重试" }
-      }
-      const stats = parseXhsNoteStatsFromHtml(html, noteId)
-      if (stats) {
-        // 解析成功即返回——新发笔记可能四项全 0，属正常态，不应误判为不可达而重试。
-        result.stats = stats
-        console.error(`  ✓ 点赞 ${stats.likeCount} / 收藏 ${stats.collectCount} / 评论 ${stats.commentCount} / 分享 ${stats.shareCount}`)
-        return result
-      }
-      console.error(`  ⚠️ 第 ${attempt}/5 次未解析到 interactInfo，重试...`)
-      await sleep(800 + Math.random() * 1200)
-    } catch (e) {
-      console.error(`  ⚠️ HTML 抓取异常（第 ${attempt}/5 次）: ${e}`)
-      await sleep(800 + Math.random() * 1200)
+  try {
+    const note = await fetchXhsNoteFromHtml(noteId, {
+      xsecToken: token,
+      xsecSource: source,
+      cookieStr,
+      ua,
+    })
+    // 解析成功即返回——新发笔记可能四项全 0，属正常态。
+    result.stats = {
+      likeCount: note.stats.likeCount,
+      collectCount: note.stats.collectCount,
+      commentCount: note.stats.commentCount,
+      shareCount: note.stats.shareCount,
     }
+    console.error(`  ✓ 点赞 ${result.stats.likeCount} / 收藏 ${result.stats.collectCount} / 评论 ${result.stats.commentCount} / 分享 ${result.stats.shareCount}`)
+    return result
+  } catch (e) {
+    if (e instanceof XhsCaptchaError) {
+      return { ...result, ok: false, error: "NEED_VERIFY", msg: "小红书出现安全验证滑块，请扫码验证后重试" }
+    }
+    if (e instanceof XhsNoteInaccessibleError) {
+      // 评论内容（top_comment）需 comment/page API，同样依赖 xsec_token 且易触发风控；
+      // 当前 DB 不存 xsec_token，该 API 本就拿不到，故暂不调。互动计数（含 commentCount）
+      // 已从 HTML 拿到，published-track 指标完整。top_comment 待发布侧落 xsec_token 后再补。
+      return { ...result, ok: false, error: "NOTE_INACCESSIBLE", msg: "多次重试仍未拿到笔记 interactInfo（可能笔记已删除/私密或触发风控）" }
+    }
+    return { ...result, ok: false, error: "NOTE_INACCESSIBLE", msg: String(e) }
   }
-
-  // 评论内容（top_comment）需 comment/page API，同样依赖 xsec_token 且易触发风控；
-  // 当前 DB 不存 xsec_token，该 API 本就拿不到，故暂不调。互动计数（含 commentCount）
-  // 已从 HTML 拿到，published-track 指标完整。top_comment 待发布侧落 xsec_token 后再补。
-  return { ...result, ok: false, error: "NOTE_INACCESSIBLE", msg: "5 次重试仍未拿到笔记 interactInfo（可能笔记已删除/私密或触发风控）" }
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────
