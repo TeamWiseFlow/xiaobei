@@ -139,6 +139,82 @@ def camoufox_wait_for_text(session: str, text: str, timeout: int = TRANSCODE_MAX
     return False
 
 
+def camoufox_wait_for_selector(session: str, selector: str, timeout: int = TRANSCODE_MAX_WAIT_S) -> bool:
+    """轮询页面，等待 selector 命中（比文本匹配稳：抖音上传完成后表单 input 渲染出来才是真完成信号）。"""
+    js = f"document.querySelector({json.dumps(selector)}) ? 'true' : 'false'"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        out = camoufox_eval(session, js)
+        if out == "true":
+            return True
+        time.sleep(TRANSCODE_POLL_S)
+    return False
+
+
+def camoufox_wait_for_url_contains(session: str, substr: str, timeout: int = POST_PUBLISH_MAX_WAIT_S) -> bool:
+    """轮询直到当前 URL 含 substr（发布成功后跳转到 /content/manage 是权威成功信号）。"""
+    js = f"window.location.href.indexOf({json.dumps(substr)}) >= 0 ? 'true' : 'false'"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        out = camoufox_eval(session, js)
+        if out == "true":
+            return True
+        time.sleep(POST_PUBLISH_POLL_S)
+    return False
+
+
+def camoufox_type_contenteditable(session: str, selector: str, text: str) -> bool:
+    """往 contenteditable 富文本区填文本（抖音简介是 editor-kit contenteditable div，value setter 无效）。
+    先 focus + execCommand insertText（富文本编辑器标准路径），读回若为空则回退 textContent + input 事件。"""
+    js = f"""
+    (function() {{
+        var el = document.querySelector({json.dumps(selector)});
+        if (!el) return 'no-element';
+        el.focus();
+        try {{
+            var range = document.createRange();
+            range.selectNodeContents(el);
+            range.collapse(false);
+            var sel = window.getSelection();
+            sel.removeAllRanges(); sel.addRange(range);
+            document.execCommand('insertText', false, {json.dumps(text)});
+        }} catch (e) {{}}
+        if (!el.innerText || el.innerText.trim().length < 2) {{
+            el.innerText = {json.dumps(text)};
+            el.dispatchEvent(new InputEvent('input', {{bubbles: true, inputType: 'insertText', data: {json.dumps(text)}}}));
+        }}
+        return el.innerText.length > 0 ? 'true' : 'empty';
+    }})()
+    """
+    return camoufox_eval(session, js) == "true"
+
+
+def camoufox_click_button_by_text(session: str, text: str) -> bool:
+    """按 innerText 精确匹配点 button/[role=button]（:has-text 不是 CSS，querySelector 用不了）。"""
+    js = f"""
+    (function() {{
+        var btns = Array.from(document.querySelectorAll('button,[role="button"]'));
+        for (var b of btns) {{ if ((b.innerText || '').trim() === {json.dumps(text)}) {{ b.click(); return 'true'; }} }}
+        return 'no-button';
+    }})()
+    """
+    return camoufox_eval(session, js) == "true"
+
+
+def camoufox_click_leaf_by_text(session: str, text: str) -> bool:
+    """按 innerText 精确匹配点叶子节点（下拉选项、自定义 select 项等无语义标签场景）。"""
+    js = f"""
+    (function() {{
+        var nodes = Array.from(document.querySelectorAll('div,span,li,option,a'));
+        for (var n of nodes) {{
+            if (n.children.length === 0 && (n.innerText || '').trim() === {json.dumps(text)}) {{ n.click(); return 'true'; }}
+        }}
+        return 'no-leaf';
+    }})()
+    """
+    return camoufox_eval(session, js) == "true"
+
+
 # ── 子命令实现 ──────────────────────────────────────────────────────────────
 
 
@@ -153,45 +229,71 @@ def cmd_upload(*, video: str, session: Optional[str] = None) -> None:
         sys.exit(1)
 
     camoufox_open(session, UPLOAD_URL)
-    # 抖音创作者中心上传选择器（待真机 spike 验证；以下为公开推测）
-    # 视频文件 input 通常在创作中心上传组件内：
+    # 抖音创作者中心上传 file input（2026-07-17 真机 spike 确认：accept 含 video/*,.mp4 等，唯一一个）
     file_input_selector = 'input[type="file"][accept*="video"]'
     if not camoufox_upload(session, file_input_selector, video_path):
         sys.stderr.write("error: 上传 input 未找到或 upload 注入失败（DOM 改版？）\n")
         sys.exit(1)
 
     sys.stderr.write("[douyin-publish] 视频已注入，等待上传/转码...\n")
-    if not camoufox_wait_for_text(session, "上传成功", TRANSCODE_MAX_WAIT_S):
-        sys.stderr.write("error: 视频上传/转码超时\n")
+    # 上传+转码完成的真实信号是表单渲染出来（标题 input 出现），而非页面文本"上传成功"——
+    # 抖音上传页根本没有"上传成功"这四个字，旧写法必超时。2026-07-17 真机 spike 确认。
+    if not camoufox_wait_for_selector(session, 'input[placeholder*="填写作品标题"]', TRANSCODE_MAX_WAIT_S):
+        sys.stderr.write("error: 视频上传/转码超时（标题表单未出现）\n")
         sys.exit(1)
     sys.stdout.write(json.dumps({"ok": True, "session": session, "video": str(video_path)}, ensure_ascii=False))
     sys.stdout.write("\n")
 
 
 def cmd_fill(*, session: str, title: str = "", caption: str = "") -> None:
-    """填标题 / 描述 / 话题。"""
+    """填标题 / 简介 / 话题 + 自主声明（内容由AI生成）。选择器 2026-07-17 真机 spike 确认。"""
     if title:
-        # 抖音创作者中心标题 input（待 spike 验证）
-        if not camoufox_type(session, 'input[placeholder*="标题"]', title):
+        # 主标题 input（placeholder="填写作品标题，为作品获得更多流量"）。收窄到"填写作品标题"
+        # 避免误中付费场景标题 input（placeholder="请输入付费场景下的视频标题"）。
+        if not camoufox_type(session, 'input[placeholder*="填写作品标题"]', title):
             sys.stderr.write("error: 标题 input 未找到\n")
             sys.exit(1)
     if caption:
-        # 抖音创作者中心描述 contenteditable（待 spike 验证）
-        if not camoufox_type(session, 'div[contenteditable][data-placeholder*="描述"]', caption):
-            sys.stderr.write("error: 描述 input 未找到\n")
+        # 简介是 editor-kit contenteditable div（data-placeholder="添加作品简介"），value setter 无效。
+        if not camoufox_type_contenteditable(session, 'div[contenteditable="true"][data-placeholder*="作品简介"]', caption):
+            sys.stderr.write("error: 简介 contenteditable 未找到或填入失败\n")
             sys.exit(1)
+    # 自主声明：Semi-UI 自定义下拉，默认"请选择自主声明"。点开再选"内容由AI生成"。
+    if not _select_ai_declaration(session):
+        sys.stderr.write("error: 自主声明「内容由AI生成」选择失败\n")
+        sys.exit(1)
     sys.stdout.write(json.dumps({"ok": True, "title": title, "caption": caption}, ensure_ascii=False))
     sys.stdout.write("\n")
 
 
+def _select_ai_declaration(session: str) -> bool:
+    """点开自主声明下拉，选「内容由AI生成」。下拉不存在（页面改版去掉声明区）时返回 True 不当错误。"""
+    js_open = """
+    (function() {
+        var nodes = Array.from(document.querySelectorAll('div,span'));
+        for (var n of nodes) {
+            if ((n.innerText || '').trim() === '请选择自主声明') { n.click(); return 'true'; }
+        }
+        return 'no-select';
+    })()
+    """
+    if camoufox_eval(session, js_open) != "true":
+        # 没有自主声明区——不阻断（部分账号/页面无此选项）
+        return True
+    time.sleep(1)
+    return camoufox_click_leaf_by_text(session, "内容由AI生成")
+
+
 def cmd_publish(*, session: str) -> None:
-    """点"发布"按钮。"""
-    if not camoufox_click(session, 'button:has-text("发布")'):
+    """点"发布"按钮（button[type=submit] 文本"发布"，:has-text 非 CSS，按 innerText 点）。"""
+    if not camoufox_click_button_by_text(session, "发布"):
         sys.stderr.write("error: 发布按钮未找到（DOM 改版？）\n")
         sys.exit(1)
     sys.stderr.write("[douyin-publish] 已点发布，等待跳转...\n")
-    if not camoufox_wait_for_text(session, "发布成功", POST_PUBLISH_MAX_WAIT_S):
-        sys.stderr.write("error: 发布后未检测到成功提示\n")
+    # 发布成功后页面跳转到作品管理页 /content/manage（中间会闪"正在发布"转圈 toast）。
+    # 没有"发布成功"文本，旧 wait_for_text 必超时。2026-07-17 真机 spike 确认。
+    if not camoufox_wait_for_url_contains(session, "/creator-micro/content/manage", POST_PUBLISH_MAX_WAIT_S):
+        sys.stderr.write("error: 发布后未跳转到管理页\n")
         sys.exit(1)
     sys.stdout.write(json.dumps({"ok": True, "session": session}, ensure_ascii=False))
     sys.stdout.write("\n")
@@ -204,26 +306,22 @@ def cmd_get_link(*, session: str) -> None:
     camoufox_open(session, mgmt_url)
     # 等待列表加载
     time.sleep(3)
-    # 从列表第一条拿"分享"按钮复制链接
-    # 抖音视频链接格式: https://www.douyin.com/video/<aweme_id>
+    # 抖音视频链接格式 https://www.douyin.com/video/<aweme_id>。管理页列表第一条即刚发布的。
     js = """
     (function() {
-        // 找第一个视频的链接（从分享按钮或 data-id 提取 aweme_id）
-        var row = document.querySelector('[class*="content-item"]:first-child, .video-item:first-child, tr:first-child');
-        if (!row) return null;
-        // 尝试从 a 标签拿 href
-        var a = row.querySelector('a[href*="/video/"]');
+        var a = document.querySelector('a[href*="/video/"]');
         if (a) return a.href;
-        // 尝试从 data 属性拿 aweme_id
-        var id = row.dataset.awemeId || row.dataset.id;
-        if (id) return 'https://www.douyin.com/video/' + id;
+        var el = document.querySelector('[data-aweme-id],[data-id]');
+        if (el) { var id = el.getAttribute('data-aweme-id') || el.getAttribute('data-id'); if (id) return 'https://www.douyin.com/video/' + id; }
         return null;
     })()
     """
     out = camoufox_eval(session, js)
     if not out or out == "null":
-        sys.stderr.write("error: 视频链接提取失败（DOM 改版？）\n")
-        sys.exit(1)
+        sys.stderr.write("warn: 视频链接提取失败（DOM 改版？），但发布已成功\n")
+        sys.stdout.write(json.dumps({"ok": True, "url": None, "note": "published but link extraction failed"}, ensure_ascii=False))
+        sys.stdout.write("\n")
+        return
     sys.stdout.write(json.dumps({"ok": True, "url": out}, ensure_ascii=False))
     sys.stdout.write("\n")
 
