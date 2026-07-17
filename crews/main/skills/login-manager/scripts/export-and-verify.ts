@@ -41,11 +41,14 @@ function errExit(msg: string, code = 1): never {
   process.exit(code);
 }
 
-/** camoufox-cli 调用封装：复用 Agent 已开的持久化 session（不加 --headed）。 */
+/** camoufox-cli 调用封装：复用 Agent 已开的持久化 session。
+ *  一律带 --headed 与 Agent 的 open 调用对齐（SKILL.md 强制有头登录）——
+ *  flag 不一致会触发 camoufox-cli 重启 daemon 切 headless，杀掉浏览器进程丢登录态
+ *  （见 memory 24-camoufox-cli-daemon-flag-gotcha）。 */
 async function camoufox(platform: string, args: string[]): Promise<unknown> {
   const { stdout } = await execFileAsync(
     CAMOUFOX_CLI,
-    ["--session", platform, "--persistent", "--json", ...args],
+    ["--session", platform, "--persistent", "--headed", "--json", ...args],
     { maxBuffer: 64 * 1024 * 1024 },
   );
   try {
@@ -81,10 +84,10 @@ async function main(): Promise<void> {
   const tmpFile = `/tmp/lm-cookies-${platform}.json`;
 
   // 1. 导出 cookie 到临时文件（不直接落中央存储——先验过再 commit）
+  //    失败不 closeSession——保留 session 让 Agent/用户重试或重登，避免被强制关闭丢登录态。
   try {
     await camoufox(platform, ["cookies", "export", tmpFile]);
   } catch (e) {
-    await closeSession(platform);
     errExit(`导出 cookie 失败（确认 Agent 已 open --headed session 且用户已登录）: ${(e as Error).message}`);
   }
 
@@ -94,12 +97,10 @@ async function main(): Promise<void> {
   try {
     raw = JSON.parse(await import("node:fs").then((fs) => fs.readFileSync(tmpFile, "utf-8")));
   } catch (e) {
-    await closeSession(platform);
     errExit(`读取导出 cookie 失败: ${(e as Error).message}`);
   }
   const map = buildCookieMap(raw);
   if (Object.keys(map).length === 0) {
-    await closeSession(platform);
     errExit("导出的 cookie 为空——session 内未登录，请确认用户已完成登录", 2);
   }
 
@@ -109,8 +110,7 @@ async function main(): Promise<void> {
   if (!r.ok && r.error === "SIGN_UNAVAILABLE") {
     process.stderr.write(`[login-manager] ⚠️ ${r.reason}（cookie 字段已过，跳过 pong 验证，照常导出）\n`);
   } else if (!r.ok) {
-    await closeSession(platform);
-    errExit(`登录后验证失败：${r.reason}（cookie 未落中央存储——不重试，请人工检查账号状态）`, 2);
+    errExit(`登录后验证失败：${r.reason}（cookie 未落中央存储——不重试，请人工检查账号状态；session 已保留）`, 2);
   }
 
   // 3. 验过 → commit 到中央存储 + identity export
@@ -120,7 +120,6 @@ async function main(): Promise<void> {
     writeFileSync(sessionFile, `${JSON.stringify({ platform, cookies: arr, updated_at: timestampLocal() }, null, 2)}\n`, "utf-8");
     await camoufox(platform, ["identity", "export", uaFile]);
   } catch (e) {
-    await closeSession(platform);
     errExit(`commit 中央存储失败: ${(e as Error).message}`);
   }
 

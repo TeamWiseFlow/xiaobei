@@ -46,6 +46,8 @@ login-manager --platform <platform>
 
 脚本一条命令闭环：导出 cookie 到临时 → 两层探活验证（cookie 字段 + 平台 pong）→ 通过才 commit 到中央存储 + 导出 UA → close session。验证不过直接 exit 2，**不重试**（避免风控）。
 
+**失败时保留 session**：任何错误路径（导出/读取/验证/commit 失败）都**不 close session**——浏览器进程留着，Agent/用户可在原窗口重试或重登，避免被强制关闭丢登录态又得重新扫码。只有 exit 0 成功路径才 close。脚本内部 camoufox-cli 调用一律带 `--headed`，与 Step 1 的 open 对齐，避免 daemon 模式冲突重启杀掉 session。
+
 | Exit | 含义 | Agent 动作 |
 |------|------|-----------|
 | `0` | 成功，cookie+UA 已落中央存储 | 继续下游任务 |

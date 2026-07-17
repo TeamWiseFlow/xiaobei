@@ -63,7 +63,7 @@ douyin-publish publish --session <s>
 douyin-publish get-link --session <s>
 ```
 
-> **get-link 取链接策略**(2026-07-17 事故修正):`publish` 阶段从发布 API 响应里抓 `aweme_id` 写进 `localStorage.douyin_last_aweme_id`(同源跨发布→管理导航存活,不像 `window` 变量随跳转销毁)。`get-link` 首选读 localStorage 拼 `https://www.douyin.com/video/<aweme_id>`,读不到才回退管理页 DOM。`run` 全流程在 `close` session 之前就拿到链接,不依赖 close 后重开。
+> **get-link 取链接策略**(2026-07-17 事故修正):发布走 form/导航(非 fetch/XHR),发布页拦截器抓不到 aweme_id。改打作品管理 list API `creator.douyin.com/janus/douyin/creator/pc/work_list` 拿 `aweme_list`,**按 `create_time` 排序取最新**(列表不按时间排,必须自排),拼 `https://www.douyin.com/video/<aweme_id>`。`publish` 记 `publish_start` 时刻,筛 `create_time >= publish_start - 120` 锁定本次作品,落 `localStorage.douyin_last_aweme_id` 供 `get-link` 复用。`get-link` 三级策略:① localStorage ② work_list 取全局最新 ③ 管理页 DOM 兜底。`run` 全流程在 `close` session 之前就拿到链接,不依赖 close 后重开。
 
 > **注意**：本 skill **没有 `login` 子命令、也没有 `cleanup` 子命令**--执行过程中任何时候发现登录态已失效，重走 login-manager 登录流程。
 >
@@ -85,7 +85,26 @@ douyin-publish get-link --session <s>
 - 同 session 已有命令在跑时,新命令 fail-first(返回 `session douyin 正忙,请等待当前操作完成后再试`)--读到这条文本就等当前操作完成再重试,不要盲试。
 - **严禁 `cookies import`**:浏览器操作不开临时 session 再 import cookie 那一套,会触发平台风控。
 - 执行过程中任何时候发现登录态已失效,则走 login-manager 有头重登流。
-- **不导出 cookie / UA**:导出是 login-manager 的事,本 skill 不调用 `cookies export` / `identity export`。
+- **不导出 cookie / UA**:导出是 login-manager 的事,本 skill 不调用 `cookies export` / `identity export`。（`_check_logged_in` 内部为验登录态会 `cookies export` 到 /tmp 临时文件读关键字段,非落中央存储。）
+
+### Exit codes
+
+| code | 含义 | 调用方动作 |
+|------|------|-----------|
+| `0` | 发布成功,aweme_id 已捕获,cookie+UA 在 login-manager 中央存储 | 继续下游 |
+| `1` | 参数错 / crash / DOM 改版（按钮/input 未找到）/ 上传转码超时 | 排查后重试 |
+| `2` | `SESSION_EXPIRED`——未登录或登录态失效（URL 跳登录页 或 cookies 缺 sessionid/sid_tt/uid_tt） | 走 login-manager `--platform douyin` 有头重登后重试 |
+| `3` | 发布流程走完但未捕获到 aweme_id——发布可能未真正成功（发布 API 未命中拦截器或被服务端拒） | **人工到管理页核实是否真有新作品**；把 `/tmp/dy-publish-debug-*.json` 回传给研发定位真实发布 API |
+
+### 发布前清理草稿弹窗
+
+`upload` open 上传页后会检测「你还有上次未发布的视频，是否继续编辑？」草稿恢复框并点「放弃」清掉，给新发布一个干净上传页。旧草稿在场时新视频上传/发布会被带偏（2026-07-17 xiaobei 事故根因之一：页面跳管理页但实际没发出去）。
+
+### aweme_id 捕获 + debug 日志
+
+`publish` 阶段注入 fetch/XHR 拦截器，**全量捕获**发布期间所有请求响应，深度搜索 `aweme_id`/`item_id`/`video_id` 字段，写入 `localStorage.douyin_last_aweme_id`（同源跨发布→管理导航存活）。同时把所有请求的 URL/method/status/响应片段记到 `localStorage.douyin_publish_debug`，发布后落盘 `/tmp/dy-publish-debug-<ts>.json` 供排查。
+
+**拦截器是兜底**——发布实际走 form/导航(非 fetch/XHR),拦截器通常抓不到 aweme_id。主路是发布后直接打作品管理 list API `work_list` 拿 `aweme_list`,按 `create_time` 排序取最新(列表不按时间排),筛 `create_time >= publish_start - 120` 锁定本次作品。**aweme_id 未捕获即 `exit 3`，不再误报发布成功。**
 
 ---
 

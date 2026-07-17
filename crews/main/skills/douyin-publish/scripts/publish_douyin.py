@@ -68,6 +68,81 @@ def camoufox_open(session: str, url: str) -> None:
     subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
 
 
+# 抖音登录态关键 cookie（与 _shared/check-session.ts Tier1 一致：sessionid+sid_tt+uid_tt 必须全在）。
+# httpOnly，document.cookie 读不到，必须走 cookies export。
+DOUYIN_LOGIN_COOKIES = ("sessionid", "sid_tt", "uid_tt")
+
+
+def _check_logged_in(session: str) -> None:
+    """open 完上传页后立即验登录态，未登录直接 exit 2（SESSION_EXPIRED）。
+
+    双重信号，任中即判未登录：
+      1. URL 跳到登录页（含 /login 或 passport，或已不在 creator-micro/content/upload 上）
+      2. cookies 缺 sessionid/sid_tt/uid_tt 任一（兜住「页面渲染但无真 session」的假登录态）
+
+    SKILL.md 约定 exit 2 = session 失效 → 调用方走 login-manager 有头重登。本 skill 不自管重登。
+    之前没这层守卫，未登录也一路点下去误报「发布成功」（2026-07-17 xiaobei 事故）。
+    """
+    # 信号 1：URL 跳登录页
+    cur_url = camoufox_eval(session, "window.location.href") or ""
+    on_login_page = ("/login" in cur_url) or ("passport" in cur_url)
+    left_upload = "/creator-micro/content/upload" not in cur_url
+    # 信号 2：导出 cookies 查关键字段
+    tmp = f"/tmp/dy-logincheck-{session}.json"
+    missing: list[str] = []
+    try:
+        subprocess.run(
+            [CAMOUFOX_BIN, "--session", session, "--persistent", "--json", "cookies", "export", tmp],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        raw = json.loads(Path(tmp).read_text("utf-8"))
+        arr = raw if isinstance(raw, list) else (raw.get("cookies") if isinstance(raw, dict) else [])
+        names = {c.get("name") for c in arr if isinstance(c, dict)}
+        missing = [k for k in DOUYIN_LOGIN_COOKIES if k not in names]
+    except Exception as e:
+        # 导出/解析失败本身是异常，但先不直接 crash——若 URL 已判登录页就够下结论；
+        # 否则把导出失败当未登录处理（宁可误报重登，不可误报成功）。
+        sys.stderr.write(f"[douyin-publish] warn: 登录态 cookie 导出异常: {e}\n")
+        missing = list(DOUYIN_LOGIN_COOKIES)
+
+    if on_login_page or (left_upload and not cur_url.startswith("about:")):
+        sys.stderr.write(
+            f"error: 未登录或登录态已失效（URL={cur_url}，已跳离上传页/到登录页）——"
+            f"请走 login-manager --platform douyin 有头重登后重试\n"
+        )
+        sys.exit(2)
+    if missing:
+        sys.stderr.write(
+            f"error: 未登录或登录态已失效（cookies 缺 {','.join(missing)}）——"
+            f"请走 login-manager --platform douyin 有头重登后重试\n"
+        )
+        sys.exit(2)
+
+
+def _dismiss_draft_dialog(session: str) -> None:
+    """上传页可能弹「你还有上次未发布的视频，是否继续编辑？」草稿恢复框。
+
+    点「放弃」清掉旧草稿，给新发布一个干净的上传页。无弹窗则 no-op。
+    旧草稿在场时新视频上传/发布会被带偏（2026-07-17 xiaobei 事故根因之一：
+    上次失败发布留了草稿，新发布被旧草稿带偏，页面跳管理页但实际没发出去）。
+    """
+    has_dialog = camoufox_eval(
+        session,
+        "(document.body.innerText||'').indexOf('你还有上次未发布的视频')>=0?'yes':'no'",
+    ) == "yes"
+    if not has_dialog:
+        return
+    sys.stderr.write("[douyin-publish] 检测到上次未发布草稿，点「放弃」清掉后重新上传...\n")
+    if not camoufox_click_leaf_by_text(session, "放弃"):
+        sys.stderr.write("warn: 草稿弹窗「放弃」按钮未点到，继续上传（可能受弹窗干扰）\n")
+        return
+    time.sleep(2)  # 等弹窗关闭、上传页重渲染
+    # 放弃后可能弹二次确认（「确定放弃？」），有就点确定
+    if camoufox_eval(session, "(document.body.innerText||'').indexOf('确定放弃')>=0?'yes':'no'") == "yes":
+        camoufox_click_button_by_text(session, "确定")
+        time.sleep(1)
+
+
 def camoufox_eval(session: str, js: str, timeout: int = 30) -> Optional[str]:
     """在 session 内 eval JS,返回 data 字段(None 表示失败)。"""
     cmd = [CAMOUFOX_BIN, "--session", session, "--json", "eval", js]
@@ -232,6 +307,10 @@ def cmd_upload(*, video: str, session: Optional[str] = None) -> None:
         sys.exit(1)
 
     camoufox_open(session, UPLOAD_URL)
+    # 登录态守卫：open 完立即验，未登录 exit 2，不往下走 fill/publish 误报成功。
+    _check_logged_in(session)
+    # 清掉上次失败发布留下的草稿弹窗，给新发布一个干净上传页。
+    _dismiss_draft_dialog(session)
     # 抖音创作者中心上传 file input(2026-07-17 真机 spike 确认:accept 含 video/*,.mp4 等,唯一一个)
     file_input_selector = 'input[type="file"][accept*="video"]'
     if not camoufox_upload(session, file_input_selector, video_path):
@@ -294,49 +373,82 @@ def _select_ai_declaration(session: str) -> bool:
 
 def cmd_publish(*, session: str) -> None:
     """点"发布"按钮(button[type=submit] 文本"发布",:has-text 非 CSS,按 innerText 点)。
-    发布前注入 fetch 拦截器捕获发布 API 响应中的 aweme_id,写入 localStorage(跨同源导航存活)。"""
-    # 注入 fetch/XHR 拦截器，捕获发布 API 响应中的 aweme_id。
-    # 关键:把 id 写进 localStorage 而不是 window 变量——发布成功后页面跳转到管理页,
-    # window.__capturedAwemeId 随旧 document 销毁,get-link 再就读不到。localStorage 在
-    # creator.douyin.com 同源下跨导航存活,管理页能直接读回。(2026-07-17 事故根因)
+    发布前注入 fetch/XHR 拦截器捕获发布 API 响应中的 aweme_id,写入 localStorage(跨同源导航存活)。
+    aweme_id 捕获不到 → exit 3（发布可能未真正成功，不再误报 ok）。"""
+    # 拦截器：捕获所有 fetch/XHR 响应，深度搜索 aweme_id/item_id，全量记 debug 日志。
+    # 旧版只匹配 url 含 'publish' 的请求 + 固定提取路径，对不上抖音真实发布接口，
+    # aweme_id 一直 null（2026-07-17 xiaobei 事故）。现改为全量捕获 + 深度提取 + debug 落盘，
+    # 下次跑能把真实发布 API 的 URL/响应 shape 反馈回来精准收窄。
+    # aweme_id + debug 都写 localStorage：发布后页面跳管理页，window 变量随旧 document 销毁，
+    # localStorage 在 creator.douyin.com 同源下跨导航存活，管理页能读回。
     js_intercept = """
     (function() {
         window.__capturedAwemeId = null;
+        window.__publishDebug = [];
         try { localStorage.removeItem('douyin_last_aweme_id'); } catch(e) {}
+        try { localStorage.removeItem('douyin_publish_debug'); } catch(e) {}
         function stash(id) {
             if (!id) return;
             id = String(id);
+            if (window.__capturedAwemeId) return;
             window.__capturedAwemeId = id;
             try { localStorage.setItem('douyin_last_aweme_id', id); } catch(e) {}
         }
         function extract(data) {
             try {
-                return data.aweme && data.aweme.aweme_id || data.aweme_id || (data.item && data.item.id) || null;
+                var found = null;
+                (function walk(o, depth) {
+                    if (found || depth > 10 || !o || typeof o !== 'object') return;
+                    for (var k in o) {
+                        if (!Object.prototype.hasOwnProperty.call(o, k)) continue;
+                        var v = o[k];
+                        if ((k === 'aweme_id' || k === 'item_id' || k === 'awemeId' || k === 'itemId' || k === 'video_id')
+                            && v != null && v !== '' && typeof v !== 'object') { found = String(v); return; }
+                        if (typeof v === 'object') walk(v, depth + 1);
+                    }
+                })(data, 0);
+                return found;
             } catch(e) { return null; }
+        }
+        function logReq(url, method, status, body) {
+            try {
+                window.__publishDebug.push({
+                    url: String(url).slice(0, 300), method: method || 'GET',
+                    status: status, body: body ? String(body).slice(0, 1000) : null
+                });
+                if (window.__publishDebug.length > 300) window.__publishDebug.shift();
+                try { localStorage.setItem('douyin_publish_debug', JSON.stringify(window.__publishDebug)); } catch(e) {}
+            } catch(e) {}
         }
         var origFetch = window.fetch;
         window.fetch = function() {
             var url = arguments[0];
-            if (typeof url === 'string' && url.indexOf('publish') >= 0) {
-                return origFetch.apply(this, arguments).then(function(resp) {
-                    resp.clone().json().then(function(data) { stash(extract(data)); }).catch(function(){});
-                    return resp;
-                });
-            }
-            return origFetch.apply(this, arguments);
+            var method = (arguments[1] && arguments[1].method) || 'GET';
+            return origFetch.apply(this, arguments).then(function(resp) {
+                try {
+                    resp.clone().text().then(function(txt) {
+                        logReq(url, method, resp.status, txt);
+                        var id = null; try { id = extract(JSON.parse(txt)); } catch(e) {}
+                        if (id) stash(id);
+                    }).catch(function(){});
+                } catch(e) {}
+                return resp;
+            });
         };
         var origOpen = XMLHttpRequest.prototype.open;
         var origSend = XMLHttpRequest.prototype.send;
         XMLHttpRequest.prototype.open = function(method, url) {
-            this.__url = url;
+            this.__url = url; this.__method = method;
             return origOpen.apply(this, arguments);
         };
         XMLHttpRequest.prototype.send = function() {
             var self = this;
             this.addEventListener('load', function() {
-                if (self.__url && self.__url.indexOf('publish') >= 0) {
-                    try { stash(extract(JSON.parse(self.responseText))); } catch(e) {}
-                }
+                try {
+                    logReq(self.__url, self.__method, self.status, self.responseText);
+                    var id = null; try { id = extract(JSON.parse(self.responseText)); } catch(e) {}
+                    if (id) stash(id);
+                } catch(e) {}
             });
             return origSend.apply(this, arguments);
         };
@@ -344,6 +456,9 @@ def cmd_publish(*, session: str) -> None:
     })()
     """
     camoufox_eval(session, js_intercept)
+    # 记发布前时间,用于 work_list 按 create_time 锁定本次作品(发布走 form/导航,
+    # 拦截器抓不到 aweme_id 时回退打 work_list API 取 create_time>=此时刻的最新作品)。
+    publish_start = int(time.time())
     if not camoufox_click_button_by_text(session, "发布"):
         sys.stderr.write("error: 发布按钮未找到(DOM 改版?)\n")
         sys.exit(1)
@@ -355,8 +470,92 @@ def cmd_publish(*, session: str) -> None:
         sys.exit(1)
     # 跳到管理页后立刻读 localStorage——趁登录态还在、同源 document 还在,把 id 落到本进程。
     aweme_id = _read_captured_aweme_id(session)
+    # 拦截器 miss(发布走 form/导航非 fetch)→ 直接打 work_list API 拿最新作品。
+    # 列表不按 create_time 排序,按 create_time>=publish_start-120 筛后取最新,锁定本次发布。
+    if not aweme_id:
+        aweme_id, title = _fetch_newest_aweme_id(session, since_ts=publish_start - 120)
+        if aweme_id:
+            sys.stderr.write(
+                f"[douyin-publish] work_list API 取到最新作品 aweme_id={aweme_id} title={title!r}\n"
+            )
+            # 落 localStorage 供 get-link 复用(跨导航存活)
+            camoufox_eval(
+                session,
+                f"try{{localStorage.setItem('douyin_last_aweme_id',{json.dumps(aweme_id)});}}catch(e){{}}",
+            )
+    # debug 日志落盘供排查（aweme_id 命中与否都写，方便 xiaobei 回传真实发布 API shape）
+    debug_path = f"/tmp/dy-publish-debug-{int(time.time())}.json"
+    debug_entries = _read_publish_debug(session)
+    try:
+        Path(debug_path).write_text(json.dumps(debug_entries, ensure_ascii=False, indent=2), "utf-8")
+        sys.stderr.write(f"[douyin-publish] debug 日志已写 {debug_path}（{len(debug_entries)} 条请求，请回传给研发）\n")
+    except Exception as e:
+        sys.stderr.write(f"warn: debug 日志写盘失败: {e}\n")
+    # aweme_id 没捕获到 → 发布可能未真正成功（拦截器没命中真实发布 API，或发布被服务端拒了）。
+    # 不再误报 ok——宁可误判失败让人工核实管理页，不可误报成功。（2026-07-17 xiaobei 事故根因之二）
+    if not aweme_id:
+        sys.stderr.write(
+            "error: 发布流程走完但未捕获到 aweme_id——发布可能未真正成功（发布 API 未命中拦截器或被服务端拒绝）。\n"
+            f"       请人工到管理页核实是否真有新作品；debug 日志在 {debug_path}\n"
+        )
+        sys.exit(3)
     sys.stdout.write(json.dumps({"ok": True, "session": session, "aweme_id": aweme_id}, ensure_ascii=False))
     sys.stdout.write("\n")
+
+
+WORK_LIST_URL = (
+    "https://creator.douyin.com/janus/douyin/creator/pc/work_list"
+    "?status=0&count=20&max_cursor=0&scene=star_atlas&device_platform=android&aid=1128"
+)
+
+
+def _fetch_newest_aweme_id(session: str, since_ts: Optional[int] = None) -> tuple[Optional[str], Optional[str]]:
+    """直接打作品管理 list API 拿最新作品的 aweme_id。
+
+    发布走 form/导航(非 fetch/XHR),发布页拦截器抓不到 aweme_id(2026-07-17 xiaobei 事故)。
+    但发布成功后作品进管理页 list,同源 fetch work_list 带 cookie 即可拿到 aweme_list。
+    列表**不按 create_time 排序**,必须自己排序取最新。
+
+    Args:
+        since_ts: 若给定,只考虑 create_time >= since_ts 的作品(发布前记的时间 - buffer,
+                  用来锁定「本次发布」的作品,避免误中上一次的旧作品)。None 则不筛(取全局最新)。
+
+    Returns:
+        (aweme_id, title) 或 (None, None)。
+    """
+    since = int(since_ts) if since_ts else 0
+    js = f"""
+    (async function() {{
+        try {{
+            var r = await fetch({json.dumps(WORK_LIST_URL)}, {{credentials: 'include'}});
+            var j = await r.json();
+            var list = j.aweme_list || [];
+            var items = list.map(function(it) {{
+                var id = it.aweme_id || it.item_id;
+                var ct = it.create_time || 0;
+                var title = '';
+                try {{ title = (it.aweme_desc && it.aweme_desc.text) || it.desc || it.title || ''; }} catch(e) {{}}
+                return {{id: String(id), ct: Number(ct), title: String(title).slice(0, 60)}};
+            }}).filter(function(x) {{ return x.id && x.id.length > 5; }});
+            if ({since} > 0) items = items.filter(function(x) {{ return x.ct >= {since}; }});
+            items.sort(function(a, b) {{ return b.ct - a.ct; }});
+            var top = items[0];
+            if (!top) return JSON.stringify({{id: null}});
+            return JSON.stringify({{id: top.id, ct: top.ct, title: top.title, count: items.length}});
+        }} catch(e) {{ return JSON.stringify({{id: null, err: String(e)}}); }}
+    }})()
+    """
+    out = camoufox_eval(session, js, timeout=40)
+    if not out or out == "null":
+        return None, None
+    try:
+        data = json.loads(out)
+    except Exception:
+        return None, None
+    aid = data.get("id")
+    if not aid:
+        return None, None
+    return str(aid), data.get("title")
 
 
 def _read_captured_aweme_id(session: str) -> Optional[str]:
@@ -373,6 +572,23 @@ def _read_captured_aweme_id(session: str) -> Optional[str]:
     return None
 
 
+def _read_publish_debug(session: str) -> list:
+    """从 localStorage 读发布期间拦截器记录的所有 fetch/XHR 请求（跨导航存活）。"""
+    js = """
+    (function() {
+        try { var d = localStorage.getItem('douyin_publish_debug'); if (d) return d; } catch(e) {}
+        return JSON.stringify(window.__publishDebug || []);
+    })()
+    """
+    out = camoufox_eval(session, js)
+    if not out or out == "null":
+        return []
+    try:
+        return json.loads(out) if isinstance(json.loads(out), list) else []
+    except Exception:
+        return []
+
+
 def cmd_get_link(*, session: str) -> None:
     """取已发布视频的公开链接。
 
@@ -387,7 +603,17 @@ def cmd_get_link(*, session: str) -> None:
         sys.stdout.write(json.dumps({"ok": True, "url": url, "aweme_id": aweme_id}, ensure_ascii=False))
         sys.stdout.write("\n")
         return
-    # 策略2: 管理页 DOM(旧方案,可能因改版失效)。当前页可能已是 manage,先看 URL 再决定是否 open。
+    # 策略2: 直接打 work_list API 取最新作品(发布走 form/导航,拦截器抓不到 aweme_id 时靠这路)。
+    # 无 since_ts(不知发布时刻),取全局最新——run 流程下 get-link 紧跟 publish,localStorage 通常已命中,
+    # 走到这里说明 localStorage 被清,取最新作品兜底。
+    aweme_id, title = _fetch_newest_aweme_id(session)
+    if aweme_id:
+        url = "https://www.douyin.com/video/" + aweme_id
+        sys.stderr.write(f"[douyin-publish] get-link 走 work_list 兜底:aweme_id={aweme_id} title={title!r}\n")
+        sys.stdout.write(json.dumps({"ok": True, "url": url, "aweme_id": aweme_id}, ensure_ascii=False))
+        sys.stdout.write("\n")
+        return
+    # 策略3: 管理页 DOM(旧方案,可能因改版失效)。当前页可能已是 manage,先看 URL 再决定是否 open。
     cur_url = camoufox_eval(session, "window.location.href")
     if not cur_url or "/creator-micro/content/manage" not in (cur_url or ""):
         camoufox_open(session, "https://creator.douyin.com/creator-micro/content/manage")
@@ -406,7 +632,7 @@ def cmd_get_link(*, session: str) -> None:
         sys.stdout.write(json.dumps({"ok": True, "url": out}, ensure_ascii=False))
         sys.stdout.write("\n")
         return
-    sys.stderr.write("warn: 视频链接提取失败(localStorage 和管理页 DOM 均未命中),但发布已成功\n")
+    sys.stderr.write("warn: 视频链接提取失败(localStorage/work_list/DOM 均未命中),但发布已成功\n")
     sys.stdout.write(json.dumps({"ok": True, "url": None, "note": "published but link extraction failed"}, ensure_ascii=False))
     sys.stdout.write("\n")
 
