@@ -90,7 +90,7 @@ viral-chaser <url> [--no-frames]
 
 > **⚠️ exec allowlist 注意**：`OUTPUT_DIR=... viral-chaser ...` 内联 env 前缀会触发 allowlist miss。通过 exec 工具调用时，把 `OUTPUT_DIR` 放到 exec 的 **`env` 字段**里传，不要写成内联前缀；同理避免 `mkdir ... ; echo` 这类分号复合命令。脚本本身已正确读取 `OUTPUT_DIR` 落盘，问题只在调用规范。
 
-**内置探活**（`_shared/check-session.ts`）：douyin / xhs 抓取前先做两层探活（Tier1 cookie 关键字段 + Tier2 平台 pong，pong 带 TTL 缓存）；bilibili 公开视频免登录，跳过探活。单条下载无法批量，每条自带探活最稳，pong 缓存让重复调用成本很低。
+**内置探活**（`_shared/check-session.ts`）：douyin 抓取前先做两层探活（Tier1 cookie 关键字段 + Tier2 平台 pong，pong 带 TTL 缓存）；bilibili 公开视频免登录，跳过探活。**xhs 走无 cookie HTML 路线（见下），不依赖签名/cookie，跳过探活**——探活 user/me 通过也不代表 feed 签名路径被接受，HTML 路线根本不走签名，无需探活。
 
 The script outputs a **JSON object to stdout**. Read it and proceed with analysis.
 
@@ -205,6 +205,7 @@ One sentence describing the primary audience persona.
 
 - **Workspace files** are stored in `output_videos/<slug>/` — all downloaded assets and analysis reports are kept together. The `references/` subdirectory contains raw assets from the analyzer.
 - **Bilibili DASH format**: if `mediaFormat` is `DASH`, the video and audio streams are separate. The downloaded `video.mp4` contains the video stream only; audio is in `audio.wav` after extraction. This is transparent to the analysis workflow.
-- **XHS video notes only**: 小红书图文笔记（image-only）不含视频，viral-chaser 会报错并提示。只有视频笔记（type=video）才能下载和分析。XHS 使用 `xhs-browse` cookie（消费者端域 www.xiaohongshu.com）。
+- **XHS video notes only**: 小红书图文笔记（image-only）不含视频，viral-chaser 会报错并提示。只有视频笔记（type=video）才能下载和分析。
+- **XHS 取数走 SSR HTML 路线（无 cookie 优先）**：`platforms/xhs.ts` 直接 GET `www.xiaohongshu.com/explore/{note_id}?xsec_token=...` 笔记详情页 HTML，解析 og:meta + `window.__INITIAL_STATE__` 拿标题/封面/视频地址/时长/互动计数（`_shared/xhs-html-note.ts`）。**不走 feed API**（`/api/sns/web/v1/feed` 需 xRap relay 签名，极易 406/500/滑块，且探活 user/me 通过不代表 feed 签名路径被接受，会出现「探活绿、feed 红」假绿）。输入必须是带 `xsec_token` 的分享链接（`xhslink.com/...` 或 `www.xiaohongshu.com/explore/...?xsec_token=...`），脚本从短链展开后的 URL 抽 token。无 cookie 抓不到（滑块/空页）时，若本机有 `xhs-browse` cookie 则用同指纹 UA + cookie 回退重试一次。
 - **ASR segments**: 语音转写使用火山引擎豆包语音·录音文件极速版（`volc.bigasr.auc_turbo`），原生返回 utterance 级真实时间戳（`start_time`/`end_time`，毫秒），脚本转成秒后填入 `transcript.segments`，`estimated=false`。仅在接口异常未返回 utterances 时，才按句切分全文并按字数比例在音频时长上估算分段（`estimated=true`）作为兜底。开通/鉴权见文首「前置：开通火山语音模型」。
 - **Exit code 2 — cookie expired:** Execute the login flow described in the login-manager skill（原则 3：douyin / xhs-browse 有头手动登录；bilibili 有头登录），导出 cookie + UA 后重试一次。Do not retry more than once.

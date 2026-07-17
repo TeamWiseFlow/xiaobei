@@ -1,21 +1,27 @@
 #!/usr/bin/env -S node --experimental-strip-types
 /**
- * xhs.ts — Xiaohongshu (小红书) API client
+ * xhs.ts — Xiaohongshu (小红书) 视频笔记取数
  *
- * 签名走 relay（/api/v1/sign/xhs/headers，xys 格式 + xRap），
- * client 拿签名 headers 后自行 fetch edith.xiaohongshu.com（client 端收尾）。
- * API reference: MediaCrawlerPro-Downloader DownloadServer/pkg/media_platform_api/xhs/
- * Video URL path: note_card.video.media.stream.h264[0].master_url
+ * 走 SSR HTML 路线（get_note_by_id_from_html）：GET 笔记详情页 HTML，
+ * 解析 og:meta + window.__INITIAL_STATE__ 拿 title/cover/videoUrl/duration/互动计数。
+ * 详见 _shared/xhs-html-note.ts。
  *
- * Cookie source: xhs-browse（消费者域 www.xiaohongshu.com）
+ * 为何不走 feed API（/api/sns/web/v1/feed）：feed 需 xRap relay 签名 + 极易 406/500/滑块，
+ * 且探活（user/me）通过不代表 feed 签名路径被接受（不同端点/签名/方法，风控敏感度不同），
+ * 会出现「探活绿、feed 红」假绿。HTML 路线是真实页面导航，风控远低；带 xsec_token 的公开
+ * 视频笔记无 cookie 也能 SSR——viral-chaser 输入是分享链接（自带 xsec_token），故默认无 cookie。
+ *
+ * Cookie：可选回退。无 cookie 抓不到（滑块/空页）时，若调用方提供 xhs-browse session，
+ * 用同指纹 UA + cookie 重试一次。无 xsec_token 直接报错（viral-chaser 只吃分享链接）。
  */
 
 import type { SessionData } from "../session.ts"
-import { cookieDict } from "../session.ts"
-import { xhsFetch } from "../../../_shared/relay-sign.ts"
-
-const EDITH_BASE = "https://edith.xiaohongshu.com"
-const DEFAULT_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+import { cookieDict, readUserAgent } from "../session.ts"
+import {
+  fetchXhsNoteFromHtml,
+  XhsCaptchaError,
+  XhsNoteInaccessibleError,
+} from "../../../_shared/xhs-html-note.ts"
 
 export interface VideoInfo {
   contentId: string
@@ -29,130 +35,91 @@ export interface VideoInfo {
   mediaFormat?: string
 }
 
-// ── Feed API via relay 签名 ──────────────────────────────────────────────────
+const XHS_BROWSE_PLATFORM = "xhs-browse"
 
-interface FeedItem {
-  note_card?: {
-    note_id?: string
-    display_title?: string
-    title?: string
-    desc?: string
-    type?: string  // "normal" = image post, "video" = video post
-    user?: { nickname?: string }
-    cover?: { url_default?: string; url?: string }
-    interact_info?: {
-      liked_count?: number
-      comment_count?: number
-      collected_count?: number
-      share_count?: number
-    }
-    video?: {
-      media?: { stream?: { h264?: Array<{ master_url?: string }> } }
-      consumer?: { origin_video?: string }
-      duration?: number | string
-    }
-  }
-  note?: FeedItem["note_card"]
+function cookieStrFromSession(session: SessionData | null | undefined): string {
+  if (!session) return ""
+  const dict = cookieDict(session)
+  return Object.entries(dict).map(([k, v]) => `${k}=${v}`).join("; ")
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
 export async function getXhsVideo(
   noteId: string,
-  session: SessionData,
-  xsecToken: string = "",
+  xsecToken: string,
   xsecSource: string = "",
+  session?: SessionData | null,
 ): Promise<VideoInfo> {
-  const dict = cookieDict(session)
-
-  if (!dict.a1 || !dict.web_session) {
-    throw new Error("小红书 cookie 缺少 a1 或 web_session，可能需要重新登录")
-  }
-
-  process.stderr.write(`[viral-chaser] XHS: 获取笔记详情 (noteId=${noteId})...\n`)
-
-  const feedPayload: Record<string, unknown> = {
-    source_note_id: noteId,
-    image_formats: ["jpg", "webp", "avif"],
-    extra: { need_body_topic: "1" },
-  }
-  if (xsecToken) {
-    feedPayload.xsec_source = xsecSource || "pc_feed"
-    feedPayload.xsec_token = xsecToken
-  }
-
-  const data = await xhsFetch<{ data?: { items?: FeedItem[] } }>({
-    baseUrl: EDITH_BASE,
-    uri: "/api/sns/web/v1/feed",
-    method: "post",
-    payload: feedPayload,
-    cookies: dict,
-    xsecToken: xsecToken || undefined,
-    xsecSource: xsecSource || undefined,
-    xRap: true,
-  })
-
-  const items = data?.data?.items ?? []
-  let noteCard: FeedItem["note_card"] | undefined
-  for (const it of items) {
-    const nc = it.note_card ?? it.note ?? it
-    if (nc && typeof nc === "object" && nc.note_id) {
-      noteCard = nc
-      break
-    }
-  }
-
-  if (!noteCard) {
-    throw new Error("note_card not found in feed response")
-  }
-
-  const noteType = noteCard.type ?? ""
-  if (noteType !== "video") {
+  if (!xsecToken) {
     throw new Error(
-      `该小红书笔记是图文类型 (type=${noteType || "unknown"})，不含视频。` +
-      `viral-chaser 仅支持视频笔记。`
+      "小红书需要带 xsec_token 的分享链接。viral-chaser 不支持裸 noteId——" +
+        "请把完整分享链接（xhslink.com 或 www.xiaohongshu.com/explore/...?xsec_token=...）整条传入。",
     )
   }
 
-  const ii = noteCard.interact_info ?? {}
-  const videoInfo = noteCard.video ?? {}
-  const media = videoInfo.media ?? {}
-  const h264 = media.stream?.h264 ?? []
+  process.stderr.write(`[viral-chaser] XHS: GET 笔记详情页 HTML (noteId=${noteId})...\n`)
 
-  let videoUrl = h264[0]?.master_url ?? ""
-  if (!videoUrl) {
-    videoUrl = videoInfo.consumer?.origin_video ?? ""
+  // 1. 无 cookie 优先（公开笔记带 xsec_token 即可 SSR，风控最低）
+  let note
+  try {
+    note = await fetchXhsNoteFromHtml(noteId, { xsecToken, xsecSource })
+  } catch (e) {
+    if (e instanceof XhsCaptchaError) {
+      // 滑块：有 cookie 就用同指纹 cookie 重试一次，否则直接抛
+      if (!session) throw e
+      process.stderr.write("[viral-chaser] XHS: 无 cookie 命中滑块，用 xhs-browse cookie 重试...\n")
+      note = await fetchXhsNoteFromHtml(noteId, {
+        xsecToken,
+        xsecSource,
+        cookieStr: cookieStrFromSession(session),
+        ua: readUserAgent(XHS_BROWSE_PLATFORM),
+      })
+    } else if (e instanceof XhsNoteInaccessibleError) {
+      // 无 cookie 抓不到：有 cookie 就回退重试，否则抛
+      if (!session) throw e
+      process.stderr.write("[viral-chaser] XHS: 无 cookie 未取到数据，用 xhs-browse cookie 回退...\n")
+      note = await fetchXhsNoteFromHtml(noteId, {
+        xsecToken,
+        xsecSource,
+        cookieStr: cookieStrFromSession(session),
+        ua: readUserAgent(XHS_BROWSE_PLATFORM),
+      })
+    } else {
+      throw e
+    }
   }
 
-  let durationMs = videoInfo.duration ?? 0
-  if (typeof durationMs === "string") {
-    try { durationMs = parseInt(durationMs, 10) || 0 }
-    catch { durationMs = 0 }
+  if (note.type && note.type !== "video") {
+    throw new Error(
+      `该小红书笔记是图文类型 (type=${note.type})，不含视频。` +
+        "viral-chaser 仅支持视频笔记。",
+    )
   }
 
-  if (!videoUrl) {
-    throw new Error("未能从 feed 响应中提取视频下载地址（可能视频已删除或需要登录）")
+  if (!note.videoUrl) {
+    throw new Error("未能从笔记页提取视频下载地址（可能视频已删除或需要登录）")
   }
 
   process.stderr.write(
-    `  ✓ 标题: ${String(noteCard.display_title || noteCard.title || "").slice(0, 40)}\n` +
-    `  ✓ 视频URL: ${String(videoUrl).slice(0, 80)}...\n`,
+    `  ✓ 标题: ${note.title.slice(0, 40)}\n` +
+      `  ✓ 视频URL: ${note.videoUrl.slice(0, 80)}...\n`,
   )
 
   return {
     contentId: noteId,
-    title: noteCard.display_title || noteCard.title || "",
-    desc: noteCard.desc || "",
-    videoUrl,
-    coverUrl: noteCard.cover?.url_default || noteCard.cover?.url || "",
-    durationMs,
-    author: noteCard.user?.nickname || "",
+    title: note.title,
+    desc: note.desc,
+    videoUrl: note.videoUrl,
+    coverUrl: note.coverUrl,
+    durationMs: note.durationMs,
+    author: note.author,
     stats: {
-      playCount: 0,  // XHS 不返回笔记播放数
-      likeCount: ii.liked_count ?? 0,
-      commentCount: ii.comment_count ?? 0,
-      collectCount: ii.collected_count ?? 0,
-      shareCount: ii.share_count ?? 0,
+      playCount: 0, // XHS 不返回笔记播放数
+      likeCount: note.stats.likeCount,
+      commentCount: note.stats.commentCount,
+      collectCount: note.stats.collectCount,
+      shareCount: note.stats.shareCount,
     },
   }
 }

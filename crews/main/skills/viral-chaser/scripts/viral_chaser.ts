@@ -17,7 +17,8 @@ import { promisify } from "util"
 import { join } from "path"
 
 import { parseLink } from "./link_parser.ts"
-import { requireSession, readUserAgent } from "./session.ts"
+import { requireSession, readSession, readUserAgent } from "./session.ts"
+import type { SessionData } from "./session.ts"
 import { checkSession } from "../../_shared/check-session.ts"
 import { getDouyinVideo } from "./platforms/douyin.ts"
 import { getBilibiliVideo } from "./platforms/bilibili.ts"
@@ -121,8 +122,10 @@ async function main(): Promise<void> {
 
   // 2. 抓取前探活（pong）合并进下载脚本——单条下载无法批量，每条自带探活最稳，
   //    且 pong 带 TTL 缓存，重复调用成本低。bilibili 公开视频免登录，跳过。
-  //    douyin/xhs 走 _shared checkSession（Tier1 字段 + Tier2 平台 pong）。
-  if (platform === "douyin" || platform === "xhs") {
+  //    douyin 走 _shared checkSession（Tier1 字段 + Tier2 平台 pong）。
+  //    xhs 走无 cookie HTML 路线（见 platforms/xhs.ts），不依赖签名/cookie，跳过探活——
+  //    探活 user/me 通过也不代表 feed 签名路径被接受，HTML 路线根本不走签名，无需探活。
+  if (platform === "douyin") {
     const probe = await checkSession(platform)
     if (!probe.ok) {
       const err = probe.error === "SIGN_UNAVAILABLE" ? "SIGN_UNAVAILABLE" : "SESSION_EXPIRED"
@@ -133,10 +136,17 @@ async function main(): Promise<void> {
     }
   }
 
-  // 3. Load session (exit 2 if missing)
-  // XHS uses xhs-browse cookie (consumer domain www.xiaohongshu.com)
+  // 3. Load session
+  // - douyin / bilibili：必需，缺失 exit 2（交 login-manager 重登）
+  // - xhs：可选读。xhs 走无 cookie HTML 路线，session 仅作滑块/空页时的 cookie 回退，
+  //   缺失不致命；有则用同指纹 UA + cookie 重试一次。
   const sessionPlatform = platform === "xhs" ? "xhs-browse" as Platform : platform
-  const session = requireSession(sessionPlatform)
+  let session: SessionData | null
+  if (platform === "xhs") {
+    session = readSession(sessionPlatform)
+  } else {
+    session = requireSession(sessionPlatform)
+  }
 
   // 4. Fetch video metadata from platform API
   let videoInfo: {
@@ -158,7 +168,7 @@ async function main(): Promise<void> {
       const xsecToken = tokenMatch ? decodeURIComponent(tokenMatch[1]) : ""
       const sourceMatch = parsed.resolvedUrl.match(/[?&]xsec_source=([^&]+)/)
       const xsecSource = sourceMatch ? decodeURIComponent(sourceMatch[1]) : ""
-      videoInfo = await getXhsVideo(contentId, session, xsecToken, xsecSource)
+      videoInfo = await getXhsVideo(contentId, xsecToken, xsecSource, session)
     } else {
       errExit(`不支持的平台: ${platform}`)
     }
@@ -180,8 +190,10 @@ async function main(): Promise<void> {
   mkdirSync(tmpDir, { recursive: true })
 
   process.stderr.write(`[viral-chaser] 开始下载视频...\n`)
-  // UA 走独立 .ua.json 文件（原则 4：cookie + UA 同指纹同源）
-  const userAgent = readUserAgent(sessionPlatform)
+  // UA 走独立 .ua.json 文件（原则 4：cookie + UA 同指纹同源）。
+  // xhs 无 cookie 路线可能没有 UA 文件，给默认 Chrome UA 兜底。
+  const userAgent = readUserAgent(sessionPlatform) ||
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
   let downloadResult: Awaited<ReturnType<typeof downloadVideo>>
   try {
     downloadResult = await downloadVideo(
