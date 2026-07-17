@@ -9,7 +9,7 @@ metadata:
       - node
       - ffmpeg
       env:
-      - VOLC_ASR_APP_KEY
+      - VOLC_ASR_APP_ID
 ---
 
 ## 🔑 前置：开通火山语音模型（仅首次）
@@ -30,11 +30,14 @@ metadata:
 
 | 变量 | 说明 |
 |------|------|
-| `VOLC_ASR_APP_KEY` | 火山控制台获取的 APP ID / App Key（必需） |
-| `VOLC_ASR_ACCESS_KEY` | Access Token（旧控制台双头鉴权用；新控制台可留空，仅用 `VOLC_ASR_APP_KEY`） |
+| `VOLC_ASR_APP_ID` | 旧控制台**数字 APP ID**（如 `1216386473`），用于 `X-Api-App-Key`。旧控制台双头鉴权必需 |
+| `VOLC_ASR_ACCESS_KEY` | 旧控制台 Access Token，用于 `X-Api-Access-Key`。与 `VOLC_ASR_APP_ID` 成对使用 |
+| `VOLC_ASR_APP_KEY` | 新控制台 APP Key，用于 `X-Api-Key` 单头鉴权。仅新控制台账号需要；旧控制台账号不要把 Secret Key 填到这里（会报 `45000010 appid mismatch`） |
 | `VOLC_ASR_RESOURCE_ID` | 资源 ID，默认 `volc.bigasr.auc_turbo`，一般无需改 |
 
-> **写入流程**：用户把 `VOLC_ASR_APP_KEY` / `VOLC_ASR_ACCESS_KEY` 交给小贝后，**小贝应 spawn 一个 `IT engineer` 作为 subagent** 去把这两个变量添加到实例环境变量中——IT engineer 掌握如何在本机环境变量 / 服务配置里安全添加此类密钥的规范。小贝本人不要直接写环境变量文件。
+> 鉴权二选一（脚本优先旧控制台双头）：同时给出 `VOLC_ASR_APP_ID`+`VOLC_ASR_ACCESS_KEY` → 旧控制台双头；否则用 `VOLC_ASR_APP_KEY` → 新控制台单头。**旧控制台 `X-Api-App-Key` 要的是数字 APP ID，不是 Secret Key。**
+
+> **写入流程**：用户把 `VOLC_ASR_APP_ID` / `VOLC_ASR_ACCESS_KEY`（或新控制台的 `VOLC_ASR_APP_KEY`）交给小贝后，**小贝应 spawn 一个 `IT engineer` 作为 subagent** 去把这两个变量添加到实例环境变量中——IT engineer 掌握如何在本机环境变量 / 服务配置里安全添加此类密钥的规范。小贝本人不要直接写环境变量文件。
 
 > **关于接口选型**：火山 ASR 分录音文件标准版 2.0（`volc.seedasr.auc`，单价最低，但只接受音频公网 URL，需自备 TOS 对象存储）、极速版（本技能采用，支持本地文件 base64 直传、一次返回）、闲时版（24h 内返回，不适合交互流程）、流式（实时上屏用）。viral-chaser 输入是本地 audio.wav，极速版免托管、原生返回时间戳，综合最合适。若后续为降本要切标准版 2.0，需额外引入 TOS 上传环节。
 
