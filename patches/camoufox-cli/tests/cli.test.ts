@@ -244,6 +244,12 @@ describe("buildCommand", () => {
     expect((cmd.params as any).path).toBe("ua.json");
   });
 
+  // --- Info ---
+  it("info", () => {
+    const cmd = buildCommand("info", ["info"]);
+    expect(cmd.action).toBe("info");
+  });
+
   // --- Upload ---
   it("upload single file via ref", () => {
     const cmd = buildCommand("upload", ["upload", "@e1", "/tmp/a.png"]);

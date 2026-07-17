@@ -202,4 +202,41 @@ describe("DaemonServer", () => {
     expect(fs.existsSync(SOCK_PATH)).toBe(false);
     expect(fs.existsSync(PID_PATH)).toBe(false);
   });
+
+  it("reports session + headless mode via info action", async () => {
+    const server = new DaemonServer({
+      session: TEST_SESSION,
+      headless: false,
+      timeout: 5,
+    });
+
+    const serverPromise = server.start();
+
+    for (let i = 0; i < 50; i++) {
+      if (fs.existsSync(SOCK_PATH)) break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    const response = await new Promise<string>((resolve, reject) => {
+      const client = net.createConnection(SOCK_PATH, () => {
+        client.end(JSON.stringify({ id: "r1", action: "info", params: {} }) + "\n");
+      });
+      let data = "";
+      client.on("data", chunk => { data += chunk.toString(); });
+      client.on("end", () => resolve(data));
+      client.on("error", reject);
+    });
+
+    const parsed = JSON.parse(response);
+    expect(parsed.success).toBe(true);
+    expect(parsed.data.session).toBe(TEST_SESSION);
+    expect(parsed.data.headless).toBe(false);
+
+    // Shut down
+    const client = net.createConnection(SOCK_PATH, () => {
+      client.end(JSON.stringify({ id: "r1", action: "close", params: {} }) + "\n");
+    });
+    client.on("data", () => {});
+    await serverPromise;
+  });
 });

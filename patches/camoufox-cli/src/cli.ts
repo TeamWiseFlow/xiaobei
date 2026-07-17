@@ -81,19 +81,78 @@ function spawnDaemon(session: string, headed: boolean, timeout: number, persiste
   });
 }
 
+/** Probe a running daemon's mode via the `info` action. Returns null if the
+ * daemon can't be reached or doesn't answer (caller falls back to reuse). */
+async function queryDaemonInfo(sockPath: string): Promise<{ headless: boolean; session: string } | null> {
+  try {
+    const resp = await sendCommand(sockPath, { id: "r1", action: "info", params: {} });
+    if (!resp.success) return null;
+    const data = resp.data as Record<string, unknown> | undefined;
+    if (!data) return null;
+    return { headless: Boolean(data.headless), session: String(data.session ?? "") };
+  } catch { return null; }
+}
+
+/** Tear down a live daemon so a fresh one can take its socket — used when the
+ * caller wants a different headed mode than the running daemon (headless is
+ * fixed at spawn time). Sends `close` (graceful), then force-kills the pid and
+ * removes socket/pid if it doesn't exit promptly. Best-effort, never throws. */
+async function killDaemon(session: string): Promise<void> {
+  const sockPath = getSocketPath(session);
+  const pidPath = getPidPath(session);
+  try { await sendCommand(sockPath, { id: "r1", action: "close", params: {} }); } catch {}
+  // Wait for graceful exit (shutdown unlinks socket + pid, then process.exit(0)).
+  for (let i = 0; i < 20; i++) {
+    if (!fs.existsSync(sockPath)) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  // Force kill if still alive (a hung command may block graceful shutdown).
+  if (fs.existsSync(pidPath)) {
+    try {
+      const pid = parseInt(fs.readFileSync(pidPath, "utf-8").trim(), 10);
+      if (pid) { try { process.kill(pid, "SIGKILL"); } catch {} }
+    } catch {}
+  }
+  for (const p of [sockPath, pidPath]) { try { fs.unlinkSync(p); } catch {} }
+  await new Promise((r) => setTimeout(r, 200));
+}
+
 async function ensureDaemon(session: string, headed: boolean, timeout: number, persistent: string | null, proxy: string | null = null, geoip: boolean = true, locale: string | null = null, viewport: [number, number] | null = null): Promise<void> {
   const sockPath = getSocketPath(session);
   if (fs.existsSync(sockPath)) {
     // Verify daemon is alive
+    let alive = false;
     try {
       await new Promise<void>((resolve, reject) => {
         const s = net.createConnection(sockPath, () => { s.destroy(); resolve(); });
         s.on("error", reject);
         s.setTimeout(2000, () => { s.destroy(); reject(new Error("timeout")); });
       });
-      return;
+      alive = true;
     } catch {
       try { fs.unlinkSync(sockPath); } catch {}
+    }
+
+    if (alive) {
+      // headless is fixed at daemon spawn time, so reusing a live daemon
+      // silently drops a conflicting `--headed`/headless request. When the
+      // caller now wants a different mode than the running daemon, tear the old
+      // one down and spawn fresh so the flag actually takes effect. This is the
+      // fix for the "11:59 死机" incident (see memory 24-camoufox-cli-daemon-
+      // flag-gotcha): the agent's `--headed` was silently swallowed by a
+      // headless daemon, so it kept spawning headed windows that never
+      // attached. If we can't determine the running mode, reuse as before
+      // (don't thrash on an unresponsive daemon).
+      const info = await queryDaemonInfo(sockPath);
+      const wantHeadless = !headed;
+      if (info && info.headless !== wantHeadless) {
+        process.stderr.write(`[camoufox-cli] Daemon running headless=${info.headless} but caller requested headless=${wantHeadless}; restarting daemon to apply mode change\n`);
+        await killDaemon(session);
+        await evictForCap(session);
+        await spawnDaemon(session, headed, timeout, persistent, proxy, geoip, locale, viewport);
+        return;
+      }
+      return;
     }
   }
   // Backstop: don't let runaway callers accumulate live daemons past the cap.
@@ -328,6 +387,8 @@ export function buildCommand(action: string, rest: string[]): Record<string, unk
 
     case "sessions":
       return { id: "r1", action: "sessions", params: {} };
+    case "info":
+      return { id: "r1", action: "info", params: {} };
     case "install":
       return { id: "r1", action: "install", params: { with_deps: rest.includes("--with-deps") } };
     case "cookies": {
@@ -498,6 +559,23 @@ async function main() {
     return;
   }
 
+  // Client-side: info — probe a session's daemon mode without spawning one.
+  if (action === "info") {
+    const sockPath = getSocketPath(flags.session);
+    const info = await queryDaemonInfo(sockPath);
+    if (!info) {
+      if (flags.json) console.log(JSON.stringify({ session: flags.session, running: false }, null, 2));
+      else console.log(`No active daemon for session ${flags.session}.`);
+      return;
+    }
+    if (flags.json) {
+      console.log(JSON.stringify({ session: info.session, headless: info.headless, headed: !info.headless, running: true }, null, 2));
+    } else {
+      console.log(`session=${info.session} headless=${info.headless} headed=${!info.headless}`);
+    }
+    return;
+  }
+
   // Client-side: close --all
   if (action === "close" && (command.params as any)?.all) {
     const sessions = listSessions();
@@ -573,6 +651,7 @@ Tabs:
 
 Session:
   sessions                List active sessions
+  info                    Show this session's daemon mode (headless/headed)
   cookies [import|export] Manage cookies
   identity [export <f>]   Show/export UA + fingerprint summary
 

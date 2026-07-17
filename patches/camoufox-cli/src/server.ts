@@ -4,7 +4,7 @@ import * as net from "node:net";
 import * as fs from "node:fs";
 import { BrowserManager } from "./browser.js";
 import { execute } from "./commands.js";
-import { parseCommand, serializeResponse, errorResponse } from "./protocol.js";
+import { parseCommand, serializeResponse, errorResponse, okResponse } from "./protocol.js";
 import { getSocketPath, getPidPath } from "./cli.js";
 
 // Hard ceiling on daemon idle timeout. Persistence only needs to keep login
@@ -118,6 +118,15 @@ export class DaemonServer {
 
       const action = command.action ?? "";
       const cmdId = (command.id as string) || "?";
+
+      // `info` returns daemon metadata (session + headless mode). It bypasses
+      // the fail-first busy gate so the CLI can probe a running daemon's mode
+      // before deciding whether to reuse or restart it (see ensureDaemon in
+      // cli.ts — headless is fixed at spawn, so a mode switch requires a respawn).
+      if (action === "info") {
+        conn.end(serializeResponse(okResponse(cmdId, { session: this.session, headless: this.headless })));
+        return;
+      }
 
       // `close` is the recovery escape hatch — always allowed, even while a
       // previous command is mid-flight (it tears the daemon down anyway).
