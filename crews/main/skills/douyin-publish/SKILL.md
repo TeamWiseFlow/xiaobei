@@ -56,12 +56,14 @@ douyin-publish upload --video video.mp4
 #    自主声明下拉不存在时不阻断（部分账号/页面无此选项）
 douyin-publish fill --session <s> --title "标题" --caption "描述"
 
-# 3. 点发布
+# 3. 点发布（注入拦截器捕获 aweme_id 写入 localStorage，返回 aweme_id）
 douyin-publish publish --session <s>
 
 # 4. 取视频链接
 douyin-publish get-link --session <s>
 ```
+
+> **get-link 取链接策略**(2026-07-17 事故修正):`publish` 阶段从发布 API 响应里抓 `aweme_id` 写进 `localStorage.douyin_last_aweme_id`(同源跨发布→管理导航存活,不像 `window` 变量随跳转销毁)。`get-link` 首选读 localStorage 拼 `https://www.douyin.com/video/<aweme_id>`,读不到才回退管理页 DOM。`run` 全流程在 `close` session 之前就拿到链接,不依赖 close 后重开。
 
 > **注意**：本 skill **没有 `login` 子命令、也没有 `cleanup` 子命令**--执行过程中任何时候发现登录态已失效，重走 login-manager 登录流程。
 >

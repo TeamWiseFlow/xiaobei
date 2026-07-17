@@ -294,29 +294,37 @@ def _select_ai_declaration(session: str) -> bool:
 
 def cmd_publish(*, session: str) -> None:
     """点"发布"按钮(button[type=submit] 文本"发布",:has-text 非 CSS,按 innerText 点)。
-    发布前注入 fetch 拦截器捕获发布 API 响应中的 aweme_id。"""
-    # 注入 fetch/XHR 拦截器，捕获发布 API 响应（2026-07-17 真机确认：管理页 DOM 改版，
-    # 旧 selector 失效，改为从发布 API 响应中直接提取 aweme_id）
+    发布前注入 fetch 拦截器捕获发布 API 响应中的 aweme_id,写入 localStorage(跨同源导航存活)。"""
+    # 注入 fetch/XHR 拦截器，捕获发布 API 响应中的 aweme_id。
+    # 关键:把 id 写进 localStorage 而不是 window 变量——发布成功后页面跳转到管理页,
+    # window.__capturedAwemeId 随旧 document 销毁,get-link 再就读不到。localStorage 在
+    # creator.douyin.com 同源下跨导航存活,管理页能直接读回。(2026-07-17 事故根因)
     js_intercept = """
     (function() {
         window.__capturedAwemeId = null;
+        try { localStorage.removeItem('douyin_last_aweme_id'); } catch(e) {}
+        function stash(id) {
+            if (!id) return;
+            id = String(id);
+            window.__capturedAwemeId = id;
+            try { localStorage.setItem('douyin_last_aweme_id', id); } catch(e) {}
+        }
+        function extract(data) {
+            try {
+                return data.aweme && data.aweme.aweme_id || data.aweme_id || (data.item && data.item.id) || null;
+            } catch(e) { return null; }
+        }
         var origFetch = window.fetch;
         window.fetch = function() {
             var url = arguments[0];
             if (typeof url === 'string' && url.indexOf('publish') >= 0) {
                 return origFetch.apply(this, arguments).then(function(resp) {
-                    resp.clone().json().then(function(data) {
-                        try {
-                            var id = data.aweme && data.aweme.aweme_id || data.aweme_id || (data.item && data.item.id) || null;
-                            if (id) window.__capturedAwemeId = String(id);
-                        } catch(e) {}
-                    }).catch(function(){});
+                    resp.clone().json().then(function(data) { stash(extract(data)); }).catch(function(){});
                     return resp;
                 });
             }
             return origFetch.apply(this, arguments);
         };
-        // 也拦截 XHR
         var origOpen = XMLHttpRequest.prototype.open;
         var origSend = XMLHttpRequest.prototype.send;
         XMLHttpRequest.prototype.open = function(method, url) {
@@ -327,11 +335,7 @@ def cmd_publish(*, session: str) -> None:
             var self = this;
             this.addEventListener('load', function() {
                 if (self.__url && self.__url.indexOf('publish') >= 0) {
-                    try {
-                        var data = JSON.parse(self.responseText);
-                        var id = data.aweme && data.aweme.aweme_id || data.aweme_id || (data.item && data.item.id) || null;
-                        if (id) window.__capturedAwemeId = String(id);
-                    } catch(e) {}
+                    try { stash(extract(JSON.parse(self.responseText))); } catch(e) {}
                 }
             });
             return origSend.apply(this, arguments);
@@ -349,42 +353,61 @@ def cmd_publish(*, session: str) -> None:
     if not camoufox_wait_for_url_contains(session, "/creator-micro/content/manage", POST_PUBLISH_MAX_WAIT_S):
         sys.stderr.write("error: 发布后未跳转到管理页\n")
         sys.exit(1)
-    sys.stdout.write(json.dumps({"ok": True, "session": session}, ensure_ascii=False))
+    # 跳到管理页后立刻读 localStorage——趁登录态还在、同源 document 还在,把 id 落到本进程。
+    aweme_id = _read_captured_aweme_id(session)
+    sys.stdout.write(json.dumps({"ok": True, "session": session, "aweme_id": aweme_id}, ensure_ascii=False))
     sys.stdout.write("\n")
+
+
+def _read_captured_aweme_id(session: str) -> Optional[str]:
+    """从 localStorage(跨导航存活)读发布时捕获的 aweme_id,读不到再退回 window 变量。"""
+    js = """
+    (function() {
+        try { var id = localStorage.getItem('douyin_last_aweme_id'); if (id) return id; } catch(e) {}
+        return window.__capturedAwemeId || null;
+    })()
+    """
+    out = camoufox_eval(session, js)
+    if out and out != "null":
+        return out
+    return None
 
 
 def cmd_get_link(*, session: str) -> None:
     """取已发布视频的公开链接。
-    优先从 publish 时注入的 fetch 拦截器读取 aweme_id；
-    失败则尝试管理页 DOM（旧方案，可能因改版失效）。"""
-    # 策略1: 从拦截器读取 aweme_id（最可靠）
-    js_intercepted = "window.__capturedAwemeId || null"
-    out = camoufox_eval(session, js_intercepted)
-    if out and out != "null":
-        url = "https://www.douyin.com/video/" + out
-        sys.stdout.write(json.dumps({"ok": True, "url": url}, ensure_ascii=False))
+
+    策略1(首选):读 publish 时写入 localStorage 的 aweme_id——localStorage 在
+    creator.douyin.com 同源下跨发布→管理导航存活,无需重开页面,登录态还在。
+    策略2(兜底):管理页 DOM 找刚发布作品卡片(改版后 selector 可能失效,仅兜底)。
+    """
+    # 策略1: localStorage(跨导航存活)+ window 变量双保险
+    aweme_id = _read_captured_aweme_id(session)
+    if aweme_id:
+        url = "https://www.douyin.com/video/" + aweme_id
+        sys.stdout.write(json.dumps({"ok": True, "url": url, "aweme_id": aweme_id}, ensure_ascii=False))
         sys.stdout.write("\n")
         return
-    # 策略2: 尝试管理页 DOM（旧方案，可能因改版失效）
-    mgmt_url = "https://creator.douyin.com/creator-micro/content/manage"
-    camoufox_open(session, mgmt_url)
-    time.sleep(3)
+    # 策略2: 管理页 DOM(旧方案,可能因改版失效)。当前页可能已是 manage,先看 URL 再决定是否 open。
+    cur_url = camoufox_eval(session, "window.location.href")
+    if not cur_url or "/creator-micro/content/manage" not in (cur_url or ""):
+        camoufox_open(session, "https://creator.douyin.com/creator-micro/content/manage")
+        time.sleep(3)
     js = """
     (function() {
         var a = document.querySelector('a[href*="/video/"]');
         if (a) return a.href;
-        var el = document.querySelector('[data-aweme-id],[data-id]');
+        var el = document.querySelector('[data-aweme-id],[data-id],[data-e2e*="video"]');
         if (el) { var id = el.getAttribute('data-aweme-id') || el.getAttribute('data-id'); if (id) return 'https://www.douyin.com/video/' + id; }
         return null;
     })()
     """
     out = camoufox_eval(session, js)
-    if not out or out == "null":
-        sys.stderr.write("warn: 视频链接提取失败(拦截器和管理页 DOM 均未命中),但发布已成功\n")
-        sys.stdout.write(json.dumps({"ok": True, "url": None, "note": "published but link extraction failed"}, ensure_ascii=False))
+    if out and out != "null":
+        sys.stdout.write(json.dumps({"ok": True, "url": out}, ensure_ascii=False))
         sys.stdout.write("\n")
         return
-    sys.stdout.write(json.dumps({"ok": True, "url": out}, ensure_ascii=False))
+    sys.stderr.write("warn: 视频链接提取失败(localStorage 和管理页 DOM 均未命中),但发布已成功\n")
+    sys.stdout.write(json.dumps({"ok": True, "url": None, "note": "published but link extraction failed"}, ensure_ascii=False))
     sys.stdout.write("\n")
 
 
