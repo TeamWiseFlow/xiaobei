@@ -130,6 +130,41 @@ class TestCheckLoggedIn(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
 
 
+class TestFetchNewestAwemeId(unittest.TestCase):
+    """work_list API 取最新作品:成功 / 鉴权失败重试后 exit 2 / 无作品。"""
+
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_success_returns_newest(self, mock_eval):
+        mock_eval.return_value = '{"sc": 0, "id": "7663480620206542131", "ct": 1784293135, "title": "测试", "count": 5}'
+        aid, title = publish_douyin._fetch_newest_aweme_id("douyin")
+        self.assertEqual(aid, "7663480620206542131")
+        self.assertEqual(title, "测试")
+
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_auth_fail_3x_exits_2(self, mock_eval):
+        # status_code=8 三次(间歇重试仍失败)→ exit 2 SESSION_EXPIRED
+        mock_eval.return_value = '{"sc": 8, "id": null}'
+        with self.assertRaises(SystemExit) as ctx:
+            publish_douyin._fetch_newest_aweme_id("douyin")
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertEqual(mock_eval.call_count, 3)
+
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_auth_fail_then_recover(self, mock_eval):
+        # 第一次 sc=8,重试后 sc=0 命中 → 返回 id
+        mock_eval.side_effect = ['{"sc": 8, "id": null}', '{"sc": 0, "id": "999", "title": "ok"}']
+        aid, title = publish_douyin._fetch_newest_aweme_id("douyin")
+        self.assertEqual(aid, "999")
+
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_no_items_returns_none_no_retry(self, mock_eval):
+        # sc=0 但无作品(since_ts 筛掉所有)→ (None,None),不重试
+        mock_eval.return_value = '{"sc": 0, "id": null}'
+        aid, title = publish_douyin._fetch_newest_aweme_id("douyin", since_ts=9999999999)
+        self.assertIsNone(aid)
+        self.assertEqual(mock_eval.call_count, 1)
+
+
 class TestCmdFill(unittest.TestCase):
     @mock.patch("publish_douyin.camoufox_eval")
     @mock.patch("publish_douyin.camoufox_type_contenteditable")

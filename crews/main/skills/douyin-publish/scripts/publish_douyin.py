@@ -522,6 +522,11 @@ def _fetch_newest_aweme_id(session: str, since_ts: Optional[int] = None) -> tupl
 
     Returns:
         (aweme_id, title) 或 (None, None)。
+
+    headless session 登录态间歇性不稳(2026-07-17 xiaobei 事故:同 URL 同 session
+    有时 status_code=0 有时 =8,连发 15 次全 0 但偶发 8,无法稳定复现)。
+    status_code!=0 时纯重试(同页连发就稳,不需 reload),最多 3 次;
+    3 次全 sc!=0 → exit 2(SESSION_EXPIRED)让调用方走 login-manager 重登。
     """
     since = int(since_ts) if since_ts else 0
     js = f"""
@@ -529,6 +534,7 @@ def _fetch_newest_aweme_id(session: str, since_ts: Optional[int] = None) -> tupl
         try {{
             var r = await fetch({json.dumps(WORK_LIST_URL)}, {{credentials: 'include'}});
             var j = await r.json();
+            var sc = (typeof j.status_code === 'number') ? j.status_code : 0;
             var list = j.aweme_list || [];
             var items = list.map(function(it) {{
                 var id = it.aweme_id || it.item_id;
@@ -540,22 +546,44 @@ def _fetch_newest_aweme_id(session: str, since_ts: Optional[int] = None) -> tupl
             if ({since} > 0) items = items.filter(function(x) {{ return x.ct >= {since}; }});
             items.sort(function(a, b) {{ return b.ct - a.ct; }});
             var top = items[0];
-            if (!top) return JSON.stringify({{id: null}});
-            return JSON.stringify({{id: top.id, ct: top.ct, title: top.title, count: items.length}});
-        }} catch(e) {{ return JSON.stringify({{id: null, err: String(e)}}); }}
+            if (!top) return JSON.stringify({{sc: sc, id: null}});
+            return JSON.stringify({{sc: sc, id: top.id, ct: top.ct, title: top.title, count: items.length}});
+        }} catch(e) {{ return JSON.stringify({{sc: -1, id: null, err: String(e)}}); }}
     }})()
     """
-    out = camoufox_eval(session, js, timeout=40)
-    if not out or out == "null":
-        return None, None
-    try:
-        data = json.loads(out)
-    except Exception:
-        return None, None
-    aid = data.get("id")
-    if not aid:
-        return None, None
-    return str(aid), data.get("title")
+    last_sc = None
+    for attempt in range(3):
+        out = camoufox_eval(session, js, timeout=40)
+        data = None
+        if out and out != "null":
+            try:
+                data = json.loads(out)
+            except Exception:
+                data = None
+        if not data:
+            # eval 失败(页面没开 / daemon 挂)→ 开管理页重试
+            camoufox_open(session, "https://creator.douyin.com/creator-micro/content/manage")
+            time.sleep(5)
+            continue
+        sc = data.get("sc", 0)
+        aid = data.get("id")
+        if sc == 0 and aid:
+            return str(aid), data.get("title")
+        if sc == 0 and not aid:
+            # API 正常但没匹配作品(since_ts 筛掉所有)→ 不重试
+            return None, None
+        # sc != 0 → 鉴权间歇失败,短等重试
+        last_sc = sc
+        sys.stderr.write(
+            f"[douyin-publish] work_list status_code={sc}(attempt {attempt + 1}/3),间歇鉴权失败,重试...\n"
+        )
+        time.sleep(2)
+    # 3 次都 sc!=0 → session 失效,交调用方重登
+    sys.stderr.write(
+        f"error: work_list API 鉴权持续失败(3 次 status_code={last_sc})——登录态已失效,"
+        "请走 login-manager --platform douyin 有头重登后重试\n"
+    )
+    sys.exit(2)
 
 
 def _read_captured_aweme_id(session: str) -> Optional[str]:

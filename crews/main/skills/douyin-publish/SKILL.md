@@ -104,7 +104,7 @@ douyin-publish get-link --session <s>
 
 `publish` 阶段注入 fetch/XHR 拦截器，**全量捕获**发布期间所有请求响应，深度搜索 `aweme_id`/`item_id`/`video_id` 字段，写入 `localStorage.douyin_last_aweme_id`（同源跨发布→管理导航存活）。同时把所有请求的 URL/method/status/响应片段记到 `localStorage.douyin_publish_debug`，发布后落盘 `/tmp/dy-publish-debug-<ts>.json` 供排查。
 
-**拦截器是兜底**——发布实际走 form/导航(非 fetch/XHR),拦截器通常抓不到 aweme_id。主路是发布后直接打作品管理 list API `work_list` 拿 `aweme_list`,按 `create_time` 排序取最新(列表不按时间排),筛 `create_time >= publish_start - 120` 锁定本次作品。**aweme_id 未捕获即 `exit 3`，不再误报发布成功。**
+**拦截器是兜底**——发布实际走 form/导航(非 fetch/XHR),拦截器通常抓不到 aweme_id。主路是发布后直接打作品管理 list API `work_list` 拿 `aweme_list`,按 `create_time` 排序取最新(列表不按时间排),筛 `create_time >= publish_start - 120` 锁定本次作品。`work_list` 偶发 `status_code=8`(间歇鉴权失败,非签名/非真掉登,同 session 同 URL 连发通常全 0),helper 内置 3 次重试;3 次全 8 才 `exit 2` 交 login-manager 重登。**aweme_id 未捕获即 `exit 3`，不再误报发布成功。**
 
 ---
 
