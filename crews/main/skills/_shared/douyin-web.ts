@@ -8,8 +8,6 @@
  * 关键：抖音 Janus 网关要求请求带全套 COMMON_PARAMS（device_platform / aid / channel /
  * version_code / browser_* / …）+ webid + verifyFp + fp，缺则 404 Unsupported path(Janus)
  * 或 200 空体。早期 published-track fetchDouyin 只发 aweme_id+msToken+a_bogus，故长期取不到数。
- *
- * API reference: MediaCrawlerPro-Downloader DownloadServer/pkg/media_platform_api/douyin/
  */
 
 import { douyinSign } from "./relay-sign.ts"

@@ -9,10 +9,8 @@
  *   - window.__INITIAL_STATE__.note.noteDetailMap[note_id].note — 给 author/duration/互动计数/video 流。
  *
  * 为何不走 feed API（/api/sns/web/v1/feed）：feed 需 xRap 签名 + 极易 406/500/滑块
- * （MediaCrawlerPro get_note_by_id 原注释印证「开启xsec_token详情接口特别容易出现滑块验证」）。
  * HTML 路线是真实页面导航，风控远低于签名 API；带 xsec_token 的公开笔记无 cookie 也能 SSR。
  *
- * headers 形态参考 MediaCrawlerPro xhs/client.py 的 headers 属性。因是真实页面导航（非 XHR），
  * sec-fetch 用 document/navigate，accept 用 text/html。cookie 可为空（公开笔记无 cookie SSR）。
  * camoufox 造的 cookie 来自 Firefox，故按 UA 家族区分 sec-ch-ua：Firefox 不发 brand 列表，
  * 仅发 platform/mobile；Chrome 发完整 sec-ch-ua——避免 UA 与 sec-ch-ua 不一致的指纹破绽。

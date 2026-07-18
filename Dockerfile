@@ -46,17 +46,14 @@ RUN pnpm install --frozen-lockfile
 RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm build
 # TODO(Phase 6): ui:build（若 openclaw 含 UI 子包）
 # RUN pnpm --filter ui build
-# 装 openclaw-weixin 插件（按 openclaw-weixin.version.json 锁定版本，走 npx 在线装）。
-# 与 scripts/install.sh → install_weixin_channel() 同源：无 vendor tgz 时走 cli 在线装。
+# 装 openclaw-weixin 插件（按 openclaw-weixin.version.json 锁定版本，在线装）。
+# 必须用 openclaw 自己的 `plugins install` 命令注册，而不是 npx cli install——
+# 后者只落文件不注册插件表，gateway 检测到配置 enabled 但未注册会弹交互式安装 prompt，
+# 容器非 TTY 环境下 channels login 挂死，二维码出不来。
 # 配淘宝 npm 镜像避 registry.npmjs.org 连不上。
-# weixin-cli 内部调 `openclaw` 命令，需 PATH 上有——pnpm openclaw = node scripts/run-node.mjs。
 RUN npm config set registry https://registry.npmmirror.com && \
-    _openclaw_wrapper_dir="$(mktemp -d)" && \
-    printf '#!/bin/sh\ncd /opt/openclaw/openclaw && node scripts/run-node.mjs "$@"\n' > "$_openclaw_wrapper_dir/openclaw" && \
-    chmod +x "$_openclaw_wrapper_dir/openclaw" && \
-    _cli_version="$(node -e 'const c=require("/opt/openclaw/openclaw-weixin.version.json");console.log(c["openclaw-weixin-cli"].version)')" && \
-    PATH="$_openclaw_wrapper_dir:$PATH" npx -y "@tencent-weixin/openclaw-weixin-cli@$_cli_version" install && \
-    rm -rf "$_openclaw_wrapper_dir"
+    _plugin_version="$(node -e 'const c=require("/opt/openclaw/openclaw-weixin.version.json");console.log(c["openclaw-weixin"].version)')" && \
+    node scripts/run-node.mjs plugins install "@tencent-weixin/openclaw-weixin@${_plugin_version}"
 
 # ── 阶段 3: wiseflow-layer ────────────────────────────────────────────────────
 # COPY skills/crews/config → 组织成 /root/.openclaw/ 运行态；统一 npm/pip install；
@@ -69,11 +66,15 @@ RUN mkdir -p /root/.openclaw
 # Docker 不跑 setup-crew.sh，直接用模板（content-producer 已在模板 agents.list 预注册）。
 # Docker 与源码部署同源：均从 config-templates/openclaw.json 派生（单源）。
 COPY config-templates/openclaw.json /root/.openclaw/openclaw.json
-# daemon.env 模板：entrypoint 首次启动时拷到 /root/.openclaw/daemon.env（用户填 API key）
+# daemon.env 模板（gateway 运维变量：超时/bonjour/DISPLAY）+ .env 模板（技能密钥）
+# entrypoint 首次启动时分别拷到 /root/.openclaw/ 下，用户编辑 .env 填 API key
 COPY config/daemon.env.template /root/.openclaw/daemon.env.template
+COPY config/.env.template /root/.openclaw/.env.template
 # 公共技能：COPY 到 /root/.openclaw/skills（apply-addons.sh 在源码部署时做软链，
 # Docker 走 COPY，容器内无 ~/wiseflow 源码故软链无意义）
 COPY skills/ /root/.openclaw/skills/
+# weixin-qr.mjs：容器内自动出 weixin 二维码，绕开 channels login 的交互式 prompt
+COPY scripts/weixin-qr.mjs /opt/openclaw/scripts/weixin-qr.mjs
 # Crew workspace：COPY 整个 crews/<id>/ 到 /root/.openclaw/workspace-<id>/（含
 # AGENTS.md/SOUL.md/IDENTITY.md/MEMORY.md/TOOLS.md/USER.md/HEARTBEAT.md/BUILTIN_SKILLS/
 # DENIED_SKILLS/skills/ 等。等价 setup-crew.sh 的 copy_crew_template_contents）。
@@ -172,9 +173,10 @@ RUN node -e "\
   if(!c.bindings.some(b=>b?.agentId==='main'&&b?.match?.channel==='openclaw-weixin'))\
     c.bindings.push({agentId:'main',comment:'openclaw-weixin -> Main Agent onboarding entry',match:{channel:'openclaw-weixin'}});\
   fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');"
-# 把各 crew 专属 skill + 公共 skill 合并进每个 agent 的 skills 字段。
-# 源码部署由 setup-crew.sh → resolve_agent_skills_json() 做；Docker 不跑 setup-crew.sh，
-# 在此用 node 扫描 skills/ 和 workspace-*/skills/ 目录，合并去重写回 openclaw.json。
+# 把各 crew 专属 skill + 公共 skill 合并进每个 agent 的 skills 字段，排除 DENIED_SKILLS。
+# 源码部署由 setup-crew.sh → resolve_agent_skills_json() 做 5 步合并（基线+addon+BUILTIN-DENIED+workspace）；
+# Docker 不跑 setup-crew.sh，在此用 node 扫描 skills/ 和 workspace-*/skills/ 目录，合并去重，
+# 读 workspace-*/DENIED_SKILLS 从最终列表排除，写回 openclaw.json。
 # 排除 .DS_Store / _shared / *.md 等非 skill 条目。
 RUN node -e "\
   const fs=require('fs'),path=require('path');\
@@ -183,21 +185,24 @@ RUN node -e "\
   const isSkill=(n)=>n&&!n.startsWith('.')&&!n.startsWith('_')&&!n.endsWith('.md');\
   const ls=(d)=>fs.existsSync(d)?fs.readdirSync(d).filter(isSkill):[];\
   const publicSkills=ls('/root/.openclaw/skills');\
-  const crewSkills={};\
+  const crewSkills={};const denied={};\
   for(const wdir of fs.readdirSync('/root/.openclaw').filter(n=>n.startsWith('workspace-'))){\
     const crewId=wdir.replace('workspace-','');\
     const sdir=path.join('/root/.openclaw',wdir,'skills');\
     crewSkills[crewId]=ls(sdir);\
+    const df=path.join('/root/.openclaw',wdir,'DENIED_SKILLS');\
+    if(fs.existsSync(df)){denied[crewId]=fs.readFileSync(df,'utf8').split(/\r?\n/).map(s=>s.trim()).filter(s=>s&&!s.startsWith('#'));}\
   }\
   for(const a of (c.agents?.list||[])){\
     const crewId=a.id;\
     const existing=new Set(a.skills||[]);\
     for(const s of publicSkills)existing.add(s);\
     for(const s of (crewSkills[crewId]||[]))existing.add(s);\
-    a.skills=Array.from(existing).sort();\
+    const dn=denied[crewId]||[];\
+    a.skills=Array.from(existing).filter(s=>!dn.includes(s)).sort();\
   }\
   fs.writeFileSync(p,JSON.stringify(c,null,2)+'\n');\
-  console.log('[wiseflow-layer] skills merged into openclaw.json agents.list');"
+  console.log('[wiseflow-layer] skills merged + DENIED_SKILLS excluded');"
 # 预装带外部 npm 依赖的 skill（rss-reader / wx-mp-hunter / proactive-send）。
 # 与 scripts/apply-addons.sh 的 per-skill 扫描同源：per-skill npm install --omit=dev。
 # COPY 已在上一步落地到 /root/.openclaw/ 下，这里进每个目录装 node_modules。

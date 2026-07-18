@@ -24,7 +24,9 @@ services:
     # 镜像来源二选一（取消注释其一）：
     #
     # 方式 1：本地已 build 的镜像（开发调试，默认）
-    image: wiseflow-test:full
+    image: wiseflow-xiaobei:full
+    # 本地构建的镜像，绝不从远端 pull（避免 compose 误判去拉 wiseflow-xiaobei）
+    pull_policy: never
     #
     # 方式 2：从阿里云拉取官方镜像（生产部署）
     # image: registry.cn-hangzhou.aliyuncs.com/<namespace>/wiseflow-client:latest
@@ -35,10 +37,9 @@ services:
     #   dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      # 产品方发放的 key（必填）。从 .env 或命令行 -e OFB_KEY=... 注入。
-      OFB_KEY: ${OFB_KEY:?OFB_KEY 必须设置}
-      # relay 网关端点（无状态多租户）。默认占位，生产环境覆盖。
-      RELAY_BASE_URL: ${RELAY_BASE_URL:-https://relay.wiseflow.example.com}
+      # AWK_API_KEY 必填（火山引擎，覆盖语言/视觉/生图，Agent 没它完全没法工作）
+      # 软校验：down 时用 dummy 绕开，up 时 entrypoint 自检 AWK_API_KEY 非占位才启 gateway
+      AWK_API_KEY: ${AWK_API_KEY:-}
       GATEWAY_PORT: ${GATEWAY_PORT:-18789}
       # 容器内固定路径，防止宿主机 HOME/OPENCLAW_HOME 泄漏进运行时路径解析。
       OPENCLAW_HOME: /root/.openclaw
