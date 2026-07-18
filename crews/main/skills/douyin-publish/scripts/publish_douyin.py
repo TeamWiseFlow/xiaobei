@@ -144,8 +144,16 @@ def _dismiss_draft_dialog(session: str) -> None:
 
 
 def camoufox_eval(session: str, js: str, timeout: int = 30) -> Optional[str]:
-    """在 session 内 eval JS,返回 data 字段(None 表示失败)。"""
-    cmd = [CAMOUFOX_BIN, "--session", session, "--json", "eval", js]
+    """在 session 内 eval JS,返回 data 字段(None 表示失败)。
+
+    必须带 --persistent:ensureDaemon 按 session+mode 复用 daemon(不查 persistent-ness),
+    若 eval 不带 --persistent 又恰好是首个触发 daemon spawn 的调用,会起一个非持久 daemon
+    (临时 profile /tmp/playwright_firefoxdev_profile-XXX,无 auth cookie),后续
+    camoufox_open --persistent 进来也复用这个非持久 daemon → 全程临时 profile → 登录页 +
+    work_list sc=8(2026-07-18 xiaobei get-link 事故根因)。所有 camoufox-cli 调用必须
+    一致带 --persistent,保证 daemon 首次 spawn 即持久。
+    """
+    cmd = [CAMOUFOX_BIN, "--session", session, "--persistent", "--json", "eval", js]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
     if result.returncode != 0 or not result.stdout.strip():
         return None
