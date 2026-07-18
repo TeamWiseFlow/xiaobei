@@ -33,7 +33,7 @@ COPY . /opt/xiaobei
 RUN test -d /opt/xiaobei/openclaw \
     && test -d /opt/xiaobei/openclaw/.git \
     && test -x /opt/xiaobei/scripts/docker-bootstrap.sh \
-    && /opt/xiaobei/scripts/docker-bootstrap.sh \
+    && NODE_OPTIONS="--max-old-space-size=4096" /opt/xiaobei/scripts/docker-bootstrap.sh \
     && install -d /opt/xiaobei/runtime-seed/openclaw \
     && cp -a /root/.openclaw/. /opt/xiaobei/runtime-seed/openclaw/
 

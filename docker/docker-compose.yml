@@ -3,6 +3,10 @@ name: xiaobei
 # Production compose file. Images are built and published by GitHub Actions;
 # local validation can override IMAGE with `IMAGE=xiaobei:local` after running
 # ./scripts/build-image.sh.
+#
+# Required configuration: copy .env.example to .env and fill in AWK_API_KEY.
+# Docker Compose auto-loads .env from this directory, so `docker compose up|down|logs`
+# work without prefixing env vars on every command.
 services:
   xiaobei:
     image: ${IMAGE:-registry.cn-hangzhou.aliyuncs.com/${ALIYUN_NAME_SPACE:-xiaobei}/xiaobei:latest}
@@ -10,7 +14,9 @@ services:
     environment:
       # The only required user-supplied setting. Other skill credentials are
       # configured later by the running agent in the persistent .env file.
-      AWK_API_KEY: ${AWK_API_KEY:?Set AWK_API_KEY before starting xiaobei}
+      # ${AWK_API_KEY:-__FILL_AWK_API_KEY__} lets `compose config|ps|down` succeed
+      # without a .env; the entrypoint refuses placeholder values at runtime.
+      AWK_API_KEY: ${AWK_API_KEY:-__FILL_AWK_API_KEY__}
     ports:
       # Keep management surfaces local to the Docker host by default. Remote
       # access should use an SSH tunnel or a deliberately configured proxy.

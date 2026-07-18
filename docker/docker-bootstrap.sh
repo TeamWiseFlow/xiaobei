@@ -31,6 +31,11 @@ chmod 600 "$OPENCLAW_HOME/daemon.env" "$OPENCLAW_HOME/.env"
 # compile the patched OpenClaw distribution. Docker has no service to restart.
 "$PROJECT_ROOT/scripts/apply-addons.sh" --force --no-restart
 
+# Pre-install the openclaw-weixin channel plugin so first launch can go straight
+# to QR login.  Switches stay off here (--no-enable); the entrypoint flips them
+# on first launch, then runs weixin-qr.mjs to print the binding QR code.
+"$PROJECT_ROOT/scripts/install-weixin-channel.sh" --no-enable
+
 # Docker needs the gateway reachable through the published localhost port. Do
 # not persist a token in the image; entrypoint creates one on first launch.
 OPENCLAW_CONFIG_PATH="$OPENCLAW_CONFIG_PATH" node - <<'NODE'
