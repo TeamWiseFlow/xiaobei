@@ -102,15 +102,26 @@ async function killDaemon(session: string): Promise<void> {
   const pidPath = getPidPath(session);
   try { await sendCommand(sockPath, { id: "r1", action: "close", params: {} }); } catch {}
   // Wait for graceful exit (shutdown unlinks socket + pid, then process.exit(0)).
-  for (let i = 0; i < 20; i++) {
+  // 8s (was 1s): shutdown() awaits manager.close() → context.close() which must
+  // let Playwright fully kill camoufox-bin. Firefox context close routinely takes
+  // 2-5s; the old 1s budget SIGKILL'd daemon.js mid-close, orphaning camoufox-bin.
+  // 30 orphaned Firefox processes from repeated headed↔headless mode switches
+  // OOM'd the box on 2026-07-17 22:34 (see memory 26/24).
+  for (let i = 0; i < 160; i++) {
     if (!fs.existsSync(sockPath)) break;
     await new Promise((r) => setTimeout(r, 50));
   }
   // Force kill if still alive (a hung command may block graceful shutdown).
+  // Kill the whole process GROUP (-pid): daemon.js is spawned detached:true so
+  // it's its own pgid leader, and camoufox-bin + content procs are its children.
+  // Killing only the daemon pid leaves camoufox-bin orphaned holding the profile
+  // lock + RAM. Fall back to plain pid if the group kill misses (ESRCH).
   if (fs.existsSync(pidPath)) {
     try {
       const pid = parseInt(fs.readFileSync(pidPath, "utf-8").trim(), 10);
-      if (pid) { try { process.kill(pid, "SIGKILL"); } catch {} }
+      if (pid) {
+        try { process.kill(-pid, "SIGKILL"); } catch { try { process.kill(pid, "SIGKILL"); } catch {} }
+      }
     } catch {}
   }
   for (const p of [sockPath, pidPath]) { try { fs.unlinkSync(p); } catch {} }
