@@ -93,6 +93,58 @@ async function queryDaemonInfo(sockPath: string): Promise<{ headless: boolean; s
   } catch { return null; }
 }
 
+/** 探测并回收孤儿 camoufox-bin：persistent profile 被 lock 占着，但 daemon socket
+ * 已不在（daemon 挂了/被杀/卡死，浏览器没跟着死，仍占着 Firefox profile lock）。
+ * 不回收则 spawnDaemon 起的新浏览器拿不到 profile lock，会卡死或失败——这是
+ * 2026-07-19 wx_mp 4 孤儿 daemon + 1 占锁 camoufox-bin 事件的根因。
+ *
+ * lock 是 symlink，target 形如 "127.0.1.1:+36416"（IP + camoufox-bin pid）。
+ * 解出 pid → 杀整个进程树（优先杀 daemon=ppid 的进程组，回退杀 bin 自己）→ 清 lock。
+ * 返回 { recovered: true } 或 { recovered: false, reason } 让调用方 fail fast。 */
+function recoverOrphanBrowser(persistent: string): { recovered: boolean; reason?: string } {
+  const lockPath = path.join(persistent, "lock");
+  const parentLockPath = path.join(persistent, ".parentlock");
+  if (!fs.existsSync(lockPath)) return { recovered: true }; // 没锁，无需回收
+
+  let lockTarget = "";
+  try { lockTarget = fs.readlinkSync(lockPath).toString(); } catch { /* 非符号链接 */ }
+  const m = lockTarget.match(/[:+](\d+)$/);
+  const binPid = m ? parseInt(m[1], 10) : 0;
+  if (!binPid) {
+    return {
+      recovered: false,
+      reason: `profile ${persistent} 被 lock 占用但解析不出 camoufox-bin pid（lock=${lockTarget || "(非符号链接)"}）。请手动清理：rm -f ${lockPath} ${parentLockPath}`,
+    };
+  }
+
+  let binAlive = false;
+  try { process.kill(binPid, 0); binAlive = true; } catch { binAlive = false; }
+  if (!binAlive) {
+    // 浏览器已死，只是 lock 残留——清掉即可。
+    for (const p of [lockPath, parentLockPath]) { try { fs.unlinkSync(p); } catch {} }
+    return { recovered: true };
+  }
+
+  // 浏览器还活着但 daemon socket 已不在 = daemon 不可达（挂死或已退出留孤儿浏览器）。
+  // 杀整个进程树：优先杀 daemon（camoufox-bin 的 ppid）的进程组，回退杀 bin 自己。
+  let ppid = 0;
+  try {
+    const stat = fs.readFileSync(`/proc/${binPid}/stat`, "utf-8");
+    ppid = parseInt(stat.split(" ")[3], 10);
+  } catch { /* /proc 不可读（非 Linux）→ 只杀 bin 自己 */ }
+  const killTargets = ppid > 1 ? [ppid, binPid] : [binPid];
+  for (const pid of killTargets) {
+    try { process.kill(-pid, "SIGKILL"); } catch { try { process.kill(pid, "SIGKILL"); } catch {} }
+  }
+  // SIGKILL 不可拦，但 Firefox content procs 需一点时间跟随退出。最多等 ~2s。
+  for (let i = 0; i < 20; i++) {
+    try { process.kill(binPid, 0); } catch { break; }
+    const start = Date.now(); while (Date.now() - start < 100) { /* sync spin */ }
+  }
+  for (const p of [lockPath, parentLockPath]) { try { fs.unlinkSync(p); } catch {} }
+  return { recovered: true };
+}
+
 /** Tear down a live daemon so a fresh one can take its socket — used when the
  * caller wants a different headed mode than the running daemon (headless is
  * fixed at spawn time). Sends `close` (graceful), then force-kills the pid and
@@ -168,6 +220,16 @@ async function ensureDaemon(session: string, headed: boolean, timeout: number, p
   }
   // Backstop: don't let runaway callers accumulate live daemons past the cap.
   await evictForCap(session);
+  // 孤儿浏览器回收：走到这里说明 socket 不存在（或已判死清理）。persistent profile
+  // 可能被一个无 daemon 看管的 camoufox-bin 锁着（daemon 挂了/被杀，浏览器没跟着死）。
+  // 不回收则 spawnDaemon 起的新浏览器拿不到 profile lock 会卡死/失败。
+  if (persistent) {
+    const r = recoverOrphanBrowser(persistent);
+    if (!r.recovered) {
+      process.stderr.write(`[camoufox-cli] ${r.reason}\n`);
+      process.exit(1);
+    }
+  }
   await spawnDaemon(session, headed, timeout, persistent, proxy, geoip, locale, viewport);
 }
 

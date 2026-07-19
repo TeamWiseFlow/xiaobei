@@ -16,10 +16,10 @@
  *   fetch <url>                    抓文章全文
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { load as loadHtml } from "cheerio";
@@ -61,6 +61,16 @@ const ACCOUNTS_CACHE_FILE = process.env.WX_ACCOUNTS_CACHE_FILE ?? `${homedir()}/
 const QR_FILE = "/tmp/qr-wx-mp.png";
 const CAMOUFOX_CLI = process.env.CAMOUFOX_CLI ?? "camoufox-cli";
 const SESSION_NAME = "wx_mp";
+// 登录 in-progress 标记：防 agent 因延迟重复调 login 再 open mp.weixin.qq.com/，
+// 每次 open 都会刷新 scanloginqrcode 的 scene_id，把用户正在扫的旧 QR 作废
+// （手机端提示「系统错误」）。REUSE_WINDOW 内重复 login 直接 re-screenshot 同一 scene。
+const LOGIN_INPROGRESS_FILE = "/tmp/wx-mp-login-in-progress";
+const LOGIN_QR_REUSE_WINDOW_MS = 30_000;
+// login-confirm 轮询当前页等用户手机确认的最长时间。scanloginqrcode 页在用户
+// 点「确认登录」后会自动 redirect 到 /cgi-bin/home?token=xxx，原地轮询即可，
+// 不要再 open（open 会刷新 scene 作废 QR）。
+const LOGIN_CONFIRM_POLL_MAX_MS = 150_000;
+const LOGIN_CONFIRM_POLL_INTERVAL_MS = 3000;
 const execFileAsync = promisify(execFile);
 
 function timestampLocal(): string {
@@ -354,20 +364,99 @@ async function cmdCheck(): Promise<void> {
   authExit(`SESSION_EXPIRED (${r.reason})`);
 }
 
+/** 登录 in-progress 标记：{ opened_at, qr_path, keepalive_pid? }。login 写、login-confirm 成功后清。 */
+interface LoginMarker {
+  opened_at: number;
+  qr_path: string;
+  keepalive_pid?: number;
+}
+
+async function readLoginMarker(): Promise<LoginMarker | null> {
+  return readJsonFile<LoginMarker>(LOGIN_INPROGRESS_FILE);
+}
+
+async function writeLoginMarker(openedAt: number, keepalivePid?: number): Promise<void> {
+  const marker: LoginMarker = { opened_at: openedAt, qr_path: QR_FILE };
+  if (keepalivePid) marker.keepalive_pid = keepalivePid;
+  await writeJsonFile(LOGIN_INPROGRESS_FILE, marker);
+}
+
+/** keep-alive 脚本路径（与本文件同目录）。detached spawn，撑过扫码间隙的 60s daemon 空闲超时。 */
+const KEEPALIVE_SCRIPT = join(dirname(new URL(import.meta.url).pathname), "wx_mp_keepalive.mjs");
+
+/** detached spawn keep-alive：每 20s ping daemon 重置 idle timer，撑到 login-confirm 接管。 */
+function spawnKeepalive(): number {
+  const child = spawn(process.execPath, [KEEPALIVE_SCRIPT, SESSION_NAME, CAMOUFOX_CLI], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  return child.pid ?? 0;
+}
+
+/** 杀 keep-alive（若还在）。吞错——进程已退或 pid 无效都忽略。 */
+function killKeepalive(pid?: number): void {
+  if (!pid) return;
+  try { process.kill(pid, "SIGTERM"); } catch { /* 已退或无效，忽略 */ }
+}
+
+async function clearLoginMarker(): Promise<void> {
+  // 清前先停 keep-alive，避免孤儿 ping 进程残留
+  const marker = await readLoginMarker();
+  killKeepalive(marker?.keepalive_pid);
+  try { await unlink(LOGIN_INPROGRESS_FILE); } catch { /* 已不在，忽略 */ }
+}
+
 /**
  * 无头截 QR 登录流：camoufox-cli open 公众号首页 → screenshot 截 QR PNG。
  * agent 拿 QR_FILE 用 image 工具发用户扫码，用户回复「已扫码」后再调 cmdLoginConfirm。
+ *
+ * 幂等：REUSE_WINDOW 内重复调 login 不再 open（每次 open 会刷新 scanloginqrcode 的
+ * scene_id 作废用户正在扫的 QR），直接 re-screenshot 同一 scene。screenshot 失败
+ * （daemon/页面已挂）才回退 open 新 scene，并提示 agent 新 QR 已生成。
  */
 async function cmdLoginQr(): Promise<void> {
   try {
-    await camoufox("open", `${MP_BASE}/`);
-    await sleep(3000);
-    await camoufox("screenshot", QR_FILE);
+    const marker = await readLoginMarker();
+    const now = Date.now();
+    const canReuse =
+      marker && now - marker.opened_at < LOGIN_QR_REUSE_WINDOW_MS && marker.qr_path === QR_FILE;
+
+    // 先杀上一轮残留 keep-alive（若有），避免多份 ping 进程并存
+    killKeepalive(marker?.keepalive_pid);
+
+    let openedAt = marker?.opened_at ?? 0;
+    let regenerated = false;
+    if (canReuse) {
+      // 复用现有 scene：只 re-screenshot，不 open。screenshot 失败 → 回退 open 新 scene。
+      try {
+        await camoufox("screenshot", QR_FILE);
+      } catch {
+        await camoufox("open", `${MP_BASE}/`);
+        await sleep(3000);
+        await camoufox("screenshot", QR_FILE);
+        openedAt = Date.now();
+        regenerated = true;
+      }
+    } else {
+      await camoufox("open", `${MP_BASE}/`);
+      await sleep(3000);
+      await camoufox("screenshot", QR_FILE);
+      openedAt = Date.now();
+    }
+    // detached keep-alive：撑过「login 返回 → agent 发图 → 用户扫码 → login-confirm 起」
+    // 这段无命令间隙的 60s daemon 空闲超时，否则浏览器死、scanloginqrcode 服务端轮询死、
+    // 手机「确认登录」无落地（2026-07-19 13:11 扫码失败根因）。login-confirm 起后 kill 它。
+    const keepalivePid = spawnKeepalive();
+    await writeLoginMarker(openedAt, keepalivePid);
     // 不 close session——留着给 cmdLoginConfirm 继续用
     printJson({
       ok: true,
       qr_path: QR_FILE,
-      message: "二维码已截，请用微信（公众号管理员账号）扫码，完成后运行 login-confirm",
+      regenerated,
+      message: regenerated
+        ? "原 QR scene 已失效（daemon/页面挂了），已重新生成新二维码，请用微信（公众号管理员账号）扫码新图，完成后运行 login-confirm"
+        : "二维码已截，请用微信（公众号管理员账号）扫码，完成后运行 login-confirm",
     });
   } catch (e: any) {
     errExit(`camoufox-cli 截 QR 失败: ${e?.message ?? String(e)}`);
@@ -376,17 +465,41 @@ async function cmdLoginQr(): Promise<void> {
 
 /**
  * 登录确认：用户扫码完成后调此命令。
- * 验 camoufox session 内登录态就位 → eval window.location.href 拿 redirect URL 提 token
- * → cookies export + identity export 落中央存储 → 写 SESSION_FILE（含 token）
+ * 原地轮询当前页 URL（login 留下的 scanloginqrcode 页）等手机确认 → 页面自动 redirect
+ * 到 /cgi-bin/home?token=xxx → 提 token → cookies export + identity export 落中央存储。
+ *
+ * ⚠️ 不再 `open mp.weixin.qq.com/`：未登录态下 open 会刷新 scanloginqrcode 的 scene_id，
+ * 把用户正在扫的 QR 作废（手机端「系统错误」）。这是 2026-07-19 07:36 扫码混乱的根因。
  */
 async function cmdLoginConfirm(): Promise<void> {
   try {
-    // 验登录态就位：open 首页应跳到 /cgi-bin/home?token=xxx
-    await camoufox("open", `${MP_BASE}/`);
-    await sleep(3000);
-    const url = await camoufoxCurrentUrl();
-    if (url.includes("login") || url.includes("scanloginqrcode")) {
-      errExit("登录态未就位——用户可能还没扫码确认，请告知用户完成手机端确认后重试");
+    // 接管轮询前先停 keep-alive（login 起的 detached ping），避免与本轮 eval 并存。
+    const marker = await readLoginMarker();
+    killKeepalive(marker?.keepalive_pid);
+
+    // 轮询当前页 URL，等用户手机点「确认登录」后 scanloginqrcode 页自动 redirect 到 home。
+    let url = "";
+    const deadline = Date.now() + LOGIN_CONFIRM_POLL_MAX_MS;
+    while (Date.now() < deadline) {
+      url = await camoufoxCurrentUrl();
+      if (url.includes("/cgi-bin/home") && url.includes("token=")) break;
+      // 还在 scanloginqrcode/login 页 = 用户还没确认，继续等
+      await sleep(LOGIN_CONFIRM_POLL_INTERVAL_MS);
+    }
+
+    if (!url.includes("/cgi-bin/home") || !url.includes("token=")) {
+      // 轮询超时仍没就位。最后再读一次 URL 给出明确诊断。
+      const finalUrl = url || (await camoufoxCurrentUrl().catch(() => ""));
+      if (!finalUrl) {
+        // 空 URL = 浏览器/daemon 已挂（eval 连不上）。QR 已失效——浏览器死则 scanloginqrcode
+        // 服务端轮询早死，手机「确认登录」无落地。不重试 open（会刷新 scene 作废），让 agent 重 login。
+        await clearLoginMarker();
+        errExit(`登录态未就位——浏览器/daemon 已挂（eval 返回空 URL）。QR 在扫码间隙被 60s 空闲超时回收而失效，手机「确认登录」无落地。请重新运行 login 获取新 QR（keep-alive 已加固，新 QR 会撑过扫码间隙）`);
+      }
+      if (finalUrl.includes("login") || finalUrl.includes("scanloginqrcode")) {
+        errExit(`登录态未就位——轮询 ${LOGIN_CONFIRM_POLL_MAX_MS / 1000}s 仍在 scanloginqrcode 页，用户可能没扫码或没点手机端「确认登录」。请确认手机端已完成确认后重试 login-confirm（不会作废当前 QR）`);
+      }
+      errExit(`登录态未就位——当前页 URL 异常: ${finalUrl.slice(0, 200)}`);
     }
 
     // 提 token
@@ -435,6 +548,7 @@ async function cmdLoginConfirm(): Promise<void> {
     // close 掉无头浏览器——登录态已在磁盘 profile + 中央存储，不留进程占内存。
     // 下游（wx-mp-engagement / 业务命令）按需重起无头 session，profile 桥接登录态。
     try { await camoufox("close"); } catch { /* session 已退或卡死，忽略 */ }
+    await clearLoginMarker();
 
     printJson({ ok: true, message: "登录成功，cookie + UA + token 已落中央存储（session 已关，登录态在磁盘 profile）", token, ping: "home", h2: ping.h2 });
   } catch (e: any) {
