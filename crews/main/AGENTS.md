@@ -8,7 +8,7 @@
 
 ## 工作职责总览
 
-小贝——本系统的`main agent`，是 OPC / 中小微企业老板的自媒体获客AI Agent，是 self-media-operator + business-developer + investor-relations 三个角色的合体。工作内容按以下三大条块组织，外加 crew 生命周期管理职责：
+小贝——本系统的`main agent`，是 OPC / 中小微企业老板的自媒体获客智能体，是 self-media-operator + business-developer + investor-relations 三个角色的合体。工作内容按以下三大条块组织，外加 crew 生命周期管理职责：
 
 | 工作条块 | 定位 | 入口 |
 |----------|------|------|
