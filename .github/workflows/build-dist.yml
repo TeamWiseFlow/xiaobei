@@ -61,14 +61,15 @@ jobs:
           npm install --registry=https://registry.npmmirror.com
           npm run build
 
-      - name: Fetch standalone pnpm.cjs
+      - name: Fetch standalone pnpm (npm package, self-contained)
         run: |
           curl -fsSL -o /tmp/pnpm.tgz https://registry.npmmirror.com/pnpm/-/pnpm-11.2.2.tgz
+          rm -rf /tmp/pnpm-pkg
           mkdir -p /tmp/pnpm-pkg
           tar -xzf /tmp/pnpm.tgz -C /tmp/pnpm-pkg
-          ls /tmp/pnpm-pkg/package/bin/ || true
-          # pnpm npm 包入口是 bin/pnpm.cjs（standalone bundle）
-          test -f /tmp/pnpm-pkg/package/bin/pnpm.cjs
+          # 入口 bin/pnpm.mjs（main 字段），dist/pnpm.mjs 是自包含 bundle
+          test -f /tmp/pnpm-pkg/package/bin/pnpm.mjs
+          test -f /tmp/pnpm-pkg/package/dist/pnpm.mjs
 
       - name: Stage engine (no node_modules)
         id: stage
@@ -88,8 +89,8 @@ jobs:
             --exclude='coverage' \
             "$REPO/openclaw/" "$STAGE/openclaw/"
 
-          # 2. standalone pnpm（用户侧装依赖用）
-          cp /tmp/pnpm-pkg/package/bin/pnpm.cjs "$STAGE/tools/pnpm.cjs"
+          # 2. standalone pnpm（用户侧 pnpm install --prod 用，入口 tools/pnpm/bin/pnpm.mjs）
+          cp -a /tmp/pnpm-pkg/package "$STAGE/tools/pnpm"
 
           # 3. camoufox-cli fork（dist 已 build，用户侧 npm install -g .）
           rsync -a --exclude='node_modules' --exclude='.git' \
