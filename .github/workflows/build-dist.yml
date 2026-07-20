@@ -94,9 +94,12 @@ jobs:
       - name: Prune dev deps（dist 已 build，运行时只需 prod deps）
         run: |
           cd openclaw
-          pnpm install --prod --ignore-scripts --no-frozen-lockfile \
+          # 用 build 已生成的 lockfile（frozen），只摘 dev deps 不重新解析依赖树
+          # --no-frozen-lockfile 会触发全量 re-resolve，openclaw workspace 巨大曾挂 50min
+          timeout 600 pnpm install --prod --frozen-lockfile --ignore-scripts \
             --registry=https://registry.npmmirror.com \
-            --fetch-retries=5 --fetch-timeout=600000
+            --fetch-retries=5 --fetch-timeout=120000 --network-concurrency=8 \
+            || { echo "⚠️ prune failed/timed out, keep full deps"; true; }
 
       - name: Build camoufox-cli fork (replaces upstream on PATH)
         run: bash patches/camoufox-cli/build.sh
