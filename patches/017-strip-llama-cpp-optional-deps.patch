@@ -1,0 +1,15 @@
+diff --git a/extensions/llama-cpp/package.json b/extensions/llama-cpp/package.json
+index 04f3ff1d7..c710aeddb 100644
+--- a/extensions/llama-cpp/package.json
++++ b/extensions/llama-cpp/package.json
+@@ -7,9 +7,7 @@
+     "url": "https://github.com/openclaw/openclaw"
+   },
+   "type": "module",
+-  "optionalDependencies": {
+-    "node-llama-cpp": "3.18.1"
+-  },
++  "optionalDependencies": {},
+   "devDependencies": {
+     "@openclaw/plugin-sdk": "workspace:*"
+   },
