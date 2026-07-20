@@ -1,5 +1,12 @@
 # xiaobei Docker 分发
 
+> ⚠️ **可选通道，现阶段不再主推**（2026-07-19）
+>
+> wiseflow 现以 `scripts/install.sh`（curl 一键脚本）为主分发通道，详见 `docs/native-distribution-plan-2026-07-18.md` 与 README「快速开始」段。
+> `.github/workflows/release.yml` 的 `docker` job 已删除，CI 不再自动构建推送镜像；`release` job 仅保留版本 bump + tag。
+>
+> 本文档保留给需要沙箱 / 隔离场景的用户参考，但需自行 build 镜像（`docker/docker-bootstrap.sh`）或使用历史已推到阿里云的滞后镜像。Dockerfile 与 `docker/` 脚本本身不删，留作后续重启通道时的复用基础。
+
 ## 运行
 
 生产镜像由 GitHub Actions 在合并到 `master` 后构建并推送到阿里云镜像服务。用户只需要：

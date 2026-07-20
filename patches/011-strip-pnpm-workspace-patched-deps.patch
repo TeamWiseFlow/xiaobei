@@ -1,0 +1,10 @@
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+index b6022e770..085564ed4 100644
+--- a/pnpm-workspace.yaml
++++ b/pnpm-workspace.yaml
+@@ -150,5 +150,3 @@ packageExtensions:
+       sharp:
+         optional: true
+ 
+-patchedDependencies:
+-  "@agentclientprotocol/claude-agent-acp@0.39.0": patches/@agentclientprotocol__claude-agent-acp@0.39.0.patch

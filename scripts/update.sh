@@ -1,22 +1,23 @@
 #!/bin/bash
-# install.sh - 一键安装 / 升级 wiseflow
+# update.sh - wiseflow 升级脚本（已 git clone 用户用）
 #
-# 适用场景：
-#   - 新用户首次安装（已下载并解压缩全部源码文件）
-#   - 老用户升级（拉取最新代码 + 同步 openclaw 引擎）
+# 与 scripts/install.sh 区别：
+#   - install.sh = curl 首装路线（从零开始，clone 仓 → build → onboard）
+#   - update.sh  = 已 git clone 用户的升级路线（fetch + reset → checkout openclaw → build → daemon reload）
+#
+# 适用场景：用户已通过 install.sh 装好 wiseflow，后续要拉新版本用此脚本。
+# 升级前请确保系统空闲（无 agent 会话正在处理任务）。
 #
 # 执行流程：
 #   1. 验证 wiseflow 项目目录合法性
-#   2. 初始化 git remote（如未初始化）或验证 remote URL
+#   2. 验证 / 重置 git remote（如未初始化或被改）
 #   3. git fetch + reset --hard 拉取最新 wiseflow 代码
 #   4. 读取 openclaw.version，按锚定版本检出 openclaw 子目录
 #      - 若已是目标 commit，跳过耗时的 install
-#   5. 首次初始化内置全局 Crew workspace + openclaw.json
-#   6. apply-addons.sh（patches + skills + crew 模板，内含 setup-crew.sh）
-#   7. pnpm build（编译 openclaw dist）
-#   8. 安装 daemon + 环境变量注入 + 重启
-#
-# ⚠️  升级前请确保系统空闲（无 agent 会话正在处理任务）
+#   5. apply-addons.sh（patches + skills + crew 模板，内含 setup-crew.sh）
+#   6. pnpm build（编译 openclaw dist）
+#   7. daemon 升级（已装只 reload + restart 不卸装，避免掐断正在跑的会话）
+#   8. 微信 channel 插件同步 + meta 回正
 set -e
 
 OFB_REPO="https://github.com/TeamWiseFlow/xiaobei.git"
@@ -456,14 +457,35 @@ EOF
   fi
 fi
 
-# ─── 9. 安装 daemon ──────────────────────────────────────
+# ─── 9. 安装 / 升级 daemon ──────────────────────────────────
+# 升级路径：daemon 已装则只 reload + restart，不 uninstall + install，
+# 避免卸装瞬间掐断正在跑的 agent 会话（self-spawned subagent / channel reply）。
+# 仅首次安装（service 文件不存在）才走完整 daemon install。
 cd "$OPENCLAW_DIR"
-pnpm openclaw daemon uninstall 2>/dev/null || true
-pnpm openclaw daemon install
 
-# daemon install 创建了 service 文件，此时 reload 让 drop-in 生效
-if [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
-  systemctl --user daemon-reload 2>/dev/null || true
+_daemon_is_installed() {
+  if [ "$(uname -s)" = "Darwin" ]; then
+    [ -f "$HOME/Library/LaunchAgents/ai.openclaw.gateway.plist" ]
+  elif [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --user list-unit-files 2>/dev/null | grep -q '^openclaw-gateway\.service'
+  else
+    return 1
+  fi
+}
+
+if _daemon_is_installed; then
+  echo "🔁 daemon already installed — reloading + restarting (no uninstall to preserve running sessions)"
+  if [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --user daemon-reload 2>/dev/null || true
+  fi
+  # 让 daemon 自升级 runtime（openclaw 引擎刚被重 build，需 daemon 重启后加载新 dist）
+  pnpm openclaw daemon restart 2>/dev/null || true
+else
+  echo "📦 daemon first-time install"
+  pnpm openclaw daemon install
+  if [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
+    systemctl --user daemon-reload 2>/dev/null || true
+  fi
 fi
 
 # ─── 9.4 让外部 CLI 解析 openclaw 时拿到本地构建 ──────────────

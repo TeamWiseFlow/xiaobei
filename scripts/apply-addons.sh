@@ -107,9 +107,14 @@ apply_patch() {
 # ─── 应用基础补丁（patches/*.patch，按序号顺序） ─────────────────
 PATCHES_DIR="$PROJECT_ROOT/patches"
 if ls "$PATCHES_DIR"/*.patch 1>/dev/null 2>&1; then
-  echo "🩹 Applying base patches..."
+  # 先数总数，循环里打 [n/N] 进度，避免长时间静默让用户以为死机
+  PATCH_TOTAL=$(ls "$PATCHES_DIR"/*.patch 2>/dev/null | wc -l | tr -d ' ')
+  echo "🩹 Applying base patches (${PATCH_TOTAL} files)..."
   cd "$OPENCLAW_DIR"
+  PATCH_IDX=0
   for patch in $(ls "$PATCHES_DIR"/*.patch | sort); do
+    PATCH_IDX=$((PATCH_IDX + 1))
+    printf "  [%d/%d] %s\n" "$PATCH_IDX" "$PATCH_TOTAL" "$(basename "$patch")"
     apply_patch "$patch"
   done
   cd "$PROJECT_ROOT"
@@ -122,9 +127,13 @@ fi
 # 按文件名 sort 顺序应用（各 patch 改不同文件，彼此独立，顺序不影正确性）。
 PIVOT_PATCH_DIR="$PROJECT_ROOT/patches/browser-camoufox-pivot/patches"
 if ls "$PIVOT_PATCH_DIR"/*.patch 1>/dev/null 2>&1; then
-  echo "🩹 Applying browser-camoufox-pivot per-file patches..."
+  PIVOT_TOTAL=$(ls "$PIVOT_PATCH_DIR"/*.patch 2>/dev/null | wc -l | tr -d ' ')
+  echo "🩹 Applying browser-camoufox-pivot per-file patches (${PIVOT_TOTAL} files)..."
   cd "$OPENCLAW_DIR"
+  PIVOT_IDX=0
   for patch in $(ls "$PIVOT_PATCH_DIR"/*.patch | sort); do
+    PIVOT_IDX=$((PIVOT_IDX + 1))
+    printf "  [%d/%d] %s\n" "$PIVOT_IDX" "$PIVOT_TOTAL" "$(basename "$patch")"
     apply_patch "$patch"
   done
   cd "$PROJECT_ROOT"
@@ -287,7 +296,7 @@ if [ -d "$AWADA_EXT" ] && [ -f "$AWADA_EXT/package.json" ]; then
   awada_stored="$(cat "$AWADA_PKG_HASH_FILE" 2>/dev/null || echo '')"
   if [ "$awada_hash" != "$awada_stored" ] || [ ! -d "$AWADA_EXT/node_modules" ]; then
     echo "📦 Installing awada plugin dependencies (ws + zod)..."
-    (cd "$AWADA_EXT" && npm install --omit=dev --no-audit --no-fund --loglevel=warn) \
+    (cd "$AWADA_EXT" && npm install --omit=dev --no-audit --no-fund --loglevel=warn --registry=https://registry.npmmirror.com) \
       && echo "$awada_hash" > "$AWADA_PKG_HASH_FILE" \
       && echo "✅ awada dependencies installed" \
       || echo "  ⚠️  awada npm install failed (可后续手动 cd $AWADA_EXT && pnpm install --prod)" >&2
@@ -368,10 +377,13 @@ stored_pkg_hash="$(cat "$SKILL_PKG_HASH_FILE" 2>/dev/null || echo '')"
 
 if [ "$current_pkg_hash" != "$stored_pkg_hash" ]; then
   if [ ${#skill_pkg_dirs[@]} -gt 0 ]; then
-    echo "📦 Installing per-skill Node.js dependencies..."
+    SKILL_PKG_TOTAL=${#skill_pkg_dirs[@]}
+    echo "📦 Installing per-skill Node.js dependencies (${SKILL_PKG_TOTAL} skills)..."
+    SKILL_PKG_IDX=0
     for d in "${skill_pkg_dirs[@]}"; do
-      echo "  → ${d#$PROJECT_ROOT/}"
-      (cd "$d" && npm install --omit=dev --no-audit --no-fund --loglevel=warn) \
+      SKILL_PKG_IDX=$((SKILL_PKG_IDX + 1))
+      printf "  [%d/%d] %s\n" "$SKILL_PKG_IDX" "$SKILL_PKG_TOTAL" "${d#$PROJECT_ROOT/}"
+      (cd "$d" && npm install --omit=dev --no-audit --no-fund --loglevel=warn --registry=https://registry.npmmirror.com) \
         || echo "  ⚠️  npm install failed in $d" >&2
     done
     echo "$current_pkg_hash" > "$SKILL_PKG_HASH_FILE"
@@ -491,7 +503,29 @@ fi
 if [ "$NEEDS_INSTALL" = "true" ]; then
   echo "📦 Syncing dependencies..."
   cd "$OPENCLAW_DIR"
-  pnpm install --frozen-lockfile=false
+  # pnpm 在算包 hash digest 时（TypedArrayPrototypeJoin → crypto::Hash::OneShotDigest）对大包
+  # 一次性 join 整个文件当 TypedArray digest，单 isolate OOM。曾试过 fetch 预拉绕开 digest，
+  # 但 pnpm fetch 无脑下所有 optionalDependencies + 平台包（@github/copilot 104MB /
+  # @openai/codex 91MB / @zed-industries/codex-acp 65MB），这些 wiseflow 根本不用，fetch 自己就炸。
+  # 真根治走 patches 008/009/010/013 把 copilot/codex/acpx/codex-supervisor 四个 extension 的
+  # dependencies 段置空 + patches 011/012 删 pnpm-workspace.yaml 的 patchedDependencies + mra-exclude 段——
+  # pnpm 解析依赖树时这四个 extension 还是 workspace package 但依赖空，transitive 大包一个都不拉，
+  # 根本不触发 digest 段。
+  # 不能加 --no-optional：跟 pnpm-lock.yaml 的 optionalDependencies 平台包声明冲突炸
+  # ERR_PNPM_LOCKFILE_MISSING_DEPENDENCY（@lydell/node-pty-darwin-arm64 那条）。平台包自己
+  # 按 arch 选一个下，体积小不触发 OOM，留着不动。
+  # 必须先删 pnpm-lock.yaml：lockfile 里冻结着 patches 改前四个 extension 的完整 dependencies 段，
+  # pnpm 跑时会按 lockfile 下 copilot/codex/zed 大包到 store（即使 link 段被 patches 截了），仍触发 OOM。
+  # 删了让 pnpm 重新解析依赖树，按当前（已被 patches 改空的）dependencies 段生成新 lockfile。
+  # --strict-peer-dependencies=false 容忍 peer 漂移。阿里云镜像 + timeout 10min + 5 重试 + 并发 8 + NODE_OPTIONS 抬 heap 8GB（双保险）
+  if [ -f "pnpm-lock.yaml" ]; then
+    echo "  → removing stale pnpm-lock.yaml (forces re-resolve, skips frozen copilot/codex/zed entries)"
+    rm -f pnpm-lock.yaml
+  fi
+  NODE_OPTIONS="--max-old-space-size=8192" \
+    pnpm install --no-frozen-lockfile --strict-peer-dependencies=false \
+      --registry=https://registry.npmmirror.com \
+      --fetch-retries=5 --fetch-timeout=600000 --network-concurrency=8
   cd "$PROJECT_ROOT"
 fi
 

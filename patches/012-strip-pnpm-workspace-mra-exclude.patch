@@ -1,0 +1,13 @@
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+index b6022e770..939821a99 100644
+--- a/pnpm-workspace.yaml
++++ b/pnpm-workspace.yaml
+@@ -12,8 +12,6 @@ minimumReleaseAgeExclude:
+   - "@openclaw/proxyline@0.3.3"
+   - "acpx"
+   - "tokenjuice"
+-  - "@agentclientprotocol/claude-agent-acp@0.39.0"
+-  - "@agentclientprotocol/sdk"
+   - "axios"
+   - "basic-ftp"
+   - "baileys@7.0.0-rc13"
