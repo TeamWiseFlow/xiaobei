@@ -1,27 +1,14 @@
 name: Build Dist Tarball
 
-# 预构建分发：checkout openclaw@pin → 打 patches → pnpm build → camoufox-cli fork build
-# → 打平台 tarball（含 portable Node）→ upload artifact / release asset。
-# 用户侧 install.sh 只下 tarball 解压，零 pnpm build。
-#
-# v1：先只开 linux-x64，跑通再加 mac-arm64 / mac-x64 / win-x64（matrix include 已留好）。
+# 方案 B：CI 只 build 一次（dist 跨平台），ship dist+lockfile（不 ship node_modules）+ pnpm.cjs
+# + 4 平台 portable Node → 4 个瘦 tarball。
+# 用户侧 install.sh 跑 `pnpm install --prod --frozen-lockfile`（用 bundled pnpm + portable Node）
+# 拉依赖+native prebuilt，无 tsc/无 OOM。
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
-    inputs:
-      platform:
-        description: '只 build 指定平台（留空 = matrix 全跑）'
-        required: false
-        type: choice
-        default: ''
-        options:
-          - ''
-          - linux-x64
-          - mac-arm64
-          - mac-x64
-          - win-x64
 
 permissions:
   contents: write
@@ -32,30 +19,7 @@ concurrency:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux-x64
-            runs-on: ubuntu-24.04
-            # node 24.15.0 与官方 install-cli.sh 默认对齐
-            node_url: https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz
-            node_archive_subdir: node-v24.15.0-linux-x64
-            # mac-arm64 / mac-x64 / win-x64 先注释，linux-x64 绿了再开
-          # - platform: mac-arm64
-          #   runs-on: macos-latest
-          #   node_url: https://nodejs.org/dist/v24.15.0/node-v24.15.0-darwin-arm64.tar.xz
-          #   node_archive_subdir: node-v24.15.0-darwin-arm64
-          # - platform: mac-x64
-          #   runs-on: macos-13
-          #   node_url: https://nodejs.org/dist/v24.15.0/node-v24.15.0-darwin-x64.tar.xz
-          #   node_archive_subdir: node-v24.15.0-darwin-x64
-          # - platform: win-x64
-          #   runs-on: windows-latest
-          #   node_url: https://nodejs.org/dist/v24.15.0/node-v24.15.0-win-x64.zip
-          #   node_archive_subdir: node-v24.15.0-win-x64
-    runs-on: ${{ matrix.runs-on }}
-
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout xiaobei
         uses: actions/checkout@v4
@@ -80,7 +44,7 @@ jobs:
           git -C openclaw fetch --depth=1 origin ${{ steps.pin.outputs.commit }}
           git -C openclaw checkout FETCH_HEAD
 
-      - name: Apply patches + pnpm install (no build, no crew, no restart)
+      - name: Apply patches + pnpm install (for build)
         run: bash scripts/apply-addons.sh --no-build --no-restart --skip-crew
 
       - name: Build openclaw dist
@@ -91,79 +55,119 @@ jobs:
         env:
           CI: 'true'
 
-      - name: Prune dev deps（dist 已 build，运行时只需 prod deps）
+      - name: Build camoufox-cli fork dist (no global install)
         run: |
-          cd openclaw
-          # 用 build 已生成的 lockfile（frozen），只摘 dev deps 不重新解析依赖树
-          # --no-frozen-lockfile 会触发全量 re-resolve，openclaw workspace 巨大曾挂 50min
-          timeout 600 pnpm install --prod --frozen-lockfile --ignore-scripts \
-            --registry=https://registry.npmmirror.com \
-            --fetch-retries=5 --fetch-timeout=120000 --network-concurrency=8 \
-            || { echo "⚠️ prune failed/timed out, keep full deps"; true; }
+          cd patches/camoufox-cli
+          npm install --registry=https://registry.npmmirror.com
+          npm run build
 
-      - name: Build camoufox-cli fork (replaces upstream on PATH)
-        run: bash patches/camoufox-cli/build.sh
+      - name: Fetch standalone pnpm.cjs
+        run: |
+          curl -fsSL -o /tmp/pnpm.tgz https://registry.npmmirror.com/pnpm/-/pnpm-11.2.2.tgz
+          mkdir -p /tmp/pnpm-pkg
+          tar -xzf /tmp/pnpm.tgz -C /tmp/pnpm-pkg
+          ls /tmp/pnpm-pkg/package/bin/ || true
+          # pnpm npm 包入口是 bin/pnpm.cjs（standalone bundle）
+          test -f /tmp/pnpm-pkg/package/bin/pnpm.cjs
 
-      - name: Stage tarball
+      - name: Stage engine (no node_modules)
         id: stage
         run: |
           set -euo pipefail
           REPO="$GITHUB_WORKSPACE"
-          STAGE="$RUNNER_TEMP/stage"
+          STAGE="$RUNNER_TEMP/engine"
           rm -rf "$STAGE"
           mkdir -p "$STAGE/bin" "$STAGE/tools"
 
-          # 1. openclaw 引擎（dist 已 build，prod node_modules；排除 .git / 缓存）
-          rsync -a --exclude='.git' --exclude='node_modules/.cache' --exclude='*.tsbuildinfo' \
+          # 1. openclaw 引擎：dist + 源码 + lockfile + package.jsons，排除 node_modules / .git / 缓存
+          #    用户侧 pnpm install --prod 按 lockfile 重建 node_modules
+          rsync -a \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='*.tsbuildinfo' \
+            --exclude='coverage' \
             "$REPO/openclaw/" "$STAGE/openclaw/"
-          # 探测 pnpm symlink 问题：node_modules 里软链指向全局 store 的话，tarball 到用户机会 dangling
-          SYMLINK_COUNT=$(find "$STAGE/openclaw" -type l 2>/dev/null | wc -l)
-          ABS_SYMLINKS=$(find "$STAGE/openclaw" -type l 2>/dev/null | while read l; do r=$(readlink "$l"); case "$r" in /*) echo x;; esac; done | wc -l)
-          echo "ℹ️ openclaw symlinks: $SYMLINK_COUNT (absolute→dangling: $ABS_SYMLINKS)"
-          # 体积 breakdown，定位 bloat（诊断用，失败不影响 build）
-          (
-            set +e +o pipefail
-            echo "📊 staged openclaw top-level sizes:"
-            du -sh "$STAGE/openclaw"/* 2>/dev/null | sort -rh | head -20
-            echo "📊 node_modules biggest packages:"
-            du -sh "$STAGE/openclaw/node_modules/.pnpm"/*/ 2>/dev/null | sort -rh | head -15
-            echo "📊 total stage:"
-            du -sh "$STAGE"/* 2>/dev/null | sort -rh
-          ) || true
 
-          # 2. portable Node 24.15.0
-          curl -fsSL -o "$RUNNER_TEMP/node.tar.xz" "${{ matrix.node_url }}"
-          tar -xJf "$RUNNER_TEMP/node.tar.xz" -C "$RUNNER_TEMP"
-          mv "$RUNNER_TEMP/${{ matrix.node_archive_subdir }}" "$STAGE/tools/node"
+          # 2. standalone pnpm（用户侧装依赖用）
+          cp /tmp/pnpm-pkg/package/bin/pnpm.cjs "$STAGE/tools/pnpm.cjs"
 
-          # 3. wrapper：~/.openclaw/bin/openclaw → portable node + openclaw.mjs
-          cat > "$STAGE/bin/openclaw" <<'EOF'
-          #!/usr/bin/env bash
-          HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-          exec "$HERE/tools/node/bin/node" "$HERE/openclaw/openclaw.mjs" "$@"
-          EOF
-          chmod +x "$STAGE/bin/openclaw"
+          # 3. camoufox-cli fork（dist 已 build，用户侧 npm install -g .）
+          rsync -a --exclude='node_modules' --exclude='.git' \
+            "$REPO/patches/camoufox-cli/" "$STAGE/camoufox-cli/"
 
-          # 4. xiaobei 模板与脚本（用户侧 install/setup-crew/apply-addons 复用）
+          # 4. xiaobei 模板与脚本
           cp -a "$REPO/crews" "$STAGE/crews"
           cp -a "$REPO/skills" "$STAGE/skills"
           cp -a "$REPO/config-templates" "$STAGE/config-templates"
           cp -a "$REPO/scripts" "$STAGE/scripts"
           cp "$REPO/openclaw.version" "$REPO/version" "$STAGE/"
 
-          # 5. 打包
-          XIAOBEI_VER="$(tr -d '[:space:]' < "$REPO/version")"
-          ASSET="xiaobei-${XIAOBEI_VER}-${{ matrix.platform }}.tar.zst"
-          tar --zstd -cf "$RUNNER_TEMP/$ASSET" -C "$STAGE" .
-          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
-          echo "asset_path=$RUNNER_TEMP/$ASSET" >> "$GITHUB_OUTPUT"
-          ls -lh "$RUNNER_TEMP/$ASSET"
+          # 5. 体积 breakdown（诊断）
+          (
+            set +e +o pipefail
+            echo "📊 engine top-level:"
+            du -sh "$STAGE"/* 2>/dev/null | sort -rh
+            echo "📊 openclaw top-level:"
+            du -sh "$STAGE/openclaw"/* 2>/dev/null | sort -rh | head -15
+          ) || true
 
-      - name: Upload artifact
+          echo "stage_dir=$STAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Build 4 platform tarballs (engine + portable Node)
+        run: |
+          set -euo pipefail
+          STAGE="${{ steps.stage.outputs.stage_dir }}"
+          XIAOBEI_VER="$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/version")"
+          mkdir -p "$RUNNER_TEMP/out"
+
+          # 平台 → (node_url, subdir)
+          declare -A PLATFORMS=(
+            [linux-x64]="https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz|node-v24.15.0-linux-x64"
+            [mac-arm64]="https://nodejs.org/dist/v24.15.0/node-v24.15.0-darwin-arm64.tar.xz|node-v24.15.0-darwin-arm64"
+            [mac-x64]="https://nodejs.org/dist/v24.15.0/node-v24.15.0-darwin-x64.tar.xz|node-v24.15.0-darwin-x64"
+            [win-x64]="https://nodejs.org/dist/v24.15.0/node-v24.15.0-win-x64.zip|node-v24.15.0-win-x64"
+          )
+
+          for plat in linux-x64 mac-arm64 mac-x64 win-x64; do
+            IFS='|' read -r url subdir <<< "${PLATFORMS[$plat]}"
+            echo "=== packaging $plat ==="
+            PKG="$RUNNER_TEMP/pkg-$plat"
+            rm -rf "$PKG"
+            cp -a "$STAGE" "$PKG"
+
+            # portable Node
+            if [[ "$plat" == win-x64 ]]; then
+              curl -fsSL -o /tmp/node.zip "$url"
+              unzip -q /tmp/node.zip -d /tmp/
+              mv "/tmp/$subdir" "$PKG/tools/node"
+            else
+              curl -fsSL -o /tmp/node.tar.xz "$url"
+              tar -xJf /tmp/node.tar.xz -C /tmp/
+              mv "/tmp/$subdir" "$PKG/tools/node"
+            fi
+
+            # wrapper: ~/.openclaw/bin/openclaw → portable node + openclaw.mjs
+            cat > "$PKG/bin/openclaw" <<'EOF'
+          #!/usr/bin/env bash
+          HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+          exec "$HERE/tools/node/bin/node" "$HERE/openclaw/openclaw.mjs" "$@"
+          EOF
+            chmod +x "$PKG/bin/openclaw"
+
+            ASSET="xiaobei-${XIAOBEI_VER}-${plat}.tar.zst"
+            tar --zstd -cf "$RUNNER_TEMP/out/$ASSET" -C "$PKG" .
+            ls -lh "$RUNNER_TEMP/out/$ASSET"
+          done
+
+          # 给后续步骤用
+          echo "out_dir=$RUNNER_TEMP/out" >> "$GITHUB_OUTPUT"
+          ls -lh "$RUNNER_TEMP/out/"
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: xiaobei-${{ matrix.platform }}
-          path: ${{ steps.stage.outputs.asset_path }}
+          name: xiaobei-tarballs
+          path: ${{ runner.temp }}/out/*.tar.zst
           retention-days: 14
 
       - name: Attach to release (on tag)
@@ -172,4 +176,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${GITHUB_REF##*/}" "${{ steps.stage.outputs.asset_path }}" --clobber
+          for f in "$RUNNER_TEMP"/out/*.tar.zst; do
+            gh release upload "${GITHUB_REF##*/}" "$f" --clobber || true
+          done
