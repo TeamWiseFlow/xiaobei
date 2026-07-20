@@ -5,7 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh | bash
 #
 # 与 update.sh 区别：
-#   - install.sh = 首装路线（拉预构建 tarball → pnpm install --prod → onboard，全程无需用户预装 Node/git/pnpm）
+#   - install.sh = 首装路线（拉预构建 tarball → pnpm install --prod → 交互收 AWK_API_KEY + daemon install，全程无需用户预装 Node/git/pnpm）
 #   - update.sh  = 已装用户的升级路线（拉新 tarball → pnpm install --prod → daemon reload）
 #
 # 执行流程：
@@ -13,15 +13,18 @@
 #   2. bootstrap gum UI（TTY 才有，非 TTY 静默跳过）
 #   3. 解析最新 release tag（GitHub API，或 XIAOBEI_MIRROR env 指向自建镜像）
 #   4. 下载 xiaobei-{ver}-{plat}.tar.zst → 临时文件
-#   5. 解压到 WISEFLOW_ROOT（默认 ~/.openclaw）：openclaw/ + tools/node + tools/pnpm + bin/openclaw + crews/ + skills/ + scripts/ + camoufox-cli/
+#   5. 解压到 WISEFLOW_ROOT（默认 ~/.xiaobei，程序目录）：openclaw/ + tools/node + tools/pnpm + bin/openclaw + crews/ + skills/ + scripts/ + camoufox-cli/
 #   6. pnpm install --prod --frozen-lockfile（用 ship 的 portable node + pnpm，在 openclaw/ 下；只拉依赖不编译，无 OOM，native 自动按平台）
 #   7. pip install --user（skills 的 python deps，扫 requirements.txt）
-#   8. 放置 config-templates/openclaw.json → ~/.openclaw/openclaw.json + 预填微信 channel binding
-#   9. setup-crew.sh（裸跑，无 --force；--force 只用户手动修复用）
+#   8. 放置 config-templates/openclaw.json → ~/.openclaw/openclaw.json（运行数据目录 OPENCLAW_HOME）+ 预填微信 channel binding
+#   9. setup-crew.sh（裸跑，无 --force；--force 只用户手动修复用；crew 模板来自 WISEFLOW_ROOT/crews，workspace 落 OPENCLAW_HOME）
 #   10. camoufox-cli：npm install -g 本地 fork（ship 的 portable node）+ camoufox-cli install 下 Firefox
-#   11. openclaw onboard --skip-channels --skip-skills --skip-bootstrap --skip-health --skip-ui --install-daemon
-#       此步交互问用户：模型供应商 + API key（唯一人工输入点）
-#   12. 打印访问指引
+#   11. openclaw-weixin 插件：openclaw plugins install @tencent-weixin/openclaw-weixin@<pin> --pin（npmmirror）
+#   12. 交互问 AWK_API_KEY → 写 gateway env（Linux daemon.env / Darwin service-env/ai.openclaw.gateway.env，均落 OPENCLAW_HOME）
+#       → openclaw daemon install + restart（唯一人工输入点；不走 onboard，小白友好）
+#   13. 打印访问指引
+#
+# 目录职责：WISEFLOW_ROOT（~/.xiaobei）= 程序（引擎+模板+脚本+工具+wrapper）；OPENCLAW_HOME（~/.openclaw）= 运行数据（config+env+workspace+logs）。
 #
 # tarball 由 .github/workflows/build-dist.yml 在 CI 预构建（方案 B）：CI 只 build 一次，
 # ship dist+lockfile（不 ship node_modules）+ pnpm + portable Node，用户侧 pnpm install --prod 重建 node_modules。
@@ -31,7 +34,9 @@ set -euo pipefail
 # 常量
 # ═══════════════════════════════════════════════════════════════════
 WISEFLOW_REPO="${XIAOBEI_REPO:-TeamWiseFlow/xiaobei}"
-WISEFLOW_ROOT_DEFAULT="$HOME/.openclaw"
+# 程序目录（引擎源码 + crew 模板 + 脚本 + portable node/pnpm + camoufox-cli fork + bin wrapper）
+# 与运行数据目录 OPENCLAW_HOME（~/.openclaw：openclaw.json + daemon.env + workspace-*）分离。
+WISEFLOW_ROOT_DEFAULT="${XIAOBEI_HOME:-$HOME/.xiaobei}"
 # XIAOBEI_MIRROR 可指向自建镜像站根（国内加速），形如 https://mirror.example.com/xiaobei
 # 资产 URL 构造为 $XIAOBEI_MIRROR/releases/download/{tag}/xiaobei-{ver}-{plat}.tar.zst
 XIAOBEI_MIRROR="${XIAOBEI_MIRROR:-}"
@@ -980,10 +985,15 @@ install_camoufox_cli() {
     # portable node 的 npm 全局前缀指向 ~/.openclaw，让 camoufox-cli 进 PATH
     export PATH="$(dirname "$node"):$PATH"
     export npm_config_prefix="$WISEFLOW_ROOT"
-    if command -v camoufox-cli >/dev/null 2>&1; then
+    # fork 的 dist 是 tsc 编译，camoufox-js/playwright-core/pdf-lib 是 external import
+    # （没打进 bundle），运行时靠 fork 目录下的 node_modules 解析。
+    # tarball 为瘦身 ship 的 fork 不带 node_modules，npm install -g <目录> 又是 symlink
+    # 到源目录（非 copy），所以必须先在 fork 目录装运行时依赖，否则 bin 跑起来 ERR_MODULE_NOT_FOUND。
+    if command -v camoufox-cli >/dev/null 2>&1 && [ -d "$fork_dir/node_modules/camoufox-js" ]; then
         ui_success "camoufox-cli already installed"
     else
         [[ -d "$fork_dir" ]] || { ui_warn "camoufox-cli fork 不在 tarball 内：$fork_dir；跳过"; return 0; }
+        run_required_step "Installing camoufox-cli fork deps" bash -c "cd '$fork_dir' && '$npm_bin' install --omit=dev --registry=https://registry.npmmirror.com"
         run_required_step "Installing camoufox-cli fork (local)" "$npm_bin" install -g "$fork_dir" --registry=https://registry.npmmirror.com
     fi
     ui_info "Ensuring camoufox Firefox binary (idempotent, ~557MB first run)"
@@ -993,7 +1003,34 @@ install_camoufox_cli() {
     ui_success "camoufox-cli ready"
 }
 
-# 放置 config template → ~/.openclaw/openclaw.json（onboard 会 merge provider 进来，不清 agents/list）
+# 装 openclaw-weixin 插件（config template 已预置 channel，但插件本体要 openclaw plugins install）
+# 读 tarball 内 openclaw-weixin.version.json 的 pin，走国内 npmmirror。
+# 幂等：openclaw plugins list 含 openclaw-weixin 则跳过。
+install_weixin_plugin() {
+    local claw_cmd="$WISEFLOW_ROOT/bin/openclaw"
+    local pin_file="$WISEFLOW_ROOT/openclaw-weixin.version.json"
+    [[ -f "$claw_cmd" ]] || { ui_warn "openclaw wrapper 不在 $claw_cmd；跳过 weixin 插件"; return 0; }
+    local pkg ver
+    if [[ -f "$pin_file" ]]; then
+        pkg=$(python3 -c "import json;print(json.load(open('$pin_file'))['openclaw-weixin']['package'])" 2>/dev/null || true)
+        ver=$(python3 -c "import json;print(json.load(open('$pin_file'))['openclaw-weixin']['version'])" 2>/dev/null || true)
+    fi
+    pkg="${pkg:-@tencent-weixin/openclaw-weixin}"
+    ver="${ver:-2.4.6}"
+    # 幂等检查：plugins list 已含则跳过
+    if "$claw_cmd" plugins list 2>/dev/null | grep -q "openclaw-weixin"; then
+        ui_success "openclaw-weixin plugin already installed"
+        return 0
+    fi
+    ui_info "Installing openclaw-weixin plugin (${pkg}@${ver}) via npmmirror"
+    if npm_config_registry=https://registry.npmmirror.com "$claw_cmd" plugins install "${pkg}@${ver}" --pin 2>/dev/null; then
+        ui_success "openclaw-weixin plugin installed"
+    else
+        ui_warn "openclaw-weixin 插件安装失败；可后续手动：npm_config_registry=https://registry.npmmirror.com $claw_cmd plugins install ${pkg}@${ver} --pin"
+    fi
+}
+
+# 放置 config template → ~/.openclaw/openclaw.json（已预置 awk provider，apiKey=${AWK_API_KEY} 由 gateway env 注入）
 place_config_template() {
     local openclaw_home="${OPENCLAW_HOME:-$HOME/.openclaw}"
     local config_path="${OPENCLAW_CONFIG_PATH:-$openclaw_home/openclaw.json}"
@@ -1003,7 +1040,7 @@ place_config_template() {
         [[ -f "$tmpl" ]] && cp "$tmpl" "$config_path"
         ui_success "Placed openclaw.json template"
     else
-        ui_info "openclaw.json 已存在，保留（onboard 会 merge）"
+        ui_info "openclaw.json 已存在，保留"
     fi
 }
 
@@ -1011,6 +1048,9 @@ place_config_template() {
 # 主流程
 # ═══════════════════════════════════════════════════════════════════
 WISEFLOW_ROOT="${WISEFLOW_ROOT:-$WISEFLOW_ROOT_DEFAULT}"
+# 运行数据目录（openclaw.json / daemon.env / workspace-*）；openclaw 引擎默认也用 ~/.openclaw
+OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
+export OPENCLAW_HOME
 VERBOSE=0
 NO_PROMPT=0
 USE_LOCAL=false
@@ -1050,7 +1090,7 @@ Usage:
   curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh | bash -s -- [options]
 
 Options:
-  --root <dir>       Install directory (default: ~/.openclaw)
+  --root <dir>       Program install directory (default: ~/.xiaobei; runtime data stays in ~/.openclaw)
   --verbose          Print debug output
   --no-prompt        Disable prompts (CI/automation)
   --help, -h         Show this help
@@ -1060,6 +1100,8 @@ Env:
   XIAOBEI_MIRROR     自建镜像站根（国内加速），形如 https://mirror.example.com/xiaobei
   XIAOBEI_TAG        指定版本 tag（默认拉最新 release）
   XIAOBEI_TARBALL    本地已下好的 tarball 路径；设了就跳过下载直接用它（网络差时手工下好塞进来）
+  XIAOBEI_HOME       程序目录覆盖（默认 ~/.xiaobei）
+  OPENCLAW_HOME      运行数据目录覆盖（默认 ~/.openclaw）
 EOF
                 exit 0
                 ;;
@@ -1094,7 +1136,8 @@ main() {
     fi
 
     ui_kv "OS" "$OS"
-    ui_kv "Install root" "$WISEFLOW_ROOT"
+    ui_kv "Program dir" "$WISEFLOW_ROOT"
+    ui_kv "Runtime dir" "$OPENCLAW_HOME"
     ui_kv "Repo" "$WISEFLOW_REPO"
     [[ -n "$XIAOBEI_MIRROR" ]] && ui_kv "Mirror" "$XIAOBEI_MIRROR"
     echo ""
@@ -1126,7 +1169,8 @@ main() {
     # ─── Step 6: setup-crew（裸跑，无 --force）──────────────
     ui_stage "Setting up crew templates"
     if [[ -f "$WISEFLOW_ROOT/scripts/setup-crew.sh" ]]; then
-        bash "$WISEFLOW_ROOT/scripts/setup-crew.sh" || ui_warn "setup-crew.sh 非零退出（可后续手动 --force 修复）"
+        OPENCLAW_HOME="$OPENCLAW_HOME" XIAOBEI_BIN_DIR="$WISEFLOW_ROOT/bin" \
+            bash "$WISEFLOW_ROOT/scripts/setup-crew.sh" || ui_warn "setup-crew.sh 非零退出（可后续手动 --force 修复）"
     else
         ui_warn "setup-crew.sh 不在 tarball 内，跳过"
     fi
@@ -1135,9 +1179,15 @@ main() {
     ui_stage "Installing camoufox-cli browser"
     install_camoufox_cli
 
-    # ─── Step 8: Onboard (interactive: model provider + key) ─
-    ui_stage "Running openclaw onboard"
-    run_onboard
+    # ─── Step 7b: openclaw-weixin 插件（config 已预置 channel）──
+    ui_stage "Installing WeChat plugin"
+    install_weixin_plugin
+
+    # ─── Step 8: 交互收 AWK_API_KEY + 装 gateway daemon ─────
+    # 不走 openclaw onboard（对小白太复杂）；config_template 已预置 awk provider
+    # （apiKey=${AWK_API_KEY}），这里把 key 写进 gateway env 文件让 config 解析到。
+    ui_stage "Configuring API key and gateway"
+    install_gateway_and_env
 
     # ─── 完成 ────────────────────────────────────────────────
     echo ""
@@ -1160,8 +1210,8 @@ main() {
 
 # ═══════════════════════════════════════════════════════════════════
 # 预填微信 channel config（fork 自 update.sh install_weixin_channel 末尾段）
-# 不装插件（update.sh 里装的，因为已 git clone；这里首次 onboard 后插件由 onboard 装
-# 或后续 manually）——只预填 openclaw.json 的 bindings + channels.entries
+# 不装插件（update.sh 里装的，因为已 git clone；这里只预填 openclaw.json 的
+# bindings + channels.entries，插件由用户后续 manually 装）
 # ═══════════════════════════════════════════════════════════════════
 prefill_weixin_channel() {
     local openclaw_home="${OPENCLAW_HOME:-$HOME/.openclaw}"
@@ -1186,40 +1236,165 @@ prefill_weixin_channel() {
     ' "$config_path"
     ui_success "WeChat channel pre-bound to Main Agent in openclaw.json"
 }
+# ═════════════════════════════════════════════════════════════════
+# 不走 openclaw onboard（对小白太复杂）。改为：
+# 1. 交互问 AWK_API_KEY（config_template 里 awk.apiKey=${AWK_API_KEY}）
+# 2. 写进 gateway env 文件（Linux: daemon.env / Darwin: service-env/ai.openclaw.gateway.env）
+# 3. openclaw daemon install + restart，gateway 起来后 config 能解析到 key
+# 平台分支复用 c441220 经验：Linux 先写 env+drop-in 再 install（避免 StartLimitBurst）；
+# Darwin 先 install（创建 env 文件）再追加。
+# ═════════════════════════════════════════════════════════════════
+_USER_PROMPT_KEYS="AWK_API_KEY"
+_HARDCODED_DEFAULTS="OPENCLAW_BROWSER_TIMEOUT_MS=90000 OPENCLAW_DISABLE_BONJOUR=true"
 
-# ═══════════════════════════════════════════════════════════════════
-# 调 openclaw onboard
-# 跳：channels / skills / bootstrap / health / ui
-# 保留：search（让用户配供应商 + key）/ auth-choice（模型供应商）/ daemon install
-# ═══════════════════════════════════════════════════════════════════
-run_onboard() {
-    # 走 tarball 内 wrapper（portable node + openclaw.mjs）
-    local claw_cmd="$WISEFLOW_ROOT/bin/openclaw"
+prompt_env_value() {
+    local key="$1" default_value="$2" default_source="$3" value="" reuse="" skip_empty=""
+    if [ -n "$default_value" ]; then
+        read -r -p "Use existing ${default_source} value for ${key}? [Y/n] " reuse
+        if [[ ! "$reuse" =~ ^[Nn]$ ]]; then printf "%s" "$default_value"; return 0; fi
+    fi
+    while true; do
+        read -r -s -p "Enter value for ${key}: " value; echo ""
+        value="${value//$'\r'/}"; value="${value//$'\n'/}"
+        if [ -n "$value" ]; then printf "%s" "$value"; return 0; fi
+        read -r -p "Value is empty, skip ${key}? [y/N] " skip_empty
+        if [[ "$skip_empty" =~ ^[Yy]$ ]]; then printf ""; return 0; fi
+    done
+}
 
-    if ! is_promptable; then
-        ui_warn "No TTY; cannot run interactive onboard"
-        ui_info "After install, run: $claw_cmd onboard --skip-channels --skip-skills --skip-bootstrap --skip-health --skip-ui --install-daemon"
+# 向 env 文件幂等写入缺失的询问 key + 硬编码默认值
+# $1: env 文件路径   $2: kv（KEY=VALUE）或 export（export KEY='value'）
+write_missing_env() {
+    local env_file="$1" format="$2" _key="" _val="" _entry="" _sv="" _missing=""
+    for _key in $_USER_PROMPT_KEYS; do
+        if [ "$format" = "export" ]; then
+            grep -qE "^export ${_key}=" "$env_file" 2>/dev/null && continue
+        else
+            grep -qE "^${_key}=" "$env_file" 2>/dev/null && continue
+        fi
+        _missing="${_missing}  ${_key}"
+    done
+    if [ -n "$_missing" ]; then
+        echo "🔐 以下 API Key 未在 $(basename "$env_file") 中找到，需要输入："
+        echo "$_missing"; echo ""
+    fi
+    for _key in $_USER_PROMPT_KEYS; do
+        if [ "$format" = "export" ]; then
+            grep -qE "^export ${_key}=" "$env_file" 2>/dev/null && continue
+        else
+            grep -qE "^${_key}=" "$env_file" 2>/dev/null && continue
+        fi
+        _sv="${!_key-}"
+        if is_promptable; then
+            _val="$(prompt_env_value "$_key" "${_sv:-}" "${_sv:+shell}")"
+        else
+            _val="${_sv:-}"
+            [ -z "$_val" ] && ui_warn "Missing ${_key} in non-interactive mode; leaving unset."
+        fi
+        # 清洗：去所有空白。API key 是不透明 token，绝不含空白；
+        # 防粘贴/环境变量带入前导换行或空格致 daemon.env 出现 `KEY=\nvalue` 错行。
+        _val="$(printf '%s' "$_val" | tr -d '[:space:]')"
+        if [ -n "$_val" ]; then
+            if [ "$format" = "export" ]; then
+                printf "export %s='%s'\n" "$_key" "${_val//\'/\'\\\'\'}" >> "$env_file"
+            else
+                printf "%s=%s\n" "$_key" "$_val" >> "$env_file"
+            fi
+        fi
+    done
+    for _entry in $_HARDCODED_DEFAULTS; do
+        _key="${_entry%%=*}"; _val="${_entry#*=}"
+        if [ "$format" = "export" ]; then
+            grep -qE "^export ${_key}=" "$env_file" 2>/dev/null && continue
+            printf "export %s='%s'\n" "$_key" "$_val" >> "$env_file"
+        else
+            grep -qE "^${_key}=" "$env_file" 2>/dev/null && continue
+            printf "%s=%s\n" "$_key" "$_val" >> "$env_file"
+        fi
+    done
+}
+
+# 确保 env 文件的 PATH 含 portable node bin + openclaw bin（gateway 子进程解析 wrapper 用）
+ensure_env_path() {
+    local env_file="$1" node_bin_dir="$2" oc_bin_dir="$3"
+    [ -f "$env_file" ] || return 0
+    local need="${node_bin_dir}:${oc_bin_dir}"
+    local cur; cur="$(grep -E '^PATH=' "$env_file" | tail -n1 | sed -E 's/^PATH=//' || true)"
+    if [ -z "$cur" ]; then
+        printf 'PATH=%s:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n' "$need" >> "$env_file"
         return 0
     fi
+    case ":$cur:" in
+        *":$node_bin_dir:"*) return 0 ;;
+    esac
+    {
+        grep -v '^PATH=' "$env_file" 2>/dev/null || true
+        printf 'PATH=%s:%s\n' "$need" "$cur"
+    } > "${env_file}.new"
+    mv "${env_file}.new" "$env_file"
+}
 
-    ui_info "Starting openclaw onboard (interactive: model provider + API key)"
-    ui_info "Skipping: channels / skills / bootstrap / health / ui (pre-filled by wiseflow)"
-    echo ""
+install_gateway_and_env() {
+    local claw_cmd="$WISEFLOW_ROOT/bin/openclaw"
+    local node_bin_dir; node_bin_dir="$(dirname "$WISEFLOW_ROOT/$PORTABLE_NODE")"
+    local oc_bin_dir="$WISEFLOW_ROOT/bin"
+    # gateway env 文件属运行数据，落 OPENCLAW_HOME（非程序目录 WISEFLOW_ROOT）
+    local systemd_env="$OPENCLAW_HOME/daemon.env"
+    local macos_env="$OPENCLAW_HOME/service-env/ai.openclaw.gateway.env"
 
-    # redirect stdin from /dev/tty so the interactive prompter works under curl|bash
-    exec </dev/tty
-    "$claw_cmd" onboard \
-        --skip-channels \
-        --skip-skills \
-        --skip-bootstrap \
-        --skip-health \
-        --skip-ui \
-        --install-daemon || {
-        ui_error "Onboarding failed"
-        echo "Re-run manually: $claw_cmd onboard --skip-channels --skip-skills --skip-bootstrap --skip-health --skip-ui --install-daemon"
-        exit 1
-    }
-    ui_success "Onboarding complete"
+    # redirect stdin from /dev/tty so interactive read 工作于 curl|bash
+    if is_promptable; then exec </dev/tty; fi
+
+    if [ "$(uname -s)" = "Linux" ]; then
+        # --- Linux: 先写 daemon.env + drop-in，再 daemon install（避免首次启动 StartLimitBurst）---
+        mkdir -p "$(dirname "$systemd_env")"
+        [ -f "$systemd_env" ] || touch "$systemd_env"
+        chmod 600 "$systemd_env"
+        write_missing_env "$systemd_env" kv
+        ensure_env_path "$systemd_env" "$node_bin_dir" "$oc_bin_dir"
+        # WSL2 GUI 显示变量
+        if grep -qi microsoft /proc/version 2>/dev/null; then
+            {
+                grep -vE "^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR)=" "$systemd_env" 2>/dev/null || true
+                printf 'DISPLAY=:0\nWAYLAND_DISPLAY=wayland-0\nXDG_RUNTIME_DIR=/mnt/wslg/runtime-dir\n'
+            } > "${systemd_env}.new"
+            mv "${systemd_env}.new" "$systemd_env"; chmod 600 "$systemd_env"
+        fi
+        # systemd drop-in 引用 daemon.env（必须在 daemon install 之前）
+        if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+            local svc="openclaw-gateway"
+            local dropin_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/${svc}.service.d"
+            mkdir -p "$dropin_dir"
+            printf '[Service]\nEnvironmentFile=-%s\n' "$systemd_env" > "${dropin_dir}/10-env-file.conf"
+            ui_success "systemd drop-in created (will reload after daemon install)"
+        fi
+        ui_info "Installing gateway daemon service"
+        "$claw_cmd" daemon uninstall 2>/dev/null || true
+        "$claw_cmd" daemon install || { ui_warn "daemon install failed; run later: $claw_cmd daemon install"; return 0; }
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl --user daemon-reload 2>/dev/null || true
+            systemctl --user reset-failed "openclaw-gateway.service" 2>/dev/null || true
+            systemctl --user restart "openclaw-gateway.service" 2>/dev/null && ui_success "Restarted gateway with daemon.env"
+        fi
+    elif [ "$(uname -s)" = "Darwin" ]; then
+        # --- Darwin: 先 daemon install（创建 mac env 文件），再追加 key，再 restart ---
+        ui_info "Installing gateway daemon service"
+        "$claw_cmd" daemon uninstall 2>/dev/null || true
+        "$claw_cmd" daemon install || { ui_warn "daemon install failed; run later: $claw_cmd daemon install"; return 0; }
+        if [ -f "$macos_env" ]; then
+            write_missing_env "$macos_env" export
+            ensure_env_path "$macos_env" "$node_bin_dir" "$oc_bin_dir"
+            chmod 600 "$macos_env"
+            "$claw_cmd" gateway restart 2>/dev/null || true
+            ui_success "Restarted gateway with macos env"
+        else
+            ui_warn "macOS gateway env file not found at $macos_env"
+            ui_info "Ensure gateway installed: $claw_cmd daemon install; then edit $macos_env"
+        fi
+    else
+        ui_warn "Unsupported platform for daemon install; run manually: $claw_cmd daemon install"
+    fi
+    ui_success "Gateway configured"
 }
 
 if [[ "${WISEFLOW_INSTALL_SH_NO_RUN:-0}" != "1" ]]; then

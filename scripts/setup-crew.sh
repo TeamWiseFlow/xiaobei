@@ -8,7 +8,7 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CREWS_DIR="$PROJECT_ROOT/crews"
 ADDONS_DIR="$PROJECT_ROOT/addons"
-OPENCLAW_HOME="$HOME/.openclaw"
+OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
 CONFIG_PATH="$OPENCLAW_HOME/openclaw.json"
 FORCE=false
 
@@ -642,19 +642,21 @@ if [ -f "$CONFIG_PATH" ]; then
   done < <(list_agent_workspaces)
   echo "  ✅ Skill scripts ensured executable"
 
-  # ─── 4g. 确保 ~/.openclaw/bin 在 gateway env 的 PATH 里 ──────────
+  # ─── 4g. 确保 program bin 在 gateway env 的 PATH 里 ──────────
   # systemd user service 不 source shell rc，PATH 只能经 EnvironmentFile 注入
   # （Linux: daemon.env / Darwin: service-env/ai.openclaw.gateway.env）。
   # EnvironmentFile 覆盖 unit 的 Environment=（实测 systemd 255），故在此文件把
-  # $OPENCLAW_HOME/bin 前置到 PATH，gateway 重启后 agent exec 才能解析 skill wrapper。
+  # program bin 前置到 PATH，gateway 重启后 agent exec 才能解析 skill wrapper。
+  # program bin = wrapper 所在（XIAOBEI_BIN_DIR 或 PROJECT_ROOT/bin），非 OPENCLAW_HOME/bin。
   # 幂等：PATH 已含 bin 则跳过。仅改 PATH 行，其余行不动。
+  _XIAOBEI_BIN="${XIAOBEI_BIN_DIR:-$PROJECT_ROOT/bin}"
   if [ "$(uname -s)" = "Darwin" ]; then
     _GW_ENV="$OPENCLAW_HOME/service-env/ai.openclaw.gateway.env"
   else
     _GW_ENV="$OPENCLAW_HOME/daemon.env"
   fi
   if [ -f "$_GW_ENV" ]; then
-    python3 - "$_GW_ENV" "$OPENCLAW_HOME/bin" <<'PY'
+    python3 - "$_GW_ENV" "$_XIAOBEI_BIN" <<'PY'
 import re, sys
 path, bin = sys.argv[1], sys.argv[2]
 with open(path) as f:
@@ -686,7 +688,7 @@ PY
   else
     echo "    ⚠️  $_GW_ENV not found; skip (created on first gateway start)"
   fi
-  unset _GW_ENV
+  unset _GW_ENV _XIAOBEI_BIN
 else
   echo "  ⚠️  openclaw.json not found at $CONFIG_PATH"
   echo "     Will be created on first start (dev.sh / reinstall-daemon.sh)"

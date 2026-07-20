@@ -349,9 +349,6 @@
       "paths": []
     },
     "entries": {
-      "awada": {
-        "enabled": false
-      },
       "xai": {
         "enabled": false
       },

@@ -102,6 +102,8 @@ jobs:
           cp -a "$REPO/config-templates" "$STAGE/config-templates"
           cp -a "$REPO/scripts" "$STAGE/scripts"
           cp "$REPO/openclaw.version" "$REPO/version" "$STAGE/"
+          # openclaw-weixin 插件 pin（install.sh 据此装插件，国内 npmmirror）
+          [ -f "$REPO/openclaw-weixin.version.json" ] && cp "$REPO/openclaw-weixin.version.json" "$STAGE/" || true
 
           # 5. 体积 breakdown（诊断）
           (
@@ -152,7 +154,7 @@ jobs:
               mv "/tmp/$subdir" "$PKG/tools/node"
             fi
 
-            # wrapper: ~/.openclaw/bin/openclaw → portable node + openclaw.mjs
+            # wrapper: <ROOT>/bin/openclaw → portable node + openclaw.mjs（ROOT 默认 ~/.xiaobei）
             cat > "$PKG/bin/openclaw" <<'EOF'
           #!/usr/bin/env bash
           HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
