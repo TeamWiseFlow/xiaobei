@@ -340,6 +340,16 @@ resolve_latest_version() {
         ui_success "Using pinned tag: $XIAOBEI_TAG"
         return 0
     fi
+    # 镜像站约定：$XIAOBEI_MIRROR/latest.txt 单行 tag（国内用户免访问 api.github.com）
+    if [[ -n "${XIAOBEI_MIRROR:-}" ]]; then
+        XIAOBEI_TAG="$(curl -fsSL "$XIAOBEI_MIRROR/latest.txt" 2>/dev/null | tr -d '[:space:]' || true)"
+        if [[ "$XIAOBEI_TAG" == v* ]]; then
+            XIAOBEI_VER="${XIAOBEI_TAG#v}"
+            ui_success "Latest release (via mirror latest.txt): $XIAOBEI_TAG"
+            return 0
+        fi
+        ui_warn "mirror latest.txt 未取到，回退 GitHub API"
+    fi
     local api="https://api.github.com/repos/$WISEFLOW_REPO/releases/latest"
     local resp
     resp="$(curl -fsSL "$api" 2>/dev/null || true)"
