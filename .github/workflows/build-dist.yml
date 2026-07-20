@@ -120,13 +120,16 @@ jobs:
           SYMLINK_COUNT=$(find "$STAGE/openclaw" -type l 2>/dev/null | wc -l)
           ABS_SYMLINKS=$(find "$STAGE/openclaw" -type l 2>/dev/null | while read l; do r=$(readlink "$l"); case "$r" in /*) echo x;; esac; done | wc -l)
           echo "ℹ️ openclaw symlinks: $SYMLINK_COUNT (absolute→dangling: $ABS_SYMLINKS)"
-          # 体积 breakdown，定位 bloat
-          echo "📊 staged openclaw top-level sizes:"
-          du -sh "$STAGE/openclaw"/* 2>/dev/null | sort -rh | head -20
-          echo "📊 node_modules biggest packages:"
-          du -sh "$STAGE/openclaw/node_modules/.pnpm"/*/ 2>/dev/null | sort -rh | head -15
-          echo "📊 total stage:"
-          du -sh "$STAGE"/* 2>/dev/null | sort -rh
+          # 体积 breakdown，定位 bloat（诊断用，失败不影响 build）
+          (
+            set +e +o pipefail
+            echo "📊 staged openclaw top-level sizes:"
+            du -sh "$STAGE/openclaw"/* 2>/dev/null | sort -rh | head -20
+            echo "📊 node_modules biggest packages:"
+            du -sh "$STAGE/openclaw/node_modules/.pnpm"/*/ 2>/dev/null | sort -rh | head -15
+            echo "📊 total stage:"
+            du -sh "$STAGE"/* 2>/dev/null | sort -rh
+          ) || true
 
           # 2. portable Node 24.15.0
           curl -fsSL -o "$RUNNER_TEMP/node.tar.xz" "${{ matrix.node_url }}"
