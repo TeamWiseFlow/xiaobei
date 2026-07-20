@@ -98,18 +98,21 @@ jobs:
         id: stage
         run: |
           set -euo pipefail
+          REPO="$GITHUB_WORKSPACE"
           STAGE="$RUNNER_TEMP/stage"
           rm -rf "$STAGE"
           mkdir -p "$STAGE/bin" "$STAGE/tools"
 
           # 1. openclaw 引擎（dist 已 build，含 node_modules）
-          cp -a openclaw "$STAGE/openclaw"
+          cp -a "$REPO/openclaw" "$STAGE/openclaw"
+          # 探测 pnpm symlink 问题：node_modules 里软链指向全局 store 的话，tarball 到用户机会 dangling
+          SYMLINK_COUNT=$(find "$STAGE/openclaw" -type l 2>/dev/null | wc -l)
+          echo "ℹ️ openclaw symlinks in staged copy: $SYMLINK_COUNT (若 >0 需改 hoisted linker 或 cp -rL)"
 
           # 2. portable Node 24.15.0
-          cd "$RUNNER_TEMP"
-          curl -fsSL -o node.tar.xz "${{ matrix.node_url }}"
-          tar -xJf node.tar.xz
-          mv "${{ matrix.node_archive_subdir }}" "$STAGE/tools/node"
+          curl -fsSL -o "$RUNNER_TEMP/node.tar.xz" "${{ matrix.node_url }}"
+          tar -xJf "$RUNNER_TEMP/node.tar.xz" -C "$RUNNER_TEMP"
+          mv "$RUNNER_TEMP/${{ matrix.node_archive_subdir }}" "$STAGE/tools/node"
 
           # 3. wrapper：~/.openclaw/bin/openclaw → portable node + openclaw.mjs
           cat > "$STAGE/bin/openclaw" <<'EOF'
@@ -120,20 +123,19 @@ jobs:
           chmod +x "$STAGE/bin/openclaw"
 
           # 4. xiaobei 模板与脚本（用户侧 install/setup-crew/apply-addons 复用）
-          cp -a crews "$STAGE/crews"
-          cp -a skills "$STAGE/skills"
-          cp -a config-templates "$STAGE/config-templates"
-          cp -a scripts "$STAGE/scripts"
-          cp openclaw.version version "$STAGE/"
+          cp -a "$REPO/crews" "$STAGE/crews"
+          cp -a "$REPO/skills" "$STAGE/skills"
+          cp -a "$REPO/config-templates" "$STAGE/config-templates"
+          cp -a "$REPO/scripts" "$STAGE/scripts"
+          cp "$REPO/openclaw.version" "$REPO/version" "$STAGE/"
 
           # 5. 打包
-          XIAOBEI_VER="$(cat version | tr -d '[:space:]')"
+          XIAOBEI_VER="$(tr -d '[:space:]' < "$REPO/version")"
           ASSET="xiaobei-${XIAOBEI_VER}-${{ matrix.platform }}.tar.zst"
-          cd "$RUNNER_TEMP"
-          tar --zstd -cf "$ASSET" -C "$STAGE" .
+          tar --zstd -cf "$RUNNER_TEMP/$ASSET" -C "$STAGE" .
           echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
           echo "asset_path=$RUNNER_TEMP/$ASSET" >> "$GITHUB_OUTPUT"
-          ls -lh "$ASSET"
+          ls -lh "$RUNNER_TEMP/$ASSET"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
