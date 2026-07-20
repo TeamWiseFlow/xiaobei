@@ -30,7 +30,7 @@ set -euo pipefail
 # ═══════════════════════════════════════════════════════════════════
 # 常量
 # ═══════════════════════════════════════════════════════════════════
-WISEFLOW_REPO="TeamWiseFlow/xiaobei"
+WISEFLOW_REPO="${XIAOBEI_REPO:-TeamWiseFlow/xiaobei}"
 WISEFLOW_ROOT_DEFAULT="$HOME/.openclaw"
 # XIAOBEI_MIRROR 可指向自建镜像站根（国内加速），形如 https://mirror.example.com/xiaobei
 # 资产 URL 构造为 $XIAOBEI_MIRROR/releases/download/{tag}/xiaobei-{ver}-{plat}.tar.zst
@@ -1049,6 +1049,7 @@ Options:
   --help, -h         Show this help
 
 Env:
+  XIAOBEI_REPO       GitHub 仓（owner/repo，默认 TeamWiseFlow/xiaobei；测试可指 bigbrother666sh/wiseflow）
   XIAOBEI_MIRROR     自建镜像站根（国内加速），形如 https://mirror.example.com/xiaobei
   XIAOBEI_TAG        指定版本 tag（默认拉最新 release）
 EOF

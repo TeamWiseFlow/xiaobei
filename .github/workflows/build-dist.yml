@@ -34,7 +34,7 @@ jobs:
       - name: Setup Node + pnpm (build env)
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '24.15.0'
       - uses: pnpm/action-setup@v4
 
       - name: Clone openclaw at pinned commit
