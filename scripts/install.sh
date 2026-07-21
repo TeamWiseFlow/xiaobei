@@ -1007,6 +1007,10 @@ checkout_openclaw_at_pin() {
 # camoufox-cli（Firefox 反指纹浏览器）
 # ═══════════════════════════════════════════════════════════════════
 install_camoufox_cli() {
+    if [[ "$SKIP_BROWSER" == "true" ]]; then
+        ui_info "跳过 camoufox-cli 浏览器二进制（--skip-browser）；后续手动：camoufox-cli install"
+        return 0
+    fi
     local node="$WISEFLOW_ROOT/$PORTABLE_NODE"
     local npm_bin; npm_bin="$(dirname "$node")/npm"
     local fork_dir="$WISEFLOW_ROOT/camoufox-cli"
@@ -1111,6 +1115,7 @@ NO_PROMPT=0
 USE_LOCAL=false
 FORCE_RUNTIME=false
 SKIP_WEIXIN_BIND=false
+SKIP_BROWSER=false
 TAGLINE="$DEFAULT_TAGLINE"
 
 parse_args() {
@@ -1155,6 +1160,11 @@ parse_args() {
                 SKIP_WEIXIN_BIND=true
                 shift
                 ;;
+            --skip-browser)
+                # 跳过 camoufox-cli 装浏览器二进制（冒烟/CI，省 ~557MB Firefox 下载）
+                SKIP_BROWSER=true
+                shift
+                ;;
             --root)
                 if [[ $# -lt 2 || "${2:-}" == --* ]]; then
                     ui_error "Missing value for $1"
@@ -1177,6 +1187,7 @@ Options:
   --mirror <url>     Custom mirror root (overrides default atomgit)
   --force            Overwrite existing runtime data (~/.openclaw); default preserves it on re-install
   --skip-bind        Skip the WeChat QR binding at the end (CI/automation)
+  --skip-browser     Skip camoufox-cli browser binary install (smoke/CI, saves ~557MB Firefox)
   --verbose          Print debug output
   --no-prompt        Disable prompts (CI/automation)
   --help, -h         Show this help

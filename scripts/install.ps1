@@ -29,6 +29,7 @@ param(
     [switch]$GitHub,                    # 切回 GitHub release（不走默认 atomgit）
     [switch]$Force,                     # 强覆盖已有运行数据（~\.openclaw）
     [switch]$SkipBind,                  # 跳过末尾微信扫码绑定
+    [switch]$SkipBrowser,               # 跳过 camoufox-cli 浏览器二进制（冒烟/CI）
     [switch]$NoPrompt
 )
 
@@ -204,6 +205,10 @@ function Run-SetupCrew {
 
 # ─── 8. camoufox-cli ───────────────────────────────────────────
 function Install-CamoufoxCli {
+    if ($SkipBrowser) {
+        Write-Host "  [i]  跳过 camoufox-cli 浏览器二进制（-SkipBrowser）；后续手动：camoufox-cli install" -ForegroundColor Yellow
+        return
+    }
     Write-Stage "Installing camoufox-cli browser"
     $fork = Join-Path $Root "camoufox-cli"
     if (-not (Test-Path $fork)) { Write-Warn "camoufox-cli fork 不在 tarball 内：$fork；跳过"; return }

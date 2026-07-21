@@ -18,6 +18,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 # 防止多个 PR 同时 merge 时并发触发重复 release
 concurrency:
@@ -26,15 +27,15 @@ concurrency:
 
 jobs:
   release:
-    # wiseflow 走 git clone 路线（见 scripts/install.sh），无 release artifact 通道。
-    # 本 job 仅做版本 bump + tag push，让用户 update.sh 可拉特定 tag 而非总跟 master。
-    # 后续若重启 tarball 通道，在此 job 内追加 build / upload asset 步骤即可。
+    # PR merge → bump version + push v* tag → 触发 build-dist.yml 出 4 平台 tarball + attach release。
+    # tag push 用 GITHUB_TOKEN 不会触发下游 on:push workflow（递归保护），故这里主动
+    # gh workflow run build-dist.yml（workflow_dispatch 是递归保护例外，GITHUB_TOKEN 可触发）。
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
@@ -98,3 +99,11 @@ jobs:
           git commit -m "chore: bump version to ${{ steps.version.outputs.new }} [skip ci]"
           git tag "${{ steps.version.outputs.new }}"
           git push origin master --tags
+
+      - name: Trigger build-dist tarball workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.new }}"
+          echo "Triggering build-dist.yml with tag=$TAG"
+          gh workflow run build-dist.yml -f tag="$TAG"

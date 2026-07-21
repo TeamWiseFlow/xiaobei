@@ -37,6 +37,7 @@ irm https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.ps1 |
 | `--mirror <url>` / `-Mirror <url>` | 自定义镜像站根（覆盖默认 atomgit） |
 | `--force` / `-Force` | 强覆盖已有运行数据（`~/.openclaw`）；默认已装机器重跑只更新 program，不碰运行数据 |
 | `--skip-bind` / `-SkipBind` | 跳过末尾微信扫码绑定（CI / 自动化） |
+| `--skip-browser` / `-SkipBrowser` | 跳过 camoufox-cli 浏览器二进制安装（冒烟 / CI，省 ~557MB Firefox 下载） |
 | `--no-prompt` / `-NoPrompt` | 关闭交互提示（CI / 自动化，隐含 `--skip-bind`） |
 | `--root <dir>` / `-Root <dir>` | 程序目录覆盖（默认 `~/xiaobei`） |
 

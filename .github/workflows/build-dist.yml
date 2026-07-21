@@ -9,6 +9,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build + attach (e.g. v5.6.0)；由 release.yml 推 tag 后触发'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -22,7 +27,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout xiaobei
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Read pinned openclaw version
         id: pin
@@ -32,10 +37,14 @@ jobs:
           echo "version=$OPENCLAW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node + pnpm (build env)
-        uses: actions/setup-node@v4
+        # v6：package-manager-cache 限 npm-only，避免 pnpm 装好前自动开缓存报
+        # "Unable to locate executable file: pnpm"（setup-node#1351）
+        uses: actions/setup-node@v6
         with:
           node-version: '24.15.0'
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.2
 
       - name: Clone openclaw at pinned commit
         run: |
@@ -121,13 +130,18 @@ jobs:
           echo "stage_dir=$STAGE" >> "$GITHUB_OUTPUT"
 
       - name: Build 4 platform tarballs (engine + portable Node)
+        id: buildtars
         run: |
           set -euo pipefail
           STAGE="${{ steps.stage.outputs.stage_dir }}"
           XIAOBEI_VER="$(tr -d '[:space:]' < "$GITHUB_WORKSPACE/version")"
-          # asset 名优先用 git tag（release source of truth），非 tag 触发回退 version 文件
+          # asset tag 优先级：workflow_dispatch inputs.tag > git tag（push 触发）> version 文件
+          INPUT_TAG="${{ inputs.tag }}"
           REF_NAME="${GITHUB_REF##*/}"
-          if [[ "$REF_NAME" == v* ]]; then ASSET_TAG="$REF_NAME"; else ASSET_TAG="$XIAOBEI_VER"; fi
+          if [[ -n "$INPUT_TAG" ]]; then ASSET_TAG="$INPUT_TAG"
+          elif [[ "$REF_NAME" == v* ]]; then ASSET_TAG="$REF_NAME"
+          else ASSET_TAG="$XIAOBEI_VER"; fi
+          echo "ASSET_TAG=$ASSET_TAG"
           mkdir -p "$RUNNER_TEMP/out"
 
           # 平台 → (node_url, subdir)
@@ -188,7 +202,35 @@ jobs:
 
           # 给后续步骤用
           echo "out_dir=$RUNNER_TEMP/out" >> "$GITHUB_OUTPUT"
+          echo "asset_tag=$ASSET_TAG" >> "$GITHUB_OUTPUT"
           ls -lh "$RUNNER_TEMP/out/"
+
+      - name: Smoke test linux tarball (extract + install --skip-browser + openclaw --version)
+        run: |
+          set -euo pipefail
+          ASSET_TAG="${{ steps.buildtars.outputs.asset_tag }}"
+          if [[ "$ASSET_TAG" != v* ]]; then
+            echo "无 release tag（asset_tag=$ASSET_TAG），跳过冒烟自检"
+            exit 0
+          fi
+          TB="$RUNNER_TEMP/out/xiaobei-$ASSET_TAG-linux-x64.tar.zst"
+          [[ -f "$TB" ]] || { echo "❌ tarball 不存在：$TB"; exit 1; }
+          SMOKE="$RUNNER_TEMP/smoke"
+          rm -rf "$SMOKE"
+          mkdir -p "$SMOKE/extract" "$SMOKE/program" "$SMOKE/runtime"
+          # 解压一份拿到 scripts/install.sh（install.sh 会再按 XIAOBEI_TARBALL 解压到 program）
+          tar --zstd -xf "$TB" -C "$SMOKE/extract"
+          [[ -f "$SMOKE/extract/scripts/install.sh" ]] || { echo "❌ tarball 缺 scripts/install.sh"; exit 1; }
+          export XIAOBEI_HOME="$SMOKE/program"
+          export OPENCLAW_HOME="$SMOKE/runtime"
+          export XIAOBEI_TARBALL="$TB"
+          export XIAOBEI_TAG="$ASSET_TAG"
+          export XIAOBEI_SOURCE=github
+          export AWK_API_KEY="smoke-test-key"
+          bash "$SMOKE/extract/scripts/install.sh" \
+            --no-prompt --skip-bind --skip-browser --root "$XIAOBEI_HOME"
+          "$XIAOBEI_HOME/bin/openclaw" --version
+          echo "✅ 冒烟自检通过：tarball 可解压 + 依赖可装 + 引擎可起"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -200,16 +242,15 @@ jobs:
           retention-days: 14
 
       - name: Attach to release (on real tag, skip disttest)
-        if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, 'disttest')
-        continue-on-error: true
+        if: ${{ startsWith(steps.buildtars.outputs.asset_tag, 'v') && !contains(steps.buildtars.outputs.asset_tag, 'disttest') }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${GITHUB_REF##*/}"
+          TAG="${{ steps.buildtars.outputs.asset_tag }}"
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --title "$TAG" --generate-notes
           fi
           for f in "$RUNNER_TEMP"/out/*.tar.zst "$RUNNER_TEMP"/out/*.tar.gz; do
             [ -e "$f" ] || continue
-            gh release upload "$TAG" "$f" --clobber || true
+            gh release upload "$TAG" "$f" --clobber
           done

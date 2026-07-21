@@ -20,15 +20,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        # v6：把 package-manager-cache 限制为 npm-only，避免检测到 packageManager: pnpm@
+        # 时在 pnpm 装好前自动开 pnpm 缓存而抛 "Unable to locate executable file: pnpm"
+        #（setup-node#1351）。v5 会自动开 pnpm 缓存，必须配 pnpm/action-setup 才不报错。
+        uses: actions/setup-node@v6
         with:
           node-version: '24'
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        # 显式 version 规避 action-setup#227（v6 早期不读 packageManager 版本）
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.2
 
       - name: Read pinned openclaw version
         id: pin
