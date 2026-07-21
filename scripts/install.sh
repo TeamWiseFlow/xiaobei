@@ -12,7 +12,7 @@
 #   1. 检测 OS + arch → 选 tarball asset（linux-x64 / mac-arm64 / mac-x64 / win-x64）
 #   2. bootstrap gum UI（TTY 才有，非 TTY 静默跳过）
 #   3. 解析最新 release tag（GitHub API，或 XIAOBEI_MIRROR env 指向自建镜像）
-#   4. 下载 xiaobei-{ver}-{plat}.tar.zst → 临时文件
+#   4. 下载 xiaobei-{ver}-{plat}.{tar.zst|tar.gz} → 临时文件（linux 用 zst，mac/win 用 gzip，bsdtar 原生支持）
 #   5. 解压到 WISEFLOW_ROOT（默认 ~/xiaobei，程序目录）：openclaw/ + tools/node + tools/pnpm + bin/openclaw + crews/ + skills/ + scripts/ + camoufox-cli/ + awada/
 #   6. pnpm install --prod --frozen-lockfile（用 ship 的 portable node + pnpm，在 openclaw/ 下；只拉依赖不编译，无 OOM，native 自动按平台）
 #   7. pip install --user（skills 的 python deps，扫 requirements.txt）
@@ -40,7 +40,7 @@ WISEFLOW_REPO="${XIAOBEI_REPO:-TeamWiseFlow/xiaobei}"
 # 不隐藏：用户能直接 ls 看到，符合"小白友好"。
 WISEFLOW_ROOT_DEFAULT="${XIAOBEI_HOME:-$HOME/xiaobei}"
 # 默认走 atomgit 国内镜像（仓根），--github 或 XIAOBEI_SOURCE=github 切回 GitHub。
-# 资产 URL 构造为 $XIAOBEI_MIRROR/releases/download/{tag}/xiaobei-{tag}-{plat}.tar.zst
+# 资产 URL 构造为 $XIAOBEI_MIRROR/releases/download/{tag}/xiaobei-{tag}-{plat}.{tar.zst|tar.gz}
 XIAOBEI_ATOMGIT_MIRROR="https://atomgit.com/wiseflow/xiaobei"
 if [[ "${XIAOBEI_SOURCE:-}" == "github" ]]; then
     XIAOBEI_MIRROR="${XIAOBEI_MIRROR:-}"
@@ -333,9 +333,13 @@ detect_platform_asset() {
     esac
     if [[ "$OS" == "macos" ]]; then
         PLAT="mac-$arch"
+        # macOS bsdtar 不带 zstd filter、小白机也无 zstd 二进制，用 gzip（bsdtar 原生支持）
+        TAR_EXT="tar.gz"
     elif [[ "$OS" == "linux" ]]; then
         [[ "$arch" == "arm64" ]] && { ui_error "linux-arm64 tarball 暂未构建，仅 linux-x64"; exit 1; }
         PLAT="linux-$arch"
+        # Linux tar 普遍带 --zstd，压缩率更好
+        TAR_EXT="tar.zst"
     fi
     ui_success "Platform asset: $PLAT"
 }
@@ -387,7 +391,7 @@ resolve_latest_version() {
 
 # 构造 tarball 下载 URL（XIAOBEI_MIRROR 优先）
 tarball_url() {
-    local asset="xiaobei-${XIAOBEI_TAG}-${PLAT}.tar.zst"
+    local asset="xiaobei-${XIAOBEI_TAG}-${PLAT}.${TAR_EXT}"
     if [[ -n "$XIAOBEI_MIRROR" ]]; then
         echo "$XIAOBEI_MIRROR/releases/download/$XIAOBEI_TAG/$asset"
     else
@@ -397,24 +401,53 @@ tarball_url() {
 
 download_and_extract_tarball() {
     local url; url="$(tarball_url)"
-    local asset="xiaobei-${XIAOBEI_TAG}-${PLAT}.tar.zst"
+    local asset="xiaobei-${XIAOBEI_TAG}-${PLAT}.${TAR_EXT}"
+    # 缓存下过的 tarball，重跑（含失败重试）免重复下 120MB。XIAOBEI_TARBALL 优先（用户自带）。
+    local cache_dir="${XIAOBEI_CACHE_DIR:-$HOME/.xiaobei/cache}"
+    local cached="$cache_dir/$asset"
     local tmp
     if [[ -n "${XIAOBEI_TARBALL:-}" && -f "${XIAOBEI_TARBALL:-}" ]]; then
         ui_kv "Asset" "$asset (local)"
         ui_kv "File" "$XIAOBEI_TARBALL"
         tmp="$XIAOBEI_TARBALL"
+    elif [[ -f "$cached" && -s "$cached" ]]; then
+        ui_kv "Asset" "$asset (cached)"
+        ui_kv "File" "$cached"
+        tmp="$cached"
     else
         ui_kv "Asset" "$asset"
         ui_kv "URL" "$url"
-        tmp="$(mktempfile)"
-        ui_info "Downloading $asset (~120MB)..."
-        download_file "$url" "$tmp"
+        mkdir -p "$cache_dir"
+        ui_info "Downloading $asset (~120MB) → $cached ..."
+        download_file "$url" "$cached"
         ui_success "Downloaded"
+        tmp="$cached"
     fi
 
     mkdir -p "$WISEFLOW_ROOT"
     ui_info "Extracting to $WISEFLOW_ROOT ..."
-    tar --zstd -xf "$tmp" -C "$WISEFLOW_ROOT"
+    local extract_ok=1
+    if [[ "$TAR_EXT" == "tar.zst" ]]; then
+        tar --zstd -xf "$tmp" -C "$WISEFLOW_ROOT" || extract_ok=0
+    else
+        tar -xzf "$tmp" -C "$WISEFLOW_ROOT" || extract_ok=0
+    fi
+    if [[ "$extract_ok" -ne 1 ]]; then
+        # 解压失败：缓存可能损坏/半下，删了重下一次再试（用户自带的 XIAOBEI_TARBALL 不删）
+        if [[ -z "${XIAOBEI_TARBALL:-}" && -f "$cached" ]]; then
+            ui_warn "解压失败，删损坏缓存重下..."
+            rm -f "$cached"
+            download_file "$url" "$cached"
+            if [[ "$TAR_EXT" == "tar.zst" ]]; then
+                tar --zstd -xf "$cached" -C "$WISEFLOW_ROOT"
+            else
+                tar -xzf "$cached" -C "$WISEFLOW_ROOT"
+            fi
+        else
+            ui_error "解压失败：$tmp"
+            exit 1
+        fi
+    fi
     ui_success "Extracted"
 
     # 校验关键入口
@@ -509,7 +542,8 @@ ui_error() {
     fi
 }
 
-INSTALL_STAGE_TOTAL=7
+# 步数总数在 main 里按 is_update 动态设（首装 12 / 更新 9）；此默认仅防 ui_stage 在 main 前被调。
+INSTALL_STAGE_TOTAL=12
 INSTALL_STAGE_CURRENT=0
 
 ui_section() {
@@ -1014,8 +1048,9 @@ install_camoufox_cli() {
     local node="$WISEFLOW_ROOT/$PORTABLE_NODE"
     local npm_bin; npm_bin="$(dirname "$node")/npm"
     local fork_dir="$WISEFLOW_ROOT/camoufox-cli"
-    # portable node 的 npm 全局前缀指向 ~/.openclaw，让 camoufox-cli 进 PATH
-    export PATH="$(dirname "$node"):$PATH"
+    # portable node 的 npm 全局前缀指向 $WISEFLOW_ROOT，bin 落 $WISEFLOW_ROOT/bin；
+    # 该目录不在默认 PATH，须显式前置，否则下一步 camoufox-cli install 报 command not found。
+    export PATH="$WISEFLOW_ROOT/bin:$(dirname "$node"):$PATH"
     export npm_config_prefix="$WISEFLOW_ROOT"
     # fork 的 dist 是 tsc 编译，camoufox-js/playwright-core/pdf-lib 是 external import
     # （没打进 bundle），运行时靠 fork 目录下的 node_modules 解析。
@@ -1107,9 +1142,13 @@ place_config_template() {
 # 主流程
 # ═══════════════════════════════════════════════════════════════════
 WISEFLOW_ROOT="${WISEFLOW_ROOT:-$WISEFLOW_ROOT_DEFAULT}"
-# 运行数据目录（openclaw.json / daemon.env / workspace-*）；openclaw 引擎默认也用 ~/.openclaw
+# 运行数据目录（openclaw.json / daemon.env / workspace-*）；本脚本内部统一用 OPENCLAW_HOME 指代。
+# 注意：openclaw 引擎的 resolveStateDir 把 $OPENCLAW_HOME 当 HOME 根再 append /.openclaw
+# （见 openclaw/src/config/paths.ts resolveStateDir → newStateDir = homedir/.openclaw），
+# 故若 export OPENCLAW_HOME=~/.openclaw 给引擎，会产出 ~/.openclaw/.openclaw 嵌套。
+# 正确做法：export OPENCLAW_STATE_DIR（引擎用作 state dir 直接覆盖，不 append），OPENCLAW_HOME 仅本脚本内部用、不外传。
 OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
-export OPENCLAW_HOME
+export OPENCLAW_STATE_DIR="$OPENCLAW_HOME"
 VERBOSE=0
 NO_PROMPT=0
 USE_LOCAL=false
@@ -1173,6 +1212,10 @@ parse_args() {
                 WISEFLOW_ROOT="$2"
                 shift 2
                 ;;
+            --)
+                # 选项/位置参数分隔符（README 的 `bash -c "..." -s -- --github` 会把 -- 透传进来）
+                shift
+                ;;
             --help|-h)
                 cat <<EOF
 wiseflow installer (macOS + Linux) — 预构建 tarball 路线
@@ -1224,12 +1267,9 @@ configure_verbose() {
 # channels login 内部 waitForWeixinLogin 有 3 次刷新上限，外层循环重出直到绑成功
 # ═══════════════════════════════════════════════════════════════════
 weixin_account_bound() {
-    local acc
-    for acc in \
-        "$OPENCLAW_HOME/openclaw-weixin/accounts.json" \
-        "$OPENCLAW_HOME/.openclaw/openclaw-weixin/accounts.json"; do
-        [[ -f "$acc" ]] && return 0
-    done
+    # accounts.json 落 state dir（OPENCLAW_STATE_DIR=~/.openclaw，引擎不再嵌套 /.openclaw）
+    local acc="$OPENCLAW_HOME/openclaw-weixin/accounts.json"
+    [[ -f "$acc" ]] && return 0
     return 1
 }
 
@@ -1251,7 +1291,8 @@ bind_weixin_channel() {
         ui_warn "openclaw wrapper 未找到（$claw），跳过微信绑定"
         return 0
     fi
-    ui_stage "绑定微信 channel（用手机扫码）"
+    # 不用 ui_stage（会递增计数器致超出总数）；用 ui_section 出独立标题。
+    ui_section "绑定微信 channel（用手机扫码）"
     echo "  接下来会出二维码，用微信扫一下、点确认，小贝就能用了。"
     echo "  扫码慢没关系，二维码会自动刷新；扫完即继续。"
     echo ""
@@ -1299,6 +1340,13 @@ main() {
     if [[ -f "$OPENCLAW_HOME/openclaw.json" && "$FORCE_RUNTIME" != "true" ]]; then
         is_update=true
         ui_warn "检测到已有安装（$OPENCLAW_HOME/openclaw.json）→ 走更新路线，保留运行数据（传 --force 可强覆盖）"
+    fi
+
+    # 步数总数按路线动态设：首装 12 步（含 config/crew/gateway），更新 9 步（只刷 program+restart）。
+    if [[ "$is_update" == "true" ]]; then
+        INSTALL_STAGE_TOTAL=9
+    else
+        INSTALL_STAGE_TOTAL=12
     fi
 
     # ─── Step 1: 平台 + 版本 ────────────────────────────────
@@ -1396,6 +1444,10 @@ prefill_weixin_channel() {
         const c = JSON.parse(fs.readFileSync(p, "utf8"));
         c.channels = c.channels || {};
         c.channels["openclaw-weixin"] = { ...(c.channels["openclaw-weixin"] || {}), enabled: true };
+        // 插件本体由 install_weixin_plugin 装，plugins.<id>.enabled 同时置 true
+        // （外部插件 store 另管，此处 config 侧显式开启，避免装完仍 false）。
+        c.plugins = c.plugins || {};
+        c.plugins["openclaw-weixin"] = { ...(c.plugins["openclaw-weixin"] || {}), enabled: true };
         c.session = { ...(c.session || {}), dmScope: "per-channel-peer" };
         if (!Array.isArray(c.bindings)) c.bindings = [];
         const hasMainWeixin = c.bindings.some((b) => b?.agentId === "main" && b?.match?.channel === "openclaw-weixin");
@@ -1519,6 +1571,23 @@ ensure_env_xiaobei_home() {
     fi
 }
 
+# 把 OPENCLAW_STATE_DIR 幂等写进 gateway env 文件。gateway 是独立进程（systemd/launchd），
+# 不继承本脚本 export 的环境；不写进去则 gateway 走默认 homedir/.openclaw（多数情况也对，
+# 但 HOME 异常或 daemon install 捕获了别的 OPENCLAW_HOME 时会偏）。显式写入消除歧义，
+# 引擎 resolveStateDir 把 OPENCLAW_STATE_DIR 当直接覆盖、不 append /.openclaw。
+# $1: env 文件路径   $2: format（kv 或 export）
+ensure_env_state_dir() {
+    local env_file="$1" format="$2"
+    [ -f "$env_file" ] || return 0
+    if [ "$format" = "export" ]; then
+        grep -qE "^export OPENCLAW_STATE_DIR=" "$env_file" 2>/dev/null && return 0
+        printf "export OPENCLAW_STATE_DIR='%s'\n" "$OPENCLAW_HOME" >> "$env_file"
+    else
+        grep -qE "^OPENCLAW_STATE_DIR=" "$env_file" 2>/dev/null && return 0
+        printf 'OPENCLAW_STATE_DIR=%s\n' "$OPENCLAW_HOME" >> "$env_file"
+    fi
+}
+
 # 更新路线用：不问 AWK_API_KEY、不 daemon install，只幂等刷 gateway env 路径
 # （PATH + XIAOBEI_HOME）+ restart gateway 让新 program 生效。
 refresh_gateway_env_only() {
@@ -1531,6 +1600,7 @@ refresh_gateway_env_only() {
     if [ "$(uname -s)" = "Linux" ] && [ -f "$systemd_env" ]; then
         ensure_env_path "$systemd_env" "$node_bin_dir" "$oc_bin_dir"
         ensure_env_xiaobei_home "$systemd_env" kv
+        ensure_env_state_dir "$systemd_env" kv
         if command -v systemctl >/dev/null 2>&1; then
             systemctl --user daemon-reload 2>/dev/null || true
             systemctl --user restart "openclaw-gateway.service" 2>/dev/null && ui_success "Restarted gateway"
@@ -1538,6 +1608,7 @@ refresh_gateway_env_only() {
     elif [ "$(uname -s)" = "Darwin" ] && [ -f "$macos_env" ]; then
         ensure_env_path "$macos_env" "$node_bin_dir" "$oc_bin_dir"
         ensure_env_xiaobei_home "$macos_env" export
+        ensure_env_state_dir "$macos_env" export
         "$claw_cmd" gateway restart 2>/dev/null && ui_success "Restarted gateway"
     else
         ui_info "无 gateway env 文件或平台不支持自动 restart；可手动：$claw_cmd gateway restart"
@@ -1564,6 +1635,7 @@ install_gateway_and_env() {
         write_missing_env "$systemd_env" kv
         ensure_env_path "$systemd_env" "$node_bin_dir" "$oc_bin_dir"
         ensure_env_xiaobei_home "$systemd_env" kv
+        ensure_env_state_dir "$systemd_env" kv
         # WSL2 GUI 显示变量
         if grep -qi microsoft /proc/version 2>/dev/null; then
             {
@@ -1597,6 +1669,7 @@ install_gateway_and_env() {
             write_missing_env "$macos_env" export
             ensure_env_path "$macos_env" "$node_bin_dir" "$oc_bin_dir"
             ensure_env_xiaobei_home "$macos_env" export
+            ensure_env_state_dir "$macos_env" export
             chmod 600 "$macos_env"
             "$claw_cmd" gateway restart 2>/dev/null || true
             ui_success "Restarted gateway with macos env"

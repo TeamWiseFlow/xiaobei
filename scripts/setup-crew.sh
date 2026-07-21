@@ -637,7 +637,8 @@ if [ -f "$CONFIG_PATH" ]; then
   while IFS=$'\t' read -r a_id a_ws; do
     [ -n "$a_id" ] || continue
     [ -d "$a_ws/skills" ] || continue
-    chmod_count="$(find "$a_ws/skills" -name '*.sh' -not -executable -exec chmod +x {} + -print | wc -l)"
+    # BSD find（macOS）不支持 -executable（GNU 专属），用 ! -perm -u+x 兼容两者。
+    chmod_count="$(find "$a_ws/skills" -name '*.sh' ! -perm -u+x -exec chmod +x {} + -print 2>/dev/null | wc -l)"
     [ "$chmod_count" -gt 0 ] && echo "    ✅ $a_id: chmod +x on $chmod_count scripts"
   done < <(list_agent_workspaces)
   echo "  ✅ Skill scripts ensured executable"
