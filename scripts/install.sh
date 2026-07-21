@@ -13,7 +13,7 @@
 #   2. bootstrap gum UI（TTY 才有，非 TTY 静默跳过）
 #   3. 解析最新 release tag（GitHub API，或 XIAOBEI_MIRROR env 指向自建镜像）
 #   4. 下载 xiaobei-{ver}-{plat}.tar.zst → 临时文件
-#   5. 解压到 WISEFLOW_ROOT（默认 ~/.xiaobei，程序目录）：openclaw/ + tools/node + tools/pnpm + bin/openclaw + crews/ + skills/ + scripts/ + camoufox-cli/
+#   5. 解压到 WISEFLOW_ROOT（默认 ~/xiaobei，程序目录）：openclaw/ + tools/node + tools/pnpm + bin/openclaw + crews/ + skills/ + scripts/ + camoufox-cli/ + awada/
 #   6. pnpm install --prod --frozen-lockfile（用 ship 的 portable node + pnpm，在 openclaw/ 下；只拉依赖不编译，无 OOM，native 自动按平台）
 #   7. pip install --user（skills 的 python deps，扫 requirements.txt）
 #   8. 放置 config-templates/openclaw.json → ~/.openclaw/openclaw.json（运行数据目录 OPENCLAW_HOME）+ 预填微信 channel binding
@@ -24,7 +24,8 @@
 #       → openclaw daemon install + restart（唯一人工输入点；不走 onboard，小白友好）
 #   13. 打印访问指引
 #
-# 目录职责：WISEFLOW_ROOT（~/.xiaobei）= 程序（引擎+模板+脚本+工具+wrapper）；OPENCLAW_HOME（~/.openclaw）= 运行数据（config+env+workspace+logs）。
+# 目录职责：WISEFLOW_ROOT（~/xiaobei）= 程序（引擎+模板+脚本+工具+wrapper）；OPENCLAW_HOME（~/.openclaw）= 运行数据（config+env+workspace+logs）。
+# 已装机器重跑 = 更新（只换 program + rebuild deps + restart，不碰运行数据）；--force 强覆盖运行数据。
 #
 # tarball 由 .github/workflows/build-dist.yml 在 CI 预构建（方案 B）：CI 只 build 一次，
 # ship dist+lockfile（不 ship node_modules）+ pnpm + portable Node，用户侧 pnpm install --prod 重建 node_modules。
@@ -36,10 +37,16 @@ set -euo pipefail
 WISEFLOW_REPO="${XIAOBEI_REPO:-TeamWiseFlow/xiaobei}"
 # 程序目录（引擎源码 + crew 模板 + 脚本 + portable node/pnpm + camoufox-cli fork + bin wrapper）
 # 与运行数据目录 OPENCLAW_HOME（~/.openclaw：openclaw.json + daemon.env + workspace-*）分离。
-WISEFLOW_ROOT_DEFAULT="${XIAOBEI_HOME:-$HOME/.xiaobei}"
-# XIAOBEI_MIRROR 可指向自建镜像站根（国内加速），形如 https://mirror.example.com/xiaobei
-# 资产 URL 构造为 $XIAOBEI_MIRROR/releases/download/{tag}/xiaobei-{ver}-{plat}.tar.zst
-XIAOBEI_MIRROR="${XIAOBEI_MIRROR:-}"
+# 不隐藏：用户能直接 ls 看到，符合"小白友好"。
+WISEFLOW_ROOT_DEFAULT="${XIAOBEI_HOME:-$HOME/xiaobei}"
+# 默认走 atomgit 国内镜像（仓根），--github 或 XIAOBEI_SOURCE=github 切回 GitHub。
+# 资产 URL 构造为 $XIAOBEI_MIRROR/releases/download/{tag}/xiaobei-{tag}-{plat}.tar.zst
+XIAOBEI_ATOMGIT_MIRROR="https://atomgit.com/wiseflow/xiaobei"
+if [[ "${XIAOBEI_SOURCE:-}" == "github" ]]; then
+    XIAOBEI_MIRROR="${XIAOBEI_MIRROR:-}"
+else
+    XIAOBEI_MIRROR="${XIAOBEI_MIRROR:-$XIAOBEI_ATOMGIT_MIRROR}"
+fi
 # tarball 内 ship 的 portable Node / pnpm 入口（相对 WISEFLOW_ROOT）
 PORTABLE_NODE="tools/node/bin/node"
 PORTABLE_PNPM="tools/pnpm/bin/pnpm.mjs"
@@ -1040,6 +1047,28 @@ install_weixin_plugin() {
     fi
 }
 
+# 装 awada 本地插件依赖（ws + zod）。
+# awada 是 TS 插件经 jiti 运行时加载（openclaw.extensions: ["./index.ts"]），无需 build；
+# tarball ship 的 awada/ 不带 node_modules，这里 npm install --omit=dev 装运行时依赖。
+# config-templates/openclaw.json 已预置 plugins.load.paths=["${XIAOBEI_HOME}/awada"] + entries.awada.enabled=false，
+# XIAOBEI_HOME 由 install_gateway_and_env 写进 daemon.env，gateway 启动时 ${XIAOBEI_HOME} env ref 解析到本目录。
+install_awada_plugin() {
+    local node="$WISEFLOW_ROOT/$PORTABLE_NODE"
+    local npm_bin; npm_bin="$(dirname "$node")/npm"
+    local awada_dir="$WISEFLOW_ROOT/awada"
+    [[ -d "$awada_dir" ]] || { ui_warn "awada 不在 tarball 内：$awada_dir；跳过"; return 0; }
+    if [ -d "$awada_dir/node_modules/ws" ] && [ -d "$awada_dir/node_modules/zod" ]; then
+        ui_success "awada deps already installed"
+        return 0
+    fi
+    ui_info "Installing awada plugin deps (ws + zod) via npmmirror"
+    if bash -c "cd '$awada_dir' && '$npm_bin' install --omit=dev --registry=https://registry.npmmirror.com"; then
+        ui_success "awada deps installed"
+    else
+        ui_warn "awada deps install 失败；可后续手动：cd '$awada_dir' && npm install --omit=dev"
+    fi
+}
+
 # 放置 config template → ~/.openclaw/openclaw.json（已预置 awk provider，apiKey=${AWK_API_KEY} 由 gateway env 注入）
 place_config_template() {
     local openclaw_home="${OPENCLAW_HOME:-$HOME/.openclaw}"
@@ -1049,6 +1078,11 @@ place_config_template() {
     if [[ ! -f "$config_path" ]]; then
         [[ -f "$tmpl" ]] && cp "$tmpl" "$config_path"
         ui_success "Placed openclaw.json template"
+    elif [[ "$FORCE_RUNTIME" == "true" ]]; then
+        local backup="${config_path}.bak.$(date +%s 2>/dev/null || echo 0)"
+        cp "$config_path" "$backup"
+        [[ -f "$tmpl" ]] && cp "$tmpl" "$config_path"
+        ui_warn "openclaw.json 已存在，--force 覆盖（旧文件备份到 $backup）"
     else
         ui_info "openclaw.json 已存在，保留"
     fi
@@ -1064,6 +1098,7 @@ export OPENCLAW_HOME
 VERBOSE=0
 NO_PROMPT=0
 USE_LOCAL=false
+FORCE_RUNTIME=false
 TAGLINE="$DEFAULT_TAGLINE"
 
 parse_args() {
@@ -1076,6 +1111,26 @@ parse_args() {
             --no-prompt)
                 NO_PROMPT=1
                 shift
+                ;;
+            --force)
+                # 强覆盖已有运行数据（~/.openclaw/openclaw.json + workspace-* + daemon.env）
+                # 默认已装机器重跑 install 只更新 program（tarball）+ rebuild deps，不碰运行数据
+                FORCE_RUNTIME=true
+                shift
+                ;;
+            --github)
+                # 切回 GitHub release（不走默认 atomgit 镜像）
+                XIAOBEI_SOURCE=github
+                XIAOBEI_MIRROR=""
+                shift
+                ;;
+            --mirror)
+                if [[ $# -lt 2 || "${2:-}" == --* ]]; then
+                    ui_error "Missing value for $1"
+                    exit 2
+                fi
+                XIAOBEI_MIRROR="$2"
+                shift 2
                 ;;
             --use-local)
                 # 复用 WISEFLOW_ROOT 已有的本地 wiseflow checkout，跳 clone/fetch，保本地改动
@@ -1100,17 +1155,21 @@ Usage:
   curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh | bash -s -- [options]
 
 Options:
-  --root <dir>       Program install directory (default: ~/.xiaobei; runtime data stays in ~/.openclaw)
+  --root <dir>       Program install directory (default: ~/xiaobei; runtime data stays in ~/.openclaw)
+  --github           Use GitHub releases instead of the default atomgit mirror
+  --mirror <url>     Custom mirror root (overrides default atomgit)
+  --force            Overwrite existing runtime data (~/.openclaw); default preserves it on re-install
   --verbose          Print debug output
   --no-prompt        Disable prompts (CI/automation)
   --help, -h         Show this help
 
 Env:
   XIAOBEI_REPO       GitHub 仓（owner/repo，默认 TeamWiseFlow/xiaobei；测试可指 bigbrother666sh/wiseflow）
-  XIAOBEI_MIRROR     自建镜像站根（国内加速），形如 https://mirror.example.com/xiaobei
+  XIAOBEI_SOURCE     设为 github 切回 GitHub release（等价 --github）
+  XIAOBEI_MIRROR     镜像站根（默认 atomgit 国内镜像 https://atomgit.com/wiseflow/xiaobei）
   XIAOBEI_TAG        指定版本 tag（默认拉最新 release）
   XIAOBEI_TARBALL    本地已下好的 tarball 路径；设了就跳过下载直接用它（网络差时手工下好塞进来）
-  XIAOBEI_HOME       程序目录覆盖（默认 ~/.xiaobei）
+  XIAOBEI_HOME       程序目录覆盖（默认 ~/xiaobei）
   OPENCLAW_HOME      运行数据目录覆盖（默认 ~/.openclaw）
 EOF
                 exit 0
@@ -1152,13 +1211,23 @@ main() {
     [[ -n "$XIAOBEI_MIRROR" ]] && ui_kv "Mirror" "$XIAOBEI_MIRROR"
     echo ""
 
+    # ─── 检测是否已装（决定走 update 还是 fresh install）──────
+    # 已装 = $OPENCLAW_HOME/openclaw.json 存在。已装且非 --force：只更新 program
+    # （tarball 解压 + rebuild deps + 幂等刷 camoufox/weixin/awada + daemon restart），
+    # 不碰运行数据（openclaw.json / workspace-* / daemon.env 已有 key）。--force 强覆盖。
+    local is_update=false
+    if [[ -f "$OPENCLAW_HOME/openclaw.json" && "$FORCE_RUNTIME" != "true" ]]; then
+        is_update=true
+        ui_warn "检测到已有安装（$OPENCLAW_HOME/openclaw.json）→ 走更新路线，保留运行数据（传 --force 可强覆盖）"
+    fi
+
     # ─── Step 1: 平台 + 版本 ────────────────────────────────
     ui_stage "Detecting platform"
     detect_platform_asset
     ui_stage "Resolving latest release"
     resolve_latest_version
 
-    # ─── Step 2: 下载 + 解压 tarball ─────────────────────────
+    # ─── Step 2: 下载 + 解压 tarball（更新 program）──────────
     ui_stage "Downloading pre-built tarball"
     download_and_extract_tarball
 
@@ -1170,51 +1239,67 @@ main() {
     ui_stage "Installing python skill deps"
     install_python_deps
 
-    # ─── Step 5: 放 config template + 预填微信 binding ───────
-    ui_stage "Placing config template"
-    place_config_template
-    ui_stage "Pre-filling WeChat channel config"
-    prefill_weixin_channel
+    # ─── Step 5: awada 本地插件 deps（幂等）──────────────────
+    ui_stage "Installing awada plugin deps"
+    install_awada_plugin
 
-    # ─── Step 6: setup-crew（裸跑，无 --force）──────────────
-    ui_stage "Setting up crew templates"
-    if [[ -f "$WISEFLOW_ROOT/scripts/setup-crew.sh" ]]; then
-        OPENCLAW_HOME="$OPENCLAW_HOME" XIAOBEI_BIN_DIR="$WISEFLOW_ROOT/bin" \
-            bash "$WISEFLOW_ROOT/scripts/setup-crew.sh" || ui_warn "setup-crew.sh 非零退出（可后续手动 --force 修复）"
-    else
-        ui_warn "setup-crew.sh 不在 tarball 内，跳过"
-    fi
-
-    # ─── Step 7: camoufox-cli + Firefox binary ───────────────
+    # ─── Step 6: camoufox-cli + Firefox binary（幂等）────────
     ui_stage "Installing camoufox-cli browser"
     install_camoufox_cli
 
-    # ─── Step 7b: openclaw-weixin 插件（config 已预置 channel）──
+    # ─── Step 7: openclaw-weixin 插件（幂等）─────────────────
     ui_stage "Installing WeChat plugin"
     install_weixin_plugin
 
-    # ─── Step 8: 交互收 AWK_API_KEY + 装 gateway daemon ─────
-    # 不走 openclaw onboard（对小白太复杂）；config_template 已预置 awk provider
-    # （apiKey=${AWK_API_KEY}），这里把 key 写进 gateway env 文件让 config 解析到。
-    ui_stage "Configuring API key and gateway"
-    install_gateway_and_env
+    if [[ "$is_update" == "true" ]]; then
+        # ─── 更新路线：不碰运行数据，只刷 gateway env 路径 + restart ──
+        ui_stage "Refreshing gateway env and restarting"
+        refresh_gateway_env_only
+    else
+        # ─── 首装路线：放 config + 预填微信 + setup-crew + gateway daemon ──
+        ui_stage "Placing config template"
+        place_config_template
+        ui_stage "Pre-filling WeChat channel config"
+        prefill_weixin_channel
+
+        ui_stage "Setting up crew templates"
+        if [[ -f "$WISEFLOW_ROOT/scripts/setup-crew.sh" ]]; then
+            local crew_force=""
+            [[ "$FORCE_RUNTIME" == "true" ]] && crew_force="--force"
+            OPENCLAW_HOME="$OPENCLAW_HOME" XIAOBEI_BIN_DIR="$WISEFLOW_ROOT/bin" \
+                bash "$WISEFLOW_ROOT/scripts/setup-crew.sh" $crew_force \
+                || ui_warn "setup-crew.sh 非零退出（可后续手动 --force 修复）"
+        else
+            ui_warn "setup-crew.sh 不在 tarball 内，跳过"
+        fi
+
+        # 交互收 AWK_API_KEY + 装 gateway daemon（不走 onboard，小白友好）
+        ui_stage "Configuring API key and gateway"
+        install_gateway_and_env
+    fi
 
     # ─── 完成 ────────────────────────────────────────────────
     echo ""
-    ui_celebrate "🦞 wiseflow installed successfully!"
+    if [[ "$is_update" == "true" ]]; then
+        ui_celebrate "🦞 wiseflow updated successfully!"
+    else
+        ui_celebrate "🦞 wiseflow installed successfully!"
+    fi
     echo ""
     ui_section "Next steps"
     echo "  把 $WISEFLOW_ROOT/bin 加到 PATH 即可用 openclaw 命令："
     echo "    export PATH=\"$WISEFLOW_ROOT/bin:\$PATH\""
     echo ""
-    echo "  1. Bind your WeChat channel:"
-    echo "     openclaw channels login --channel openclaw-weixin"
-    echo "     openclaw pairing list openclaw-weixin"
-    echo "     openclaw pairing approve openclaw-weixin <id>"
-    echo ""
-    echo "  2. Open the dashboard: http://127.0.0.1:18789"
-    echo ""
-    echo "  3. Update later with: bash $WISEFLOW_ROOT/scripts/update.sh"
+    if [[ "$is_update" != "true" ]]; then
+        echo "  1. Bind your WeChat channel:"
+        echo "     openclaw channels login --channel openclaw-weixin"
+        echo "     openclaw pairing list openclaw-weixin"
+        echo "     openclaw pairing approve openclaw-weixin <id>"
+        echo ""
+        echo "  2. Open the dashboard: http://127.0.0.1:18789"
+        echo ""
+    fi
+    echo "  Update later: re-run this install script (preserves ~/.openclaw runtime data)."
     echo ""
 }
 
@@ -1344,6 +1429,47 @@ ensure_env_path() {
     mv "${env_file}.new" "$env_file"
 }
 
+# 把 XIAOBEI_HOME（程序目录绝对路径）幂等写进 env 文件，让 openclaw.json 里
+# plugins.load.paths 的 ${XIAOBEI_HOME}/awada env ref 在 gateway 启动时能解析。
+# $1: env 文件路径   $2: format（kv 或 export）
+ensure_env_xiaobei_home() {
+    local env_file="$1" format="$2"
+    [ -f "$env_file" ] || return 0
+    if [ "$format" = "export" ]; then
+        grep -qE "^export XIAOBEI_HOME=" "$env_file" 2>/dev/null && return 0
+        printf "export XIAOBEI_HOME='%s'\n" "$WISEFLOW_ROOT" >> "$env_file"
+    else
+        grep -qE "^XIAOBEI_HOME=" "$env_file" 2>/dev/null && return 0
+        printf 'XIAOBEI_HOME=%s\n' "$WISEFLOW_ROOT" >> "$env_file"
+    fi
+}
+
+# 更新路线用：不问 AWK_API_KEY、不 daemon install，只幂等刷 gateway env 路径
+# （PATH + XIAOBEI_HOME）+ restart gateway 让新 program 生效。
+refresh_gateway_env_only() {
+    local claw_cmd="$WISEFLOW_ROOT/bin/openclaw"
+    local node_bin_dir; node_bin_dir="$(dirname "$WISEFLOW_ROOT/$PORTABLE_NODE")"
+    local oc_bin_dir="$WISEFLOW_ROOT/bin"
+    local systemd_env="$OPENCLAW_HOME/daemon.env"
+    local macos_env="$OPENCLAW_HOME/service-env/ai.openclaw.gateway.env"
+
+    if [ "$(uname -s)" = "Linux" ] && [ -f "$systemd_env" ]; then
+        ensure_env_path "$systemd_env" "$node_bin_dir" "$oc_bin_dir"
+        ensure_env_xiaobei_home "$systemd_env" kv
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl --user daemon-reload 2>/dev/null || true
+            systemctl --user restart "openclaw-gateway.service" 2>/dev/null && ui_success "Restarted gateway"
+        fi
+    elif [ "$(uname -s)" = "Darwin" ] && [ -f "$macos_env" ]; then
+        ensure_env_path "$macos_env" "$node_bin_dir" "$oc_bin_dir"
+        ensure_env_xiaobei_home "$macos_env" export
+        "$claw_cmd" gateway restart 2>/dev/null && ui_success "Restarted gateway"
+    else
+        ui_info "无 gateway env 文件或平台不支持自动 restart；可手动：$claw_cmd gateway restart"
+    fi
+    ui_success "Gateway env refreshed"
+}
+
 install_gateway_and_env() {
     local claw_cmd="$WISEFLOW_ROOT/bin/openclaw"
     local node_bin_dir; node_bin_dir="$(dirname "$WISEFLOW_ROOT/$PORTABLE_NODE")"
@@ -1362,6 +1488,7 @@ install_gateway_and_env() {
         chmod 600 "$systemd_env"
         write_missing_env "$systemd_env" kv
         ensure_env_path "$systemd_env" "$node_bin_dir" "$oc_bin_dir"
+        ensure_env_xiaobei_home "$systemd_env" kv
         # WSL2 GUI 显示变量
         if grep -qi microsoft /proc/version 2>/dev/null; then
             {
@@ -1394,6 +1521,7 @@ install_gateway_and_env() {
         if [ -f "$macos_env" ]; then
             write_missing_env "$macos_env" export
             ensure_env_path "$macos_env" "$node_bin_dir" "$oc_bin_dir"
+            ensure_env_xiaobei_home "$macos_env" export
             chmod 600 "$macos_env"
             "$claw_cmd" gateway restart 2>/dev/null || true
             ui_success "Restarted gateway with macos env"

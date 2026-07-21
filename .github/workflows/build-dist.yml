@@ -101,6 +101,10 @@ jobs:
           cp -a "$REPO/skills" "$STAGE/skills"
           cp -a "$REPO/config-templates" "$STAGE/config-templates"
           cp -a "$REPO/scripts" "$STAGE/scripts"
+          # awada 本地插件（TS，jiti 加载；ship 源码 + lockfile，排除 node_modules，
+          # 用户侧 install.sh 在 awada/ 下 npm install --omit=dev 装 ws+zod）
+          rsync -a --exclude='node_modules' --exclude='.git' \
+            "$REPO/awada/" "$STAGE/awada/"
           cp "$REPO/openclaw.version" "$REPO/version" "$STAGE/"
           # openclaw-weixin 插件 pin（install.sh 据此装插件，国内 npmmirror）
           [ -f "$REPO/openclaw-weixin.version.json" ] && cp "$REPO/openclaw-weixin.version.json" "$STAGE/" || true

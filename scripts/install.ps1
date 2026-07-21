@@ -22,10 +22,12 @@
 
 [CmdletBinding()]
 param(
-    [string]$Root = "",                 # 程序目录覆盖（默认 ~\.xiaobei）
+    [string]$Root = "",                 # 程序目录覆盖（默认 ~\xiaobei）
     [string]$Tag = "",                  # 指定 release tag
     [string]$Tarball = "",              # 本地已下好的 tarball 路径，跳过下载
-    [string]$Mirror = "",               # 自建镜像站根
+    [string]$Mirror = "",               # 自定义镜像站根（覆盖默认 atomgit）
+    [switch]$GitHub,                    # 切回 GitHub release（不走默认 atomgit）
+    [switch]$Force,                     # 强覆盖已有运行数据（~\.openclaw）
     [switch]$NoPrompt
 )
 
@@ -34,12 +36,22 @@ $ErrorActionPreference = "Stop"
 # ─── 常量 / 目录 ───────────────────────────────────────────────
 $Repo = if ($env:XIAOBEI_REPO) { $env:XIAOBEI_REPO } else { "TeamWiseFlow/xiaobei" }
 if (-not $Root) {
-    $Root = if ($env:XIAOBEI_HOME) { $env:XIAOBEI_HOME } else { Join-Path $env:USERPROFILE ".xiaobei" }
+    $Root = if ($env:XIAOBEI_HOME) { $env:XIAOBEI_HOME } else { Join-Path $env:USERPROFILE "xiaobei" }
 }
 $OpenclawHome = if ($env:OPENCLAW_HOME) { $env:OPENCLAW_HOME } else { Join-Path $env:USERPROFILE ".openclaw" }
+# 默认走 atomgit 国内镜像；-GitHub 或 XIAOBEI_SOURCE=github 切回 GitHub
+$AtomgitMirror = "https://atomgit.com/wiseflow/xiaobei"
+if (-not $Mirror) {
+    if ($GitHub -or $env:XIAOBEI_SOURCE -eq "github") {
+        $env:XIAOBEI_MIRROR = ""
+    } else {
+        $env:XIAOBEI_MIRROR = if ($env:XIAOBEI_MIRROR) { $env:XIAOBEI_MIRROR } else { $AtomgitMirror }
+    }
+} else {
+    $env:XIAOBEI_MIRROR = $Mirror
+}
 if ($Tag) { $env:XIAOBEI_TAG = $Tag }
 if ($Tarball) { $env:XIAOBEI_TARBALL = $Tarball }
-if ($Mirror) { $env:XIAOBEI_MIRROR = $Mirror }
 
 $NodeExe   = Join-Path $Root "tools\node\node.exe"
 $NpmCmd    = Join-Path $Root "tools\node\npm.cmd"
@@ -136,6 +148,10 @@ function Place-Config {
     if (-not (Test-Path $cfg)) {
         if (Test-Path $tmpl) { Copy-Item $tmpl $cfg; Write-Ok "placed openclaw.json" }
         else { Write-Warn "template 未找到：$tmpl" }
+    } elseif ($Force) {
+        $bak = "$cfg.bak.$([int][double]::Parse((Get-Date -UFormat %s)))"
+        Copy-Item $cfg $bak
+        if (Test-Path $tmpl) { Copy-Item $tmpl $cfg -Force; Write-Warn "openclaw.json 已存在，-Force 覆盖（备份到 $bak）" }
     } else {
         Write-Ok "openclaw.json 已存在，保留"
     }
@@ -226,7 +242,24 @@ function Install-WeixinPlugin {
     else { Write-Warn "插件安装失败；可后续手动：$ClawCmd plugins install $pkg@$ver --pin" }
 }
 
-# ─── 10. 交互收 AWK_API_KEY + 起 gateway ──────────────────────
+# ─── 10. awada 本地插件 deps（ws + zod）──────────────────────
+function Install-AwadaPlugin {
+    Write-Stage "Installing awada plugin deps"
+    $awada = Join-Path $Root "awada"
+    if (-not (Test-Path $awada)) { Write-Warn "awada 不在 tarball 内：$awada；跳过"; return }
+    $hasWs   = Test-Path (Join-Path $awada "node_modules\ws")
+    $hasZod  = Test-Path (Join-Path $awada "node_modules\zod")
+    if ($hasWs -and $hasZod) { Write-Ok "awada deps already installed"; return }
+    $env:npm_config_registry = "https://registry.npmmirror.com"
+    Push-Location $awada
+    try {
+        & $NpmCmd install --omit=dev
+        if ($LASTEXITCODE -eq 0) { Write-Ok "awada deps installed" }
+        else { Write-Warn "awada deps install 失败；可后续手动：cd $awada ; npm install --omit=dev" }
+    } finally { Pop-Location }
+}
+
+# ─── 11. 交互收 AWK_API_KEY + 起 gateway ──────────────────────
 function Install-GatewayAndEnv {
     Write-Stage "Configuring API key and gateway"
     New-Item -ItemType Directory -Force -Path $OpenclawHome | Out-Null
@@ -239,10 +272,12 @@ function Install-GatewayAndEnv {
     # 写 daemon.env（KEY=value 格式，幂等）
     $lines = @()
     if (Test-Path $envFile) { $lines = Get-Content $envFile }
-    $lines = $lines | Where-Object { $_ -notmatch "^AWK_API_KEY=" -and $_ -notmatch "^OPENCLAW_BROWSER_TIMEOUT_MS=" -and $_ -notmatch "^OPENCLAW_DISABLE_BONJOUR=" }
+    $lines = $lines | Where-Object { $_ -notmatch "^AWK_API_KEY=" -and $_ -notmatch "^OPENCLAW_BROWSER_TIMEOUT_MS=" -and $_ -notmatch "^OPENCLAW_DISABLE_BONJOUR=" -and $_ -notmatch "^XIAOBEI_HOME=" }
     if ($awkKey) { $lines += "AWK_API_KEY=$awkKey" }
     $lines += "OPENCLAW_BROWSER_TIMEOUT_MS=90000"
     $lines += "OPENCLAW_DISABLE_BONJOUR=true"
+    # XIAOBEI_HOME 让 openclaw.json 里 ${XIAOBEI_HOME}/awada env ref 解析到程序目录
+    $lines += "XIAOBEI_HOME=$Root"
     # PATH 注入 program bin + node bin
     $pathLine = "PATH=$(Join-Path $Root 'bin');$(Split-Path $NodeExe);$env:PATH"
     $lines = $lines | Where-Object { $_ -notmatch "^PATH=" }
@@ -277,6 +312,13 @@ function Main {
     Write-Host "  Runtime dir : $OpenclawHome"
     Write-Host "  Repo        : $Repo"
 
+    # 检测是否已装（决定走 update 还是 fresh install）
+    $cfgExisting = Join-Path $OpenclawHome "openclaw.json"
+    $isUpdate = (Test-Path $cfgExisting) -and -not $Force
+    if ($isUpdate) {
+        Write-Warn "检测到已有安装（$cfgExisting）→ 走更新路线，保留运行数据（-Force 可强覆盖）"
+    }
+
     Write-Stage "Resolving latest release"
     $tag = Resolve-Tag
     Write-Ok "tag = $tag"
@@ -289,28 +331,49 @@ function Main {
 
     Install-Deps
     Install-PythonDeps
-    Place-Config
-    Run-SetupCrew
+    Install-AwadaPlugin
     Install-CamoufoxCli
     Install-WeixinPlugin
-    Install-GatewayAndEnv
+
+    if ($isUpdate) {
+        Write-Stage "Refreshing gateway env and restarting"
+        $envFile = Join-Path $OpenclawHome "daemon.env"
+        if (Test-Path $envFile) {
+            $lines = Get-Content $envFile
+            $lines = $lines | Where-Object { $_ -notmatch "^XIAOBEI_HOME=" }
+            $lines += "XIAOBEI_HOME=$Root"
+            Set-Content -Path $envFile -Value $lines -Encoding UTF8
+            Write-Ok "daemon.env XIAOBEI_HOME refreshed"
+        }
+        & $ClawCmd gateway restart 2>&1 | ForEach-Object { Write-Host "    $_" }
+    } else {
+        Place-Config
+        Run-SetupCrew
+        Install-GatewayAndEnv
+    }
 
     Write-Host ""
-    Write-Host "🦞 wiseflow installed successfully!" -ForegroundColor Green
+    if ($isUpdate) {
+        Write-Host "🦞 wiseflow updated successfully!" -ForegroundColor Green
+    } else {
+        Write-Host "🦞 wiseflow installed successfully!" -ForegroundColor Green
+    }
     Write-Host ""
     Write-Host "Next steps:" -ForegroundColor Cyan
     $binDir = Join-Path $Root 'bin'
     Write-Host "  把 $binDir 加到用户 PATH（安全方式，勿用 setx %PATH% 会截断）："
     Write-Host "    [Environment]::SetEnvironmentVariable('PATH', `"$binDir;`" + [Environment]::GetEnvironmentVariable('PATH','User'), 'User')"
     Write-Host ""
-    Write-Host "  1. Bind your WeChat channel:"
-    Write-Host "     openclaw channels login --channel openclaw-weixin"
-    Write-Host "     openclaw pairing list openclaw-weixin"
-    Write-Host "     openclaw pairing approve openclaw-weixin <id>"
-    Write-Host ""
-    Write-Host "  2. Open the dashboard: http://127.0.0.1:18789"
-    Write-Host ""
-    Write-Host "  3. Update later with: powershell -File $(Join-Path $Root 'scripts\update.ps1')"
+    if (-not $isUpdate) {
+        Write-Host "  1. Bind your WeChat channel:"
+        Write-Host "     openclaw channels login --channel openclaw-weixin"
+        Write-Host "     openclaw pairing list openclaw-weixin"
+        Write-Host "     openclaw pairing approve openclaw-weixin <id>"
+        Write-Host ""
+        Write-Host "  2. Open the dashboard: http://127.0.0.1:18789"
+        Write-Host ""
+    }
+    Write-Host "  Update later: re-run this install script (preserves $OpenclawHome runtime data)."
     Write-Host ""
 }
 

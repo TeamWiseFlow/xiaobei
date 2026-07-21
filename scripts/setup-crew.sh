@@ -755,6 +755,8 @@ generate_ofb_env_md() {
 # wiseflow 环境信息（由 setup-crew.sh 自动生成，勿手动编辑）
 
 - **部署环境**：$([ "$_is_docker" = "true" ] && echo "Docker 容器" || echo "源码部署（$(uname -s)）")
+- **程序目录**（引擎 + 模板 + 脚本 + 工具 + wrapper，升级只换这里）：$_PROJECT_ROOT
+- **运行数据目录**（openclaw.json + daemon.env + workspace-* + sessions，用户数据不动）：$_OPENCLAW_HOME
 - **wiseflow 项目路径**：$_PROJECT_ROOT
 - **openclaw 子目录**：$_PROJECT_ROOT/openclaw
 - **配置文件**：$_CONFIG_PATH

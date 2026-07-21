@@ -346,9 +346,12 @@
   },
   "plugins": {
     "load": {
-      "paths": []
+      "paths": ["${XIAOBEI_HOME}/awada"]
     },
     "entries": {
+      "awada": {
+        "enabled": false
+      },
       "xai": {
         "enabled": false
       },
