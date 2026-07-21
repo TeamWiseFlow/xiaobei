@@ -1135,21 +1135,46 @@ install_awada_plugin() {
 }
 
 # 放置 config template → ~/.openclaw/openclaw.json（已预置 awk provider，apiKey=${AWK_API_KEY} 由 gateway env 注入）
+# 健康判定：现有 config 必须同时有 models + agents.defaults，否则视为被极简化（openclaw 首启自动生成
+# 的最小 config 缺这两块），用 template 覆盖。这样首装 / 重跑 / 更新路线都能自愈极简 config。
 place_config_template() {
     local openclaw_home="${OPENCLAW_HOME:-$HOME/.openclaw}"
     local config_path="${OPENCLAW_CONFIG_PATH:-$openclaw_home/openclaw.json}"
     local tmpl="$WISEFLOW_ROOT/config-templates/openclaw.json"
     mkdir -p "$openclaw_home"
+    if [[ ! -f "$tmpl" ]]; then
+        ui_error "config template 缺失：$tmpl（tarball 损坏？）"
+        return 1
+    fi
+    local need_place=0 reason=""
     if [[ ! -f "$config_path" ]]; then
-        [[ -f "$tmpl" ]] && cp "$tmpl" "$config_path"
-        ui_success "Placed openclaw.json template"
+        need_place=1; reason="不存在"
     elif [[ "$FORCE_RUNTIME" == "true" ]]; then
-        local backup="${config_path}.bak.$(date +%s 2>/dev/null || echo 0)"
-        cp "$config_path" "$backup"
-        [[ -f "$tmpl" ]] && cp "$tmpl" "$config_path"
-        ui_warn "openclaw.json 已存在，--force 覆盖（旧文件备份到 $backup）"
+        need_place=1; reason="--force"
     else
-        ui_info "openclaw.json 已存在，保留"
+        # 现有 config 存在——检查是否健康（有 models + agents.defaults）
+        if "$WISEFLOW_ROOT/$PORTABLE_NODE" -e '
+            const fs=require("fs");
+            const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+            process.exit(c.models && c.agents && c.agents.defaults ? 0 : 1);
+        ' "$config_path" 2>/dev/null; then
+            need_place=0
+        else
+            need_place=1; reason="缺 models/agents.defaults（疑似被极简化）"
+        fi
+    fi
+    if [[ "$need_place" == "1" ]]; then
+        if [[ -f "$config_path" ]]; then
+            local backup="${config_path}.bak.$(date +%s 2>/dev/null || echo 0)"
+            cp "$config_path" "$backup"
+            ui_warn "openclaw.json $reason → 用 template 覆盖（旧文件备份到 $backup）"
+        else
+            ui_info "Placing openclaw.json template（$reason）"
+        fi
+        cp "$tmpl" "$config_path"
+        ui_success "Placed openclaw.json template"
+    else
+        ui_info "openclaw.json 已存在且健康（有 models + agents.defaults），保留"
     fi
 }
 
@@ -1357,9 +1382,9 @@ main() {
         ui_warn "检测到已有安装（$OPENCLAW_HOME/openclaw.json）→ 走更新路线，保留运行数据（传 --force 可强覆盖）"
     fi
 
-    # 步数总数按路线动态设：首装 11 步（含 config/crew/gateway），更新 9 步（只刷 program+restart）。
+    # 步数总数按路线动态设：首装 11 步（含 config/crew/gateway），更新 10 步（自愈 config + 刷 program+restart）。
     if [[ "$is_update" == "true" ]]; then
-        INSTALL_STAGE_TOTAL=9
+        INSTALL_STAGE_TOTAL=10
     else
         INSTALL_STAGE_TOTAL=11
     fi
@@ -1401,7 +1426,11 @@ main() {
     install_weixin_plugin
 
     if [[ "$is_update" == "true" ]]; then
-        # ─── 更新路线：不碰运行数据，只刷 gateway env 路径 + restart ──
+        # ─── 更新路线：先自愈 config（若被极简化），再刷 gateway env 路径 + restart ──
+        # 不碰运行数据（daemon.env 的 key / workspace 不动），但 openclaw.json 若缺 models/agents.defaults
+        # （openclaw 首启自动生成的极简 config）则用 template 覆盖，否则更新路线永远修不回完整 config。
+        ui_stage "Checking config health"
+        place_config_template
         ui_stage "Refreshing gateway env and restarting"
         refresh_gateway_env_only
     else

@@ -102,7 +102,7 @@ irm https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.ps1 |
 5. awada 本地插件 deps（`awada/` 下 `npm install --omit=dev` 装 ws+zod）
 6. `camoufox-cli install`（下 Firefox 反指纹浏览器二进制，约 557MB，仅首装）
 7. `openclaw plugins install @tencent-weixin/openclaw-weixin@<pin> --pin`（微信插件，走 npmmirror）
-8. 放 `config-templates/openclaw.json` → `~/.openclaw/openclaw.json` + 预填微信 channel binding
+8. 放 `config-templates/openclaw.json` → `~/.openclaw/openclaw.json`（已预置微信 channel binding + 插件开关）；若现有 config 被极简化（缺 models/agents.defaults）则自动覆盖自愈
 9. `setup-crew.sh`（部署 crew workspace 到 `~/.openclaw/workspace-*`，注册 agents）
 10. 交互问 `AWK_API_KEY` → 写 `~/.openclaw/daemon.env` → `openclaw daemon install` + restart
 11. 自动出微信绑定二维码（已绑过的机器自动跳过），手机扫码、点确认即用
