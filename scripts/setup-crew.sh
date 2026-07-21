@@ -687,7 +687,8 @@ else:
     print(f"    ✅ {bin} already on PATH in {path}")
 PY
   else
-    echo "    ⚠️  $_GW_ENV not found; skip (created on first gateway start)"
+    # 首装时 gateway env 文件由后续 install_gateway_and_env 创建，此刻不存在是预期，静默跳过。
+    :
   fi
   unset _GW_ENV _XIAOBEI_BIN
 else

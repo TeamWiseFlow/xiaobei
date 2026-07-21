@@ -470,6 +470,7 @@ pnpm_install_prod() {
 }
 
 # skills 的 python 依赖（扫仓内 requirements.txt，pip install --user）
+# 优先高版本 python（3.12/3.11/3.10），回退 python3；小白机可能只有 CommandLineTools 的 3.9。
 install_python_deps() {
     local root="$WISEFLOW_ROOT"
     local merged=""
@@ -478,17 +479,27 @@ install_python_deps() {
         merged+="$(cat "$f" 2>/dev/null)"$'\n'
     done < <(find "$root/skills" "$root/crews" "$root" -maxdepth 4 -name requirements.txt -print0 2>/dev/null)
     [[ -z "$merged" ]] && { ui_info "No requirements.txt found; skip python deps"; return 0; }
-    local PIP_CMD=""
-    if command -v pip &>/dev/null; then PIP_CMD="pip"
-    elif command -v pip3 &>/dev/null; then PIP_CMD="pip3"
-    elif python3 -m pip --version &>/dev/null; then PIP_CMD="python3 -m pip"; fi
-    if [[ -z "$PIP_CMD" ]]; then
-        ui_warn "pip 未安装，跳过 python 依赖（skills 用到时再装）"
+    # 选 python：优先 3.12/3.11/3.10，回退 python3
+    local PY_BIN=""
+    for cand in python3.12 python3.11 python3.10 python3; do
+        if command -v "$cand" &>/dev/null; then PY_BIN="$cand"; break; fi
+    done
+    if [[ -z "$PY_BIN" ]]; then
+        ui_warn "python3 未安装，跳过 python 依赖（skills 用到时再装）"
         return 0
     fi
-    ui_info "Installing python skill deps (--user)"
+    if ! "$PY_BIN" -m pip --version &>/dev/null; then
+        ui_warn "$PY_BIN -m pip 不可用，跳过 python 依赖"
+        return 0
+    fi
+    ui_info "Installing python skill deps via $PY_BIN (--user)"
+    # --no-warn-script-location 抑制 'script installed in .../bin which is not on PATH'（小白噪音）
+    # --disable-pip-version-check 抑制 pip 升级提示
     printf '%s' "$merged" | sort -u | grep -vE '^\s*#|^\s*$' | \
-        "$PIP_CMD" install --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com -r /dev/stdin || \
+        "$PY_BIN" -m pip install --user \
+            --no-warn-script-location --disable-pip-version-check \
+            -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com \
+            -r /dev/stdin || \
         ui_warn "pip install 部分失败，可稍后手动补"
     ui_success "Python deps done"
 }
@@ -542,8 +553,8 @@ ui_error() {
     fi
 }
 
-# 步数总数在 main 里按 is_update 动态设（首装 12 / 更新 9）；此默认仅防 ui_stage 在 main 前被调。
-INSTALL_STAGE_TOTAL=12
+# 步数总数在 main 里按 is_update 动态设（首装 11 / 更新 9）；此默认仅防 ui_stage 在 main 前被调。
+INSTALL_STAGE_TOTAL=11
 INSTALL_STAGE_CURRENT=0
 
 ui_section() {
@@ -1063,6 +1074,10 @@ install_camoufox_cli() {
         run_required_step "Installing camoufox-cli fork deps" bash -c "cd '$fork_dir' && '$npm_bin' install --omit=dev --registry=https://registry.npmmirror.com"
         run_required_step "Installing camoufox-cli fork (local)" "$npm_bin" install -g "$fork_dir" --registry=https://registry.npmmirror.com
     fi
+    # npm install -g 建的 bin 可能缺 +x（symlink 目标权限没带过来），直接调会 Permission denied。
+    # chmod +x 跟随 symlink 改目标权限（macOS/Linux 一致）。
+    local cbin="$WISEFLOW_ROOT/bin/camoufox-cli"
+    [[ -e "$cbin" ]] && chmod +x "$cbin" 2>/dev/null || true
     ui_info "Ensuring camoufox Firefox binary (idempotent, ~557MB first run)"
     if ! camoufox-cli install; then
         ui_warn "camoufox-cli install failed; you can run it manually later: camoufox-cli install"
@@ -1342,11 +1357,17 @@ main() {
         ui_warn "检测到已有安装（$OPENCLAW_HOME/openclaw.json）→ 走更新路线，保留运行数据（传 --force 可强覆盖）"
     fi
 
-    # 步数总数按路线动态设：首装 12 步（含 config/crew/gateway），更新 9 步（只刷 program+restart）。
+    # 步数总数按路线动态设：首装 11 步（含 config/crew/gateway），更新 9 步（只刷 program+restart）。
     if [[ "$is_update" == "true" ]]; then
         INSTALL_STAGE_TOTAL=9
     else
-        INSTALL_STAGE_TOTAL=12
+        INSTALL_STAGE_TOTAL=11
+    fi
+
+    # 更新路线：先停 gateway。否则 pnpm install --prod 重写 node_modules 时与运行中的 gateway
+    # 文件句柄竞争，macOS 上可卡几十分钟（EBUSY 重试）。末尾 refresh_gateway_env_only 会重启。
+    if [[ "$is_update" == "true" ]]; then
+        stop_gateway_if_running
     fi
 
     # ─── Step 1: 平台 + 版本 ────────────────────────────────
@@ -1384,11 +1405,12 @@ main() {
         ui_stage "Refreshing gateway env and restarting"
         refresh_gateway_env_only
     else
-        # ─── 首装路线：放 config + 预填微信 + setup-crew + gateway daemon ──
+        # ─── 首装路线：放 config + setup-crew + gateway daemon ──
+        # config-templates/openclaw.json 已预置 channels.openclaw-weixin.enabled=true
+        # + plugins.entries.openclaw-weixin.enabled=true + bindings + session.dmScope，
+        # 故不再运行时 mutate（曾因此把 plugins 顶层写坏致 "Invalid input"）。
         ui_stage "Placing config template"
         place_config_template
-        ui_stage "Pre-filling WeChat channel config"
-        prefill_weixin_channel
 
         ui_stage "Setting up crew templates"
         if [[ -f "$WISEFLOW_ROOT/scripts/setup-crew.sh" ]]; then
@@ -1417,47 +1439,8 @@ main() {
         ui_celebrate "🦞 wiseflow installed successfully!"
     fi
     echo ""
-    ui_section "Next steps"
-    echo "  把 $WISEFLOW_ROOT/bin 加到 PATH 即可用 openclaw 命令："
-    echo "    export PATH=\"$WISEFLOW_ROOT/bin:\$PATH\""
-    echo ""
-    echo "  Dashboard: http://127.0.0.1:18789"
-    echo "  Update later: re-run this install script (preserves ~/.openclaw runtime data)."
-    echo ""
 }
 
-# ═══════════════════════════════════════════════════════════════════
-# 预填微信 channel config（fork 自 update.sh install_weixin_channel 末尾段）
-# 不装插件（update.sh 里装的，因为已 git clone；这里只预填 openclaw.json 的
-# bindings + channels.entries，插件由用户后续 manually 装）
-# ═══════════════════════════════════════════════════════════════════
-prefill_weixin_channel() {
-    local openclaw_home="${OPENCLAW_HOME:-$HOME/.openclaw}"
-    local config_path="${OPENCLAW_CONFIG_PATH:-$openclaw_home/openclaw.json}"
-    if [[ ! -f "$config_path" ]]; then
-        ui_warn "openclaw.json not present yet ($config_path); skip channel prefill"
-        return 0
-    fi
-    "$WISEFLOW_ROOT/$PORTABLE_NODE" -e '
-        const fs = require("fs");
-        const p = process.argv[1];
-        const c = JSON.parse(fs.readFileSync(p, "utf8"));
-        c.channels = c.channels || {};
-        c.channels["openclaw-weixin"] = { ...(c.channels["openclaw-weixin"] || {}), enabled: true };
-        // 插件本体由 install_weixin_plugin 装，plugins.<id>.enabled 同时置 true
-        // （外部插件 store 另管，此处 config 侧显式开启，避免装完仍 false）。
-        c.plugins = c.plugins || {};
-        c.plugins["openclaw-weixin"] = { ...(c.plugins["openclaw-weixin"] || {}), enabled: true };
-        c.session = { ...(c.session || {}), dmScope: "per-channel-peer" };
-        if (!Array.isArray(c.bindings)) c.bindings = [];
-        const hasMainWeixin = c.bindings.some((b) => b?.agentId === "main" && b?.match?.channel === "openclaw-weixin");
-        if (!hasMainWeixin) {
-            c.bindings.push({ agentId: "main", comment: "openclaw-weixin -> Main Agent onboarding entry", match: { channel: "openclaw-weixin" } });
-        }
-        fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
-    ' "$config_path"
-    ui_success "WeChat channel pre-bound to Main Agent in openclaw.json"
-}
 # ═════════════════════════════════════════════════════════════════
 # 不走 openclaw onboard（对小白太复杂）。改为：
 # 1. 交互问 AWK_API_KEY（config_template 里 awk.apiKey=${AWK_API_KEY}）
@@ -1585,6 +1568,17 @@ ensure_env_state_dir() {
     else
         grep -qE "^OPENCLAW_STATE_DIR=" "$env_file" 2>/dev/null && return 0
         printf 'OPENCLAW_STATE_DIR=%s\n' "$OPENCLAW_HOME" >> "$env_file"
+    fi
+}
+
+# 停掉运行中的 gateway（更新路线开头调，避免 pnpm 重写 node_modules 时文件句柄竞争卡死）。
+# 平台分支：Linux systemctl --user stop；Darwin openclaw gateway stop。无 service / 未运行则静默。
+stop_gateway_if_running() {
+    local claw_cmd="$WISEFLOW_ROOT/bin/openclaw"
+    if [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
+        systemctl --user stop "openclaw-gateway.service" 2>/dev/null && ui_info "Stopped gateway before update" || true
+    elif [ "$(uname -s)" = "Darwin" ] && [ -x "$claw_cmd" ]; then
+        "$claw_cmd" gateway stop 2>/dev/null && ui_info "Stopped gateway before update" || true
     fi
 }
 
