@@ -37,10 +37,14 @@ jobs:
           echo "version=$OPENCLAW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node + pnpm (build env)
-        uses: actions/setup-node@v5
+        # v6：package-manager-cache 限 npm-only，避免 pnpm 装好前自动开缓存报
+        # "Unable to locate executable file: pnpm"（setup-node#1351）
+        uses: actions/setup-node@v6
         with:
           node-version: '24.15.0'
       - uses: pnpm/action-setup@v6
+        with:
+          version: 10.30.2
 
       - name: Clone openclaw at pinned commit
         run: |
