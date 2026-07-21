@@ -83,6 +83,8 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/mas
 
 > install.sh 默认走 atomgit 的 Gitea API 取最新 tag（atomgit 每晚自动同步上游 tag + release），全程不访问 `api.github.com`。指定版本：`export XIAOBEI_TAG=v5.6.0`。自定义镜像：`--mirror <url>` 或 `XIAOBEI_MIRROR=<url>`（自定义镜像请配 `XIAOBEI_TAG` 指定版本）。
 
+> 💡 **下载中断 / 安装失败？多试几次就好。** tarball 体积较大（~140MB），首装还要下 Firefox 反指纹浏览器（~557MB），国内网络偶发中断属正常。脚本幂等，重跑会续上已下的部分；实在卡可换 `--github` 走 GitHub release，或用 `XIAOBEI_MIRROR=<url>` 换镜像。
+
 **Windows（PowerShell）：**
 
 ```powershell
@@ -113,6 +115,8 @@ irm https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.ps1 |
 > **目录职责**：`~/xiaobei/` = 程序（引擎 + 模板 + 脚本 + 工具 + wrapper）；`~/.openclaw/` = 运行数据（openclaw.json + daemon.env + workspaces + logs）。两者分开，升级只换 `~/xiaobei/`，用户数据不动。可用 `XIAOBEI_HOME` / `OPENCLAW_HOME` env 覆盖。
 
 > **系统要求**：推荐 Ubuntu 22.04；支持 WSL2 / macOS（arm64 + x64）；Windows 10 1803+（x64，需 Git Bash 或 WSL）。WSL2 下脚本自动注入 GUI 显示变量。
+
+> 🖥️ **部署机器建议**：推荐用一台 **7×24 小时常开**的电脑部署，上面**不要放置个人隐私 / 机密文件**。若你希望在日常办公电脑上安装、且只在用时启动——可以期待我们即将推出的**官方 Docker 镜像**，具体可咨询掌柜。
 
 > **调试模式**（单次启动，适合测试）：`~/xiaobei/bin/openclaw gateway start`
 
