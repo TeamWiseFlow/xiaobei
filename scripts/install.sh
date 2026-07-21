@@ -1146,7 +1146,7 @@ place_config_template() {
         ui_error "config template 缺失：$tmpl（tarball 损坏？）"
         return 1
     fi
-    local need_place=0 reason=""
+    local need_place=0 reason="" backup=""
     if [[ ! -f "$config_path" ]]; then
         need_place=1; reason="不存在"
     elif [[ "$FORCE_RUNTIME" == "true" ]]; then
@@ -1165,7 +1165,9 @@ place_config_template() {
     fi
     if [[ "$need_place" == "1" ]]; then
         if [[ -f "$config_path" ]]; then
-            local backup="${config_path}.bak.$(date +%s 2>/dev/null || echo 0)"
+            # bash 3.2（macOS 自带）在 set -eu 下对 `local var=$(cmd)` 有已知坑，
+            # 故 backup 已在上面预绑定为空串，这里用 $$.$RANDOM（始终有值、无命令替换）拼后缀。
+            backup="${config_path}.bak.$$.${RANDOM:-0}"
             cp "$config_path" "$backup"
             ui_warn "openclaw.json $reason → 用 template 覆盖（旧文件备份到 $backup）"
         else
