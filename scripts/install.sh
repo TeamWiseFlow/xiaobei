@@ -12,7 +12,7 @@
 #   1. 检测 OS + arch → 选 tarball asset（linux-x64 / mac-arm64 / mac-x64 / win-x64）
 #   2. bootstrap gum UI（TTY 才有，非 TTY 静默跳过）
 #   3. 解析最新 release tag（GitHub API，或 XIAOBEI_MIRROR env 指向自建镜像）
-#   4. 下载 xiaobei-{ver}-{plat}.tar.zst → 临时文件
+#   4. 下载 xiaobei-{ver}-{plat}.{tar.zst|tar.gz} → 临时文件（linux 用 zst，mac/win 用 gzip，bsdtar 原生支持）
 #   5. 解压到 WISEFLOW_ROOT（默认 ~/xiaobei，程序目录）：openclaw/ + tools/node + tools/pnpm + bin/openclaw + crews/ + skills/ + scripts/ + camoufox-cli/ + awada/
 #   6. pnpm install --prod --frozen-lockfile（用 ship 的 portable node + pnpm，在 openclaw/ 下；只拉依赖不编译，无 OOM，native 自动按平台）
 #   7. pip install --user（skills 的 python deps，扫 requirements.txt）
@@ -40,7 +40,7 @@ WISEFLOW_REPO="${XIAOBEI_REPO:-TeamWiseFlow/xiaobei}"
 # 不隐藏：用户能直接 ls 看到，符合"小白友好"。
 WISEFLOW_ROOT_DEFAULT="${XIAOBEI_HOME:-$HOME/xiaobei}"
 # 默认走 atomgit 国内镜像（仓根），--github 或 XIAOBEI_SOURCE=github 切回 GitHub。
-# 资产 URL 构造为 $XIAOBEI_MIRROR/releases/download/{tag}/xiaobei-{tag}-{plat}.tar.zst
+# 资产 URL 构造为 $XIAOBEI_MIRROR/releases/download/{tag}/xiaobei-{tag}-{plat}.{tar.zst|tar.gz}
 XIAOBEI_ATOMGIT_MIRROR="https://atomgit.com/wiseflow/xiaobei"
 if [[ "${XIAOBEI_SOURCE:-}" == "github" ]]; then
     XIAOBEI_MIRROR="${XIAOBEI_MIRROR:-}"
@@ -333,9 +333,13 @@ detect_platform_asset() {
     esac
     if [[ "$OS" == "macos" ]]; then
         PLAT="mac-$arch"
+        # macOS bsdtar 不带 zstd filter、小白机也无 zstd 二进制，用 gzip（bsdtar 原生支持）
+        TAR_EXT="tar.gz"
     elif [[ "$OS" == "linux" ]]; then
         [[ "$arch" == "arm64" ]] && { ui_error "linux-arm64 tarball 暂未构建，仅 linux-x64"; exit 1; }
         PLAT="linux-$arch"
+        # Linux tar 普遍带 --zstd，压缩率更好
+        TAR_EXT="tar.zst"
     fi
     ui_success "Platform asset: $PLAT"
 }
@@ -387,7 +391,7 @@ resolve_latest_version() {
 
 # 构造 tarball 下载 URL（XIAOBEI_MIRROR 优先）
 tarball_url() {
-    local asset="xiaobei-${XIAOBEI_TAG}-${PLAT}.tar.zst"
+    local asset="xiaobei-${XIAOBEI_TAG}-${PLAT}.${TAR_EXT}"
     if [[ -n "$XIAOBEI_MIRROR" ]]; then
         echo "$XIAOBEI_MIRROR/releases/download/$XIAOBEI_TAG/$asset"
     else
@@ -397,7 +401,7 @@ tarball_url() {
 
 download_and_extract_tarball() {
     local url; url="$(tarball_url)"
-    local asset="xiaobei-${XIAOBEI_TAG}-${PLAT}.tar.zst"
+    local asset="xiaobei-${XIAOBEI_TAG}-${PLAT}.${TAR_EXT}"
     local tmp
     if [[ -n "${XIAOBEI_TARBALL:-}" && -f "${XIAOBEI_TARBALL:-}" ]]; then
         ui_kv "Asset" "$asset (local)"
@@ -414,7 +418,11 @@ download_and_extract_tarball() {
 
     mkdir -p "$WISEFLOW_ROOT"
     ui_info "Extracting to $WISEFLOW_ROOT ..."
-    tar --zstd -xf "$tmp" -C "$WISEFLOW_ROOT"
+    if [[ "$TAR_EXT" == "tar.zst" ]]; then
+        tar --zstd -xf "$tmp" -C "$WISEFLOW_ROOT"
+    else
+        tar -xzf "$tmp" -C "$WISEFLOW_ROOT"
+    fi
     ui_success "Extracted"
 
     # 校验关键入口

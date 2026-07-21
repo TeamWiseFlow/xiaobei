@@ -189,13 +189,13 @@ jobs:
           EOF
             fi
 
-            # Windows 用 .tar.gz（bsdtar 原生支持 gzip，免装 zstd）；其余 .tar.zst
-            if [[ "$plat" == win-x64 ]]; then
-              ASSET="xiaobei-${TAG}-${plat}.tar.gz"
-              tar -czf "$RUNNER_TEMP/out/$ASSET" -C "$PKG" .
-            else
+            # mac/win 用 .tar.gz（bsdtar 原生支持 gzip，小白机无 zstd 二进制）；linux 用 .tar.zst（压缩率更好）
+            if [[ "$plat" == linux-x64 ]]; then
               ASSET="xiaobei-${TAG}-${plat}.tar.zst"
               tar --zstd -cf "$RUNNER_TEMP/out/$ASSET" -C "$PKG" .
+            else
+              ASSET="xiaobei-${TAG}-${plat}.tar.gz"
+              tar -czf "$RUNNER_TEMP/out/$ASSET" -C "$PKG" .
             fi
             ls -lh "$RUNNER_TEMP/out/$ASSET"
           done
