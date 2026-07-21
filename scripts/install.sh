@@ -1071,7 +1071,7 @@ install_camoufox_cli() {
     if command -v camoufox-cli >/dev/null 2>&1 && [ -d "$fork_dir/node_modules/camoufox-js" ]; then
         ui_success "camoufox-cli already installed"
     else
-        [[ -d "$fork_dir" ]] || { ui_warn "camoufox-cli fork 不在 tarball 内：$fork_dir；跳过"; return 0; }
+        [[ -d "$fork_dir" ]] || { ui_warn "camoufox-cli fork 不在 tarball 内：${fork_dir}；跳过"; return 0; }
         run_required_step "Installing camoufox-cli fork deps" bash -c "cd '$fork_dir' && '$npm_bin' install --omit=dev --registry=https://registry.npmmirror.com"
         run_required_step "Installing camoufox-cli fork (local)" "$npm_bin" install -g "$fork_dir" --registry=https://registry.npmmirror.com
     fi
@@ -1092,7 +1092,7 @@ install_camoufox_cli() {
 install_weixin_plugin() {
     local claw_cmd="$WISEFLOW_ROOT/bin/openclaw"
     local pin_file="$WISEFLOW_ROOT/openclaw-weixin.version.json"
-    [[ -f "$claw_cmd" ]] || { ui_warn "openclaw wrapper 不在 $claw_cmd；跳过 weixin 插件"; return 0; }
+    [[ -f "$claw_cmd" ]] || { ui_warn "openclaw wrapper 不在 ${claw_cmd}；跳过 weixin 插件"; return 0; }
     local pkg ver
     if [[ -f "$pin_file" ]]; then
         pkg=$(python3 -c "import json;print(json.load(open('$pin_file'))['openclaw-weixin']['package'])" 2>/dev/null || true)
@@ -1122,7 +1122,7 @@ install_awada_plugin() {
     local node="$WISEFLOW_ROOT/$PORTABLE_NODE"
     local npm_bin; npm_bin="$(dirname "$node")/npm"
     local awada_dir="$WISEFLOW_ROOT/awada"
-    [[ -d "$awada_dir" ]] || { ui_warn "awada 不在 tarball 内：$awada_dir；跳过"; return 0; }
+    [[ -d "$awada_dir" ]] || { ui_warn "awada 不在 tarball 内：${awada_dir}；跳过"; return 0; }
     if [ -d "$awada_dir/node_modules/ws" ] && [ -d "$awada_dir/node_modules/zod" ]; then
         ui_success "awada deps already installed"
         return 0
@@ -1139,19 +1139,32 @@ install_awada_plugin() {
 # 健康判定：现有 config 必须同时有 models + agents.defaults，否则视为被极简化（openclaw 首启自动生成
 # 的最小 config 缺这两块），用 template 覆盖。这样首装 / 重跑 / 更新路线都能自愈极简 config。
 place_config_template() {
-    local openclaw_home="${OPENCLAW_HOME:-$HOME/.openclaw}"
-    local config_path="${OPENCLAW_CONFIG_PATH:-$openclaw_home/openclaw.json}"
-    local tmpl="$WISEFLOW_ROOT/config-templates/openclaw.json"
+    # bash 3.2（macOS 自带 /bin/bash）在 set -eu 下对 `local a=1 b="" c=""`（多变量一行 local）
+    # 有已知坑：只绑第一个变量，后续变量在 set -u 下报 unbound。故这里每个变量单独 local 声明、
+    # 再用纯赋值预绑，且引用时一律 ${var} 加花括号（避免后接全角字符被 C locale 渲染成 `?` 误判）。
+    local openclaw_home
+    local config_path
+    local tmpl
+    local need_place
+    local reason
+    local backup
+    openclaw_home="${OPENCLAW_HOME:-$HOME/.openclaw}"
+    config_path="${OPENCLAW_CONFIG_PATH:-$openclaw_home/openclaw.json}"
+    tmpl="$WISEFLOW_ROOT/config-templates/openclaw.json"
+    need_place=0
+    reason=""
+    backup=""
     mkdir -p "$openclaw_home"
     if [[ ! -f "$tmpl" ]]; then
-        ui_error "config template 缺失：$tmpl（tarball 损坏？）"
+        ui_error "config template 缺失: ${tmpl} (tarball 损坏?)"
         return 1
     fi
-    local need_place=0 reason="" backup=""
     if [[ ! -f "$config_path" ]]; then
-        need_place=1; reason="不存在"
+        need_place=1
+        reason="不存在"
     elif [[ "$FORCE_RUNTIME" == "true" ]]; then
-        need_place=1; reason="--force"
+        need_place=1
+        reason="--force"
     else
         # 现有 config 存在——检查是否健康（有 models + agents.defaults）
         if "$WISEFLOW_ROOT/$PORTABLE_NODE" -e '
@@ -1161,23 +1174,22 @@ place_config_template() {
         ' "$config_path" 2>/dev/null; then
             need_place=0
         else
-            need_place=1; reason="缺 models/agents.defaults（疑似被极简化）"
+            need_place=1
+            reason="缺 models/agents.defaults (疑似被极简化)"
         fi
     fi
     if [[ "$need_place" == "1" ]]; then
         if [[ -f "$config_path" ]]; then
-            # bash 3.2（macOS 自带）在 set -eu 下对 `local var=$(cmd)` 有已知坑，
-            # 故 backup 已在上面预绑定为空串，这里用 $$.$RANDOM（始终有值、无命令替换）拼后缀。
             backup="${config_path}.bak.$$.${RANDOM:-0}"
             cp "$config_path" "$backup"
-            ui_warn "openclaw.json $reason → 用 template 覆盖（旧文件备份到 $backup）"
+            ui_warn "openclaw.json ${reason} -> 用 template 覆盖 (旧文件备份到 ${backup})"
         else
-            ui_info "Placing openclaw.json template（$reason）"
+            ui_info "Placing openclaw.json template (${reason})"
         fi
         cp "$tmpl" "$config_path"
         ui_success "Placed openclaw.json template"
     else
-        ui_info "openclaw.json 已存在且健康（有 models + agents.defaults），保留"
+        ui_info "openclaw.json 已存在且健康 (有 models + agents.defaults), 保留"
     fi
 }
 
@@ -1338,7 +1350,7 @@ bind_weixin_channel() {
     fi
     local claw="$WISEFLOW_ROOT/bin/openclaw"
     if [[ ! -x "$claw" ]]; then
-        ui_warn "openclaw wrapper 未找到（$claw），跳过微信绑定"
+        ui_warn "openclaw wrapper 未找到（${claw}），跳过微信绑定"
         return 0
     fi
     # 不用 ui_stage（会递增计数器致超出总数）；用 ui_section 出独立标题。
