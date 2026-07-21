@@ -1181,6 +1181,10 @@ parse_args() {
                 WISEFLOW_ROOT="$2"
                 shift 2
                 ;;
+            --)
+                # 选项/位置参数分隔符（README 的 `bash -c "..." -s -- --github` 会把 -- 透传进来）
+                shift
+                ;;
             --help|-h)
                 cat <<EOF
 wiseflow installer (macOS + Linux) — 预构建 tarball 路线
