@@ -1135,7 +1135,8 @@ install_awada_plugin() {
     fi
 }
 
-# 放置 config template → ~/.openclaw/openclaw.json（已预置 awk provider，apiKey=${AWK_API_KEY} 由 gateway env 注入）
+# 放置 config template → ~/.openclaw/openclaw.json（已预置 awk provider，apiKey=${AWK_API_KEY} 由 gateway env 注入；
+# plugins.load.paths 里的 ${XIAOBEI_HOME}/awada 在放置后由本函数直接解析成绝对路径写回，不依赖运行时 env）
 # 健康判定：现有 config 必须同时有 models + agents.defaults，否则视为被极简化（openclaw 首启自动生成
 # 的最小 config 缺这两块），用 template 覆盖。这样首装 / 重跑 / 更新路线都能自愈极简 config。
 place_config_template() {
@@ -1190,6 +1191,33 @@ place_config_template() {
         ui_success "Placed openclaw.json template"
     else
         ui_info "openclaw.json 已存在且健康 (有 models + agents.defaults), 保留"
+    fi
+    # 把 plugins.load.paths 里的 ${XIAOBEI_HOME} env ref 直接解析成绝对路径写回 config。
+    # 原因：openclaw 在 CLI 上下文（daemon install / doctor / status / 用户裸跑 openclaw）校验
+    # config 时用的是当前 shell env，未必有 XIAOBEI_HOME → ${XIAOBEI_HOME}/awada 不展开 →
+    # "plugin path not found" 误报。awada 位置在 install 时已知（$WISEFLOW_ROOT/awada），
+    # 直接写死绝对路径，daemon / CLI / 裸终端所有上下文都能解析。AWK_API_KEY 是 secret，
+    # 保持 ${AWK_API_KEY} env ref 不写死（写死会让 key 落盘明文 + 进 .bak 备份 + doctor 可见）。
+    # 幂等：已是绝对路径则 no-op。更新路线也跑（修老 config 里残留的 ${XIAOBEI_HOME} ref）。
+    if ! "$WISEFLOW_ROOT/$PORTABLE_NODE" -e '
+        const fs=require("fs");
+        const p=process.argv[1], root=process.argv[2];
+        const c=JSON.parse(fs.readFileSync(p,"utf8"));
+        const paths=(c.plugins?.load?.paths) || [];
+        let changed=false;
+        const fixed=paths.map(s => {
+            if (typeof s==="string" && s.indexOf("${XIAOBEI_HOME}")!==-1) {
+                changed=true;
+                return s.split("${XIAOBEI_HOME}").join(root);
+            }
+            return s;
+        });
+        if (changed) {
+            c.plugins.load.paths=fixed;
+            fs.writeFileSync(p, JSON.stringify(c,null,2)+"\n");
+        }
+    ' "$config_path" "$WISEFLOW_ROOT" 2>/dev/null; then
+        ui_warn "plugins.load.paths 路径解析失败 (非致命, config 仍可用, 但 awada 可能加载不到)"
     fi
 }
 
@@ -1622,6 +1650,23 @@ ensure_env_state_dir() {
     fi
 }
 
+# 把刚写进 env 文件的 AWK_API_KEY + XIAOBEI_HOME 加载进当前 install shell，让后续 openclaw
+# CLI 调用（daemon install / gateway restart / channels login）校验 config 时能解析到，
+# 避免 "missing env var AWK_API_KEY / XIAOBEI_HOME" 误报。daemon 自己经 env-file wrapper
+# 也能拿到（launchd wrapper 在 exec 前 . env_file），这里纯粹为 install 期间 CLI 上下文。
+# 不写进用户 shell rc（secret 不落明文 rc）；用户裸跑 openclaw 仍可能 warn，属 env-ref 固有。
+# $1: env 文件路径
+load_env_vars_for_cli() {
+    local env_file="$1" _awk=""
+    [ -f "$env_file" ] || return 0
+    export XIAOBEI_HOME="$WISEFLOW_ROOT"
+    _awk="$(grep -E "^(export )?AWK_API_KEY=" "$env_file" 2>/dev/null | tail -n1 || true)"
+    _awk="${_awk#export }"
+    _awk="${_awk#AWK_API_KEY=}"
+    _awk="$(printf '%s' "$_awk" | tr -d "'")"
+    if [ -n "$_awk" ]; then export AWK_API_KEY="$_awk"; fi
+}
+
 # 停掉运行中的 gateway（更新路线开头调，避免 pnpm 重写 node_modules 时文件句柄竞争卡死）。
 # 平台分支：Linux systemctl --user stop；Darwin openclaw gateway stop。无 service / 未运行则静默。
 stop_gateway_if_running() {
@@ -1646,6 +1691,7 @@ refresh_gateway_env_only() {
         ensure_env_path "$systemd_env" "$node_bin_dir" "$oc_bin_dir"
         ensure_env_xiaobei_home "$systemd_env" kv
         ensure_env_state_dir "$systemd_env" kv
+        load_env_vars_for_cli "$systemd_env"
         if command -v systemctl >/dev/null 2>&1; then
             systemctl --user daemon-reload 2>/dev/null || true
             systemctl --user restart "openclaw-gateway.service" 2>/dev/null && ui_success "Restarted gateway"
@@ -1654,6 +1700,7 @@ refresh_gateway_env_only() {
         ensure_env_path "$macos_env" "$node_bin_dir" "$oc_bin_dir"
         ensure_env_xiaobei_home "$macos_env" export
         ensure_env_state_dir "$macos_env" export
+        load_env_vars_for_cli "$macos_env"
         "$claw_cmd" gateway restart 2>/dev/null && ui_success "Restarted gateway"
     else
         ui_info "无 gateway env 文件或平台不支持自动 restart；可手动：$claw_cmd gateway restart"
@@ -1697,6 +1744,8 @@ install_gateway_and_env() {
             printf '[Service]\nEnvironmentFile=-%s\n' "$systemd_env" > "${dropin_dir}/10-env-file.conf"
             ui_success "systemd drop-in created (will reload after daemon install)"
         fi
+        # 把 AWK_API_KEY / XIAOBEI_HOME 加载进 install shell，让 daemon install 校验 config 不误报
+        load_env_vars_for_cli "$systemd_env"
         ui_info "Installing gateway daemon service"
         "$claw_cmd" daemon uninstall 2>/dev/null || true
         "$claw_cmd" daemon install || { ui_warn "daemon install failed; run later: $claw_cmd daemon install"; return 0; }
@@ -1716,6 +1765,8 @@ install_gateway_and_env() {
             ensure_env_xiaobei_home "$macos_env" export
             ensure_env_state_dir "$macos_env" export
             chmod 600 "$macos_env"
+            # 加载进 install shell，让后续 gateway restart / channels login 校验 config 不误报
+            load_env_vars_for_cli "$macos_env"
             "$claw_cmd" gateway restart 2>/dev/null || true
             ui_success "Restarted gateway with macos env"
         else

@@ -168,7 +168,7 @@ function Place-Config {
     if (Test-Path $cfg) {
         $prefill = @"
 const fs = require('fs');
-const p = process.argv[1];
+const p = process.argv[1], root = process.argv[2];
 const c = JSON.parse(fs.readFileSync(p, 'utf8'));
 c.channels = c.channels || {};
 c.channels['openclaw-weixin'] = { ...(c.channels['openclaw-weixin'] || {}), enabled: true };
@@ -176,9 +176,16 @@ c.session = { ...(c.session || {}), dmScope: 'per-channel-peer' };
 if (!Array.isArray(c.bindings)) c.bindings = [];
 const has = c.bindings.some(b => b?.agentId === 'main' && b?.match?.channel === 'openclaw-weixin');
 if (!has) c.bindings.push({ agentId: 'main', comment: 'openclaw-weixin -> Main Agent onboarding entry', match: { channel: 'openclaw-weixin' } });
+// 把 plugins.load.paths 里的 \${XIAOBEI_HOME} env ref 解析成绝对路径（root），避免 CLI 上下文
+// 没 XIAOBEI_HOME 时 "plugin path not found" 误报。AWK_API_KEY 是 secret 保持 env ref。
+if (c.plugins?.load?.paths) {
+  c.plugins.load.paths = c.plugins.load.paths.map(s =>
+    (typeof s === 'string' && s.indexOf('\${XIAOBEI_HOME}') !== -1)
+      ? s.split('\${XIAOBEI_HOME}').join(root) : s);
+}
 fs.writeFileSync(p, JSON.stringify(c, null, 2) + '\n');
 "@
-        & $NodeExe -e $prefill $cfg
+        & $NodeExe -e $prefill $cfg $Root
         Write-Ok "WeChat channel pre-bound"
     }
 }
