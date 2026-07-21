@@ -115,6 +115,9 @@ jobs:
           rsync -a --exclude='node_modules' --exclude='.git' \
             "$REPO/awada/" "$STAGE/awada/"
           cp "$REPO/openclaw.version" "$REPO/version" "$STAGE/"
+          # 仓根 requirements.txt（install.sh install_python_deps 扫 skills/crews/仓根，
+          # 不打进则用户侧 Step 4 报 "No requirements.txt found"）
+          [ -f "$REPO/requirements.txt" ] && cp "$REPO/requirements.txt" "$STAGE/" || true
           # openclaw-weixin 插件 pin（install.sh 据此装插件，国内 npmmirror）
           [ -f "$REPO/openclaw-weixin.version.json" ] && cp "$REPO/openclaw-weixin.version.json" "$STAGE/" || true
 
