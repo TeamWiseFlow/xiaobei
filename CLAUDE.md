@@ -7,10 +7,7 @@ Claude Code 被授权在本仓库中执行任何 git 命令（包括 push、bran
 ## Docker 部署规范
 
 - 用户态镜像、Compose service 和持久卷统一使用 **xiaobei** 命名；不得新增 `wiseflow-*` 镜像或卷名。
-- Dockerfile 必须复用 `scripts/docker-bootstrap.sh` → `scripts/apply-addons.sh` → `scripts/setup-crew.sh` 的能力安装路径，禁止手工 COPY crew/skill 或重复拼接 `openclaw.json`。
-- 构建阶段不运行 `install.sh`，也不 fetch/reset 业务仓库、不收集密钥、不安装 daemon；CI 负责注入 `openclaw.version` 锁定的源码。
 - 运行态只持久化 `/root/.openclaw` 和 `/root/.camoufox-cli`。入口脚本必须从镜像 seed 初始化空卷，且不得覆盖已有用户状态。
-- `AWK_API_KEY` 只能来自运行环境，禁止写入镜像、Dockerfile 或 `openclaw.json`。gateway token 必须首启随机生成；不可使用固定 token。
 - Gateway/noVNC 默认只绑定 `127.0.0.1`，不得默认公开无密码 noVNC。
 
 ## Crew Template 开发规范
