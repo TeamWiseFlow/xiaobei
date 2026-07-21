@@ -29,6 +29,24 @@ export interface ConfigDefaults {
   proxy?: string | null;
   geoip?: boolean;
   locale?: string | null;
+  viewport?: [number, number] | null;
+}
+
+/** Parse a viewport spec ("WxH" string or [W, H] tuple) into a [w, h] tuple.
+ *  Returns null for null/undefined, or the INVALID sentinel for malformed input. */
+export function parseViewport(value: unknown): [number, number] | null | typeof INVALID {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") {
+    const m = /^(\d+)x(\d+)$/.exec(value.trim());
+    if (m) return [parseInt(m[1], 10), parseInt(m[2], 10)];
+    return INVALID;
+  }
+  if (Array.isArray(value) && value.length === 2
+      && typeof value[0] === "number" && Number.isFinite(value[0])
+      && typeof value[1] === "number" && Number.isFinite(value[1])) {
+    return [Math.trunc(value[0]), Math.trunc(value[1])];
+  }
+  return INVALID;
 }
 
 // Flags a config file may set, grouped by the value type each one expects.
@@ -36,7 +54,7 @@ export interface ConfigDefaults {
 // must come from the command line.
 const BOOL_KEYS = new Set(["headed", "geoip", "json"]);
 const STR_KEYS = new Set(["proxy", "locale"]);
-const ALLOWED_KEYS = new Set([...BOOL_KEYS, ...STR_KEYS, "timeout", "persistent"]);
+const ALLOWED_KEYS = new Set([...BOOL_KEYS, ...STR_KEYS, "timeout", "persistent", "viewport"]);
 const INVALID = Symbol("invalid");
 
 /** Resolved config path, read at call time so the env var can be overridden (incl. by tests). */
@@ -136,5 +154,6 @@ function coerce(key: string, value: unknown): unknown {
     if (typeof value === "boolean") return value ? "" : null;
     return value === null || typeof value === "string" ? value : INVALID;
   }
+  if (key === "viewport") return parseViewport(value);
   return value; // unreachable: clean already filtered to known keys
 }

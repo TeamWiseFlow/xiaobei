@@ -4,8 +4,16 @@ import * as net from "node:net";
 import * as fs from "node:fs";
 import { BrowserManager } from "./browser.js";
 import { execute } from "./commands.js";
-import { parseCommand, serializeResponse, errorResponse } from "./protocol.js";
+import { parseCommand, serializeResponse, errorResponse, okResponse } from "./protocol.js";
 import { getSocketPath, getPidPath } from "./cli.js";
+
+// Hard ceiling on daemon idle timeout. Persistence only needs to keep login
+// state on disk (the profile dir survives daemon exit); it does NOT need the
+// process alive. So every daemon — persistent or not — self-exits after this
+// many seconds with no command, regardless of what --timeout the caller passed.
+// This is the backstop against browser-process accumulation (see memory
+// 23-smart-search-session-leak-crash: 72 open / 1 close froze a 13GB machine).
+const MAX_IDLE_TIMEOUT = 60;
 
 export class DaemonServer {
   private session: string;
@@ -34,13 +42,15 @@ export class DaemonServer {
   // alive. In-process tests pass false and let the event loop drain naturally.
   private forceExit: boolean;
 
-  constructor(opts: { session?: string; headless?: boolean; timeout?: number; persistent?: string | null; proxy?: string | null; geoip?: boolean; locale?: string | null; forceExit?: boolean }) {
+  constructor(opts: { session?: string; headless?: boolean; timeout?: number; persistent?: string | null; proxy?: string | null; geoip?: boolean; locale?: string | null; viewport?: [number, number] | null; forceExit?: boolean }) {
     this.session = opts.session ?? "default";
     this.headless = opts.headless ?? true;
-    this.timeout = opts.timeout ?? 1800;
+    // Clamp to MAX_IDLE_TIMEOUT so callers can't request a longer-lived daemon
+    // than the backstop allows. A caller asking for less (e.g. 30s) is honored.
+    this.timeout = Math.min(opts.timeout ?? MAX_IDLE_TIMEOUT, MAX_IDLE_TIMEOUT);
     this.socketPath = getSocketPath(this.session);
     this.pidPath = getPidPath(this.session);
-    this.manager = new BrowserManager(opts.persistent ?? null, opts.proxy ?? null, opts.geoip ?? true, opts.locale ?? null);
+    this.manager = new BrowserManager(opts.persistent ?? null, opts.proxy ?? null, opts.geoip ?? true, opts.locale ?? null, opts.viewport ?? null);
     this.forceExit = opts.forceExit ?? false;
   }
 
@@ -49,6 +59,10 @@ export class DaemonServer {
     this.writePid();
     // Idle timeout watchdog
     this.watchdogTimer = setInterval(() => {
+      // A command mid-flight (e.g. `wait 90`, a slow `open`) is NOT idle —
+      // don't kill the daemon out from under it. Only self-exit when truly
+      // idle: no command running AND no activity for the timeout window.
+      if (this.busy) return;
       if (Date.now() - this.lastActivity > this.timeout * 1000) {
         process.stderr.write(`[camoufox-cli] Idle timeout (${this.timeout}s), shutting down\n`);
         this.server?.close();
@@ -104,6 +118,15 @@ export class DaemonServer {
 
       const action = command.action ?? "";
       const cmdId = (command.id as string) || "?";
+
+      // `info` returns daemon metadata (session + headless mode). It bypasses
+      // the fail-first busy gate so the CLI can probe a running daemon's mode
+      // before deciding whether to reuse or restart it (see ensureDaemon in
+      // cli.ts — headless is fixed at spawn, so a mode switch requires a respawn).
+      if (action === "info") {
+        conn.end(serializeResponse(okResponse(cmdId, { session: this.session, headless: this.headless })));
+        return;
+      }
 
       // `close` is the recovery escape hatch — always allowed, even while a
       // previous command is mid-flight (it tears the daemon down anyway).

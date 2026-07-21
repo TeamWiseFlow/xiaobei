@@ -1,6 +1,6 @@
 # 小贝（xiaobei）
 
-小贝（xiaobei）是为OPC/中小微企业量身打造的自媒体获客AI Agent，底层架构基于 [openclaw](https://github.com/openclaw/openclaw)，目前它能帮你：
+小贝（xiaobei）是为OPC/中小微企业量身打造的自媒体获客智能体，底层架构基于 [openclaw](https://github.com/openclaw/openclaw)，目前它能帮你：
 
 - 微信公众号文章写作、排版与推送
 - 小红书/小绿书图文创作与发布
@@ -28,6 +28,8 @@
 
 xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 
+官网：[openclaw-for-business.com](https://openclaw-for-business.com/)
+
 ---
 
 ## 🚀 **v5.6.0 更新**
@@ -45,7 +47,7 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
   - **线 2**：保留openclaw原版 `target=host`（existing-session 真机 Chrome + chrome-mcp relay）+ `target=node`（remote-cdp 远端 Chrome）。
   - **profile 丢失 / 损坏 / 指纹错配 → 重建 + 重登录
 - 适配 openclaw 2026-6-11 版本（近两个月最稳定版本）、openclaw-weixin 2.4.6 版本。
-- **主力 + 视觉 + 替补模型统一走火山方舟 Coding Plan**：新用户仅需注册一个套餐即可。
+- 新增一键安装脚本，无需提前配置环境，脚本会搞定一切。
 
 详见 [CHANGELOG.md](CHANGELOG.md)
 
@@ -55,7 +57,7 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 
 ### 0. 准备 API Key
 
-注册 [火山引擎方舟 Coding Plan](https://volcengine.com/L/dx-wt80li-I/)（🎁 欢迎使用 xiaobei 邀请链接 / 邀请码 `5Y5A6L86`，订阅叠加 9.5 折，首月尝鲜低至 9.4 元），开通后获得 `AWK_API_KEY`——主力模型 GLM-5.2、视觉与替补模型全部走此通道，**一个 key 即可**。
+推荐注册 [火山引擎方舟 Coding Plan](https://volcengine.com/L/dx-wt80li-I/)（🎁 欢迎使用 xiaobei 邀请链接 / 邀请码 `5Y5A6L86`，订阅叠加 9.5 折，首月尝鲜低至 9.4 元），开通后获得 `AWK_API_KEY`——主力模型 GLM-5.2、视觉与替补模型全部走此通道，**一个 key 即可**。
 
 > ⚠️ **火山方舟 Coding Plan 目前限量发售**，额度通常在每天上午放量，**建议在每天 10 点前购买**更容易抢到。
 
@@ -63,33 +65,71 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 
 > 🎬 **想用视频生成能力？** 需额外开通火山方舟 `doubao-seedance-2.0` 系列或阿里云百炼 `happyhorse-1.1` 系列模型，并把对应 key（`AWK_GEN_KEY` 或 `MODELSTUDIO_API_KEY`）配置到 `daemon.env`。详见下方[视频生成模型配置](#-视频生成模型配置)。
 
-### 推荐 - 直接使用我们的Docker image
+### 推荐：一键脚本安装（预构建 tarball 路线）
 
-### 手动安装
+一行命令，全程无需预装 Node / pnpm / git（tarball 自带 portable Node + pnpm）。脚本完成后**唯一人工输入**是填 `AWK_API_KEY`（火山方舟 Coding Plan 的 key）。
 
-#### 1. 获取代码
-
-至 [Releases](https://github.com/TeamWiseFlow/xiaobei/releases) 下载最新版压缩包并解压；
-
-#### 2A. docker 模式运行
-
-#### 2B. 源码脚本一键安装（需提前部署环境）
+**国内用户（默认走 atomgit 镜像，免梯子）：** atomgit 仓 `https://atomgit.com/wiseflow/xiaobei` 每晚从上游同步，install.sh 与 release tarball 默认都走 atomgit：
 
 ```bash
-cd wiseflow
-./scripts/install.sh
+bash -c "$(curl -fsSL https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.sh)"
 ```
 
-`install.sh` 会自动完成：
-- 拉取最新代码
-- 初始化 `openclaw.json`（内置最佳模型配置，无需手动编辑）
-- 安装系统 daemon（开机自启 + 崩溃重启）
-- **交互式引导你输入** `AWK_API_KEY`（仅在首次或缺失时询问）
-- 安装腾讯官方 `openclaw-weixin` extension，并引导扫码绑定
+**海外 / 有梯子用户（GitHub，加 `--github` 切回）：**
 
-> **调试模式**（单次启动，适合测试）：`./scripts/dev.sh gateway`
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)" -s -- --github
+```
 
-> **系统要求**：推荐 Ubuntu 22.04；支持 WSL2 / macOS；Windows 用户建议使用docker方案
+> install.sh 默认走 atomgit 的 Gitea API 取最新 tag（atomgit 每晚自动同步上游 tag + release），全程不访问 `api.github.com`。指定版本：`export XIAOBEI_TAG=v5.6.0`。自定义镜像：`--mirror <url>` 或 `XIAOBEI_MIRROR=<url>`（自定义镜像请配 `XIAOBEI_TAG` 指定版本）。
+
+**Windows（PowerShell）：**
+
+```powershell
+irm https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.ps1 | iex
+```
+
+> ⚠️ **Windows 必须装 bash**（Git Bash 或 WSL）。install.ps1 用 `tar`（Win10 1803+ 自带）解压 tarball，但 `setup-crew.sh` 是 bash 脚本，部署 crew workspace 离不开 bash。无 bash 时脚本会跳过 crew 模板部署并提示手动补跑——此时小贝团队起不来。装 Git Bash：https://git-scm.com （安装时勾选 "Add to PATH"）。
+
+脚本自动完成（约 5-15 分钟，CI 已预构建引擎，用户侧只 `pnpm install --prod` 拉依赖 + 下 Firefox）：
+
+1. 检测 OS + arch → 选 tarball asset（linux-x64 / mac-arm64 / mac-x64 / win-x64）
+2. 下载预构建 tarball → 解压到 `~/xiaobei/`（程序目录：openclaw 引擎 + crew 模板 + 脚本 + portable Node/pnpm + camoufox-cli fork + `bin/openclaw` wrapper）
+3. `pnpm install --prod --frozen-lockfile`（用自带的 portable Node + pnpm，在 `openclaw/` 下；只拉依赖不编译，native deps 自动按平台）
+4. `pip install --user`（skills 的 Python 依赖）
+5. awada 本地插件 deps（`awada/` 下 `npm install --omit=dev` 装 ws+zod）
+6. `camoufox-cli install`（下 Firefox 反指纹浏览器二进制，约 557MB，仅首装）
+7. `openclaw plugins install @tencent-weixin/openclaw-weixin@<pin> --pin`（微信插件，走 npmmirror）
+8. 放 `config-templates/openclaw.json` → `~/.openclaw/openclaw.json` + 预填微信 channel binding
+9. `setup-crew.sh`（部署 crew workspace 到 `~/.openclaw/workspace-*`，注册 agents）
+10. 交互问 `AWK_API_KEY` → 写 `~/.openclaw/daemon.env` → `openclaw daemon install` + restart
+11. 自动出微信绑定二维码（已绑过的机器自动跳过），手机扫码、点确认即用
+
+装好后：
+
+- 脚本最后会自动出微信绑定二维码——用手机微信扫一下、点确认，小贝就能用了。已绑过的机器自动跳过这一步。
+- 访问 dashboard：http://127.0.0.1:18789
+
+> **目录职责**：`~/xiaobei/` = 程序（引擎 + 模板 + 脚本 + 工具 + wrapper）；`~/.openclaw/` = 运行数据（openclaw.json + daemon.env + workspaces + logs）。两者分开，升级只换 `~/xiaobei/`，用户数据不动。可用 `XIAOBEI_HOME` / `OPENCLAW_HOME` env 覆盖。
+
+> **系统要求**：推荐 Ubuntu 22.04；支持 WSL2 / macOS（arm64 + x64）；Windows 10 1803+（x64，需 Git Bash 或 WSL）。WSL2 下脚本自动注入 GUI 显示变量。
+
+> **调试模式**（单次启动，适合测试）：`~/xiaobei/bin/openclaw gateway start`
+
+> 排障见 [`docs/install-troubleshooting.md`](docs/install-troubleshooting.md)
+
+### 升级
+
+**已装用户重跑 install 脚本即升级**：脚本检测到 `~/.openclaw/openclaw.json` 已存在时自动走更新路线——只刷新程序目录 `~/xiaobei/`（拉新 tarball + `pnpm install --prod` 重建依赖 + 幂等刷 camoufox/weixin/awada）+ restart gateway，**不碰运行数据**（openclaw.json / workspace / daemon.env 已有 key 全保留）。要强覆盖运行数据加 `--force`（会备份旧 openclaw.json）。
+
+```bash
+# 国内（默认 atomgit）
+bash -c "$(curl -fsSL https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.sh)"
+# 海外
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)" -s -- --github
+```
+
+> 已手动 `git clone` 仓做开发的用户仍可用 `scripts/update.sh` 走 fetch + rebuild 路线（不重装依赖、不卸 daemon）。普通用户用上面的 install 脚本即可。
 
 ### 系统与环境要求
 
@@ -247,15 +287,16 @@ wiseflow/
 │   └── openclaw-aihubmix.json  # AiHubMix 海外模型备选模板
 ├── scripts/               # 工具脚本（详见 scripts/README.md）
 │   ├── lib/               # 脚本共享工具（agent-skills.sh 等）
-│   ├── install.sh         # 一键安装 / 升级（推荐入口）
-│   ├── apply-addons.sh    # 应用补丁 + 全局技能 + awada 注入 + build + restart
+│   ├── install.sh         # 一键安装 + 升级（预构建 tarball 路线，macOS + Linux；重跑即升级，保留 ~/.openclaw）
+│   ├── install.ps1        # 一键安装 + 升级（Windows，tarball 路线；需 Git Bash/WSL）
+│   ├── update.sh          # 已 git clone 开发用户的升级路线（fetch + rebuild，不重装依赖）
 │   ├── dev.sh             # 开发模式启动（前台运行 gateway）
 │   ├── setup-crew.sh      # 多 crew 系统安装（同步 markdown + 注入规范，幂等）
 │   └── setup-wsl2.sh      # WSL2 环境配置
 └── docs/                  # 项目文档
 ```
 
-运行时数据使用上游默认位置 `~/.openclaw/`。
+运行时数据在 `~/.openclaw/`（openclaw.json、daemon.env、workspaces、sessions、camoufox profile 全在此）；程序在 `~/xiaobei/`（install.sh 解压的预构建 tarball：`openclaw/` 引擎 + `crews/` + `skills/` + `scripts/` + `tools/` portable Node/pnpm + `camoufox-cli/` fork + `bin/openclaw` wrapper）。两者职责分开：升级只换 `~/xiaobei/`，`~/.openclaw/` 用户数据不动。可用 `XIAOBEI_HOME` / `OPENCLAW_HOME` env 覆盖位置。
 
 🌹 即日起为 xiaobei 开源版本贡献 PR（代码、文档、成功案例分享均欢迎），一经采纳，贡献者将获赠 **VIP Club 一年会员**！
 
@@ -267,7 +308,7 @@ wiseflow/
 
 有任何问题或建议，欢迎通过 [issue](https://github.com/TeamWiseFlow/xiaobei/issues) 留言。
 
-商务合作（**开放定制开发与 OEM 合作，诚招代理**）请联系"掌柜的"👆，或邮箱 `zm.zhao # foxmail.com`（发送时将 # 替换为 @）。
+商务合作（**开放定制开发与 OEM 合作，诚招代理**）请联系"掌柜的"👆，或访问官网：[openclaw-for-business.com](https://openclaw-for-business.com/pricing)。
 
 ## 🤝 xiaobei 基于如下优秀的开源项目：
 

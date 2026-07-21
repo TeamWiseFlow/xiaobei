@@ -19,7 +19,7 @@
 - **Docker 部署**（容器内 `/.dockerenv` 存在）：路径固定，无需读文件
   - `PROJECT_ROOT` = `/opt/openclaw`
   - `OPENCLAW_HOME` = `/root/.openclaw`
-  - daemon.env = `/root/.openclaw/daemon.env`
+  - 环境变量文件 = `/root/.openclaw/.env`（技能密钥统一写这里，见下文「添加环境变量」）
 - **源码部署**：路径记录在同目录 `OFB_ENV.md`（由 `setup-crew.sh` 自动生成，历史命名保留），每次运行自动更新
 
 执行任何脚本前,先按上述方式确认路径,再 `cd <PROJECT_ROOT>` 后调用 `./scripts/xxx.sh`。
@@ -28,9 +28,11 @@
 
 当某个技能需要新的环境变量（API Key、超时配置等），或 main agent / 用户要求新增环境变量时，**你必须先读本工作区的 `OFB_ENV.md`**（源码部署时由 `setup-crew.sh` 自动生成；Docker 部署见上文固定路径段）。
 
-`OFB_ENV.md` 记录了环境变量文件的位置、写入格式（systemd `KEY=value` / macOS `export KEY='value'`）、注意事项（先 grep 防重复、写入后重启 gateway、禁止内联 env 赋值）。按其规范写入 daemon.env（或 macOS 下的 service-env 文件），重启 gateway 生效。
+**技能密钥一律写进 `~/.openclaw/.env`（state-dir dotenv），不要写 daemon.env / service-env。** 此文件被每个 openclaw 进程加载（gateway、subagent、cron、裸 CLI），密钥能到达所有调用路径；daemon.env / service-env 是服务管理器的 EnvironmentFile，只有托管 gateway 进程继承，subagent / cron 不继承，技能密钥放那里到不了 subagent。daemon.env / service-env 只放 gateway 运维变量（PATH 注入等必须进程启动前就位的值）。源码部署和 Docker 都适用此规则。
 
-main agent 不直接编辑 daemon.env——它会把用户给的变量值转交给你，由你执行写入。
+`OFB_ENV.md` 记录了 `~/.openclaw/.env` 的位置、写入格式、注意事项（先 grep 防重复、写入后重启 gateway、禁止内联 env 赋值）。按其规范写入并重启 gateway 生效。
+
+main agent 不直接编辑环境变量文件——它会把用户给的变量值转交给你，由你执行写入。
 
 ⚠️ **生产运行中不得调用 `pnpm openclaw <subcommand>`**（会触发重新 build 并写 `dist/`，导致运行系统崩溃）。cron / config / sessions 类操作 **一律走 MCP 工具**（`cron`、`gateway`、`sessions_*`）。具体防范规则见Memory「内置运维知识 - 重大警告」一节。
 

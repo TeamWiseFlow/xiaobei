@@ -2,7 +2,7 @@
 # build-image.sh — wiseflow-client 镜像构建辅助
 #
 # 职责：检出 openclaw 引擎源码（按 openclaw.version 锁定）→ 注入到 build 上下文 →
-#   docker build。install.sh 是给裸机装的；client 仓只用此脚本出镜像。
+#   docker build。install.sh 是给裸机装的；镜像构建复用 docker-bootstrap.sh 的安装语义。
 #
 # Phase 0 骨架：检出 + build 流程就位，Dockerfile 阶段 3-4 待 Phase 6-7 填实。
 set -euo pipefail
@@ -23,7 +23,7 @@ git -C openclaw fetch --depth=1 origin "$OPENCLAW_COMMIT"
 git -C openclaw checkout "$OPENCLAW_COMMIT"
 
 # 镜像 tag
-TAG="${IMAGE_TAG:-wiseflow-client:dev}"
+TAG="${IMAGE_TAG:-xiaobei:local}"
 echo "[build] building $TAG"
 
 docker build \
@@ -33,4 +33,4 @@ docker build \
   .
 
 echo "[build] done: $TAG"
-echo "[run]   docker run -e OFB_KEY=xxx -e AWK_API_KEY=yyy -p 18789:18789 -v wiseflow-data:/root/.openclaw $TAG"
+echo "[run]   AWK_API_KEY=xxx IMAGE=$TAG docker compose up -d"

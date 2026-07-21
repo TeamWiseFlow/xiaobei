@@ -5,7 +5,7 @@
 
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, open, stat } from "node:fs/promises";
+import { access, mkdir, open, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -35,7 +35,7 @@ function usage() {
       "  --max-scan N     关键词筛选最多扫描文章数，默认 100",
       "",
       "Output:",
-      "  --output 必须是当前工作目录下的单个 .json 文件名，不允许目录、绝对路径或 .. 上跳。",
+      "  --output 工作区内相对 .json 路径（可含子目录，如 wenyan-theme/sources.json）；禁止绝对路径 / .. 上跳。",
     ].join("\n") + "\n"
   );
 }
@@ -115,14 +115,15 @@ async function assertExecutableFile(filePath, label) {
 
 function workspaceOutputPath(filePath) {
   if (!filePath.endsWith(".json")) fail("--output 必须使用 .json 后缀");
-  if (basename(filePath) !== filePath || filePath.startsWith(sep)) {
-    fail("--output 必须是当前工作目录下的单个 .json 文件名，不能包含目录、绝对路径或 .. 上跳");
+  if (filePath.startsWith(sep)) {
+    fail("--output 不能是绝对路径");
   }
+  // 允许工作区内的相对路径（可含子目录，如 wenyan-theme/sources.json），禁止 .. 上跳。
   const cwd = resolve(process.cwd());
   const absolute = resolve(cwd, filePath);
   const relativePrefix = `${cwd}${sep}`;
   if (absolute === cwd || !absolute.startsWith(relativePrefix)) {
-    fail("--output 必须位于当前工作目录内");
+    fail("--output 必须位于当前工作目录内（可含子目录，禁止 .. 上跳或绝对路径）");
   }
   return absolute;
 }
@@ -236,6 +237,7 @@ async function fetchArticleHtml(wxHunter, article) {
 
 async function writeOutput(filePath, data) {
   const absolute = workspaceOutputPath(filePath);
+  await mkdir(dirname(absolute), { recursive: true });
   const file = await open(absolute, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600).catch(
     (error) => {
       throw new Error(`无法安全写入输出文件: ${error instanceof Error ? error.message : String(error)}`);

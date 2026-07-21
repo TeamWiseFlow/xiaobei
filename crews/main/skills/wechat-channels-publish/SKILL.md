@@ -18,16 +18,16 @@ metadata:
 ## 前置条件
 
 1. 持久化 session `wechat-channel` 已登录（登录态存 session profile 里）。本 skill 与 login-manager **完全无关**——自管探活 + 登录，**不导出 cookie/UA 落中央存储**。
-2. 首次使用 / 登录态失效时，走自管**无头截图 QR**登录流：
-   - `camoufox-cli --session wechat-channel --persistent --json open "https://channels.weixin.qq.com/platform/home"`
-   - `camoufox-cli --session wechat-channel --json screenshot /tmp/qr-wechat-channel.png` 截登录 QR
-   - 把 PNG 用 image 工具加载发用户（**不要发本地路径**），告知「**微信视频号** 登录已失效，请用微信扫码确认，完成后回复"已扫码"」
-   - 用户回复后 `snapshot` 验页面已跳走 / QR 消失
-   - 登录后**不关 session**——持久化 session `wechat-channel` 登录态留着给本 skill 下次用，主动 close 会破坏复用。
+2. 首次使用 / 登录态失效时，走**有头手动扫码**登录流（视频号登录页无法无头截 QR，必须弹出有头窗口让用户在浏览器里手动扫码）：
+   - `camoufox-cli --session wechat-channel --persistent --headed --viewport 1920x1080 --json open "https://channels.weixin.qq.com/platform/home"`
+   - `--viewport 1920x1080`：camoufox 默认按指纹给移动端窗口比例，二维码看不全；强制桌面 1920×1080
+   - 告知用户「**微信视频号** 登录已失效，浏览器窗口已打开，请在窗口里用微信扫码确认登录，完成后回复"已扫码"」
+   - **Stop and wait**，用户回复后 `snapshot` 验页面已跳走 / QR 消失
+   - 登录后**close session**——登录态落磁盘 profile，不留进程占内存；本 skill 下次 `--session wechat-channel --persistent` 重起无头即恢复，用完再 close。
 
 > **不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`。
 >
-> 无头模式（camoufox-cli 默认即 headless，无需额外 flag）：本 skill 登录走默认 headless 截 QR 发用户扫码。
+> 登录走**有头**（`--headed --viewport 1920x1080`）；业务发布操作走默认无头（camoufox-cli 默认即 headless，无需额外 flag）。
 
 ---
 
@@ -43,7 +43,7 @@ camoufox-cli --session wechat-channel --persistent --json open "https://channels
 
 ### Step 2: 检查登录态
 
-`snapshot` 看页面 URL 是否含 `login` 或出现登录二维码——命中走前置条件的无头截图 QR 登录流。
+`snapshot` 看页面 URL 是否含 `login` 或出现登录二维码——命中走前置条件的有头手动扫码登录流。
 
 ### Step 3: 上传视频
 
@@ -136,7 +136,7 @@ camoufox-cli --session wechat-channel --persistent --json open "https://channels
 
 ## 必做约束
 
-- **不主动 close 持久化 session `wechat-channel`**——登录态 + 指纹冻结留着下次用。只在 session 卡死时 `camoufox-cli --session wechat-channel --json close` teardown。
+- **用完即 close 持久化 session `wechat-channel`**——登录态 + 指纹冻结在磁盘 profile，不留进程占内存；下次发布 `--session wechat-channel --persistent` 重起无头即恢复。只在 session 卡死时 `camoufox-cli --session wechat-channel --json close` teardown。
 - 同 session 已有命令在跑时，新命令 fail-first（返回 `session wechat-channel 正忙，请等待当前操作完成后再试`）——读到这条文本就等当前操作完成再重试，不要盲试。
 
 ---
@@ -159,7 +159,7 @@ camoufox-cli --session wechat-channel --persistent --json open "https://channels
 
 - **触发**：访问视频号页面未登录
 - **症状**：跳转到扫码登录页，无用户名/密码选项
-- **workaround**：走前置条件的无头截图 QR 流程，等待用户在手机微信扫码确认
+- **workaround**：走前置条件的有头手动扫码流程（`--headed --viewport 1920x1080`），等待用户在浏览器窗口里用手机微信扫码确认
 
 ### pitfall: form_reset_on_idle
 
@@ -173,7 +173,7 @@ camoufox-cli --session wechat-channel --persistent --json open "https://channels
 
 | 情况 | 处理 |
 |------|------|
-| 未登录 | 走前置条件的无头截图 QR 登录流，重试一次 |
+| 未登录 | 走前置条件的有头手动扫码登录流，重试一次 |
 | 上传失败 | 检查视频格式（mp4/mov/avi/webm），重试一次 |
 | 转码超时 | 增加超时时间，或告知用户稍后在创作者中心检查 |
 | 发表按钮 disabled | 检查必填字段是否已填写（视频是否上传完成） |

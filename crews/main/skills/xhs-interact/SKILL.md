@@ -1,6 +1,6 @@
 ---
 name: xhs-interact
-description: 小红书社交互动技能。发表评论、回复评论、点赞、关注。当用户要求评论、回复、点赞或关注小红书用户时触发。走 camoufox-cli 主推路径（反指纹 + 探活前置），browser-guide + login-manager skill 配合使用。
+description: 小红书社交互动技能。发表评论、回复评论、点赞、关注。当用户要求评论、回复、点赞或关注小红书用户时触发。
 metadata:
   openclaw:
     emoji: 💬
@@ -17,30 +17,30 @@ metadata:
 
 ---
 
-## 前置：login-manager 探活 / 登录（复用 xhs-browse 持久化 session）
+## 如果登录失效：使用 login-manager 重新登录
 
-走 login-manager skill 流程（详见 login-manager SKILL.md 步骤 0–3），开**同一个** `xhs-browse` 持久化 session：
+走 login-manager skill 流程，复用 `xhs-browse` 持久化 session（消费者域 `www.xiaohongshu.com`）：
 
-1. **探活**（无头 snapshot 看是否跳登录页）：`camoufox-cli --session xhs-browse --persistent --json open "https://www.xiaohongshu.com/"`（默认 headless）+ `camoufox-cli --session xhs-browse --json snapshot` → 没跳登录页 = 登录态有效，跳登录页 = 失效走步骤 2。
-2. **失效则启有头重登**：`camoufox-cli --session xhs-browse --persistent --headed --json open "https://www.xiaohongshu.com/"`，告知用户「**小红书** 浏览器已打开，请在窗口里手动扫码登录，完成后告诉我」。
-3. 登录就位后**同时导出 cookie + UA**落中央存储（供其他脚本类技能消费，非本技能自用）：
-   - `camoufox-cli --session xhs-browse --persistent --json cookies export ~/.openclaw/logins/xhs-browse.json`
-   - `camoufox-cli --session xhs-browse --persistent --json identity export ~/.openclaw/logins/xhs-browse.ua.json`
+```bash
+camoufox-cli --session xhs-browse --persistent --headed --json open "https://www.xiaohongshu.com/"
+# 告知用户在窗口里手动扫码登录，确认后：
+login-manager --platform xhs-browse
+```
 
-> **同时导出 cookie 和 UA**：xhs 的 `a1`/`websectiga` 等设备指纹 cookie 必须配同一指纹的 UA 导出，下游脚本消费时也必须同时导入，否则被风控错配。
+login-manager 一条命令闭环导出+验证+落中央存储（供其他脚本类技能消费，非本技能自用）+ close session。
 
 ---
 
 ## 互动流程：直接复用 xhs-browse 持久化 session
 
-互动操作**直接在 `xhs-browse` 持久化 session 上跑**——不开独立 session、不 import cookie（camoufox-cli 浏览器方案严禁 `cookies import` 造会话）。下文所有 `camoufox-cli` 命令统一用 `--session xhs-browse --persistent`，与上方 login-manager 登录后留下的 session 同名。若该 session 正被其他浏览器操作 skill 占用（fail-first 拒绝 → 命令报 session 正忙），等其完成再串行接力，**不要**自动 close 正在跑的 session。
+互动操作**直接在 `xhs-browse` 持久化 session 上跑**——不开独立 session、不 import cookie（camoufox-cli 浏览器方案严禁 `cookies import` 造会话）。下文所有 `camoufox-cli` 命令统一用 `--session xhs-browse --persistent`，若该 session 正被其他浏览器操作 skill 占用（fail-first 拒绝 → 命令报 session 正忙），等其完成再串行接力，**不要**自动 close 正在跑的 session。
 
 ```bash
 # 全文下方 $SESSION 一律指 xhs-browse 持久化 session
 SESSION="xhs-browse"
 ```
 
-任务结束后**不要 close 该 session**——它是持久化 session，留给后续自己 / 其他浏览器操作技能复用。除非明确要重登，才走 login-manager 有头重登流。
+任务结束后**close 该 session**——持久化 session 登录态在磁盘 profile，不留进程占内存；后续自己 / 其他浏览器操作技能用 `--session <平台 key> --persistent` 重起无头即恢复。互动过程中任何时候发现登录已失效则走 login-manager 有头重登流。
 
 ---
 
@@ -69,7 +69,6 @@ camoufox-cli --session "$SESSION" --json eval "window.location.href"
 
 - 批量操作时每次之间保持 30-60 秒间隔，避免风控。
 - 每天评论不超过 20 条。
-- 互动前用 `camoufox-cli eval` 验 cookie 有效（页面 snapshot 不出 `.login-container` / 不 redirect 到 login）。
 
 ---
 
@@ -213,7 +212,6 @@ https://www.xiaohongshu.com/explore/{feed_id}?xsec_token={xsec_token}&xsec_sourc
 
 | 情况 | 处理 |
 |------|------|
-| cookie 失效（login-manager 探活 exit 2） | 在同一 `xhs-browse` 持久化 session 上重走 login-manager 有头登录流（导出 cookie+UA 落中央存储给其他脚本技能用）→ 在同一 session 上重试 |
 | 页面出现登录墙 | 同上重走 login-manager 登录流 |
 | 点赞状态未变化 | 重试一次，仍未变化则报告错误 |
 | camoufox click/eval 失败 / 超时 | 改用 `eval` 走 JS 方式（最稳）；再失败 → 等 60s 后在同一 session 上重试（不开新 session、不 import cookie） |

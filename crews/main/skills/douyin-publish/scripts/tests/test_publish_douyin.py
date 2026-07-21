@@ -5,7 +5,7 @@
 - 4 个子命令路由（upload / fill / publish / get-link）+ run 一键全流程
 - 纯浏览器操作：本 skill 不自管探活/登录，交 login-manager；脚本只复用持久化 session `douyin` 做发布
 - camoufox-cli 调用模式（open / eval / click / type / set_file / wait）
-- 持久化 session 复用（不主动 close，登录态留着下次用）
+- 持久化 session 复用（用完即 close，登录态在磁盘 profile，下次重起无头即恢复）
 - file 不存在 / 按钮找不到等失败模式
 
 All camoufox-cli / subprocess calls are mocked.
@@ -63,10 +63,11 @@ class TestCmdUpload(unittest.TestCase):
             publish_douyin.cmd_upload(video="/nonexistent.mp4", session="s1")
         self.assertEqual(ctx.exception.code, 1)
 
-    @mock.patch("publish_douyin.camoufox_wait_for_text")
+    @mock.patch("publish_douyin._check_logged_in")
+    @mock.patch("publish_douyin.camoufox_wait_for_selector")
     @mock.patch("publish_douyin.camoufox_upload")
     @mock.patch("publish_douyin.camoufox_open")
-    def test_successful_upload(self, mock_open, mock_upload, mock_wait):
+    def test_successful_upload(self, mock_open, mock_upload, mock_wait, mock_login):
         mock_upload.return_value = True
         mock_wait.return_value = True
 
@@ -80,11 +81,12 @@ class TestCmdUpload(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["session"], "douyin-upload-abc")
         mock_open.assert_called_once()
+        mock_login.assert_called_once()  # 登录态守卫在 open 后被调用
 
-    @mock.patch("publish_douyin.camoufox_wait_for_text")
+    @mock.patch("publish_douyin._check_logged_in")
     @mock.patch("publish_douyin.camoufox_upload")
     @mock.patch("publish_douyin.camoufox_open")
-    def test_upload_setfile_fail_exits_1(self, mock_open, mock_upload, mock_wait):
+    def test_upload_setfile_fail_exits_1(self, mock_open, mock_upload, mock_login):
         mock_upload.return_value = False
         with tempfile.TemporaryDirectory() as tmp:
             video = Path(tmp) / "v.mp4"
@@ -94,16 +96,88 @@ class TestCmdUpload(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 1)
 
 
+class TestCheckLoggedIn(unittest.TestCase):
+    """登录态守卫：open 完上传页后立即验，未登录 exit 2（SESSION_EXPIRED）。"""
+
+    @mock.patch("publish_douyin.subprocess.run")
+    @mock.patch("publish_douyin.camoufox_eval")
+    @mock.patch("publish_douyin.Path")
+    def test_logged_in_passes(self, mock_path, mock_eval, mock_run):
+        # URL 停在上传页 + cookies 三字段齐全 → 不 exit
+        mock_eval.return_value = "https://creator.douyin.com/creator-micro/content/upload?enter_from=dou_web"
+        mock_path.return_value.read_text.return_value = json.dumps(
+            [{"name": "sessionid", "value": "x"}, {"name": "sid_tt", "value": "y"}, {"name": "uid_tt", "value": "z"}]
+        )
+        publish_douyin._check_logged_in("douyin")  # 不抛即通过
+
+    @mock.patch("publish_douyin.subprocess.run")
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_login_page_redirect_exits_2(self, mock_eval, mock_run):
+        mock_eval.return_value = "https://creator.douyin.com/login?from=upload"
+        with self.assertRaises(SystemExit) as ctx:
+            publish_douyin._check_logged_in("douyin")
+        self.assertEqual(ctx.exception.code, 2)
+
+    @mock.patch("publish_douyin.subprocess.run")
+    @mock.patch("publish_douyin.camoufox_eval")
+    @mock.patch("publish_douyin.Path")
+    def test_missing_login_cookies_exits_2(self, mock_path, mock_eval, mock_run):
+        # URL 停在上传页但 cookies 缺 sessionid → exit 2（兜住「页面渲染但无真 session」）
+        mock_eval.return_value = "https://creator.douyin.com/creator-micro/content/upload"
+        mock_path.return_value.read_text.return_value = json.dumps([{"name": "sid_tt", "value": "y"}, {"name": "uid_tt", "value": "z"}])
+        with self.assertRaises(SystemExit) as ctx:
+            publish_douyin._check_logged_in("douyin")
+        self.assertEqual(ctx.exception.code, 2)
+
+
+class TestFetchNewestAwemeId(unittest.TestCase):
+    """work_list API 取最新作品:成功 / 鉴权失败重试后 exit 2 / 无作品。"""
+
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_success_returns_newest(self, mock_eval):
+        mock_eval.return_value = '{"sc": 0, "id": "7663480620206542131", "ct": 1784293135, "title": "测试", "count": 5}'
+        aid, title = publish_douyin._fetch_newest_aweme_id("douyin")
+        self.assertEqual(aid, "7663480620206542131")
+        self.assertEqual(title, "测试")
+
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_auth_fail_3x_exits_2(self, mock_eval):
+        # status_code=8 三次(间歇重试仍失败)→ exit 2 SESSION_EXPIRED
+        mock_eval.return_value = '{"sc": 8, "id": null}'
+        with self.assertRaises(SystemExit) as ctx:
+            publish_douyin._fetch_newest_aweme_id("douyin")
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertEqual(mock_eval.call_count, 3)
+
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_auth_fail_then_recover(self, mock_eval):
+        # 第一次 sc=8,重试后 sc=0 命中 → 返回 id
+        mock_eval.side_effect = ['{"sc": 8, "id": null}', '{"sc": 0, "id": "999", "title": "ok"}']
+        aid, title = publish_douyin._fetch_newest_aweme_id("douyin")
+        self.assertEqual(aid, "999")
+
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_no_items_returns_none_no_retry(self, mock_eval):
+        # sc=0 但无作品(since_ts 筛掉所有)→ (None,None),不重试
+        mock_eval.return_value = '{"sc": 0, "id": null}'
+        aid, title = publish_douyin._fetch_newest_aweme_id("douyin", since_ts=9999999999)
+        self.assertIsNone(aid)
+        self.assertEqual(mock_eval.call_count, 1)
+
+
 class TestCmdFill(unittest.TestCase):
+    @mock.patch("publish_douyin.camoufox_eval")
+    @mock.patch("publish_douyin.camoufox_type_contenteditable")
     @mock.patch("publish_douyin.camoufox_type")
-    def test_fill_title_and_caption(self, mock_type):
+    def test_fill_title_and_caption(self, mock_type, mock_ce, mock_eval):
         mock_type.return_value = True
+        mock_ce.return_value = True
+        mock_eval.return_value = "no-select"  # 无自主声明区,_select_ai_declaration 直接 True
         out = StringIO()
         with mock.patch("sys.stdout", out):
             publish_douyin.cmd_fill(session="s1", title="测试标题", caption="描述 #话题")
         result = json.loads(out.getvalue())
         self.assertTrue(result["ok"])
-        self.assertEqual(mock_type.call_count, 2)
 
     @mock.patch("publish_douyin.camoufox_type")
     def test_fill_title_missing_input_exits_1(self, mock_type):
@@ -114,19 +188,61 @@ class TestCmdFill(unittest.TestCase):
 
 
 class TestCmdPublish(unittest.TestCase):
-    @mock.patch("publish_douyin.camoufox_wait_for_text")
-    @mock.patch("publish_douyin.camoufox_click")
-    def test_publish_success(self, mock_click, mock_wait):
+    @mock.patch("publish_douyin._fetch_newest_aweme_id")
+    @mock.patch("publish_douyin.Path")
+    @mock.patch("publish_douyin.camoufox_wait_for_url_contains")
+    @mock.patch("publish_douyin.camoufox_click_button_by_text")
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_publish_success_returns_aweme_id(self, mock_eval, mock_click, mock_wait, mock_path, mock_fetch):
         mock_click.return_value = True
         mock_wait.return_value = True
+        # 拦截器命中 localStorage → 不走 work_list
+        mock_eval.side_effect = ["intercepted", "123456", "[]"]
         out = StringIO()
         with mock.patch("sys.stdout", out):
             publish_douyin.cmd_publish(session="s1")
         result = json.loads(out.getvalue())
         self.assertTrue(result["ok"])
+        self.assertEqual(result["aweme_id"], "123456")
+        mock_fetch.assert_not_called()
 
-    @mock.patch("publish_douyin.camoufox_click")
-    def test_publish_button_not_found_exits_1(self, mock_click):
+    @mock.patch("publish_douyin._fetch_newest_aweme_id")
+    @mock.patch("publish_douyin.Path")
+    @mock.patch("publish_douyin.camoufox_wait_for_url_contains")
+    @mock.patch("publish_douyin.camoufox_click_button_by_text")
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_publish_interceptor_miss_falls_back_to_work_list(self, mock_eval, mock_click, mock_wait, mock_path, mock_fetch):
+        # 拦截器 miss(发布走 form/导航)→ work_list API 兜底取最新作品
+        mock_click.return_value = True
+        mock_wait.return_value = True
+        mock_eval.side_effect = ["intercepted", None, "[]", "ok"]  # 拦截注入 + 读captured(miss) + 读debug + 落localStorage
+        mock_fetch.return_value = ("7663480620206542131", "测试标题")
+        out = StringIO()
+        with mock.patch("sys.stdout", out):
+            publish_douyin.cmd_publish(session="s1")
+        result = json.loads(out.getvalue())
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["aweme_id"], "7663480620206542131")
+        mock_fetch.assert_called_once()
+
+    @mock.patch("publish_douyin._fetch_newest_aweme_id")
+    @mock.patch("publish_douyin.Path")
+    @mock.patch("publish_douyin.camoufox_wait_for_url_contains")
+    @mock.patch("publish_douyin.camoufox_click_button_by_text")
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_publish_aweme_id_none_exits_3_no_false_success(self, mock_eval, mock_click, mock_wait, mock_path, mock_fetch):
+        # 拦截器 + work_list 都 miss → exit 3，不再误报 ok（2026-07-17 xiaobei 事故根因之二）
+        mock_click.return_value = True
+        mock_wait.return_value = True
+        mock_eval.side_effect = ["intercepted", None, "[]"]
+        mock_fetch.return_value = (None, None)
+        with self.assertRaises(SystemExit) as ctx:
+            publish_douyin.cmd_publish(session="s1")
+        self.assertEqual(ctx.exception.code, 3)
+
+    @mock.patch("publish_douyin.camoufox_click_button_by_text")
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_publish_button_not_found_exits_1(self, mock_eval, mock_click):
         mock_click.return_value = False
         with self.assertRaises(SystemExit) as ctx:
             publish_douyin.cmd_publish(session="s1")
@@ -136,22 +252,62 @@ class TestCmdPublish(unittest.TestCase):
 class TestCmdGetLink(unittest.TestCase):
     @mock.patch("publish_douyin.camoufox_open")
     @mock.patch("publish_douyin.camoufox_eval")
-    def test_get_link_success(self, mock_eval, mock_open):
-        mock_eval.return_value = "https://www.douyin.com/video/12345"
+    def test_get_link_from_localStorage(self, mock_eval, mock_open):
+        # 策略1: _read_captured_aweme_id 命中 localStorage → 不重开页面
+        mock_eval.return_value = "123456"
         out = StringIO()
         with mock.patch("sys.stdout", out):
             publish_douyin.cmd_get_link(session="s1")
         result = json.loads(out.getvalue())
         self.assertTrue(result["ok"])
-        self.assertEqual(result["url"], "https://www.douyin.com/video/12345")
+        self.assertEqual(result["url"], "https://www.douyin.com/video/123456")
+        self.assertEqual(result["aweme_id"], "123456")
+        mock_open.assert_not_called()
 
+    @mock.patch("publish_douyin._fetch_newest_aweme_id")
     @mock.patch("publish_douyin.camoufox_open")
     @mock.patch("publish_douyin.camoufox_eval")
-    def test_get_link_no_result_exits_1(self, mock_eval, mock_open):
-        mock_eval.return_value = "null"
-        with self.assertRaises(SystemExit) as ctx:
+    def test_get_link_fallback_manage_dom(self, mock_eval, mock_open, mock_fetch):
+        # 策略1(localStorage) miss → 策略2(work_list) miss → 策略3 管理页 DOM 命中
+        mock_fetch.return_value = (None, None)
+        mock_eval.side_effect = [None, "https://creator.douyin.com/creator-micro/content/manage", "https://www.douyin.com/video/789"]
+        out = StringIO()
+        with mock.patch("sys.stdout", out):
             publish_douyin.cmd_get_link(session="s1")
-        self.assertEqual(ctx.exception.code, 1)
+        result = json.loads(out.getvalue())
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["url"], "https://www.douyin.com/video/789")
+        mock_open.assert_not_called()  # 已在 manage 页,不重开
+
+    @mock.patch("publish_douyin._fetch_newest_aweme_id")
+    @mock.patch("publish_douyin.camoufox_open")
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_get_link_work_list_strategy(self, mock_eval, mock_open, mock_fetch):
+        # 策略1 miss → 策略2 work_list 命中
+        mock_eval.return_value = None  # _read_captured_aweme_id miss
+        mock_fetch.return_value = ("999", "标题")
+        out = StringIO()
+        with mock.patch("sys.stdout", out):
+            publish_douyin.cmd_get_link(session="s1")
+        result = json.loads(out.getvalue())
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["url"], "https://www.douyin.com/video/999")
+        self.assertEqual(result["aweme_id"], "999")
+        mock_open.assert_not_called()
+
+    @mock.patch("publish_douyin._fetch_newest_aweme_id")
+    @mock.patch("publish_douyin.camoufox_open")
+    @mock.patch("publish_douyin.camoufox_eval")
+    def test_get_link_no_result_returns_ok_url_none(self, mock_eval, mock_open, mock_fetch):
+        # 三条策略都 miss → 不 exit,返回 ok=True url=None(发布已成功)
+        mock_fetch.return_value = (None, None)
+        mock_eval.side_effect = [None, "https://creator.douyin.com/creator-micro/content/manage", "null"]
+        out = StringIO()
+        with mock.patch("sys.stdout", out):
+            publish_douyin.cmd_get_link(session="s1")
+        result = json.loads(out.getvalue())
+        self.assertTrue(result["ok"])
+        self.assertIsNone(result["url"])
 
 
 class TestCmdRun(unittest.TestCase):

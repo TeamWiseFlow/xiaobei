@@ -62,7 +62,7 @@ Symmetric with `cookies export`. Writes the **effective** UA the browser reports
 
 - `--persistent` fingerprint freeze, `camoufox-cli.json` format, first-launch generation.
 - `cookies export/import` JSON format (= Playwright `add_cookies`).
-- Daemon model, `--session` isolation, `--json` envelope, `--headed`/`--headless`, config-file precedence.
+- Daemon model, `--session` isolation, `--json` envelope, `--headed`（默认 headless）, `--viewport WxH`（固定窗口尺寸，覆盖指纹默认的移动端比例）, config-file precedence.
 - All other commands and flags.
 
 ## Build & install

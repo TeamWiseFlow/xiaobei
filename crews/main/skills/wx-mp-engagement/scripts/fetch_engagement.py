@@ -390,11 +390,9 @@ def _prepare_session() -> str:
 
 
 def _cleanup_session(session: str) -> None:
-    """不复用 wx-mp-hunter 的 wx_mp 持久化 session 时才 close；
-    现行实现 SESSION_NAME=wx_mp 是持久化 session，**不主动 close**——
-    登录态留着下次用（wx-mp-hunter / 下次 fetch 复用）。
-    仅在 session 卡死时由调用方手动 camoufox-cli close teardown。"""
-    pass
+    """用完即 close——登录态在磁盘 profile + 中央存储，不留进程占内存。
+    下次 fetch / wx-mp-hunter 按需重起无头 session，profile 桥接登录态。"""
+    camoufox_close(session)
 
 
 def cmd_probe(args) -> None:

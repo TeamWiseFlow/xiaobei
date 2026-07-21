@@ -26,13 +26,18 @@
  *   2  Cookie 无效/未登录 → 调用方应触发 login-manager
  */
 
-const XHS_BROWSE_BASE = "https://www.xiaohongshu.com"
-
 import { readFileSync, existsSync } from "fs"
 import { join } from "path"
 import { homedir } from "os"
-import { execFile } from "child_process"
+import { execFile, execFileSync } from "child_process"
 import { promisify } from "util"
+import {
+  xhsBrowserHeaders,
+  extractInitialState,
+  fetchXhsNoteFromHtml,
+  XhsCaptchaError,
+  XhsNoteInaccessibleError,
+} from "../../_shared/xhs-html-note.ts"
 
 const execFileAsync = promisify(execFile)
 
@@ -68,7 +73,12 @@ function readSession(platform: string): SessionData | null {
   const path = join(SESSIONS_DIR, `${platform}.json`)
   if (!existsSync(path)) return null
   try {
-    return JSON.parse(readFileSync(path, "utf-8")) as SessionData
+    const raw = JSON.parse(readFileSync(path, "utf-8"))
+    // camoufox-cli `cookies export` 写的是裸数组（见 patches/camoufox-cli/src/commands.ts
+    // `writeFileSync(path, JSON.stringify(cookies))`），消费方统一归一化为 {cookies: [...]}，
+    // 否则 requireSession 的 `!data.cookies` 判空会把有效 cookie 误报 SESSION_EXPIRED。
+    if (Array.isArray(raw)) return { platform, cookies: raw } as SessionData
+    return raw as SessionData
   } catch {
     return null
   }
@@ -129,20 +139,12 @@ async function fetchDouyin(awemeId: string): Promise<RetroResult> {
   const session = requireSession("douyin")
   const cookieDict = parseCookies(session.cookies)
   const ua = sessionUA("douyin", session)
+  const cookieStr = cookieHeader(cookieDict)
 
-  // a_bogus 签名走 relay（D1 签名收敛到 server，vendor/douyin.js 已移至 relay）
-  const { douyinSign } = await import("../../_shared/relay-sign.ts")
-
-  const DOUYIN_API = "https://www.douyin.com"
-
-  function douyinHeaders(cookieStr: string): Record<string, string> {
-    return {
-      "User-Agent": ua,
-      "Cookie": cookieStr,
-      "Referer": "https://www.douyin.com/",
-      "Accept": "application/json",
-    }
-  }
+  // 签名 + COMMON_PARAMS + webid/msToken/verifyFp 走 _shared/douyin-web.ts。
+  // 早期此处只发 aweme_id+msToken+a_bogus，缺 COMMON_PARAMS，抖音 Janus 网关回 200 空体，
+  // 长期取不到数（静默 __no_metrics__）。复用 viral-chaser 同款请求形态后修复。
+  const { douyinWebGet } = await import("../../_shared/douyin-web.ts")
 
   const result: RetroResult = {
     ok: true,
@@ -152,133 +154,42 @@ async function fetchDouyin(awemeId: string): Promise<RetroResult> {
     comments: [],
   }
 
-  // 1. 获取视频详情（aweme/detail 接口）
+  // 视频详情（aweme/detail 接口）——只取数，不碰评论
+  // （参考 wiseflow4-pro douyin aweme_processor.__call__ → get_video_by_id →
+  //  update_douyin_aweme：读 statistics 的 digg_count/collect_count/comment_count/share_count。）
   console.error("  → 调抖音 API 获取视频详情...")
   try {
-    const detailParams: Record<string, string> = {
-      aweme_id: awemeId,
-      ...Object.fromEntries([
-        ["msToken", genFakeMsToken()],
-      ]),
-    }
-    const paramStr = new URLSearchParams(detailParams).toString()
-    const aBogus = await douyinSign({ queryString: paramStr, postData: "", ua })
-    const url = `${DOUYIN_API}/aweme/v1/web/aweme/detail/?${paramStr}&a_bogus=${aBogus}`
-
-    const resp = await fetch(url, {
-      headers: douyinHeaders(cookieHeader(cookieDict)),
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (resp.ok) {
-      const data = await resp.json() as any
-      const aweme = data?.aweme_detail
-      if (aweme) {
-        const stats = aweme.statistics || {}
-        result.stats = {
-          playCount: stats.play_count || 0,
-          likeCount: stats.digg_count || 0,
-          commentCount: stats.comment_count || 0,
-          shareCount: stats.share_count || 0,
-          collectCount: stats.collect_count || 0,
-        }
-        console.error(`  ✓ 播放 ${result.stats.playCount} / 点赞 ${result.stats.likeCount} / 评论 ${result.stats.commentCount}`)
+    const { status, data } = await douyinWebGet<any>(
+      "/aweme/v1/web/aweme/detail/",
+      { aweme_id: awemeId },
+      cookieStr,
+      ua,
+    )
+    const aweme = data?.aweme_detail
+    if (aweme) {
+      const stats = aweme.statistics || {}
+      result.stats = {
+        playCount: stats.play_count || 0,
+        likeCount: stats.digg_count || 0,
+        commentCount: stats.comment_count || 0,
+        shareCount: stats.share_count || 0,
+        collectCount: stats.collect_count || 0,
       }
+      console.error(`  ✓ 播放 ${result.stats.playCount} / 点赞 ${result.stats.likeCount} / 评论 ${result.stats.commentCount}`)
     } else {
-      console.error(`  ⚠️ 视频详情接口返回 ${resp.status}`)
+      console.error(`  ⚠️ 视频详情接口返回 ${status} 但无 aweme_detail（cookie 可能失效）`)
     }
   } catch (e) {
     console.error(`  ⚠️ 视频详情获取失败: ${e}`)
   }
 
-  // 2. 获取评论（comment/list 接口）
-  console.error("  → 调抖音 API 获取评论...")
-  try {
-    const comments: Array<{ cid: string; text: string; likeCount: number; userName: string }> = []
-    let cursor = 0
-
-    for (let page = 0; page < 5; page++) {  // 最多 5 页
-      const commentParams: Record<string, string> = {
-        aweme_id: awemeId,
-        cursor: String(cursor),
-        count: "20",
-        item_type: "0",
-        insert_ids: "",
-        msToken: genFakeMsToken(),
-      }
-      const paramStr = new URLSearchParams(commentParams).toString()
-      const aBogus = await douyinSign({ queryString: paramStr, postData: "", ua })
-      const url = `${DOUYIN_API}/aweme/v1/web/comment/list/?${paramStr}&a_bogus=${aBogus}`
-
-      const resp = await fetch(url, {
-        headers: douyinHeaders(cookieHeader(cookieDict)),
-        signal: AbortSignal.timeout(15_000),
-      })
-      if (!resp.ok) break
-
-      const data = await resp.json() as any
-      const cmts = data?.comments || []
-      if (cmts.length === 0) break
-
-      for (const c of cmts) {
-        comments.push({
-          cid: c.cid || "",
-          text: c.text || "",
-          likeCount: c.digg_count || 0,
-          userName: c.user?.nickname || "",
-        })
-      }
-
-      cursor = data.cursor || 0
-      if (!data.has_more) break
-    }
-
-    comments.sort((a, b) => b.likeCount - a.likeCount)
-    result.comments = comments.slice(0, 50)
-    console.error(`  ✓ 抓到 ${comments.length} 条评论`)
-  } catch (e) {
-    console.error(`  ⚠️ 评论获取失败: ${e}`)
-  }
-
   return result
-}
-
-function genFakeMsToken(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-  let token = ""
-  for (let i = 0; i < 126; i++) token += chars[Math.floor(Math.random() * chars.length)]
-  return token + "=="
 }
 
 // ─── B站 ───────────────────────────────────────────────────────────────────
 
 const BILI_API = "https://api.bilibili.com"
 const BILI_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-
-// WBI 签名走 relay（/api/v1/sign/bilibili/wbi，仅算 {wts, w_rid}）。
-// imgKey/subKey 拉取与缓存归 client（契约 docs/API-CONTRACT.md §sign/bilibili/wbi）。
-let wbiKeyCache: { imgKey: string; subKey: string; ts: number } | null = null
-
-async function getWbiKeys(): Promise<{ imgKey: string; subKey: string }> {
-  if (wbiKeyCache && Date.now() - wbiKeyCache.ts < 10 * 60 * 1000) {
-    return { imgKey: wbiKeyCache.imgKey, subKey: wbiKeyCache.subKey }
-  }
-
-  const resp = await fetch(`${BILI_API}/x/web-interface/nav`, {
-    headers: { "User-Agent": BILI_UA },
-    signal: AbortSignal.timeout(10_000),
-  })
-  if (!resp.ok) throw new Error(`获取 WBI 密钥失败: ${resp.status}`)
-  const data = await resp.json() as any
-  const wbiImg = data?.data?.wbi_img
-  if (!wbiImg) throw new Error("WBI 密钥字段不存在")
-
-  wbiKeyCache = {
-    imgKey: wbiImg.img_url.split("/").pop()!.split(".")[0],
-    subKey: wbiImg.sub_url.split("/").pop()!.split(".")[0],
-    ts: Date.now(),
-  }
-  return { imgKey: wbiKeyCache.imgKey, subKey: wbiKeyCache.subKey }
-}
 
 async function fetchBilibili(bvid: string): Promise<RetroResult> {
   const result: RetroResult = {
@@ -289,7 +200,9 @@ async function fetchBilibili(bvid: string): Promise<RetroResult> {
     comments: [],
   }
 
-  // 1. 视频详情（公开 API，无需 cookie）
+  // 视频详情（公开 API，无需 cookie）——只取数，不碰评论
+  // （参考 wiseflow4-pro bilibili video_processor.get_video_detail：读 View.stat 的
+  //  like/view/danmaku/reply/coin/favorite/share。此处用更轻的 /view 公开端点，字段同。）
   console.error("  → 调 B站 API 获取视频详情...")
   try {
     const resp = await fetch(`${BILI_API}/x/web-interface/view?bvid=${bvid}`, {
@@ -301,7 +214,6 @@ async function fetchBilibili(bvid: string): Promise<RetroResult> {
     if (data.code !== 0) throw new Error(data.message)
 
     const stat = data.data.stat
-    const aid = data.data.aid
     result.stats = {
       viewCount: stat.view || 0,
       likeCount: stat.like || 0,
@@ -312,44 +224,6 @@ async function fetchBilibili(bvid: string): Promise<RetroResult> {
       replyCount: stat.reply || 0,
     }
     console.error(`  ✓ 播放 ${result.stats.viewCount} / 点赞 ${result.stats.likeCount} / 评论 ${result.stats.replyCount}`)
-
-    // 2. 评论（公开 API，WBI 签名走 relay）
-    console.error("  → 调 B站 API 获取评论（relay 签名）...")
-    const { bilibiliWbiSign } = await import("../../_shared/relay-sign.ts")
-    const wbiKeys = await getWbiKeys()
-    const comments: Array<{ cid: string; text: string; likeCount: number; userName: string }> = []
-
-    for (let page = 1; page <= 5; page++) {
-      const baseParams = { type: 1, oid: aid, pn: page, ps: 20, sort: 1 }
-      const { wts, w_rid } = await bilibiliWbiSign({
-        params: baseParams,
-        imgKey: wbiKeys.imgKey,
-        subKey: wbiKeys.subKey,
-      })
-      const qs = new URLSearchParams({ ...baseParams, wts, w_rid }).toString()
-      const resp = await fetch(`${BILI_API}/x/v2/reply?${qs}`, {
-        headers: { "User-Agent": BILI_UA },
-        signal: AbortSignal.timeout(15_000),
-      })
-      if (!resp.ok) break
-      const cmtData = await resp.json() as any
-      if (cmtData.code !== 0) break
-      const replies = cmtData?.data?.replies || []
-      if (replies.length === 0) break
-
-      for (const r of replies) {
-        comments.push({
-          cid: String(r.rpid || ""),
-          text: r.content?.message || "",
-          likeCount: r.like || 0,
-          userName: r.member?.uname || "",
-        })
-      }
-    }
-
-    comments.sort((a, b) => b.likeCount - a.likeCount)
-    result.comments = comments.slice(0, 50)
-    console.error(`  ✓ 抓到 ${comments.length} 条评论`)
   } catch (e) {
     console.error(`  ⚠️ B站数据获取失败: ${e}`)
   }
@@ -374,10 +248,11 @@ async function fetchKuaishou(photoId: string): Promise<RetroResult> {
     comments: [],
   }
 
-  // 1. 视频详情（GraphQL）
+  // 视频详情（GraphQL）——只取数，不碰评论（参考 wiseflow4-pro kuaishou video_processor.get_video_detail）
+  // likeCount 是展示数，realLikeCount 才是真实点赞数（参考 update_kuaishou_video 读 realLikeCount）。
   console.error("  → 调快手 GraphQL 获取视频详情...")
   try {
-    const query = `query visionVideoDetail($photoId: String) { visionVideoDetail(photoId: $photoId) { photo { id viewCount likeCount commentCount } } }`
+    const query = `query visionVideoDetail($photoId: String) { visionVideoDetail(photoId: $photoId) { photo { id viewCount realLikeCount commentCount } } }`
     const resp = await fetch(KUAISHOU_GQL, {
       method: "POST",
       headers: {
@@ -396,7 +271,7 @@ async function fetchKuaishou(photoId: string): Promise<RetroResult> {
       if (photo) {
         result.stats = {
           viewCount: photo.viewCount || 0,
-          likeCount: photo.likeCount || 0,
+          likeCount: photo.realLikeCount || 0,
           commentCount: photo.commentCount || 0,
         }
         console.error(`  ✓ 播放 ${result.stats.viewCount} / 点赞 ${result.stats.likeCount}`)
@@ -406,54 +281,84 @@ async function fetchKuaishou(photoId: string): Promise<RetroResult> {
     console.error(`  ⚠️ 快手详情获取失败: ${e}`)
   }
 
-  // 2. 评论（GraphQL）
-  console.error("  → 调快手 GraphQL 获取评论...")
-  try {
-    const comments: Array<{ cid: string; text: string; likeCount: number; userName: string }> = []
-    let cursor = ""
-
-    for (let page = 0; page < 5; page++) {
-      const query = `query commentList($photoId: String, $cursor: String) { commentList(photoId: $photoId, cursor: $cursor) { comments { id content likeCount user { name } } cursor } }`
-      const resp = await fetch(KUAISHOU_GQL, {
-        method: "POST",
-        headers: {
-          "User-Agent": ua,
-          "Cookie": cookieHeader(cookieDict),
-          "Content-Type": "application/json",
-          "Referer": "https://www.kuaishou.com/",
-          "Origin": "https://www.kuaishou.com",
-        },
-        body: JSON.stringify({ query, variables: { photoId, cursor } }),
-        signal: AbortSignal.timeout(15_000),
-      })
-      if (!resp.ok) break
-      const data = await resp.json() as any
-      const cmts = data?.data?.commentList?.comments || []
-      if (cmts.length === 0) break
-
-      for (const c of cmts) {
-        comments.push({
-          cid: String(c.id || ""),
-          text: c.content || "",
-          likeCount: c.likeCount || 0,
-          userName: c.user?.name || "",
-        })
-      }
-      cursor = data?.data?.commentList?.cursor || ""
-      if (!cursor) break
-    }
-
-    comments.sort((a, b) => b.likeCount - a.likeCount)
-    result.comments = comments.slice(0, 50)
-    console.error(`  ✓ 抓到 ${comments.length} 条评论`)
-  } catch (e) {
-    console.error(`  ⚠️ 快手评论获取失败: ${e}`)
-  }
-
   return result
 }
 
 // ─── 小红书 ────────────────────────────────────────────────────────────────
+//
+// 走 get_note_by_id_from_html 路线（借鉴 MediaCrawlerPro-Python xhs/client.py）：
+// 直接 GET 笔记详情网页 https://www.xiaohongshu.com/explore/{note_id}?xsec_token=...，
+// 解析 window.__INITIAL_STATE__.note.noteDetailMap[note_id].note.interactInfo 拿互动计数。
+//
+// 为何不走 feed API（/api/sns/web/v1/feed）：feed 接口需 xsec_token 且极易触发滑块验证
+// （MediaCrawlerPro get_note_by_id 原注释：「开启xsec_token详情接口特别容易出现滑块验证」，
+// 实测 500）。HTML 路线只需 cookie + 浏览器头，无需 relay 签名，风控远低于 feed。
+//
+// headers 形态参考 MediaCrawlerPro xhs/client.py 的 headers 属性（accept-language /
+// cache-control / pragma / priority / referer / sec-ch-ua* / sec-fetch-* / ua / cookie）。
+// 因是真实页面导航（非 XHR），sec-fetch 用 document/navigate 而非 cors/empty，
+// accept 用 text/html —— 比 MediaCrawlerPro 复用 API 头更贴合真实浏览器，camoufox 造的
+// cookie 本就来自页面导航，保持一致降低风控。
+//
+// xhsBrowserHeaders / extractInitialState / fetchXhsNoteFromHtml / parseXhsCount 复用
+// _shared/xhs-html-note.ts（与 viral-chaser / xhs-content-ops 同源，避免三处重复解析逻辑）。
+
+/** 解析 profile 页 window.__INITIAL_STATE__.user.notes，解 Vue ref 后建 note_id→xsec_token 映射。
+ * 纯 HTTP：GET /user/profile/{user_id}（带 cookie）即可，无需 camoufox。返回 null 表示抓取/解析失败。 */
+async function fetchXhsNoteTokenMapping(
+  userId: string,
+  cookieStr: string,
+  ua: string,
+): Promise<Record<string, { xsecToken: string; xsecSource: string }> | null> {
+  const url = `https://www.xiaohongshu.com/user/profile/${userId}`
+  try {
+    const resp = await fetch(url, {
+      headers: xhsBrowserHeaders(ua, cookieStr),
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (!resp.ok) return null
+    const html = await resp.text()
+    if (/website-login\/captcha/.test(html)) return null
+    const state = extractInitialState(html)
+    if (!state) return null
+    const unref = (v: any): any => (v && v.__v_isRef && v._rawValue !== undefined ? v._rawValue : v)
+    const notes = unref(state?.user?.notes)
+    const mapping: Record<string, { xsecToken: string; xsecSource: string }> = {}
+    if (Array.isArray(notes)) {
+      for (const grp of notes) {
+        const g = unref(grp)
+        if (!Array.isArray(g)) continue
+        for (const n of g) {
+          const nn = unref(n)
+          if (nn?.id && nn?.xsecToken) {
+            mapping[nn.id] = { xsecToken: String(nn.xsecToken), xsecSource: nn.xsecSource || "pc_feed" }
+          }
+        }
+      }
+    }
+    return mapping
+  } catch {
+    return null
+  }
+}
+
+/** 取 xhs-browse 自身 user_id：优先读 xhs-user-id.cache，缺失则调 get-xhs-user-id.sh（relay sign + user/me）。 */
+function readXhsUserId(): string {
+  const root = join(import.meta.dirname, "../../..")
+  const skillDir = join(root, "skills", "published-track")
+  const cache = join(skillDir, "xhs-user-id.cache")
+  if (existsSync(cache)) {
+    const v = readFileSync(cache, "utf-8").trim()
+    if (/^[0-9a-f]{20,}$/.test(v)) return v
+  }
+  try {
+    const out = execFileSync("bash", [join(skillDir, "scripts", "get-xhs-user-id.sh")], {
+      encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 30_000,
+    }).trim()
+    if (/^[0-9a-f]{20,}$/.test(out)) return out
+  } catch { /* get-xhs-user-id.sh 失败，返回空交上游报错 */ }
+  return ""
+}
 
 async function fetchXhs(noteId: string, xsecToken: string = "", xsecSource: string = ""): Promise<RetroResult> {
   const session = requireSession("xhs-browse")
@@ -473,92 +378,62 @@ async function fetchXhs(noteId: string, xsecToken: string = "", xsecSource: stri
     comments: [],
   }
 
-  // 签名走 relay
-  const { xhsFetch } = await import("../../_shared/relay-sign.ts")
+  const cookieStr = cookieHeader(cookieDict)
 
-  console.error("  → 调小红书 API（relay 签名）...")
-  try {
-    // 1. 获取笔记详情 (feed 接口, POST)
-    const feedUri = "/api/sns/web/v1/feed"
-    const feedPayload: Record<string, unknown> = {
-      source_note_id: noteId,
-      image_formats: ["jpg", "webp", "avif"],
-      extra: { need_body_topic: "1" },
+  // 1. 无 xsec_token 时，从自己 profile 页（纯 HTTP）取 note_id→xsec_token 映射。
+  //    feed/HTML 路线都强制要 xsec_token；publish_url 不带 token、发布响应也不返 token，
+  //    唯一来源是 profile 页 note 列表（每条 note 附 xsecToken）。纯 HTTP，不开 camoufox。
+  let token = xsecToken
+  let source = xsecSource
+  if (!token) {
+    console.error("  → 无 xsec_token，从自己 profile 页取映射（纯 HTTP）...")
+    const userId = readXhsUserId()
+    if (!userId) {
+      return { ...result, ok: false, error: "NO_USER_ID", msg: "未取到 self user_id（xhs-user-id.cache 缺失且 get-xhs-user-id.sh 失败）" }
     }
-    if (xsecToken) {
-      feedPayload.xsec_source = xsecSource || "pc_feed"
-      feedPayload.xsec_token = xsecToken
+    const mapping = await fetchXhsNoteTokenMapping(userId, cookieStr, ua)
+    if (!mapping) {
+      return { ...result, ok: false, error: "PROFILE_FETCH_FAILED", msg: "profile 页抓取/解析失败（可能触发风控/登录态失效）" }
     }
-    const feedResp = await xhsFetch<{ data?: { items?: any[] }; msg?: string }>({
-      baseUrl: XHS_BROWSE_BASE,
-      uri: feedUri,
-      method: "post",
-      payload: feedPayload,
-      cookies: cookieDict,
-      xsecToken: xsecToken || undefined,
-      xsecSource: xsecSource || undefined,
-      xRap: true,
-    })
-    const items = feedResp.data?.items ?? []
-    if (!items.length) {
-      console.error(`  ❌ 小红书 feed 返回空 items（可能缺 xsec_token 或笔记已删除）`)
-      return { ...result, ok: false, error: "NOTE_INACCESSIBLE", msg: feedResp.msg || "feed 返回空 items" }
+    const entry = mapping[noteId]
+    if (!entry) {
+      return { ...result, ok: false, error: "NOTE_NOT_IN_PROFILE", msg: `profile 首页未加载到该笔记（仅近期笔记可见，可能已删除/私密/超出首页范围；共 ${Object.keys(mapping).length} 条映射）` }
     }
-    for (const it of items) {
-      const node = it.note_card ?? it.note ?? it
-      const ii = node?.interact_info
-      if (ii && typeof ii === "object") {
-        result.stats = {
-          likeCount: Number(ii.liked_count ?? 0),
-          collectCount: Number(ii.collected_count ?? 0),
-          commentCount: Number(ii.comment_count ?? 0),
-          shareCount: Number(ii.share_count ?? 0),
-        }
-        break
-      }
-    }
-
-    // 2. 获取评论 (comment/page 接口, GET, 分页)
-    const comments: Array<{ cid: string; text: string; likeCount: number; userName: string }> = []
-    let cursor = ""
-    for (let page = 0; page < 5; page++) {
-      const commentUri = "/api/sns/web/v2/comment/page"
-      const commentParams: Record<string, string> = {
-        note_id: noteId,
-        cursor,
-        top_comment_size: "0",
-        image_formats: "jpg,webp,avif",
-      }
-      const cResp = await xhsFetch<{ data?: { comments?: any[]; cursor?: string; has_more?: boolean } }>({
-        baseUrl: XHS_BROWSE_BASE,
-        uri: commentUri,
-        method: "get",
-        params: commentParams,
-        cookies: cookieDict,
-      })
-      const cmts = cResp.data?.comments ?? []
-      if (!cmts.length) break
-      for (const c of cmts) {
-        const user = c.user_info ?? {}
-        comments.push({
-          cid: String(c.id ?? ""),
-          text: c.content ?? "",
-          likeCount: Number(c.like_count ?? 0),
-          userName: user.nickname ?? "",
-        })
-      }
-      cursor = cResp.data?.cursor ?? ""
-      if (!cursor || !cResp.data?.has_more) break
-    }
-    comments.sort((a, b) => b.likeCount - a.likeCount)
-    result.comments = comments.slice(0, 50)
-    console.error(`  ✓ 点赞 ${result.stats.likeCount || 0} / 收藏 ${result.stats.collectCount || 0} / 评论 ${result.comments.length} 条`)
-  } catch (e) {
-    console.error(`  ⚠️ 小红书数据获取失败: ${e}`)
-    return { ...result, ok: false, error: "XHS_FETCH_EXCEPTION", msg: String(e) }
+    token = entry.xsecToken
+    source = entry.xsecSource || "pc_feed"
+    console.error(`  ✓ 映射命中（共 ${Object.keys(mapping).length} 条），拿到 xsec_token`)
   }
 
-  return result
+  // 2. GET 笔记详情页 HTML，解析 interactInfo（复用 _shared/xhs-html-note.ts）
+  console.error(`  → GET 小红书笔记详情页 HTML（get_note_by_id_from_html 路线）...`)
+  try {
+    const note = await fetchXhsNoteFromHtml(noteId, {
+      xsecToken: token,
+      xsecSource: source,
+      cookieStr,
+      ua,
+    })
+    // 解析成功即返回——新发笔记可能四项全 0，属正常态。
+    result.stats = {
+      likeCount: note.stats.likeCount,
+      collectCount: note.stats.collectCount,
+      commentCount: note.stats.commentCount,
+      shareCount: note.stats.shareCount,
+    }
+    console.error(`  ✓ 点赞 ${result.stats.likeCount} / 收藏 ${result.stats.collectCount} / 评论 ${result.stats.commentCount} / 分享 ${result.stats.shareCount}`)
+    return result
+  } catch (e) {
+    if (e instanceof XhsCaptchaError) {
+      return { ...result, ok: false, error: "NEED_VERIFY", msg: "小红书出现安全验证滑块，请扫码验证后重试" }
+    }
+    if (e instanceof XhsNoteInaccessibleError) {
+      // 评论内容（top_comment）需 comment/page API，同样依赖 xsec_token 且易触发风控；
+      // 当前 DB 不存 xsec_token，该 API 本就拿不到，故暂不调。互动计数（含 commentCount）
+      // 已从 HTML 拿到，published-track 指标完整。top_comment 待发布侧落 xsec_token 后再补。
+      return { ...result, ok: false, error: "NOTE_INACCESSIBLE", msg: "多次重试仍未拿到笔记 interactInfo（可能笔记已删除/私密或触发风控）" }
+    }
+    return { ...result, ok: false, error: "NOTE_INACCESSIBLE", msg: String(e) }
+  }
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────

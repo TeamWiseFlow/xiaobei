@@ -114,7 +114,7 @@ wx-mp-engagement fetch-all --days 7
 6. camoufox-cli --session wx_mp --json eval <innerText 解析 JS> -> [{title, metrics}, ...]
 7. match_article(rows, row.title) -> 按标题归一化匹配
 8. update-metrics.sh --platform wx_mp --id <row_id> ... -> 写 pub_wx_mp
-9. finally: 不主动 close（wx_mp 持久化 session 留下次用；fail-first 队列里别的命令接力）
+9. finally: close session（登录态在磁盘 profile + 中央存储，不留进程占内存；下次 fetch / wx-mp-hunter 按需重起无头 session，profile 桥接登录态）
 ```
 
 ---

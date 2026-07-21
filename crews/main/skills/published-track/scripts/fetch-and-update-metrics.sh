@@ -26,22 +26,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # camoufox-cli 路径（全局可用）
 CAMOUFOX_CLI="${CAMOUFOX_CLI:-camoufox-cli}"
 
-# published-track 平台名 → 持久化 session 名映射
-# 小红书按域拆为 xhs-publish / xhs-browse，取数走消费者端 xhs-browse
-LM_PLATFORM="$PLATFORM"
-if [ "$PLATFORM" = "xhs" ]; then
-  LM_PLATFORM="xhs-browse"
-fi
-
-# 平台首页 URL（探活时 open 用）
-case "$LM_PLATFORM" in
-  douyin)     PLATFORM_HOME="https://www.douyin.com/" ;;
-  bilibili)   PLATFORM_HOME="https://www.bilibili.com/" ;;
-  kuaishou)   PLATFORM_HOME="https://www.kuaishou.com/" ;;
-  xhs-browse) PLATFORM_HOME="https://www.xiaohongshu.com/" ;;
-  *)          PLATFORM_HOME="" ;;
-esac
-
 # ─── 辅助函数 ──────────────────────────────────────────────────────────────
 
 extract_content_id() {
@@ -69,6 +53,11 @@ extract_content_id() {
       echo ""
       ;;
   esac
+}
+
+# 从 xhs publish_url 的 query 里抽 xsec_token（feed/HTML 路线都用得到）
+extract_xsec_token() {
+  echo "$1" | sed -n 's/.*xsec_token=\([^&]*\).*/\1/p'
 }
 
 # ─── 平台配置 ──────────────────────────────────────────────────────────────
@@ -109,6 +98,22 @@ if [ -z "$PLATFORM" ]; then
   echo '{"ok":false,"error":"missing required arg: --platform"}'
   exit 1
 fi
+
+# published-track 平台名 -> 持久化 session 名映射
+# 小红书按域拆为 xhs-publish / xhs-browse，取数走消费者端 xhs-browse
+LM_PLATFORM="$PLATFORM"
+if [ "$PLATFORM" = "xhs" ]; then
+  LM_PLATFORM="xhs-browse"
+fi
+
+# 平台首页 URL（探活时 open 用）
+case "$LM_PLATFORM" in
+  douyin)     PLATFORM_HOME="https://www.douyin.com/" ;;
+  bilibili)   PLATFORM_HOME="https://www.bilibili.com/" ;;
+  kuaishou)   PLATFORM_HOME="https://www.kuaishou.com/" ;;
+  xhs-browse) PLATFORM_HOME="https://www.xiaohongshu.com/" ;;
+  *)          PLATFORM_HOME="" ;;
+esac
 
 # ─── 平台路由 ──────────────────────────────────────────────────────────────
 
@@ -167,21 +172,33 @@ for cp in $COOKIE_PLATFORMS; do
 done
 
 if [ "$NEEDS_COOKIE" = true ]; then
-  if ! command -v "$CAMOUFOX_CLI" >/dev/null 2>&1; then
-    echo "{\"ok\":false,\"error\":\"CAMOUFOX_CLI_NOT_FOUND\",\"platform\":\"$PLATFORM\",\"hint\":\"camoufox-cli 未找到，请确认已全局可用\"}"
+  # 探活：按平台 cookie 关键字段判（借鉴 docs/nodriver_helper_reference._check_login_status），
+  # 读 ~/.openclaw/logins/<session>.json，不再开 camoufox + snapshot grep——已登录页面里
+  # 「登录」文案会假阳性误报 SESSION_EXPIRED。cookie 关键字段缺失必失效；真伪交
+  # fetch-retro-data 实请求验证，本步只做 cheap gate。探活与取数读同一份 cookie，状态对齐。
+  CHECK_LOGIN="$SCRIPT_DIR/check-login.ts"
+  if [ ! -f "$CHECK_LOGIN" ]; then
+    echo "{\"ok\":false,\"error\":\"CHECK_LOGIN_SCRIPT_NOT_FOUND\",\"platform\":\"$PLATFORM\",\"hint\":\"check-login.ts 不存在于 $SCRIPT_DIR/\"}"
     exit 1
   fi
-
-  # 探活：开持久化 session open 平台首页 + snapshot 看是否跳登录页（spec §11-6，对齐 login-manager 步骤 0）
-  "$CAMOUFOX_CLI" --session "$LM_PLATFORM" --persistent --json open "$PLATFORM_HOME" >/dev/null 2>&1 || true
-  sleep 3
-  SNAP=$("$CAMOUFOX_CLI" --session "$LM_PLATFORM" --json snapshot 2>/dev/null || echo "")
-  "$CAMOUFOX_CLI" --session "$LM_PLATFORM" --json close >/dev/null 2>&1 || true
-
-  # snapshot 输出含登录标志 = 失效（跳登录页 / 出登录按钮 / 「请登录」文案）
-  if echo "$SNAP" | grep -qE "login|登录|扫码|请登录|sign ?in"; then
-    echo "{\"ok\":false,\"error\":\"SESSION_EXPIRED\",\"platform\":\"$PLATFORM\",\"login_platform\":\"$LM_PLATFORM\",\"method\":\"script\",\"hint\":\"Cookie 已失效，请使用 login-manager 技能引导用户重新登录 $LM_PLATFORM（camoufox-cli --session $LM_PLATFORM --persistent --headed open $PLATFORM_HOME → 用户手动登录 → cookies export + identity export 落中央存储）\"}"
+  CHECK_OUT=$(node --experimental-strip-types "$CHECK_LOGIN" --platform "$PLATFORM" 2>/dev/null) || CHECK_EXIT=$?
+  CHECK_EXIT=${CHECK_EXIT:-0}
+  if [ "$CHECK_EXIT" -eq 2 ]; then
+    CHECK_REASON=$(printf '%s' "$CHECK_OUT" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).reason||"")}catch{}})' 2>/dev/null)
+    echo "{\"ok\":false,\"error\":\"SESSION_EXPIRED\",\"platform\":\"$PLATFORM\",\"login_platform\":\"$LM_PLATFORM\",\"method\":\"script\",\"reason\":\"$CHECK_REASON\",\"hint\":\"Cookie 关键字段缺失/过期，请使用 login-manager 技能引导用户重新登录 $LM_PLATFORM（camoufox-cli --session $LM_PLATFORM --persistent --headed open $PLATFORM_HOME → 用户手动登录 → cookies export + identity export 落中央存储）\"}"
     exit 2
+  fi
+  if [ "$CHECK_EXIT" -ne 0 ]; then
+    # exit 1 区分 SIGN_UNAVAILABLE（签名基础设施缺凭证，非 cookie 问题，不触发重登）
+    # 与真·CHECK_LOGIN_FAILED（脚本异常）
+    CHECK_ERROR=$(printf '%s' "$CHECK_OUT" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).error||"")}catch{}})' 2>/dev/null)
+    if [ "$CHECK_ERROR" = "SIGN_UNAVAILABLE" ]; then
+      CHECK_REASON=$(printf '%s' "$CHECK_OUT" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.parse(d).reason||"")}catch{}})' 2>/dev/null)
+      echo "{\"ok\":false,\"error\":\"SIGN_UNAVAILABLE\",\"platform\":\"$PLATFORM\",\"login_platform\":\"$LM_PLATFORM\",\"reason\":\"$CHECK_REASON\",\"hint\":\"签名基础设施不可用（如 OFB_KEY 未配置），非 cookie 失效——重登无益，请 IT engineer 修 relay 凭证后重跑\"}"
+      exit 1
+    fi
+    echo "{\"ok\":false,\"error\":\"CHECK_LOGIN_FAILED\",\"platform\":\"$PLATFORM\",\"hint\":\"check-login.ts 执行异常 (exit $CHECK_EXIT): $CHECK_OUT\"}"
+    exit 1
   fi
 fi
 
@@ -234,6 +251,15 @@ if [ -z "$CONTENT_ID" ]; then
   if [ -z "$CONTENT_ID" ]; then
     echo "{\"ok\":false,\"error\":\"CANNOT_EXTRACT_CONTENT_ID\",\"platform\":\"$PLATFORM\",\"publish_url\":\"$PUBLISH_URL\",\"hint\":\"无法从 publish_url 提取 content_id，请用 --content-id 参数直接提供\"}"
     exit 1
+  fi
+
+  # xhs：publish_url 若带 xsec_token 则抽出透传（HTML 路线有 token 更稳；
+  # 当前发布侧多数未落 token，此处无则空，fetch-retro-data 仍可仅凭 cookie 走 HTML）
+  if [ "$PLATFORM" = "xhs" ] && [ -z "$XSEC_TOKEN" ]; then
+    XSEC_TOKEN=$(extract_xsec_token "$PUBLISH_URL")
+    if [ -n "$XSEC_TOKEN" ] && [ -z "$XSEC_SOURCE" ]; then
+      XSEC_SOURCE="pc_feed"
+    fi
   fi
 fi
 
@@ -300,12 +326,7 @@ for (const [k, v] of Object.entries(stats)) {
     args.push('--' + mapped + '=' + v);
   }
 }
-const comments = data.comments || [];
-if (comments.length > 0) {
-  const top = comments[0];
-  const text = (top.text || '').substring(0, 200).replace(/[\"']/g, '');
-  args.push('--top_comment=' + text);
-}
+// 只取互动计数，不抓评论（参考 wiseflow4-pro 各平台 processor：detail-only，风控最低）。
 // 即使无 stats 也输出 __empty__ 标记，避免被 bash 判为空
 if (args.length === 0) {
   console.log('__no_metrics__');

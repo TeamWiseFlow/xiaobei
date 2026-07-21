@@ -29,6 +29,7 @@ Use this skill when:
 2. **等待服务器响应**：每次执行脚本命令后，必须等待脚本返回 JSON 结果。若结果需要时间，**先向用户说明"正在请求服务器，请稍候……"**，然后等待。
 3. **严禁提前假设结果**：不得在脚本输出 JSON 之前就根据假设继续后续步骤。
 4. **批量前必须小样本验证**：批量抓全文前，必须先 `check`，再选 1 篇文章 `fetch` 验证链路成功；成功后才能批量。
+5. **中间产物归集到专用子目录**：执行过程中产生的任何中间/临时文件（命令输出落盘、解析片段、`_wx*.txt` / `_wx_*.txt` 之类的 scratch 捕获、二维码图片等）**一律写入工作区下的 `wx-mp-hunter-out/` 子目录**，不要散落工作区根目录。脚本本身只输出 JSON 到 stdout，凡需要落盘的中间态由你显式写到该子目录（必要时先 `mkdir -p wx-mp-hunter-out`）。最终交付给用户的文章 JSON/Markdown 也放该子目录。
 
 ---
 
@@ -50,7 +51,7 @@ Use this skill when:
 **每次使用前可选地检查 session 是否有效：**
 
 ```bash
-wx-mp-hunter check-session
+wx-mp-hunter check
 ```
 
 | 返回值 | 含义 |
@@ -58,7 +59,7 @@ wx-mp-hunter check-session
 | `{"ok": true}` | session 有效，可直接使用 |
 | `{"ok": false, "error": "SESSION_EXPIRED"}` (exit 2) | 需要重新登录 |
 
-`check` 内部走 camoufox-cli：`--session wx_mp --persistent open "https://mp.weixin.qq.com/"`（默认 headless）+ 读 redirect URL，跳到 `login` / `scanloginqrcode` = 失效，跳到 `/cgi-bin/home?...&token=xxx` = 有效。
+`check` 走纯 HTTP `_ping`（不起浏览器）：带 cookie+token GET `mp.weixin.qq.com/cgi-bin/home?t=home/index&token=<token>`，解析返回 HTML 的 `<h2>`——含「新的创作」= 有效，含「请重新登录」/`scanloginqrcode` = 失效。cookie + token 从中央存储 `wx_mp.json` 读。
 
 ---
 
@@ -72,7 +73,7 @@ wx-mp-hunter check-session
 wx-mp-hunter login
 ```
 
-脚本内部走 camoufox-cli：`--session wx_mp --persistent open "https://mp.weixin.qq.com/"`（默认 headless）+ `screenshot /tmp/qr-wx-mp.png`，**不 close session**（留着给 `login-confirm` 继续用）。等待脚本输出 JSON：
+脚本内部走 camoufox-cli：`--session wx_mp --persistent open "https://mp.weixin.qq.com/"`（默认 headless）+ `screenshot /tmp/qr-wx-mp.png`，**不 close session**（仅此一处例外：留给紧接的 `login-confirm` 复用同一进程，login-confirm 导出后即 close）。等待脚本输出 JSON：
 
 ```json
 {
@@ -100,10 +101,10 @@ wx-mp-hunter login
 wx-mp-hunter login-confirm
 ```
 
-脚本内部走 camoufox-cli：复用已开的 `wx_mp` session `open "https://mp.weixin.qq.com/"` → 读 redirect URL 验登录态就位（跳到 `/cgi-bin/home?...&token=xxx` = 就位）→ 从 URL 提 token → `cookies export ~/.openclaw/logins/wx_mp.json` + `identity export ~/.openclaw/logins/wx_mp.ua.json` → 把 token 合写进 `wx_mp.json`（cookie + token + ua + updated_at 同文件）→ **不 close session**（wx_mp 持久化 session 留给 wx-mp-engagement 复用，两 skill 共用同一 session）。等待脚本返回：
+脚本内部走 camoufox-cli：复用已开的 `wx_mp` session `open "https://mp.weixin.qq.com/"` → `eval window.location.href` 读 redirect URL 验登录态就位（跳到 `/cgi-bin/home?...&token=xxx` = 就位）→ 从 URL 提 token → `cookies export` 到临时文件 → **`_ping` 验证 cookie+token 真能用（后台首页返回「新的创作」）才 commit** → 写 `~/.openclaw/logins/wx_mp.json`（cookie + token + ua + updated_at 同文件）+ `identity export ~/.openclaw/logins/wx_mp.ua.json` → **close session**（登录态已落磁盘 profile + 中央存储，wx-mp-engagement 下次 `--session wx_mp --persistent` 重起无头即恢复，不留进程占内存）。验证不过直接报错、不写中央存储、不重试（避免风控）。等待脚本返回：
 
 ```json
-{"ok": true, "message": "登录成功，cookie + UA + token 已落中央存储（session 未关，留给下游复用）", "token": "..."}
+{"ok": true, "message": "登录成功，cookie + UA + token 已落中央存储（session 已关，登录态在磁盘 profile）", "token": "..."}
 ```
 
 | 情况 | 处理 |

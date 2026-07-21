@@ -4,6 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Claude Code 被授权在本仓库中执行任何 git 命令（包括 push、branch、tag 等），无需逐次确认。
 
+## Docker 部署规范
+
+- 用户态镜像、Compose service 和持久卷统一使用 **xiaobei** 命名；不得新增 `wiseflow-*` 镜像或卷名。
+- 运行态只持久化 `/root/.openclaw` 和 `/root/.camoufox-cli`。入口脚本必须从镜像 seed 初始化空卷，且不得覆盖已有用户状态。
+- Gateway/noVNC 默认只绑定 `127.0.0.1`，不得默认公开无密码 noVNC。
+
 ## Crew Template 开发规范
 
 创建或修改 crew template（`crews/` 下的任何 crew）时，必须遵循 `docs/workspace-bootstrap-files.md` 中定义的文件职责划分：
@@ -21,12 +27,7 @@ Claude Code 被授权在本仓库中执行任何 git 命令（包括 push、bran
 - 1、多步骤操作且涉及中间态保存的（下一步操作的某一输入为上一步返回结果），哪怕每一步都只是一条命令，也必须做脚本！
 - 2、涉及多分支选择，且分支选择依靠明确变量的（如环境变量中是否有某个值，或者按某个入参的值判断分支）应该优先用脚本。
 - 3、涉及 python 的，必须制作脚本，最终以 “python /path/to/script.py” 的模式调用。
-- 4、**crew 专属 skill**（`crews/<crew-id>/skills/` 下的 skill）如果包含脚本，SKILL.md 中对脚本调用的路径必须使用**绝对路径**写法，即 `python3 /<workspace 绝对路径>/skills/<skill-name>/scripts/<file>` 或 `/<workspace 绝对路径>/skills/<skill-name>/scripts/<file>`。**禁止** `cd <path> && python3 ...` 复合调用、**禁止** `bash <script>` 前缀、**禁止**工作区相对路径 `./skills/...`（实测相对路径 agent 容易误拼 CWD 或误加 `cd`/`bash` 前缀导致 allowlist miss，绝对路径最稳）。
-
-原因：openclaw exec allowlist 按命令前缀匹配，`cd` / `bash` 不在 allowlist 中；agent 的 exec 虽从 workspace CWD 执行，但实测相对路径 `./skills/...` 经常被 agent 误拼或误加前缀，直接用绝对路径最稳。注入到 TOOLS.md 的「exec 命令规范」由 `scripts/lib/agent-skills.sh` 在 setup-crew 时用真实 workspace 绝对路径渲染。
-
-**全局 skill**（`skills/` 目录下，部署到 `~/.openclaw/skills/`）同样优先用绝对路径。openclaw 加载 skill 时会注入 `References are relative to <skill绝对路径>` 提示，agent 据此将 `./scripts/xxx.sh` 解析为绝对路径，该机制可用但仍推荐直接写绝对路径。**不得**使用 `{baseDir}`——这是旧写法，模型经常无法正确推断 `{baseDir}` 的值而误用工作区相对路径。
-
+- 4、skill 目前已经全面实施wrapper模式，规避agent自行拼接路径带来的潜在错误风险，具体见 `docs/docker-distribution.md`
 - 5、skill 需要的常量（如各种 ID、KEY 等），搭配脚本时优先使用环境变量，搭配 SKILL.md 时优先使用同级目录下的 json 配置。
 
 本代码仓的 skill 是给 openclaw 使用的，以上原则是为了适配 openclaw 的规则。

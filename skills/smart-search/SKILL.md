@@ -1,7 +1,8 @@
 ---
 name: smart-search
 description: 智能搜索路由器。根据用户意图选择最佳搜索源，构造 URL 并导航，获取内容。
-  Replaces the built-in web_search tool for targeted, platform-specific searches.
+  仅在默认搜索手段效果不佳、或需要登录自媒体平台（抖音/小红书/微博等）搜索时启用本技能；
+  常规通用搜索请先用 onboard 配置的搜索供应商（火山/serper/Tavily 等）。
 metadata:
   openclaw:
     emoji: 🔍

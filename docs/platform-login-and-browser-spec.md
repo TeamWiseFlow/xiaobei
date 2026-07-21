@@ -139,7 +139,7 @@ camoufox-cli --session wx_mp --persistent --json identity export ~/.openclaw/log
 2. **探活 / 有头登录 / 导出 Cookie+UA 全交 login-manager**——本 skill 不自管，不调用 `cookies export` / `identity export` / `cookies import`。
 3. **自身不吃 Cookie**：发布脚本直接复用 login-manager 准备好的持久化 session `douyin`（`--session douyin --persistent`），不开临时 session、不 import cookie。
 4. **导出的 Cookie+UA 落中央存储仅供脚本类下游消费**（`viral-chaser` / `published-track`）——douyin-publish 自身不读这两个文件。
-5. **发布任务跑完不主动 close 持久化 session `douyin`**——登录态留着下次用；只在 session 卡死时 `camoufox-cli --session douyin --json close` teardown。
+5. **发布任务跑完即 close 持久化 session `douyin`**——登录态在磁盘 profile，不留进程占内存，下次发布 `--session douyin --persistent` 重起无头即恢复；只在 session 卡死时 `camoufox-cli --session douyin --json close` teardown。
 6. 子命令清单**无 `login`**：`upload` / `fill` / `publish` / `get-link` / `cleanup` / `run`（run 一键跑 upload → fill → publish → get-link，**不**自管探活）。
 
 ## 7. 显式有头/无头模式的场景规则（browser-guide 澄清点）
@@ -155,7 +155,7 @@ camoufox-cli --session wx_mp --persistent --json identity export ~/.openclaw/log
 
 **browser-guide §1-B 那句「wechat-channel / wx-mp 可无头启动截图发 QR；douyin / twitter / xhs / weibo / zhihu / xianyu / reddit / youtube 登录必须有头模式」要改**：
 - wx-mp 那个无头特例只属于 wx-mp-hunter/engagement 的自有体系，不属于 login-manager 体系，不应在 browser-guide 里和 wechat-channel 并列提。
-- wechat-channel（视频号）按现行 wechat-channels-publish 技能自有 SKILL.md 走，不在 browser-guide 里集中下结论。
+- wechat-channel（视频号）扫码登录页**无法无头截 QR**，必须 `--headed --viewport 1920x1080` 弹窗手动扫码（同 weibo / xianyu），按现行 wechat-channels-publish 技能自有 SKILL.md 走。
 
 ## 8. published-track 流程 2A·自动更新（定时任务用）取数方案
 

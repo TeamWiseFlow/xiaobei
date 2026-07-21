@@ -3,5 +3,8 @@
 # 让 agent 用 `init-workspace <cmd>` 走 PATH，零路径拼接。
 # 内部转发到 scripts/init.sh；wrapper 自身只是 exec 转发，不改语义。
 set -euo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELF="${BASH_SOURCE[0]}"
+# Resolve symlink (wrapper is ln -sfn'd into ~/.openclaw/bin) so SCRIPT_DIR points at the real skill dir.
+while [ -L "$SELF" ]; do SELF="$(readlink -f "$SELF")"; done
+SCRIPT_DIR="$(cd "$(dirname "$SELF")" && pwd)"
 exec "$SCRIPT_DIR/scripts/init.sh" "$@"

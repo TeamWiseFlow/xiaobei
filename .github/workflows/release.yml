@@ -26,7 +26,9 @@ concurrency:
 
 jobs:
   release:
-    # CI 已在 PR 期间验证过，此处直接做版本 bump + 打包发布
+    # wiseflow 走 git clone 路线（见 scripts/install.sh），无 release artifact 通道。
+    # 本 job 仅做版本 bump + tag push，让用户 update.sh 可拉特定 tag 而非总跟 master。
+    # 后续若重启 tarball 通道，在此 job 内追加 build / upload asset 步骤即可。
     if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
@@ -96,37 +98,3 @@ jobs:
           git commit -m "chore: bump version to ${{ steps.version.outputs.new }} [skip ci]"
           git tag "${{ steps.version.outputs.new }}"
           git push origin master --tags
-
-      - name: Read pinned openclaw version
-        id: pin
-        run: |
-          source openclaw.version
-          echo "commit=$OPENCLAW_COMMIT" >> "$GITHUB_OUTPUT"
-          echo "version=$OPENCLAW_VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Clone openclaw at pinned commit
-        run: |
-          git init openclaw
-          git -C openclaw remote add origin https://github.com/openclaw/openclaw.git
-          git -C openclaw fetch --depth=1 origin ${{ steps.pin.outputs.commit }}
-          git -C openclaw checkout FETCH_HEAD
-
-      - name: Package release
-        run: |
-          RELEASE_DIR="wiseflow-${{ steps.version.outputs.new }}"
-          # 复制整个项目到发布目录（保留 openclaw/.git 供 git apply --3way 使用）
-          cp -r . "../$RELEASE_DIR"
-          # 删除主仓库 .git 目录，保留 openclaw/.git
-          rm -rf "../$RELEASE_DIR/.git"
-          cd ..
-          zip -r "$RELEASE_DIR.zip" "$RELEASE_DIR"
-          mv "$RELEASE_DIR.zip" "$GITHUB_WORKSPACE/"
-
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${{ steps.version.outputs.new }}" \
-            "wiseflow-${{ steps.version.outputs.new }}.zip" \
-            --title "${{ steps.version.outputs.new }}" \
-            --generate-notes

@@ -43,5 +43,11 @@ wiseflow 针对原版 openclaw 提供的非侵入式补丁与依赖覆盖，由 
 | `003-act-field-validation.patch` | 2026-07-11（浏览器转向） | 默认走 camoufox-cli（不经 browser tool 的 act 路由），fallback 路径偶尔用，前置校验价值有限；先拿掉，后面有需求再加 |
 | `005-browser-timeout-env-var.patch` | 2026-07-11（浏览器转向） | 基于 patchright/browser tool 的超时调优，camoufox-cli 走旁路不受影响，fallback 路径偶尔用；先拿掉，后面有需求再加 |
 | `006-connectovercdp-no-defaults.patch` | 2026-07-11（浏览器转向） | `noDefaults` 是 patchright 1.60+ 专属选项，patchright 整体去掉后原版 playwright-core 的 `connectOverCDP` 不支持该参数；remote-cdp 保留但走原版 PW 即可 |
+| `008-strip-extension-all-deps.patch` | 2026-07-20（GA 预构建） | 分发改 GA matrix build 出平台 tarball，build 在 CI 跑全量 deps 不再 strip；"不装乱七八糟"改由 template 里 extensions disabled 在运行时控制 |
+| `011-strip-pnpm-workspace-patched-deps.patch` | 2026-07-20（GA 预构建） | 同 008，CI 跑全量 |
+| `012-strip-pnpm-workspace-mra-exclude.patch` | 2026-07-20（GA 预构建） | 同 008 |
+| `015-strip-pnpm-workspace-mra-codex.patch` | 2026-07-20（GA 预构建） | 同 008 |
+| `016-strip-root-deps-acp.patch` | 2026-07-20（GA 预构建） | 同 008 |
+| `017-strip-llama-cpp-optional-deps.patch` | 2026-07-20（GA 预构建） | 同 008；若 CI build 因 llama-cpp native 翻车再单独加回 |
 
 > 注：`007` 曾于 2026-07-11 计划"并入 001"并记入删除历史，后改为**保留为独立 patch**（system-prompt 引导与架构 patch 解耦，便于单独 revert/调序），见上 §1 active 表。

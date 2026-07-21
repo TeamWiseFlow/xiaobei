@@ -48,25 +48,21 @@ def err_exit(msg: str, code: int = 1) -> None:
     sys.exit(code)
 
 
-def load_cookies(cookie_file: Path | None = None) -> tuple[dict, str]:
-    """Load cookies + UA from central store.
+def _read_cookie_dict(path: Path) -> dict[str, str]:
+    """Read a camoufox-cli cookie file → flat {name: value} dict.
 
-    中央存储格式（forked camoufox-cli 原生输出，= Playwright add_cookies 期望格式）：
-      ~/.openclaw/logins/xhs-publish.json     → { platform, cookies: [{name, value, domain, ...}], updated_at }
-      ~/.openclaw/logins/xhs-publish.ua.json  → { userAgent, platform, language, ... }
-    同时导入 cookie 和 UA——同一指纹下的 cookie 才不会被风控错配。
+    兼容三种格式：camoufox-cli 原生裸数组 [{name, value, domain, ...}]（xhs-browse.json）、
+    {platform, cookies:[...], updated_at} 包壳（旧 login-and-verify 写）、
+    旧字符串 "k1=v1; k2=v2"。文件不存在 / 解析失败 → 空 dict。
     """
-    p = cookie_file or (LOGINS_DIR / "xhs-publish.json")
-    if not p.exists():
-        err_exit("AUTH_EXPIRED", 2)
+    if not path.exists():
+        return {}
     try:
-        data = json.loads(p.read_text())
-    except json.JSONDecodeError:
-        err_exit("AUTH_EXPIRED", 2)
-
-    raw = data.get("cookies", "")
-    # camoufox-cli 原生格式：cookies 是对象数组 [{name, value, domain, ...}]
-    cookie_dict: dict[str, str] = {}
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+    raw = data.get("cookies", "") if isinstance(data, dict) else data
+    out: dict[str, str] = {}
     if isinstance(raw, list):
         for c in raw:
             if not isinstance(c, dict):
@@ -74,29 +70,58 @@ def load_cookies(cookie_file: Path | None = None) -> tuple[dict, str]:
             name = c.get("name")
             value = c.get("value")
             if name and isinstance(value, str):
-                cookie_dict[name.strip()] = value.strip()
+                out[name.strip()] = value.strip()
     elif isinstance(raw, str) and raw:
-        # 向后兼容：旧格式字符串 "k1=v1; k2=v2"
         for item in raw.split(";"):
             item = item.strip()
             if "=" in item:
                 k, v = item.split("=", 1)
-                cookie_dict[k.strip()] = v.strip()
+                out[k.strip()] = v.strip()
+    return out
+
+
+def load_cookies(cookie_file: Path | None = None) -> tuple[dict, str]:
+    """Load merged cookies (创作者域 + 消费者域) + UA from central store.
+
+    AiToEarn 对齐：发布需同时带创作者域 session（galaxy_creator_session_id 等）和消费者域
+    web_session——两套由共享 camoufox profile（session=xhs-browse）的两步登录产出：
+      ~/.openclaw/logins/xhs-browse.json   → 消费者域（login-manager 管，web_session 最新）
+      ~/.openclaw/logins/xhs-publish.json  → 创作者域（本技能 SSO 后导出，galaxy_creator）
+    合并策略：以 xhs-publish.json 为底，xhs-browse.json 覆盖（web_session / a1 取消费者侧最新）。
+    UA 取 xhs-publish.ua.json（SSO 时刻 camoufox 指纹），缺失回退 xhs-browse.ua.json → DEFAULT_UA。
+    """
+    publish_path = cookie_file or (LOGINS_DIR / "xhs-publish.json")
+    browse_path = LOGINS_DIR / "xhs-browse.json"
+
+    cookie_dict = _read_cookie_dict(publish_path)
+    # xhs-browse 覆盖：web_session / a1 取消费者侧最新（login-manager 可能已轮换 web_session）
+    cookie_dict.update(_read_cookie_dict(browse_path))
 
     if not cookie_dict:
         err_exit("AUTH_EXPIRED", 2)
 
-    # UA 走独立文件（forked cli identity export 输出，与 cookies export 对称）
-    ua_path = p.parent / (p.stem + ".ua.json")
+    # UA：优先 xhs-publish.ua.json（SSO 时刻指纹），回退 xhs-browse.ua.json，再回退 DEFAULT_UA
     ua = DEFAULT_UA
-    if ua_path.exists():
-        try:
-            ua_data = json.loads(ua_path.read_text())
-            ua = ua_data.get("userAgent") or DEFAULT_UA
-        except (json.JSONDecodeError, OSError):
-            pass  # UA 文件读失败不阻断，回退 DEFAULT_UA
+    for ua_path in (publish_path.parent / "xhs-publish.ua.json", browse_path.parent / "xhs-browse.ua.json"):
+        if ua_path.exists():
+            try:
+                ua = json.loads(ua_path.read_text()).get("userAgent") or DEFAULT_UA
+                break
+            except (json.JSONDecodeError, OSError):
+                continue
 
+    # 发布门：a1（设备指纹）+ web_session（消费者域）+ 任一创作者会话 token，三者必备。
+    # 与 creator-session.ts presenceCheckCreator 对齐；探活（personal_info pong）由
+    # check-login.ts 发布前做，此处只做 cheap 字段门。
+    CREATOR_SESSION_KEYS = (
+        "galaxy_creator_session_id",
+        "galaxy.creator.beaker.session.id",
+        "access-token-creator.xiaohongshu.com",
+        "customer-sso-sid",
+    )
     if "a1" not in cookie_dict or "web_session" not in cookie_dict:
+        err_exit("AUTH_EXPIRED", 2)
+    if not any(k in cookie_dict for k in CREATOR_SESSION_KEYS):
         err_exit("AUTH_EXPIRED", 2)
 
     return cookie_dict, ua

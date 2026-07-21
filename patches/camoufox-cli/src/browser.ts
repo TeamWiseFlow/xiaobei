@@ -30,14 +30,16 @@ export class BrowserManager {
   private proxy: string | null;
   private geoip: boolean;
   private locale: string | null;
+  private viewport: [number, number] | null;
   private history: string[] = [];
   private historyIndex = -1;
 
-  constructor(persistent: string | null = null, proxy: string | null = null, geoip: boolean = true, locale: string | null = null) {
+  constructor(persistent: string | null = null, proxy: string | null = null, geoip: boolean = true, locale: string | null = null, viewport: [number, number] | null = null) {
     this.persistent = persistent;
     this.proxy = proxy;
     this.geoip = geoip;
     this.locale = locale;
+    this.viewport = viewport;
   }
 
   async launch(headless: boolean = true): Promise<void> {
@@ -52,6 +54,13 @@ export class BrowserManager {
     }
 
     const launchOpts: Record<string, unknown> = { headless };
+    if (this.viewport) {
+      // Fixed window size — overrides the fingerprint-derived (often mobile-ratio)
+      // default. Needed for headed logins where the QR code is cut off by a
+      // mobile viewport (weibo / xianyu / wechat-channels). camoufox-js maps
+      // `window` to a fixed window size in the generated fingerprint.
+      launchOpts.window = this.viewport;
+    }
     let proxySettings: { server: string; username?: string; password?: string } | null = null;
     if (this.proxy) {
       const settings = parseProxySettings(this.proxy);

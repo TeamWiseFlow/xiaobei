@@ -12,9 +12,12 @@
  * 靠字数比例估算的方案。标准版 2.0（volc.seedasr.auc）单价更低但只接受
  * audio.url，需自备 TOS 托管，未采用。
  *
- * 鉴权：兼容新旧控制台。
- *   - VOLC_ASR_ACCESS_KEY 设置 → 旧控制台双头：X-Api-App-Key + X-Api-Access-Key
- *   - 未设置 → 新控制台单头：X-Api-Key
+ * 鉴权：兼容新旧控制台（二选一，优先旧控制台双头）。
+ *   - 旧控制台双头：VOLC_ASR_APP_ID（数字 APP ID）+ VOLC_ASR_ACCESS_KEY（Access Token）
+ *     → X-Api-App-Key=APP_ID, X-Api-Access-Key=Token, user.uid=APP_ID
+ *   - 新控制台单头：VOLC_ASR_APP_KEY（APP Key）→ X-Api-Key=APP_KEY, user.uid=APP_KEY
+ *   注意：旧控制台 X-Api-App-Key 要的是数字 APP ID，不是 Secret Key/APP Key
+ *   （把 Secret Key 塞进 X-Api-App-Key 会得到 45000010 request and grant appid mismatch）。
  *
  * 实现说明：沿用 xhs.ts 同一模式（python3 -c 内联脚本调 requests），避免
  * Node fetch/FormData 在部分环境的兼容异常。
@@ -99,26 +102,31 @@ except ImportError as e:
     sys.exit(1)
 
 audio_path = sys.argv[1]
-app_key = os.environ.get("VOLC_ASR_APP_KEY")
-if not app_key:
-    print(json.dumps({"ok": False, "error": "环境变量 VOLC_ASR_APP_KEY 未设置（火山语音 APP ID/App Key）"}))
-    sys.exit(1)
+# 鉴权（二选一，优先旧控制台双头）：
+#   旧控制台双头：VOLC_ASR_APP_ID（数字 APP ID）+ VOLC_ASR_ACCESS_KEY（Access Token）
+#   新控制台单头：VOLC_ASR_APP_KEY（APP Key / X-Api-Key）
+app_id = os.environ.get("VOLC_ASR_APP_ID", "")
 access_key = os.environ.get("VOLC_ASR_ACCESS_KEY", "")
+app_key = os.environ.get("VOLC_ASR_APP_KEY", "")
 
 resource_id = os.environ.get("VOLC_ASR_RESOURCE_ID", "volc.bigasr.auc_turbo")
 url = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash"
 
-# 鉴权头：有 access_key 走旧控制台双头，否则新控制台单头
 headers = {
     "X-Api-Resource-Id": resource_id,
     "X-Api-Request-Id": str(uuid.uuid4()),
     "X-Api-Sequence": "-1",
 }
-if access_key:
-    headers["X-Api-App-Key"] = app_key
+if app_id and access_key:
+    headers["X-Api-App-Key"] = app_id
     headers["X-Api-Access-Key"] = access_key
-else:
+    uid = app_id
+elif app_key:
     headers["X-Api-Key"] = app_key
+    uid = app_key
+else:
+    print(json.dumps({"ok": False, "error": "火山 ASR 凭证未配置：需 VOLC_ASR_APP_ID+VOLC_ASR_ACCESS_KEY（旧控制台双头）或 VOLC_ASR_APP_KEY（新控制台单头）"}))
+    sys.exit(1)
 
 try:
     with open(audio_path, "rb") as f:
@@ -132,7 +140,7 @@ ext = os.path.splitext(audio_path)[1].lower().lstrip(".")
 fmt = ext if ext in ("wav", "mp3", "ogg") else "wav"
 
 body = {
-    "user": {"uid": app_key},
+    "user": {"uid": uid},
     "audio": {"data": b64, "format": fmt},
     "request": {
         "model_name": "bigmodel",

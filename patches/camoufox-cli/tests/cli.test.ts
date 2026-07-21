@@ -244,6 +244,12 @@ describe("buildCommand", () => {
     expect((cmd.params as any).path).toBe("ua.json");
   });
 
+  // --- Info ---
+  it("info", () => {
+    const cmd = buildCommand("info", ["info"]);
+    expect(cmd.action).toBe("info");
+  });
+
   // --- Upload ---
   it("upload single file via ref", () => {
     const cmd = buildCommand("upload", ["upload", "@e1", "/tmp/a.png"]);
@@ -299,7 +305,7 @@ describe("parseArgs", () => {
     const { flags } = parseArgs(["open", "https://example.com"]);
     expect(flags.session).toBe("default");
     expect(flags.headed).toBe(false);
-    expect(flags.timeout).toBe(1800);
+    expect(flags.timeout).toBe(60);
     expect(flags.json).toBe(false);
     expect(flags.persistent).toBeNull();
     expect(flags.proxy).toBeNull();

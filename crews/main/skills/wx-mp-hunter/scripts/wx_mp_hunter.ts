@@ -2,23 +2,24 @@
 /**
  * wx_mp_hunter.ts — WeChat Official Account Hunter CLI (TypeScript)
  *
- * 探活/登录走 camoufox-cli + 持久化 session `wx_mp`（无头截 QR 登录），
+ * 登录走 camoufox-cli + 持久化 session `wx_mp`（无头截 QR 登录），
  * 登录就位后导出 cookie + UA + token 落中央存储 `~/.openclaw/logins/wx_mp.json`
  * + `wx_mp.ua.json`，业务命令（search/account-posts/fetch）走 mpFetch 纯 HTTP，
  * cookie + token + UA 从中央存储读。
+ * 探活（check）也走 mpFetch 纯 HTTP（wx_mp _ping：GET /cgi-bin/home 解析 <h2>），不起浏览器。
  *
  * Commands:
- *   check                          探活（camoufox open + snapshot 看跳登录页）
+ *   check                          探活（HTTP _ping /cgi-bin/home 解析 <h2>）
  *   login                          无头截 QR 登录 → 导出 cookie+UA+token 落中央存储
  *   search <keyword>               搜索公众号
  *   account-posts <fakeid>         拉账号最新文章列表
  *   fetch <url>                    抓文章全文
  */
 
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { load as loadHtml } from "cheerio";
@@ -60,6 +61,16 @@ const ACCOUNTS_CACHE_FILE = process.env.WX_ACCOUNTS_CACHE_FILE ?? `${homedir()}/
 const QR_FILE = "/tmp/qr-wx-mp.png";
 const CAMOUFOX_CLI = process.env.CAMOUFOX_CLI ?? "camoufox-cli";
 const SESSION_NAME = "wx_mp";
+// 登录 in-progress 标记：防 agent 因延迟重复调 login 再 open mp.weixin.qq.com/，
+// 每次 open 都会刷新 scanloginqrcode 的 scene_id，把用户正在扫的旧 QR 作废
+// （手机端提示「系统错误」）。REUSE_WINDOW 内重复 login 直接 re-screenshot 同一 scene。
+const LOGIN_INPROGRESS_FILE = "/tmp/wx-mp-login-in-progress";
+const LOGIN_QR_REUSE_WINDOW_MS = 30_000;
+// login-confirm 轮询当前页等用户手机确认的最长时间。scanloginqrcode 页在用户
+// 点「确认登录」后会自动 redirect 到 /cgi-bin/home?token=xxx，原地轮询即可，
+// 不要再 open（open 会刷新 scene 作废 QR）。
+const LOGIN_CONFIRM_POLL_MAX_MS = 150_000;
+const LOGIN_CONFIRM_POLL_INTERVAL_MS = 3000;
 const execFileAsync = promisify(execFile);
 
 function timestampLocal(): string {
@@ -259,9 +270,9 @@ async function mergeAccountsToCache(
 
 // ── camoufox-cli 辅助 ──────────────────────────────────────────────────────────
 //
-// 探活/登录走 camoufox-cli + 持久化 session `wx_mp`（无头模式）。
-// 业务命令（search/account-posts/fetch）仍走 mpFetch 纯 HTTP，cookie + token + UA
-// 从中央存储 SESSION_FILE / UA_FILE 读。
+// 登录走 camoufox-cli + 持久化 session `wx_mp`（无头模式）。
+// 业务命令（search/account-posts/fetch）与探活（check）均走 mpFetch 纯 HTTP，
+// cookie + token + UA 从中央存储 SESSION_FILE / UA_FILE 读。
 
 /** camoufox-cli 调用封装：固定 --session wx_mp --persistent --json（默认即 headless） */
 async function camoufox(...args: string[]): Promise<JsonMap> {
@@ -288,7 +299,7 @@ async function camoufoxCurrentUrl(): Promise<string> {
 
 function checkRet(data: JsonMap): void {
   const baseResp = (data.base_resp as JsonMap | undefined) ?? {};
-  const ret = Number(baseResp0 ?? 0);
+  const ret = Number(baseResp.ret ?? 0);
   if (ret === 200003) {
     authExit("SESSION_EXPIRED");
   }
@@ -299,48 +310,153 @@ function checkRet(data: JsonMap): void {
 }
 
 /**
- * 探活：camoufox-cli open 公众号首页 + eval window.location.href 看是否跳 login。
- * 不验 SESSION_FILE TTL——camoufox session profile 自管登录态生命周期。
- * exit 0 = 有效；exit 2 = 失效（camoufox session 跳登录页 / SESSION_FILE 不存在）
+ * wx_mp `_ping`——带 cookie+token GET 公众号后台首页，解析 <h2> 判登录态。
+ * 借鉴 ~/wiseflow-pro/wiseflow4-pro/core/wis/wx_crawler.py _ping：
+ *   GET /cgi-bin/home?t=home/index&lang=zh_CN&token=<token>
+ *   <h2> 含「新的创作」→ 有效；含「请重新」/scanloginqrcode → 失效。
+ * 纯 HTTP，不起 camoufox，不依赖磁盘 profile，与 fetch/search 走同一 mpFetch 通道。
+ * cmdCheck（探活）与 cmdLoginConfirm（登录后验证）共用，避免两处判据漂移。
+ * 不抛——返回 {ok, reason, h2}，调用方决定 exit。
+ */
+async function pingWxMp(data: SessionData): Promise<{ ok: boolean; reason?: string; h2?: string }> {
+  if (!data.token) return { ok: false, reason: "missing token" };
+  const cookieJar = cookieDictFromSession(data);
+  if (Object.keys(cookieJar).length === 0) return { ok: false, reason: "empty cookie jar" };
+
+  let resp: Response;
+  try {
+    resp = await mpFetch({
+      method: "GET",
+      endpoint: `${MP_BASE}/cgi-bin/home`,
+      query: { t: "home/index", lang: "zh_CN", token: data.token },
+      cookieJar,
+      timeoutMs: 15000,
+    });
+  } catch (e) {
+    return { ok: false, reason: `home fetch error: ${(e as Error).message.slice(0, 120)}` };
+  }
+  if (!resp.ok) return { ok: false, reason: `home HTTP ${resp.status}` };
+
+  const html = await resp.text();
+  // 抽 <h2>...</h2> 文本：登录有效页有「新的创作」；失效页提示「请重新登录」
+  const h2Match = html.match(/<h2[^>]*>([\s\S]*?)<\/h2>/i);
+  const h2 = h2Match ? h2Match[1].replace(/<[^>]+>/g, "").trim() : "";
+  if (h2.includes("新的创作")) return { ok: true, h2 };
+  if (h2.includes("请重新") || html.includes("请重新登录") || html.includes("scanloginqrcode")) {
+    return { ok: false, reason: "home 页提示请重新登录", h2 };
+  }
+  // 兜底：没命中已知标志，按失效处理（避免误报有效）
+  return { ok: false, reason: "home 页未出现「新的创作」标志", h2 };
+}
+
+/**
+ * 探活：读中央存储 session → pingWxMp。
+ * exit 0 = 有效；exit 2 = 失效（session 文件缺 / token 缺 / 服务端判未登录 / 网络错）
  */
 async function cmdCheck(): Promise<void> {
-  // 先验 SESSION_FILE 存在（业务命令要 token + cookies）
   const data = await loadSession();
-  if (!data || !data.token) {
-    authExit("SESSION_EXPIRED");
+  if (!data) authExit("SESSION_EXPIRED");
+  const r = await pingWxMp(data);
+  if (r.ok) {
+    printJson({ ok: true, message: "session 有效", ping: "home", h2: r.h2 });
+    return;
   }
+  authExit(`SESSION_EXPIRED (${r.reason})`);
+}
 
-  // 再验 camoufox session 内登录态是否真就位
-  try {
-    await camoufox("open", `${MP_BASE}/`);
-    await sleep(3000);
-    const url = await camoufoxCurrentUrl();
-    // 不 close wx_mp 挧愿化 session——留着给 wx-mp-engagement / 下游 fetch 命令接力复用；
-    // 仅在 session 卡死时由调用方手动 logout 子命令 teardown。
-    if (url.includes("login") || url.includes("scanloginqrcode")) {
-      authExit("SESSION_EXPIRED");
-    }
-    printJson({ ok: true, message: "session 有效", url });
-  } catch (e: any) {
-    // camoufox-cli 调用失败（命令不可用 / session 卡死等）——视为失效让调用方重登
-    authExit("SESSION_EXPIRED");
-  }
+/** 登录 in-progress 标记：{ opened_at, qr_path, keepalive_pid? }。login 写、login-confirm 成功后清。 */
+interface LoginMarker {
+  opened_at: number;
+  qr_path: string;
+  keepalive_pid?: number;
+}
+
+async function readLoginMarker(): Promise<LoginMarker | null> {
+  return readJsonFile<LoginMarker>(LOGIN_INPROGRESS_FILE);
+}
+
+async function writeLoginMarker(openedAt: number, keepalivePid?: number): Promise<void> {
+  const marker: LoginMarker = { opened_at: openedAt, qr_path: QR_FILE };
+  if (keepalivePid) marker.keepalive_pid = keepalivePid;
+  await writeJsonFile(LOGIN_INPROGRESS_FILE, marker);
+}
+
+/** keep-alive 脚本路径（与本文件同目录）。detached spawn，撑过扫码间隙的 60s daemon 空闲超时。 */
+const KEEPALIVE_SCRIPT = join(dirname(new URL(import.meta.url).pathname), "wx_mp_keepalive.mjs");
+
+/** detached spawn keep-alive：每 20s ping daemon 重置 idle timer，撑到 login-confirm 接管。 */
+function spawnKeepalive(): number {
+  const child = spawn(process.execPath, [KEEPALIVE_SCRIPT, SESSION_NAME, CAMOUFOX_CLI], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  return child.pid ?? 0;
+}
+
+/** 杀 keep-alive（若还在）。吞错——进程已退或 pid 无效都忽略。 */
+function killKeepalive(pid?: number): void {
+  if (!pid) return;
+  try { process.kill(pid, "SIGTERM"); } catch { /* 已退或无效，忽略 */ }
+}
+
+async function clearLoginMarker(): Promise<void> {
+  // 清前先停 keep-alive，避免孤儿 ping 进程残留
+  const marker = await readLoginMarker();
+  killKeepalive(marker?.keepalive_pid);
+  try { await unlink(LOGIN_INPROGRESS_FILE); } catch { /* 已不在，忽略 */ }
 }
 
 /**
  * 无头截 QR 登录流：camoufox-cli open 公众号首页 → screenshot 截 QR PNG。
  * agent 拿 QR_FILE 用 image 工具发用户扫码，用户回复「已扫码」后再调 cmdLoginConfirm。
+ *
+ * 幂等：REUSE_WINDOW 内重复调 login 不再 open（每次 open 会刷新 scanloginqrcode 的
+ * scene_id 作废用户正在扫的 QR），直接 re-screenshot 同一 scene。screenshot 失败
+ * （daemon/页面已挂）才回退 open 新 scene，并提示 agent 新 QR 已生成。
  */
 async function cmdLoginQr(): Promise<void> {
   try {
-    await camoufox("open", `${MP_BASE}/`);
-    await sleep(3000);
-    await camoufox("screenshot", QR_FILE);
+    const marker = await readLoginMarker();
+    const now = Date.now();
+    const canReuse =
+      marker && now - marker.opened_at < LOGIN_QR_REUSE_WINDOW_MS && marker.qr_path === QR_FILE;
+
+    // 先杀上一轮残留 keep-alive（若有），避免多份 ping 进程并存
+    killKeepalive(marker?.keepalive_pid);
+
+    let openedAt = marker?.opened_at ?? 0;
+    let regenerated = false;
+    if (canReuse) {
+      // 复用现有 scene：只 re-screenshot，不 open。screenshot 失败 → 回退 open 新 scene。
+      try {
+        await camoufox("screenshot", QR_FILE);
+      } catch {
+        await camoufox("open", `${MP_BASE}/`);
+        await sleep(3000);
+        await camoufox("screenshot", QR_FILE);
+        openedAt = Date.now();
+        regenerated = true;
+      }
+    } else {
+      await camoufox("open", `${MP_BASE}/`);
+      await sleep(3000);
+      await camoufox("screenshot", QR_FILE);
+      openedAt = Date.now();
+    }
+    // detached keep-alive：撑过「login 返回 → agent 发图 → 用户扫码 → login-confirm 起」
+    // 这段无命令间隙的 60s daemon 空闲超时，否则浏览器死、scanloginqrcode 服务端轮询死、
+    // 手机「确认登录」无落地（2026-07-19 13:11 扫码失败根因）。login-confirm 起后 kill 它。
+    const keepalivePid = spawnKeepalive();
+    await writeLoginMarker(openedAt, keepalivePid);
     // 不 close session——留着给 cmdLoginConfirm 继续用
     printJson({
       ok: true,
       qr_path: QR_FILE,
-      message: "二维码已截，请用微信（公众号管理员账号）扫码，完成后运行 login-confirm",
+      regenerated,
+      message: regenerated
+        ? "原 QR scene 已失效（daemon/页面挂了），已重新生成新二维码，请用微信（公众号管理员账号）扫码新图，完成后运行 login-confirm"
+        : "二维码已截，请用微信（公众号管理员账号）扫码，完成后运行 login-confirm",
     });
   } catch (e: any) {
     errExit(`camoufox-cli 截 QR 失败: ${e?.message ?? String(e)}`);
@@ -349,17 +465,41 @@ async function cmdLoginQr(): Promise<void> {
 
 /**
  * 登录确认：用户扫码完成后调此命令。
- * 验 camoufox session 内登录态就位 → eval window.location.href 拿 redirect URL 提 token
- * → cookies export + identity export 落中央存储 → 写 SESSION_FILE（含 token）
+ * 原地轮询当前页 URL（login 留下的 scanloginqrcode 页）等手机确认 → 页面自动 redirect
+ * 到 /cgi-bin/home?token=xxx → 提 token → cookies export + identity export 落中央存储。
+ *
+ * ⚠️ 不再 `open mp.weixin.qq.com/`：未登录态下 open 会刷新 scanloginqrcode 的 scene_id，
+ * 把用户正在扫的 QR 作废（手机端「系统错误」）。这是 2026-07-19 07:36 扫码混乱的根因。
  */
 async function cmdLoginConfirm(): Promise<void> {
   try {
-    // 验登录态就位：open 首页应跳到 /cgi-bin/home?token=xxx
-    await camoufox("open", `${MP_BASE}/`);
-    await sleep(3000);
-    const url = await camoufoxCurrentUrl();
-    if (url.includes("login") || url.includes("scanloginqrcode")) {
-      errExit("登录态未就位——用户可能还没扫码确认，请告知用户完成手机端确认后重试");
+    // 接管轮询前先停 keep-alive（login 起的 detached ping），避免与本轮 eval 并存。
+    const marker = await readLoginMarker();
+    killKeepalive(marker?.keepalive_pid);
+
+    // 轮询当前页 URL，等用户手机点「确认登录」后 scanloginqrcode 页自动 redirect 到 home。
+    let url = "";
+    const deadline = Date.now() + LOGIN_CONFIRM_POLL_MAX_MS;
+    while (Date.now() < deadline) {
+      url = await camoufoxCurrentUrl();
+      if (url.includes("/cgi-bin/home") && url.includes("token=")) break;
+      // 还在 scanloginqrcode/login 页 = 用户还没确认，继续等
+      await sleep(LOGIN_CONFIRM_POLL_INTERVAL_MS);
+    }
+
+    if (!url.includes("/cgi-bin/home") || !url.includes("token=")) {
+      // 轮询超时仍没就位。最后再读一次 URL 给出明确诊断。
+      const finalUrl = url || (await camoufoxCurrentUrl().catch(() => ""));
+      if (!finalUrl) {
+        // 空 URL = 浏览器/daemon 已挂（eval 连不上）。QR 已失效——浏览器死则 scanloginqrcode
+        // 服务端轮询早死，手机「确认登录」无落地。不重试 open（会刷新 scene 作废），让 agent 重 login。
+        await clearLoginMarker();
+        errExit(`登录态未就位——浏览器/daemon 已挂（eval 返回空 URL）。QR 在扫码间隙被 60s 空闲超时回收而失效，手机「确认登录」无落地。请重新运行 login 获取新 QR（keep-alive 已加固，新 QR 会撑过扫码间隙）`);
+      }
+      if (finalUrl.includes("login") || finalUrl.includes("scanloginqrcode")) {
+        errExit(`登录态未就位——轮询 ${LOGIN_CONFIRM_POLL_MAX_MS / 1000}s 仍在 scanloginqrcode 页，用户可能没扫码或没点手机端「确认登录」。请确认手机端已完成确认后重试 login-confirm（不会作废当前 QR）`);
+      }
+      errExit(`登录态未就位——当前页 URL 异常: ${finalUrl.slice(0, 200)}`);
     }
 
     // 提 token
@@ -368,25 +508,49 @@ async function cmdLoginConfirm(): Promise<void> {
       errExit(`无法从 redirect URL 提取 token: ${url}`);
     }
 
-    // 导出 cookies + UA 落中央存储
-    await camoufox("cookies", "export", SESSION_FILE);
-    await camoufox("identity", "export", UA_FILE);
+    // 导出 cookies 到临时文件（不直接落中央存储——先 _ping 验过再 commit）
+    const tmpCookies = "/tmp/wx-mp-login-cookies.json";
+    await camoufox("cookies", "export", tmpCookies);
 
-    // 读导出的 cookies 文件 + token，写回 SESSION_FILE（扩展加 token 字段）
-    const exported = await readJsonFile<{ cookies: SessionData["cookies"]; updated_at?: string }>(SESSION_FILE);
+    // 读导出的 cookies + token 组 sessionData，先 _ping 验证再 commit
+    // camoufox-cli `cookies export` 写的是裸数组（见 patches/camoufox-cli/src/commands.ts），
+    // 兼容裸数组与 {cookies:[...]} 两种形状，否则 exported.cookies 为 undefined →
+    // cookies 落空，search/account-posts 无 Cookie 必失败。
+    const exported = await readJsonFile<
+      SessionData["cookies"] | { cookies?: SessionData["cookies"]; updated_at?: string }
+    >(tmpCookies);
+    const exportedCookies: SessionData["cookies"] = Array.isArray(exported)
+      ? exported
+      : (exported?.cookies ?? []);
     const ua = await loadUa();
     const sessionData: SessionData = {
       platform: "wx_mp",
-      cookies: exported?.cookies ?? [],
+      cookies: exportedCookies,
       token,
       ua: ua || undefined,
       updated_at: timestampLocal(),
     };
-    await writeJsonFile(SESSION_FILE, sessionData);
-    // 不 close wx_mp 持久化 session——登录态留着给 wx-mp-engagement 复用（两 skill 共用同一 session）；
-    // 仅当 session 卡死时由调用方手动 logout 子命令 teardown。
 
-    printJson({ ok: true, message: "登录成功，cookie + UA + token 已落中央存储（session 未关，留给下游复用）", token });
+    // 导出前验证：_ping 后台首页，确认 cookie+token 真能用，通过才 commit 中央存储。
+    // 落实「验证后再导出」原则——_ping 不过说明 cookie/token 不完整或账号异常，
+    // 不写中央存储（避免把失效 cookie 喂给下游），直接报错让 Agent 人工排查。
+    // 不重试（登录本身已走浏览器，再试只会触风控）。
+    const ping = await pingWxMp(sessionData);
+    if (!ping.ok) {
+      try { await camoufox("close"); } catch { /* 尽力关 session，忽略 */ }
+      errExit(`登录后 _ping 验证失败：${ping.reason}（后台首页未返回「新的创作」，cookie 未落中央存储——请人工检查账号状态，不重试避免风控）`);
+    }
+
+    // 验过 → commit 中央存储：写 SESSION_FILE（含 token）+ identity export UA
+    await writeJsonFile(SESSION_FILE, sessionData);
+    await camoufox("identity", "export", UA_FILE);
+
+    // close 掉无头浏览器——登录态已在磁盘 profile + 中央存储，不留进程占内存。
+    // 下游（wx-mp-engagement / 业务命令）按需重起无头 session，profile 桥接登录态。
+    try { await camoufox("close"); } catch { /* session 已退或卡死，忽略 */ }
+    await clearLoginMarker();
+
+    printJson({ ok: true, message: "登录成功，cookie + UA + token 已落中央存储（session 已关，登录态在磁盘 profile）", token, ping: "home", h2: ping.h2 });
   } catch (e: any) {
     errExit(`camoufox-cli 登录确认失败: ${e?.message ?? String(e)}`);
   }
@@ -694,6 +858,30 @@ async function cmdFetch(url: string, includeHtml: boolean, outputDir = "", downl
     result.content_html = $.html(contentEl) || "";
   }
 
+  // 图片本地化：--download-images 时并发下载到 <outputDir>/images/<hash>.<ext>，
+  // content_markdown 里的图片 URL 替换为 images/<hash>.<ext> 本地相对路径。
+  // 早期版本只解析了 flag 却没调 downloadImages → 参数失效，此处补回。
+  if (downloadImgs && images.length) {
+    const baseDir = outputDir || process.cwd();
+    const imgDir = join(baseDir, "images");
+    const dl = await downloadImages(images, { destDir: imgDir });
+    const downloaded: string[] = [];
+    const failed: string[] = [];
+    for (const [u, r] of dl) {
+      if (r.relPath) downloaded.push(`images/${r.relPath}`);
+      else failed.push(u);
+    }
+    result.content_markdown = contentMarkdown.replace(
+      /!\[[^\]]*\]\(([^)]+)\)/g,
+      (full, u: string) => {
+        const r = dl.get(u);
+        return r && r.relPath ? full.replace(`(${u})`, `(images/${r.relPath})`) : full;
+      },
+    );
+    result.images_local = downloaded;
+    result.images_failed = failed;
+  }
+
   printJson(result);
 }
 
@@ -701,12 +889,13 @@ function usage(): void {
   const lines = [
     "WeChat Official Account Hunter — 微信公众号内容获取工具",
     "",
-    "探活/登录走 camoufox-cli + �持久化 session `wx_mp`（无头截 QR），",
+    "登录走 camoufox-cli + 持久化 session `wx_mp`（无头截 QR），",
     "登录就位后导出 cookie + UA + token 落 ~/.openclaw/logins/wx_mp.{json,ua.json}。",
+    "探活（check）走 mpFetch 纯 HTTP（_ping /cgi-bin/home 解析 <h2>），不起浏览器。",
     "",
     "Usage:",
     "  node --experimental-strip-types wx_mp_hunter.ts check",
-    "    探活（camoufox open + snapshot 看跳登录页）；exit 0=有效 / 2=失效",
+    "    探活（HTTP _ping /cgi-bin/home 解析 <h2>）；exit 0=有效 / 2=失效",
     "  node --experimental-strip-types wx_mp_hunter.ts login",
     "    无头截 QR 登录 → 导出 cookie+UA+token 落中央存储",
     "    （agent 拿 /tmp/qr-wx-mp.png 发用户扫码，用户回复「已扫码」后再 login-confirm）",

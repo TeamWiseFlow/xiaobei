@@ -8,7 +8,7 @@ import * as path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as crypto from "node:crypto";
-import { loadDefaults } from "./config.js";
+import { loadDefaults, parseViewport } from "./config.js";
 
 const SOCKET_PREFIX = "/tmp/camoufox-cli-";
 // Linux sockaddr_un path limit is 108 bytes. With prefix "/tmp/camoufox-cli-"
@@ -51,7 +51,7 @@ function sendCommand(sockPath: string, command: Record<string, unknown>): Promis
   });
 }
 
-function spawnDaemon(session: string, headed: boolean, timeout: number, persistent: string | null, proxy: string | null = null, geoip: boolean = true, locale: string | null = null): Promise<void> {
+function spawnDaemon(session: string, headed: boolean, timeout: number, persistent: string | null, proxy: string | null = null, geoip: boolean = true, locale: string | null = null, viewport: [number, number] | null = null): Promise<void> {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const daemonPath = path.join(__dirname, "daemon.js");
 
@@ -61,6 +61,7 @@ function spawnDaemon(session: string, headed: boolean, timeout: number, persiste
   if (proxy) args.push("--proxy", proxy);
   if (!geoip) args.push("--no-geoip");
   if (locale) args.push("--locale", locale);
+  if (viewport) args.push("--viewport", `${viewport[0]}x${viewport[1]}`);
 
   spawn("node", [daemonPath, ...args], {
     detached: true,
@@ -80,22 +81,156 @@ function spawnDaemon(session: string, headed: boolean, timeout: number, persiste
   });
 }
 
-async function ensureDaemon(session: string, headed: boolean, timeout: number, persistent: string | null, proxy: string | null = null, geoip: boolean = true, locale: string | null = null): Promise<void> {
+/** Probe a running daemon's mode via the `info` action. Returns null if the
+ * daemon can't be reached or doesn't answer (caller falls back to reuse). */
+async function queryDaemonInfo(sockPath: string): Promise<{ headless: boolean; session: string } | null> {
+  try {
+    const resp = await sendCommand(sockPath, { id: "r1", action: "info", params: {} });
+    if (!resp.success) return null;
+    const data = resp.data as Record<string, unknown> | undefined;
+    if (!data) return null;
+    return { headless: Boolean(data.headless), session: String(data.session ?? "") };
+  } catch { return null; }
+}
+
+/** 探测并回收孤儿 camoufox-bin：persistent profile 被 lock 占着，但 daemon socket
+ * 已不在（daemon 挂了/被杀/卡死，浏览器没跟着死，仍占着 Firefox profile lock）。
+ * 不回收则 spawnDaemon 起的新浏览器拿不到 profile lock，会卡死或失败——这是
+ * 2026-07-19 wx_mp 4 孤儿 daemon + 1 占锁 camoufox-bin 事件的根因。
+ *
+ * lock 是 symlink，target 形如 "127.0.1.1:+36416"（IP + camoufox-bin pid）。
+ * 解出 pid → 杀整个进程树（优先杀 daemon=ppid 的进程组，回退杀 bin 自己）→ 清 lock。
+ * 返回 { recovered: true } 或 { recovered: false, reason } 让调用方 fail fast。 */
+function recoverOrphanBrowser(persistent: string): { recovered: boolean; reason?: string } {
+  const lockPath = path.join(persistent, "lock");
+  const parentLockPath = path.join(persistent, ".parentlock");
+  if (!fs.existsSync(lockPath)) return { recovered: true }; // 没锁，无需回收
+
+  let lockTarget = "";
+  try { lockTarget = fs.readlinkSync(lockPath).toString(); } catch { /* 非符号链接 */ }
+  const m = lockTarget.match(/[:+](\d+)$/);
+  const binPid = m ? parseInt(m[1], 10) : 0;
+  if (!binPid) {
+    return {
+      recovered: false,
+      reason: `profile ${persistent} 被 lock 占用但解析不出 camoufox-bin pid（lock=${lockTarget || "(非符号链接)"}）。请手动清理：rm -f ${lockPath} ${parentLockPath}`,
+    };
+  }
+
+  let binAlive = false;
+  try { process.kill(binPid, 0); binAlive = true; } catch { binAlive = false; }
+  if (!binAlive) {
+    // 浏览器已死，只是 lock 残留——清掉即可。
+    for (const p of [lockPath, parentLockPath]) { try { fs.unlinkSync(p); } catch {} }
+    return { recovered: true };
+  }
+
+  // 浏览器还活着但 daemon socket 已不在 = daemon 不可达（挂死或已退出留孤儿浏览器）。
+  // 杀整个进程树：优先杀 daemon（camoufox-bin 的 ppid）的进程组，回退杀 bin 自己。
+  let ppid = 0;
+  try {
+    const stat = fs.readFileSync(`/proc/${binPid}/stat`, "utf-8");
+    ppid = parseInt(stat.split(" ")[3], 10);
+  } catch { /* /proc 不可读（非 Linux）→ 只杀 bin 自己 */ }
+  const killTargets = ppid > 1 ? [ppid, binPid] : [binPid];
+  for (const pid of killTargets) {
+    try { process.kill(-pid, "SIGKILL"); } catch { try { process.kill(pid, "SIGKILL"); } catch {} }
+  }
+  // SIGKILL 不可拦，但 Firefox content procs 需一点时间跟随退出。最多等 ~2s。
+  for (let i = 0; i < 20; i++) {
+    try { process.kill(binPid, 0); } catch { break; }
+    const start = Date.now(); while (Date.now() - start < 100) { /* sync spin */ }
+  }
+  for (const p of [lockPath, parentLockPath]) { try { fs.unlinkSync(p); } catch {} }
+  return { recovered: true };
+}
+
+/** Tear down a live daemon so a fresh one can take its socket — used when the
+ * caller wants a different headed mode than the running daemon (headless is
+ * fixed at spawn time). Sends `close` (graceful), then force-kills the pid and
+ * removes socket/pid if it doesn't exit promptly. Best-effort, never throws. */
+async function killDaemon(session: string): Promise<void> {
+  const sockPath = getSocketPath(session);
+  const pidPath = getPidPath(session);
+  try { await sendCommand(sockPath, { id: "r1", action: "close", params: {} }); } catch {}
+  // Wait for graceful exit (shutdown unlinks socket + pid, then process.exit(0)).
+  // 8s (was 1s): shutdown() awaits manager.close() → context.close() which must
+  // let Playwright fully kill camoufox-bin. Firefox context close routinely takes
+  // 2-5s; the old 1s budget SIGKILL'd daemon.js mid-close, orphaning camoufox-bin.
+  // 30 orphaned Firefox processes from repeated headed↔headless mode switches
+  // OOM'd the box on 2026-07-17 22:34 (see memory 26/24).
+  for (let i = 0; i < 160; i++) {
+    if (!fs.existsSync(sockPath)) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  // Force kill if still alive (a hung command may block graceful shutdown).
+  // Kill the whole process GROUP (-pid): daemon.js is spawned detached:true so
+  // it's its own pgid leader, and camoufox-bin + content procs are its children.
+  // Killing only the daemon pid leaves camoufox-bin orphaned holding the profile
+  // lock + RAM. Fall back to plain pid if the group kill misses (ESRCH).
+  if (fs.existsSync(pidPath)) {
+    try {
+      const pid = parseInt(fs.readFileSync(pidPath, "utf-8").trim(), 10);
+      if (pid) {
+        try { process.kill(-pid, "SIGKILL"); } catch { try { process.kill(pid, "SIGKILL"); } catch {} }
+      }
+    } catch {}
+  }
+  for (const p of [sockPath, pidPath]) { try { fs.unlinkSync(p); } catch {} }
+  await new Promise((r) => setTimeout(r, 200));
+}
+
+async function ensureDaemon(session: string, headed: boolean, timeout: number, persistent: string | null, proxy: string | null = null, geoip: boolean = true, locale: string | null = null, viewport: [number, number] | null = null): Promise<void> {
   const sockPath = getSocketPath(session);
   if (fs.existsSync(sockPath)) {
     // Verify daemon is alive
+    let alive = false;
     try {
       await new Promise<void>((resolve, reject) => {
         const s = net.createConnection(sockPath, () => { s.destroy(); resolve(); });
         s.on("error", reject);
         s.setTimeout(2000, () => { s.destroy(); reject(new Error("timeout")); });
       });
-      return;
+      alive = true;
     } catch {
       try { fs.unlinkSync(sockPath); } catch {}
     }
+
+    if (alive) {
+      // headless is fixed at daemon spawn time, so reusing a live daemon
+      // silently drops a conflicting `--headed`/headless request. When the
+      // caller now wants a different mode than the running daemon, tear the old
+      // one down and spawn fresh so the flag actually takes effect. This is the
+      // fix for the "11:59 死机" incident (see memory 24-camoufox-cli-daemon-
+      // flag-gotcha): the agent's `--headed` was silently swallowed by a
+      // headless daemon, so it kept spawning headed windows that never
+      // attached. If we can't determine the running mode, reuse as before
+      // (don't thrash on an unresponsive daemon).
+      const info = await queryDaemonInfo(sockPath);
+      const wantHeadless = !headed;
+      if (info && info.headless !== wantHeadless) {
+        process.stderr.write(`[camoufox-cli] Daemon running headless=${info.headless} but caller requested headless=${wantHeadless}; restarting daemon to apply mode change\n`);
+        await killDaemon(session);
+        await evictForCap(session);
+        await spawnDaemon(session, headed, timeout, persistent, proxy, geoip, locale, viewport);
+        return;
+      }
+      return;
+    }
   }
-  await spawnDaemon(session, headed, timeout, persistent, proxy, geoip, locale);
+  // Backstop: don't let runaway callers accumulate live daemons past the cap.
+  await evictForCap(session);
+  // 孤儿浏览器回收：走到这里说明 socket 不存在（或已判死清理）。persistent profile
+  // 可能被一个无 daemon 看管的 camoufox-bin 锁着（daemon 挂了/被杀，浏览器没跟着死）。
+  // 不回收则 spawnDaemon 起的新浏览器拿不到 profile lock 会卡死/失败。
+  if (persistent) {
+    const r = recoverOrphanBrowser(persistent);
+    if (!r.recovered) {
+      process.stderr.write(`[camoufox-cli] ${r.reason}\n`);
+      process.exit(1);
+    }
+  }
+  await spawnDaemon(session, headed, timeout, persistent, proxy, geoip, locale, viewport);
 }
 
 export function listSessions(): string[] {
@@ -108,6 +243,54 @@ export function listSessions(): string[] {
     }
   } catch {}
   return sessions.sort();
+}
+
+// Hard cap on concurrently live daemons. Each daemon holds a full Firefox
+// instance (~200-400MB + several content processes); on a 13GB machine a
+// runaway agent can freeze the box in minutes by opening dozens of uniquely-
+// named sessions and never closing them (see memory 23-smart-search-session-
+// leak-crash: 72 open / 1 close). When a new daemon would exceed this cap we
+// evict the oldest live daemon (its profile persists, so login state survives)
+// before spawning. 6 leaves headroom for system + node gateway on 13GB
+// (each Firefox ~200-400MB + several content processes; 6 × ~400MB ≈ 2.4GB).
+const MAX_CONCURRENT_DAEMONS = 6;
+
+/** Verify a session's daemon is actually alive by probing its socket. */
+function daemonAlive(sockPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      const s = net.createConnection(sockPath, () => { s.destroy(); resolve(true); });
+      s.on("error", () => resolve(false));
+      s.setTimeout(1000, () => { s.destroy(); resolve(false); });
+    } catch { resolve(false); }
+  });
+}
+
+/** Before spawning a new daemon, if we're at the concurrent cap, close the
+ * oldest live daemon (oldest socket mtime) to make room. Excludes the session
+ * we're about to spawn. Best-effort — never throws. */
+async function evictForCap(session: string): Promise<void> {
+  const excludeSock = getSocketPath(session);
+  const candidates: { session: string; mtime: number }[] = [];
+  for (const s of listSessions()) {
+    const sock = getSocketPath(s);
+    if (sock === excludeSock) continue;
+    if (!(await daemonAlive(sock))) continue;
+    try {
+      const st = fs.statSync(sock);
+      candidates.push({ session: s, mtime: st.mtimeMs });
+    } catch {}
+  }
+  if (candidates.length < MAX_CONCURRENT_DAEMONS) return;
+  candidates.sort((a, b) => a.mtime - b.mtime);
+  const oldest = candidates[0];
+  process.stderr.write(`[camoufox-cli] Concurrent daemon cap (${MAX_CONCURRENT_DAEMONS}) reached, evicting oldest session ${oldest.session}\n`);
+  try {
+    await sendCommand(getSocketPath(oldest.session), { id: "r1", action: "close", params: {} });
+  } catch (e: any) {
+    process.stderr.write(`[camoufox-cli] Eviction close failed: ${e.message}\n`);
+  }
+  await new Promise((r) => setTimeout(r, 300));
 }
 
 // ---------------------------------------------------------------------------
@@ -123,13 +306,14 @@ export interface Flags {
   proxy: string | null;
   geoip: boolean;
   locale: string | null;
+  viewport: [number, number] | null;
 }
 
 export function parseArgs(argv: string[]): { flags: Flags; command: Record<string, unknown> } {
   // Flag precedence: command line > config file (per-session block, then the
   // `default` block) > built-in defaults. Only flags explicitly passed on the
   // command line are collected here, so they always win over config.
-  const builtin: Flags = { session: "default", headed: false, timeout: 1800, json: false, persistent: null, proxy: null, geoip: true, locale: null };
+  const builtin: Flags = { session: "default", headed: false, timeout: 60, json: false, persistent: null, proxy: null, geoip: true, locale: null, viewport: null };
   const cli: Partial<Flags> = {};
   const rest: string[] = [];
 
@@ -143,7 +327,7 @@ export function parseArgs(argv: string[]): { flags: Flags; command: Record<strin
         cli.headed = true;
         break;
       case "--timeout":
-        cli.timeout = parseInt(argv[++i] ?? "1800", 10);
+        cli.timeout = parseInt(argv[++i] ?? "60", 10);
         break;
       case "--json":
         cli.json = true;
@@ -167,6 +351,12 @@ export function parseArgs(argv: string[]): { flags: Flags; command: Record<strin
       case "--locale":
         cli.locale = argv[++i] ?? (process.stderr.write("Error: --locale requires a value\n"), process.exit(1), "");
         break;
+      case "--viewport": {
+        const vp = parseViewport(argv[++i]);
+        if (!Array.isArray(vp)) { process.stderr.write("Error: --viewport requires a value like 1920x1080\n"); process.exit(1); }
+        cli.viewport = vp;
+        break;
+      }
       default:
         rest.push(argv[i]);
     }
@@ -270,6 +460,8 @@ export function buildCommand(action: string, rest: string[]): Record<string, unk
 
     case "sessions":
       return { id: "r1", action: "sessions", params: {} };
+    case "info":
+      return { id: "r1", action: "info", params: {} };
     case "install":
       return { id: "r1", action: "install", params: { with_deps: rest.includes("--with-deps") } };
     case "cookies": {
@@ -440,6 +632,23 @@ async function main() {
     return;
   }
 
+  // Client-side: info — probe a session's daemon mode without spawning one.
+  if (action === "info") {
+    const sockPath = getSocketPath(flags.session);
+    const info = await queryDaemonInfo(sockPath);
+    if (!info) {
+      if (flags.json) console.log(JSON.stringify({ session: flags.session, running: false }, null, 2));
+      else console.log(`No active daemon for session ${flags.session}.`);
+      return;
+    }
+    if (flags.json) {
+      console.log(JSON.stringify({ session: info.session, headless: info.headless, headed: !info.headless, running: true }, null, 2));
+    } else {
+      console.log(`session=${info.session} headless=${info.headless} headed=${!info.headless}`);
+    }
+    return;
+  }
+
   // Client-side: close --all
   if (action === "close" && (command.params as any)?.all) {
     const sessions = listSessions();
@@ -453,7 +662,7 @@ async function main() {
   }
 
   // Ensure daemon is running
-  await ensureDaemon(flags.session, flags.headed, flags.timeout, flags.persistent, flags.proxy, flags.geoip, flags.locale);
+  await ensureDaemon(flags.session, flags.headed, flags.timeout, flags.persistent, flags.proxy, flags.geoip, flags.locale, flags.viewport);
 
   const sockPath = getSocketPath(flags.session);
 
@@ -515,6 +724,7 @@ Tabs:
 
 Session:
   sessions                List active sessions
+  info                    Show this session's daemon mode (headless/headed)
   cookies [import|export] Manage cookies
   identity [export <f>]   Show/export UA + fingerprint summary
 
@@ -524,12 +734,15 @@ Setup:
 Flags:
   --session <name>     Session name (default: "default")
   --headed             Show browser window
-  --timeout <secs>     Daemon idle timeout (default: 1800)
+  --timeout <secs>     Daemon idle timeout (default: 60, hard max 60 — daemons
+                        self-exit when idle to avoid browser accumulation; login
+                        state lives in the profile dir and survives exit)
   --json               Output as JSON
   --persistent [path]  Persistent identity — freeze fingerprint/OS/locale + store cookies/state (default: ~/.camoufox-cli/profiles/<session>)
   --proxy <url>        Proxy server (e.g. http://host:port or https://host:443)
   --no-geoip           Disable automatic GeoIP spoofing (auto-enabled with --proxy)
   --locale <tag>       Force browser locale (e.g. "en-US" or "en-US,zh-CN")
+  --viewport <WxH>     Fixed window size, e.g. 1920x1080 (default: fingerprint-derived)
 
 Config file:
   ~/.camoufox-cli/config.json sets defaults for the flags above (override the

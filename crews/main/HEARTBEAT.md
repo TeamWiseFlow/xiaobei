@@ -24,7 +24,7 @@
 
 4. **⛔ 登录失效一律「跳过 + 记录 + 汇总上报」，严禁硬行恢复登录**
 
-   任何平台的取数端登录失效（`SESSION_EXPIRED` / login-manager 探活失败 / 浏览器跳登录页 / `get-xhs-user-id.sh` exit 2 等）时，**必须**：
+   任何平台的取数端登录失效（`SESSION_EXPIRED` / 探活失败 / 浏览器跳登录页 / `get-xhs-user-id.sh` exit 2 等）时，**必须**：
    - 立即**跳过该平台**本轮取数，不再尝试任何取数动作；
    - 把平台名记入 `EXPIRED_PLATFORMS`，在 Step 5 统一汇报，由用户**白天**用 login-manager 重新登录；
    - **不得**在凌晨心跳里扫码登录、不得唤醒用户。
@@ -32,8 +32,6 @@
    **严禁的"硬行恢复"动作**（任一都可能触发平台风控/限流/封号）：
    - ❌ 用 CDP `Network.setCookies` 把本地存的 cookie **注入**浏览器去"造"一个登录会话
    - ❌ 反复刷新/重导航 profile 页试图"刷出"登录态
-   - ❌ 不带 xsec_token 硬调 feed API 试 fallback
-   - ❌ 任何绕过 login-manager 正常探活流程的私拉会话操作
 
    > 本规范下方 Step 2 / Step 5 已写明，但 **2026-06-29 凌晨 Agent 未遵守**：xhs-browse 浏览器无登录态时，Agent 用 CDP 注入 22 个 cookie 强造会话后批量抓取，**当日触发小红书风控、账号被处罚**。故在此特别前置强调。
 

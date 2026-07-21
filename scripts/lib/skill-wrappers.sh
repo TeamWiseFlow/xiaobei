@@ -40,6 +40,8 @@ expose_skill_wrappers() {
     esac
     wrapper="$skill_dir${skill_name}.sh"
     [ -f "$wrapper" ] || continue
+    # wrapper 需可执行：agent 走 PATH exec 调 `<skill> <cmd>`，缺 +x 会「权限不够」。
+    chmod +x "$wrapper"
     ln -sfn "$wrapper" "$OPENCLAW_BIN_DIR/$skill_name"
     exposed=$((exposed + 1))
   done

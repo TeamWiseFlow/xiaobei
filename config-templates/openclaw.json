@@ -251,7 +251,7 @@
   },
   "channels": {
     "openclaw-weixin": {
-      "enabled": true
+      "enabled": false
     }
   },
   "gateway": {
@@ -346,7 +346,7 @@
   },
   "plugins": {
     "load": {
-      "paths": []
+      "paths": ["${XIAOBEI_HOME}/awada"]
     },
     "entries": {
       "awada": {
@@ -373,7 +373,7 @@
         }
       },
       "openclaw-weixin": {
-        "enabled": true
+        "enabled": false
       }
     }
   },

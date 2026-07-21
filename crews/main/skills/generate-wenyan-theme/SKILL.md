@@ -52,7 +52,7 @@ metadata:
 ### URL 模式
 
 ```bash
-generate-wenyan-theme --url <mp.weixin.qq.com-url> --output wenyan-theme-sources.json
+generate-wenyan-theme --url <mp.weixin.qq.com-url> --output wenyan-theme/sources.json
 ```
 
 输出 JSON 中 `articles[0].content_html` 为文章正文 HTML。
@@ -60,13 +60,13 @@ generate-wenyan-theme --url <mp.weixin.qq.com-url> --output wenyan-theme-sources
 ### 公众号账号模式
 
 ```bash
-generate-wenyan-theme --account <公众号名> --count 10 --output wenyan-theme-sources.json
+generate-wenyan-theme --account <公众号名> --count 10 --output wenyan-theme/sources.json
 ```
 
 如果用户同时给出关键词或筛选信息，传入 `--keywords`：
 
 ```bash
-generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2" --count 10 --scan-batch 20 --max-scan 100 --output wenyan-theme-sources.json
+generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2" --count 10 --scan-batch 20 --max-scan 100 --output wenyan-theme/sources.json
 ```
 
 筛选规则：
@@ -130,8 +130,10 @@ generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2
 
 ### 5. 输出文件路径约束
 
-- 采集输出 JSON：必须是当前工作目录下的单个 `.json` 文件名，禁止目录、绝对路径和 `..` 上跳。
-- 生成的 CSS：只写入当前工作目录内的相对 `.css` 路径，禁止绝对路径、`..` 上跳、隐藏目录和非 `.css` 后缀。
+**所有产物（采集 JSON + 生成的 CSS）统一放工作区下专用子目录 `wenyan-theme/`，不要散落工作区根。** 脚本会自动 `mkdir -p` 该子目录。
+
+- 采集输出 JSON：工作区内相对 `.json` 路径，可含子目录（如 `wenyan-theme/sources.json`）；禁止绝对路径和 `..` 上跳。
+- 生成的 CSS：写入同一 `wenyan-theme/` 子目录下的相对 `.css` 路径（如 `wenyan-theme/custom-theme.css`）；禁止绝对路径、`..` 上跳、隐藏目录和非 `.css` 后缀。
 
 ---
 
@@ -259,7 +261,7 @@ generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2
 
 1. **分析需求**：提取关键词（如：深色、科技风、可爱），确定主色调和风格方向
 2. **生成 CSS**：严格按照命名空间约束和上述规范，生成完整的 CSS 代码
-3. **保存文件**：将 CSS 写入本地文件（如 `custom-theme.css`）
+3. **保存文件**：将 CSS 写入 `wenyan-theme/` 子目录（如 `wenyan-theme/custom-theme.css`）
 4. **注册主题**：更新 `./skills/wx-mp-publisher/SKILL.md` 的“主题选择”表格，追加或更新该自定义主题记录
 5. **后续引导**：提示使用 `wx-mp-publisher` 技能的第二个位置参数传入自定义 CSS 路径进行发布
 
@@ -268,7 +270,7 @@ generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2
 1. **识别链接**：确认用户输入包含 `https://mp.weixin.qq.com` 开头的文章 URL。
 2. **采集 HTML**：运行采集脚本：
    ```bash
-   generate-wenyan-theme --url <url> --output wenyan-theme-sources.json
+   generate-wenyan-theme --url <url> --output wenyan-theme/sources.json
    ```
 3. **分析样式**：读取输出 JSON，基于 `articles[0].content_html` 分析标题、段落、引用、分割线、强调、图片周边等样式特征。
 4. **生成 CSS**：将可迁移特征映射到 `#wenyan` 选择器体系，不复制无效的微信原始 class 或 inline style。
@@ -281,11 +283,11 @@ generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2
    - 无筛选信息：抓最近 10 篇。
    - 有筛选信息：从最近 20 篇开始筛选，不足则继续下一批 20 篇。
    ```bash
-   generate-wenyan-theme --account <公众号名> --count 10 --output wenyan-theme-sources.json
+   generate-wenyan-theme --account <公众号名> --count 10 --output wenyan-theme/sources.json
    ```
    或：
    ```bash
-   generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2" --count 10 --scan-batch 20 --max-scan 100 --output wenyan-theme-sources.json
+   generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2" --count 10 --scan-batch 20 --max-scan 100 --output wenyan-theme/sources.json
    ```
 3. **向用户确认**：生成 CSS 前，必须向用户展示拟参考的文章列表（标题、发布时间/链接、匹配关键词），并询问是否继续。用户确认后再生成。
 4. **抽取共性**：优先使用多篇文章共同出现的视觉规律；冲突样式按出现频次和标题层级一致性取舍。
@@ -327,8 +329,8 @@ generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2
 
 注册要求：
 
-- `theme-id` 使用 CSS 文件名去掉 `.css` 后缀，例如 `custom-theme.css` → `custom-theme`。
-- CSS 文件路径写相对路径，优先使用当前 crew workspace 内路径。
+- `theme-id` 使用 CSS 文件名去掉 `.css` 后缀，例如 `wenyan-theme/custom-theme.css` → `custom-theme`。
+- CSS 文件路径写相对路径（含 `wenyan-theme/` 子目录），优先使用当前 crew workspace 内路径。
 - 如果同名 `theme-id` 已存在，更新原行，不重复追加。
 - 自定义主题必须在风格描述中标注“用户自定义”。
 - 自定义主题的适用场景必须强调：**用户指定参考时优先采用**。
@@ -338,7 +340,7 @@ generate-wenyan-theme --account <公众号名> --keywords "关键词1,关键词2
 
 ```bash
 # 1) 直接传 CSS 文件路径
-wx-mp-publisher article.md custom-theme.css
+wx-mp-publisher article.md wenyan-theme/custom-theme.css
 # 2) 传登记在主题表里的 theme-id（脚本自动解析出 CSS 路径）
 wx-mp-publisher article.md custom-theme
 ```
@@ -350,7 +352,7 @@ wx-mp-publisher article.md custom-theme
 生成 CSS 文件后，用 `wx-mp-publisher` 发布，第二个位置参数即主题（CSS 路径或登记的 theme-id 均可）：
 
 ```bash
-wx-mp-publisher article.md custom-theme.css
+wx-mp-publisher article.md wenyan-theme/custom-theme.css
 # 或
 wx-mp-publisher article.md custom-theme
 ```

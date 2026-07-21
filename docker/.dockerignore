@@ -2,6 +2,9 @@
 **/node_modules
 **/dist
 **/.git
+!openclaw/.git
+!openclaw/.git/**
+**/.DS_Store
 awada/node_modules
 openclaw/node_modules
 *.log
