@@ -69,27 +69,23 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 
 一行命令，全程无需预装 Node / pnpm / git（tarball 自带 portable Node + pnpm）。脚本完成后**唯一人工输入**是填 `AWK_API_KEY`（火山方舟 Coding Plan 的 key）。
 
-**国内用户（默认走 atomgit 镜像，免梯子）：** atomgit 仓 `https://atomgit.com/wiseflow/xiaobei` 每晚从上游同步，install.sh 与 release tarball 默认都走 atomgit：
+**macOS / Linux（bash，一行命令）：**
 
 ```bash
-bash -c "$(curl -fsSL https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)"
 ```
-
-**海外 / 有梯子用户（GitHub，加 `--github` 切回）：**
-
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)" -s -- --github
-```
-
-> install.sh 默认走 atomgit 的 Gitea API 取最新 tag（atomgit 每晚自动同步上游 tag + release），全程不访问 `api.github.com`。指定版本：`export XIAOBEI_TAG=v5.6.0`。自定义镜像：`--mirror <url>` 或 `XIAOBEI_MIRROR=<url>`（自定义镜像请配 `XIAOBEI_TAG` 指定版本）。
-
-> 💡 **下载中断 / 安装失败？多试几次就好。** tarball 体积较大（~140MB），首装还要下 Firefox 反指纹浏览器（~557MB），国内网络偶发中断属正常。脚本幂等，重跑会续上已下的部分；实在卡可换 `--github` 走 GitHub release，或用 `XIAOBEI_MIRROR=<url>` 换镜像。
 
 **Windows（PowerShell）：**
 
 ```powershell
-irm https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.ps1 | iex
 ```
+
+> install.sh / install.ps1 默认走 GitHub release 取最新 tag + 下载 tarball。指定版本：`export XIAOBEI_TAG=v5.6.0`（PowerShell：`$env:XIAOBEI_TAG="v5.6.0"`）。自定义镜像：`--mirror <url>` 或 `XIAOBEI_MIRROR=<url>`（自定义镜像请配 `XIAOBEI_TAG` 指定版本）。
+
+> 💡 **下载中断 / 安装失败？多试几次就好。** tarball 体积较大（~140MB），首装还要下 Firefox 反指纹浏览器（~557MB），网络偶发中断属正常。脚本幂等，重跑会续上已下的部分；实在卡可换 `XIAOBEI_MIRROR=<url>` 换镜像。
+
+> ℹ️ **国内镜像**：atomgit 国内镜像（`--atomgit`）正在修复中——当前其 raw 文件接口返回 SPA 页面、API 被 WAF 拦截、v5.6.0 资产未同步，暂不可用。修复后会重新作为国内默认通道。在此之前国内用户走上面的 GitHub 即可（GitHub release 的 tarball 下载走 CDN，多数国内网络可直连，慢的话多试几次）。
 
 > ⚠️ **Windows 必须装 bash**（Git Bash 或 WSL）。install.ps1 用 `tar`（Win10 1803+ 自带）解压 tarball，但 `setup-crew.sh` 是 bash 脚本，部署 crew workspace 离不开 bash。无 bash 时脚本会跳过 crew 模板部署并提示手动补跑——此时小贝团队起不来。装 Git Bash：https://git-scm.com （安装时勾选 "Add to PATH"）。
 
@@ -127,10 +123,10 @@ irm https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.ps1 |
 **已装用户重跑 install 脚本即升级**：脚本检测到 `~/.openclaw/openclaw.json` 已存在时自动走更新路线——只刷新程序目录 `~/xiaobei/`（拉新 tarball + `pnpm install --prod` 重建依赖 + 幂等刷 camoufox/weixin/awada）+ restart gateway，**不碰运行数据**（openclaw.json / workspace / daemon.env 已有 key 全保留）。要强覆盖运行数据加 `--force`（会备份旧 openclaw.json）。
 
 ```bash
-# 国内（默认 atomgit）
-bash -c "$(curl -fsSL https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.sh)"
-# 海外
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)" -s -- --github
+# macOS / Linux
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)"
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.ps1 | iex
 ```
 
 > 已手动 `git clone` 仓做开发的用户仍可用 `scripts/update.sh` 走 fetch + rebuild 路线（不重装依赖、不卸 daemon）。普通用户用上面的 install 脚本即可。

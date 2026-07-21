@@ -25,8 +25,9 @@ param(
     [string]$Root = "",                 # 程序目录覆盖（默认 ~\xiaobei）
     [string]$Tag = "",                  # 指定 release tag
     [string]$Tarball = "",              # 本地已下好的 tarball 路径，跳过下载
-    [string]$Mirror = "",               # 自定义镜像站根（覆盖默认 atomgit）
-    [switch]$GitHub,                    # 切回 GitHub release（不走默认 atomgit）
+    [string]$Mirror = "",               # 自定义镜像站根（覆盖默认 GitHub）
+    [switch]$GitHub,                    # 走 GitHub release（现已默认；保留向后兼容）
+    [switch]$Atomgit,                   # 切回 atomgit 国内镜像（当前 infra 不可用，待修复）
     [switch]$Force,                     # 强覆盖已有运行数据（~\.openclaw）
     [switch]$SkipBind,                  # 跳过末尾微信扫码绑定
     [switch]$SkipBrowser,               # 跳过 camoufox-cli 浏览器二进制（冒烟/CI）
@@ -41,13 +42,14 @@ if (-not $Root) {
     $Root = if ($env:XIAOBEI_HOME) { $env:XIAOBEI_HOME } else { Join-Path $env:USERPROFILE "xiaobei" }
 }
 $OpenclawHome = if ($env:OPENCLAW_HOME) { $env:OPENCLAW_HOME } else { Join-Path $env:USERPROFILE ".openclaw" }
-# 默认走 atomgit 国内镜像；-GitHub 或 XIAOBEI_SOURCE=github 切回 GitHub
+# 默认走 GitHub release（atomgit 国内镜像当前不可用：raw 返回 SPA HTML、API 被 CloudWAF 拦 418、
+# v5.6.0 资产未同步 404）。-Atomgit 或 XIAOBEI_SOURCE=atomgit 切回 atomgit（待其 infra 修复后可用）。
 $AtomgitMirror = "https://atomgit.com/wiseflow/xiaobei"
 if (-not $Mirror) {
-    if ($GitHub -or $env:XIAOBEI_SOURCE -eq "github") {
-        $env:XIAOBEI_MIRROR = ""
-    } else {
+    if ($Atomgit -or $env:XIAOBEI_SOURCE -eq "atomgit") {
         $env:XIAOBEI_MIRROR = if ($env:XIAOBEI_MIRROR) { $env:XIAOBEI_MIRROR } else { $AtomgitMirror }
+    } else {
+        $env:XIAOBEI_MIRROR = ""
     }
 } else {
     $env:XIAOBEI_MIRROR = $Mirror

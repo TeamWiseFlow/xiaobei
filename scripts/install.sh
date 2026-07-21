@@ -39,13 +39,14 @@ WISEFLOW_REPO="${XIAOBEI_REPO:-TeamWiseFlow/xiaobei}"
 # 与运行数据目录 OPENCLAW_HOME（~/.openclaw：openclaw.json + daemon.env + workspace-*）分离。
 # 不隐藏：用户能直接 ls 看到，符合"小白友好"。
 WISEFLOW_ROOT_DEFAULT="${XIAOBEI_HOME:-$HOME/xiaobei}"
-# 默认走 atomgit 国内镜像（仓根），--github 或 XIAOBEI_SOURCE=github 切回 GitHub。
+# 默认走 GitHub release（atomgit 国内镜像当前不可用：raw 返回 SPA HTML、API 被 CloudWAF 拦 418、
+# v5.6.0 资产未同步 404）。--atomgit 或 XIAOBEI_SOURCE=atomgit 切回 atomgit（待其 infra 修复后可用）。
 # 资产 URL 构造为 $XIAOBEI_MIRROR/releases/download/{tag}/xiaobei-{tag}-{plat}.{tar.zst|tar.gz}
 XIAOBEI_ATOMGIT_MIRROR="https://atomgit.com/wiseflow/xiaobei"
-if [[ "${XIAOBEI_SOURCE:-}" == "github" ]]; then
-    XIAOBEI_MIRROR="${XIAOBEI_MIRROR:-}"
-else
+if [[ "${XIAOBEI_SOURCE:-}" == "atomgit" ]]; then
     XIAOBEI_MIRROR="${XIAOBEI_MIRROR:-$XIAOBEI_ATOMGIT_MIRROR}"
+else
+    XIAOBEI_MIRROR="${XIAOBEI_MIRROR:-}"
 fi
 # tarball 内 ship 的 portable Node / pnpm 入口（相对 WISEFLOW_ROOT）
 PORTABLE_NODE="tools/node/bin/node"
@@ -1215,9 +1216,15 @@ parse_args() {
                 shift
                 ;;
             --github)
-                # 切回 GitHub release（不走默认 atomgit 镜像）
+                # 走 GitHub release（现已默认；保留 flag 向后兼容）
                 XIAOBEI_SOURCE=github
                 XIAOBEI_MIRROR=""
+                shift
+                ;;
+            --atomgit)
+                # 切回 atomgit 国内镜像（当前 infra 不可用，待修复）
+                XIAOBEI_SOURCE=atomgit
+                XIAOBEI_MIRROR="$XIAOBEI_ATOMGIT_MIRROR"
                 shift
                 ;;
             --mirror)
@@ -1266,8 +1273,9 @@ Usage:
 
 Options:
   --root <dir>       Program install directory (default: ~/xiaobei; runtime data stays in ~/.openclaw)
-  --github           Use GitHub releases instead of the default atomgit mirror
-  --mirror <url>     Custom mirror root (overrides default atomgit)
+  --github           Use GitHub releases (default)
+  --atomgit          Use atomgit 国内镜像（当前 infra 不可用，待修复）
+  --mirror <url>     Custom mirror root (overrides default GitHub)
   --force            Overwrite existing runtime data (~/.openclaw); default preserves it on re-install
   --skip-bind        Skip the WeChat QR binding at the end (CI/automation)
   --skip-browser     Skip camoufox-cli browser binary install (smoke/CI, saves ~557MB Firefox)
