@@ -79,6 +79,15 @@ function Invoke-Streamed([scriptblock]$sb) {
     finally { $ErrorActionPreference = $prev }
 }
 
+# 同 Invoke-Streamed，但把 stdout+stderr 合并成字符串返回（供调用方 -&match）。`2>$null` 在
+# Windows PowerShell 5.1 + Stop 下压不住 .cmd 的 stderr 仍抛 NativeCommandError，这里用 Continue + 2>&1 稳。
+function Capture-Streamed([scriptblock]$sb) {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { return (& $sb 2>&1 | Out-String) }
+    finally { $ErrorActionPreference = $prev }
+}
+
 # ─── 1. 解析最新 release tag ───────────────────────────────────
 function Resolve-Tag {
     if ($env:XIAOBEI_TAG) { return $env:XIAOBEI_TAG }
@@ -232,22 +241,37 @@ function Install-CamoufoxCli {
     Write-Stage "Installing camoufox-cli browser"
     $fork = Join-Path $Root "camoufox-cli"
     if (-not (Test-Path $fork)) { Write-Warn "camoufox-cli fork 不在 tarball 内：$fork；跳过"; return }
-    $env:PATH = "$(Split-Path $NodeExe);$env:PATH"
-    $env:npm_config_prefix = $Root
+    # $Root\bin 放 camoufox-cli.cmd shim，前置进 PATH 让下面 `camoufox-cli install` 找得到
+    $env:PATH = "$(Join-Path $Root 'bin');$(Split-Path $NodeExe);$env:PATH"
     $env:npm_config_registry = "https://registry.npmmirror.com"
     $camoufoxBin = Join-Path $Root "bin\camoufox-cli.cmd"
+    $cliJs = Join-Path $fork "dist\cli.js"
     $hasDeps = Test-Path (Join-Path $fork "node_modules\camoufox-js")
-    if ((Get-Command camoufox-cli -ErrorAction SilentlyContinue) -and $hasDeps) {
-        Write-Ok "camoufox-cli already installed"
-    } else {
+
+    # fork 运行时依赖：dist 是 tsc 编译，camoufox-js/playwright-core/pdf-lib 是 external import，
+    # 运行时靠 fork 目录下的 node_modules 解析。tarball 为瘦身 ship 的 fork 不带 node_modules。
+    if (-not $hasDeps) {
         Push-Location $fork
         try {
             & $NpmCmd install --omit=dev
             if ($LASTEXITCODE -ne 0) { Write-Warn "camoufox-cli fork deps install 失败"; return }
-            & $NpmCmd install -g $fork
-            if ($LASTEXITCODE -ne 0) { Write-Warn "camoufox-cli 全局安装失败"; return }
         } finally { Pop-Location }
     }
+
+    # Windows 不走 `npm install -g $fork`：npm 把 fork 装进 $prefix\node_modules 时撞 fork 源目录
+    # 本身（EEXIST: file already exists $Root\camoufox-cli）——Windows npm 不能像 Linux 那样 symlink
+    # 到源目录。改仿 openclaw.cmd 写 .cmd shim 直接跑 node $fork\dist\cli.js，fork 的 node_modules
+    # 已就位，Node 从 cli.js 向上解析依赖；camoufox-cli JS 用 __dirname 定位自身包根，行为与全局装一致。
+    if (-not (Test-Path $cliJs)) { Write-Warn "camoufox-cli 入口未找到：$cliJs；跳过"; return }
+    $shimLines = @(
+        '@echo off'
+        'setlocal'
+        'set "HERE=%~dp0.."'
+        '"%HERE%\tools\node\node.exe" "%HERE%\camoufox-cli\dist\cli.js" %*'
+    )
+    Set-Content -Path $camoufoxBin -Value $shimLines -Encoding ASCII
+    Write-Ok "camoufox-cli shim written: $camoufoxBin"
+
     Write-Host "  下 Firefox binary（首次 ~557MB）..."
     Invoke-Streamed { camoufox-cli install }
     if ($LASTEXITCODE -ne 0) { Write-Warn "camoufox-cli install 失败；可后续手动：camoufox-cli install" }
@@ -267,7 +291,7 @@ function Install-WeixinPlugin {
         } catch { Write-Warn "pin 文件解析失败，用默认 $pkg@$ver" }
     }
     $env:npm_config_registry = "https://registry.npmmirror.com"
-    $listOut = (& $ClawCmd plugins list 2>$null | Out-String)
+    $listOut = Capture-Streamed { & $ClawCmd plugins list }
     if ($listOut -match "openclaw-weixin") { Write-Ok "openclaw-weixin plugin already installed"; return }
     Invoke-Streamed { & $ClawCmd plugins install "$pkg@$ver" --pin }
     if ($LASTEXITCODE -eq 0) { Write-Ok "openclaw-weixin plugin installed" }
