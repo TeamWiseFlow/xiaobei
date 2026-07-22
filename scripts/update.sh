@@ -20,7 +20,10 @@
 #   8. 微信 channel 插件同步 + meta 回正
 set -e
 
-OFB_REPO="https://github.com/TeamWiseFlow/xiaobei.git"
+OFB_REPO_DEFAULT="https://github.com/TeamWiseFlow/xiaobei.git"
+OFB_REPO_ATOMGIT="https://atomgit.com/wiseflow/xiaobei.git"
+# 默认 GitHub；--atomgit 切到 atomgit 国内镜像（git remote 可匿名 fetch/clone，实测可用）
+OFB_REPO="$OFB_REPO_DEFAULT"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OPENCLAW_DIR="$PROJECT_ROOT/openclaw"
 VERSION_FILE="$PROJECT_ROOT/openclaw.version"
@@ -46,12 +49,24 @@ while [ $# -gt 0 ]; do
       SKIP_WEIXIN=true
       shift
       ;;
+    --atomgit)
+      # 切到 atomgit 国内镜像 git remote（匿名 fetch 可用，release 资产走 GitCode CDN）
+      OFB_REPO="$OFB_REPO_ATOMGIT"
+      shift
+      ;;
+    --github)
+      # 显式切回 GitHub（默认即是，保留向后兼容）
+      OFB_REPO="$OFB_REPO_DEFAULT"
+      shift
+      ;;
     *)
       echo "❌ Unknown option: $1"
-      echo "Usage: $0 [--force] [--skip-crew] [--skip-weixin]"
+      echo "Usage: $0 [--force] [--skip-crew] [--skip-weixin] [--atomgit] [--github]"
       echo "  --force        Overwrite existing workspace files (including MEMORY.md)"
-      echo "  --skip-crew    Skip setup-crew.sh (only sync addons, no workspace updates)"
-      echo "  --skip-weixin  Skip bundled/online openclaw-weixin plugin installation"
+      echo "  --skip-crew   Skip setup-crew.sh (only sync addons, no workspace updates)"
+      echo "  --skip-weixin Skip bundled/online openclaw-weixin plugin installation"
+      echo "  --atomgit     Use atomgit 国内镜像 git remote (default: GitHub)"
+      echo "  --github      Use GitHub git remote (default)"
       exit 1
       ;;
   esac
