@@ -116,7 +116,7 @@ irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/instal
 
 > 🖥️ **部署机器建议**：推荐用一台 **7×24 小时常开**的电脑部署，上面**不要放置个人隐私 / 机密文件**。若你希望在日常办公电脑上安装、且只在用时启动——可以期待我们即将推出的**官方 Docker 镜像**，具体可咨询掌柜。
 
-> **调试模式**（单次启动，适合测试）：`~/xiaobei/bin/openclaw gateway start`
+> **调试模式**（前台单次启动，适合测试，不走 launchd/systemd 服务）：`~/xiaobei/bin/openclaw gateway run`
 
 > 排障见 [`docs/install-troubleshooting.md`](docs/install-troubleshooting.md)
 
