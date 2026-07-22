@@ -118,6 +118,29 @@ irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/instal
 
 > 排障见 [`docs/install-troubleshooting.md`](docs/install-troubleshooting.md)
 
+### 微信换绑 / 增加绑定
+
+装好后想**换一个微信号**（换绑）或**再加一个号**，都用 `channels login` 重新出二维码。`openclaw` 不在 PATH，下面命令用全路径 `~/xiaobei/bin/openclaw`（把 `~/xiaobei/bin` 加进 PATH 后可直接敲 `openclaw`）。
+
+**换绑（替换成新号）**：先停 gateway、清掉旧账号数据，再重新 login 出码：
+
+```bash
+~/xiaobei/bin/openclaw gateway stop
+rm -rf ~/.openclaw/openclaw-weixin/
+~/xiaobei/bin/openclaw gateway start
+~/xiaobei/bin/openclaw channels login --channel openclaw-weixin
+```
+
+> `channels login` 出码后 8 分钟内有效，扫码慢会自动刷新，用新微信扫一下、点确认即完成。
+
+**增加绑定（保留旧号、再加一个）**：直接再跑一次 login，用另一个微信扫：
+
+```bash
+~/xiaobei/bin/openclaw channels login --channel openclaw-weixin
+```
+
+> ⚠️ 多账号时，若两个号都能匹配同一个收件人，发消息会报 `ambiguous — N accounts matched`。所以**换号场景建议用上面的"换绑"流程清掉旧号**，避免歧义；只在确实要多号并存时用"增加绑定"。
+
 ### 升级
 
 **已装用户重跑 install 脚本即升级**：脚本检测到 `~/.openclaw/openclaw.json` 已存在时自动走更新路线——只刷新程序目录 `~/xiaobei/`（拉新 tarball + `pnpm install --prod` 重建依赖 + 幂等刷 camoufox/weixin/awada）+ restart gateway，**不碰运行数据**（openclaw.json / workspace / daemon.env 已有 key 全保留）。要强覆盖运行数据加 `--force`（会备份旧 openclaw.json）。

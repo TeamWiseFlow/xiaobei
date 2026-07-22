@@ -193,9 +193,16 @@ jobs:
             fi
 
             # mac/win 用 .tar.gz（bsdtar 原生支持 gzip，小白机无 zstd 二进制）；linux 用 .tar.zst（压缩率更好）
+            # win-x64 额外加 --dereference：Windows bsdtar 无法创建 symlink（哪怕 Administrator，
+            # 相对 symlink + \\?\ 前缀 → "Invalid argument"），打包时把 symlink 解引用成真实文件副本。
+            # 树内 703 个 symlink 全是相对、目标在树内、全是文件（无目录链接），解引用安全无功能损失
+            # （CLAUDE.md→AGENTS.md、rubric_notes.md→../rubric_notes.md、dist-runtime .d.ts→dist/... 都是部署态只读引用）。
             if [[ "$plat" == linux-x64 ]]; then
               ASSET="xiaobei-${TAG}-${plat}.tar.zst"
               tar --zstd -cf "$RUNNER_TEMP/out/$ASSET" -C "$PKG" .
+            elif [[ "$plat" == win-x64 ]]; then
+              ASSET="xiaobei-${TAG}-${plat}.tar.gz"
+              tar --dereference -czf "$RUNNER_TEMP/out/$ASSET" -C "$PKG" .
             else
               ASSET="xiaobei-${TAG}-${plat}.tar.gz"
               tar -czf "$RUNNER_TEMP/out/$ASSET" -C "$PKG" .
