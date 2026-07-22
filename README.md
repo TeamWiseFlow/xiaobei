@@ -72,20 +72,24 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 **macOS / Linux（bash，一行命令）：**
 
 ```bash
+# macOS / Linux（默认走 GitHub release，国内用户加 --atomgit 切国内镜像）
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)"
+# 国内镜像（atomgit → GitCode CDN，全程国内直连）
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)" -s -- --atomgit
 ```
 
 **Windows（PowerShell）：**
 
 ```powershell
+# Windows（PowerShell，需 Git Bash 或 WSL）
 irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.ps1 | iex
+# 国内镜像
+irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.ps1 | iex -- -Atomgit
 ```
 
 > install.sh / install.ps1 默认走 GitHub release 取最新 tag + 下载 tarball。指定版本：`export XIAOBEI_TAG=v5.6.0`（PowerShell：`$env:XIAOBEI_TAG="v5.6.0"`）。自定义镜像：`--mirror <url>` 或 `XIAOBEI_MIRROR=<url>`（自定义镜像请配 `XIAOBEI_TAG` 指定版本）。
 
-> 💡 **下载中断 / 安装失败？多试几次就好。** tarball 体积较大（~140MB），首装还要下 Firefox 反指纹浏览器（~557MB），网络偶发中断属正常。脚本幂等，重跑会续上已下的部分；实在卡可换 `XIAOBEI_MIRROR=<url>` 换镜像。
-
-> ℹ️ **国内镜像**：atomgit 国内镜像（`--atomgit`）正在修复中——当前其 raw 文件接口返回 SPA 页面、API 被 WAF 拦截、v5.6.0 资产未同步，暂不可用。修复后会重新作为国内默认通道。在此之前国内用户走上面的 GitHub 即可（GitHub release 的 tarball 下载走 CDN，多数国内网络可直连，慢的话多试几次）。
+> 💡 **下载中断 / 安装失败？多试几次就好。** tarball 体积较大（~140MB），首装还要下 Firefox 反指纹浏览器（~557MB），网络偶发中断属正常。脚本幂等，重跑会续上已下的部分；实在卡可换 `XIAOBEI_MIRROR=<url>` 换镜像。**国内用户**：可加 `--atomgit` 全程atomgit 国内路线
 
 > ⚠️ **Windows 必须装 bash**（Git Bash 或 WSL）。install.ps1 用 `tar`（Win10 1803+ 自带）解压 tarball，但 `setup-crew.sh` 是 bash 脚本，部署 crew workspace 离不开 bash。无 bash 时脚本会跳过 crew 模板部署并提示手动补跑——此时小贝团队起不来。装 Git Bash：https://git-scm.com （安装时勾选 "Add to PATH"）。
 
@@ -114,7 +118,7 @@ irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/instal
 
 > **系统要求**：推荐 Ubuntu 22.04；支持 WSL2 / macOS（arm64 + x64）；Windows 10 1803+（x64，需 Git Bash 或 WSL）。WSL2 下脚本自动注入 GUI 显示变量。
 
-> 🖥️ **部署机器建议**：推荐用一台 **7×24 小时常开**的电脑部署，上面**不要放置个人隐私 / 机密文件**。若你希望在日常办公电脑上安装、且只在用时启动——可以期待我们即将推出的**官方 Docker 镜像**，具体可咨询掌柜。
+> 🖥️ **部署机器建议**：推荐用一台 **7×24 小时常开**的电脑部署，上面**不要放置个人隐私 / 机密文件**。若你希望在日常办公电脑上安装、且只在用时启动——可以期待我们即将推出的**官方 Docker 镜像**，具体可扫下方二维码咨询掌柜👇。
 
 > **调试模式**（前台单次启动，适合测试，不走 launchd/systemd 服务）：`~/xiaobei/bin/openclaw gateway run`
 

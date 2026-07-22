@@ -39,10 +39,16 @@ WISEFLOW_REPO="${XIAOBEI_REPO:-TeamWiseFlow/xiaobei}"
 # 与运行数据目录 OPENCLAW_HOME（~/.openclaw：openclaw.json + daemon.env + workspace-*）分离。
 # 不隐藏：用户能直接 ls 看到，符合"小白友好"。
 WISEFLOW_ROOT_DEFAULT="${XIAOBEI_HOME:-$HOME/xiaobei}"
-# 默认走 GitHub release（atomgit 国内镜像当前不可用：raw 返回 SPA HTML、API 被 CloudWAF 拦 418、
-# v5.6.0 资产未同步 404）。--atomgit 或 XIAOBEI_SOURCE=atomgit 切回 atomgit（待其 infra 修复后可用）。
 # 资产 URL 构造为 $XIAOBEI_MIRROR/releases/download/{tag}/xiaobei-{tag}-{plat}.{tar.zst|tar.gz}
+# atomgit 国内镜像（--atomgit / XIAOBEI_SOURCE=atomgit 切入）：
+#   - tarball 直链 host = atomgit.com（redirect 到 file-cdn.gitcode.com 签名 CDN，匿名 GET 可下，~140MB）
+#   - 解 latest tag 走 api.atomgit.com/api/v5/repos/{o}/{r}/releases/latest（NOT Gitea v1，host/版本都不同）
+#   - 单文件 raw 走 api.atomgit.com/api/v5/repos/{o}/{r}/contents/{path}?ref={branch}（返 JSON base64，非直链；
+#     atomgit 的 /raw/branch/... 路由返 SPA HTML 不可用）。本脚本本体一旦跑起来不依赖 raw——首装命令那条
+#     `curl | bash` 要单独走 contents API + base64 解码（见 scripts/README.md 首装命令段）。
+# GitHub 默认（--github 或不传）：raw = raw.githubusercontent.com，API = api.github.com，直链 = github.com/.../releases/download/...
 XIAOBEI_ATOMGIT_MIRROR="https://atomgit.com/wiseflow/xiaobei"
+XIAOBEI_ATOMGIT_API="https://api.atomgit.com/api/v5/repos/wiseflow/xiaobei"
 if [[ "${XIAOBEI_SOURCE:-}" == "atomgit" ]]; then
     XIAOBEI_MIRROR="${XIAOBEI_MIRROR:-$XIAOBEI_ATOMGIT_MIRROR}"
 else
@@ -346,16 +352,29 @@ detect_platform_asset() {
 }
 
 # 解析最新 release tag + 版本号
-# atomgit（Gitea）每晚自动同步上游 tag + release，走其 /api/v1/repos/<o>/<r>/releases/latest
-# 全程不访问 api.github.com；--github 或自定义镜像回退 GitHub API
+# atomgit：走 api.atomgit.com/api/v5（非 Gitea v1，host/版本都不同，每 release JSON 含 tag_name）
+# 自定义镜像：从 mirror URL 推导 Gitea v1 API（host + owner/repo）
+# GitHub / fallback：api.github.com，再回退 gh CLI
 resolve_latest_version() {
     if [[ -n "${XIAOBEI_TAG:-}" ]]; then
         XIAOBEI_VER="${XIAOBEI_TAG#v}"
         ui_success "Using pinned tag: $XIAOBEI_TAG"
         return 0
     fi
-    # atomgit / 自建 Gitea 镜像：从 mirror URL 推导 Gitea API（host + owner/repo）
-    if [[ -n "${XIAOBEI_MIRROR:-}" ]]; then
+    # atomgit 官方镜像：走预定义 v5 API（host = api.atomgit.com，非 mirror URL 推导）
+    if [[ "${XIAOBEI_SOURCE:-}" == "atomgit" && -n "${XIAOBEI_ATOMGIT_API:-}" ]]; then
+        local resp
+        resp="$(curl -fsSL "$XIAOBEI_ATOMGIT_API/releases/latest" 2>/dev/null || true)"
+        XIAOBEI_TAG="$(printf '%s' "$resp" | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"v[^"]+"' | head -1 | sed -E 's/.*"v([^"]+)".*/v\1/')"
+        if [[ -n "$XIAOBEI_TAG" ]]; then
+            XIAOBEI_VER="${XIAOBEI_TAG#v}"
+            ui_success "Latest release (via atomgit v5 API): $XIAOBEI_TAG"
+            return 0
+        fi
+        ui_warn "atomgit v5 API 未取到 tag，回退 GitHub API"
+    fi
+    # 自定义 Gitea 镜像：从 mirror URL 推导 Gitea v1 API（host + owner/repo）
+    if [[ -n "${XIAOBEI_MIRROR:-}" && "${XIAOBEI_SOURCE:-}" != "atomgit" ]]; then
         local m="${XIAOBEI_MIRROR%/}"
         m="${m#https://}"; m="${m#http://}"
         local host="${m%%/*}"
@@ -1264,7 +1283,8 @@ parse_args() {
                 shift
                 ;;
             --atomgit)
-                # 切回 atomgit 国内镜像（当前 infra 不可用，待修复）
+                # 切到 atomgit 国内镜像（tarball 走 atomgit.com → file-cdn.gitcode.com 签名 CDN；
+                # tag 解析走 api.atomgit.com/api/v5，非 Gitea v1）
                 XIAOBEI_SOURCE=atomgit
                 XIAOBEI_MIRROR="$XIAOBEI_ATOMGIT_MIRROR"
                 shift
@@ -1316,7 +1336,7 @@ Usage:
 Options:
   --root <dir>       Program install directory (default: ~/xiaobei; runtime data stays in ~/.openclaw)
   --github           Use GitHub releases (default)
-  --atomgit          Use atomgit 国内镜像（当前 infra 不可用，待修复）
+  --atomgit          Use atomgit 国内镜像（tarball 走 atomgit.com → GitCode CDN；tag 走 api.atomgit.com v5）
   --mirror <url>     Custom mirror root (overrides default GitHub)
   --force            Overwrite existing runtime data (~/.openclaw); default preserves it on re-install
   --skip-bind        Skip the WeChat QR binding at the end (CI/automation)
@@ -1327,8 +1347,8 @@ Options:
 
 Env:
   XIAOBEI_REPO       GitHub 仓（owner/repo，默认 TeamWiseFlow/xiaobei；测试可指 bigbrother666sh/wiseflow）
-  XIAOBEI_SOURCE     设为 github 切回 GitHub release（等价 --github）
-  XIAOBEI_MIRROR     镜像站根（默认 atomgit 国内镜像 https://atomgit.com/wiseflow/xiaobei，走其 Gitea API 取最新 tag）
+  XIAOBEI_SOURCE     设为 atomgit 切到 atomgit 国内镜像（tarball 走 atomgit.com CDN，tag 走 api.atomgit.com v5）；github 切回 GitHub release
+  XIAOBEI_MIRROR     镜像站根（atomgit 默认 https://atomgit.com/wiseflow/xiaobei；自定义 Gitea 镜像走 /api/v1 推导）
   XIAOBEI_TAG        指定版本 tag（默认拉最新 release；自定义镜像建议配此项）
   XIAOBEI_TARBALL    本地已下好的 tarball 路径；设了就跳过下载直接用它（网络差时手工下好塞进来）
   XIAOBEI_HOME       程序目录覆盖（默认 ~/xiaobei）

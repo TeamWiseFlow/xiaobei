@@ -27,7 +27,7 @@ param(
     [string]$Tarball = "",              # 本地已下好的 tarball 路径，跳过下载
     [string]$Mirror = "",               # 自定义镜像站根（覆盖默认 GitHub）
     [switch]$GitHub,                    # 走 GitHub release（现已默认；保留向后兼容）
-    [switch]$Atomgit,                   # 切回 atomgit 国内镜像（当前 infra 不可用，待修复）
+    [switch]$Atomgit,                   # 切到 atomgit 国内镜像（tarball 走 atomgit.com CDN，tag 走 api.atomgit.com v5）
     [switch]$Force,                     # 强覆盖已有运行数据（~\.openclaw）
     [switch]$SkipBind,                  # 跳过末尾微信扫码绑定
     [switch]$SkipBrowser,               # 跳过 camoufox-cli 浏览器二进制（冒烟/CI）
@@ -42,9 +42,11 @@ if (-not $Root) {
     $Root = if ($env:XIAOBEI_HOME) { $env:XIAOBEI_HOME } else { Join-Path $env:USERPROFILE "xiaobei" }
 }
 $OpenclawHome = if ($env:OPENCLAW_HOME) { $env:OPENCLAW_HOME } else { Join-Path $env:USERPROFILE ".openclaw" }
-# 默认走 GitHub release（atomgit 国内镜像当前不可用：raw 返回 SPA HTML、API 被 CloudWAF 拦 418、
-# v5.6.0 资产未同步 404）。-Atomgit 或 XIAOBEI_SOURCE=atomgit 切回 atomgit（待其 infra 修复后可用）。
+# -Atomgit / XIAOBEI_SOURCE=atomgit 切到 atomgit 国内镜像：
+#   tarball 走 atomgit.com → GitCode CDN（带签名 auth_key，匿名 GET 可下）；
+#   tag 解析走 api.atomgit.com/api/v5（非 Gitea v1，host/版本都不同）。
 $AtomgitMirror = "https://atomgit.com/wiseflow/xiaobei"
+$AtomgitApi = "https://api.atomgit.com/api/v5/repos/wiseflow/xiaobei"
 if (-not $Mirror) {
     if ($Atomgit -or $env:XIAOBEI_SOURCE -eq "atomgit") {
         $env:XIAOBEI_MIRROR = if ($env:XIAOBEI_MIRROR) { $env:XIAOBEI_MIRROR } else { $AtomgitMirror }
@@ -91,8 +93,15 @@ function Capture-Streamed([scriptblock]$sb) {
 # ─── 1. 解析最新 release tag ───────────────────────────────────
 function Resolve-Tag {
     if ($env:XIAOBEI_TAG) { return $env:XIAOBEI_TAG }
-    if ($env:XIAOBEI_MIRROR) {
-        # Gitea 镜像（atomgit 每晚同步上游 tag）：从 mirror URL 推导 /api/v1/repos/<o>/<r>/releases/latest
+    # atomgit 官方镜像：走预定义 v5 API（host = api.atomgit.com，非 mirror URL 推导）
+    if ($Atomgit -or $env:XIAOBEI_SOURCE -eq "atomgit") {
+        try {
+            $rel = Invoke-RestMethod "$AtomgitApi/releases/latest" -Headers @{ "User-Agent" = "xiaobei-install" }
+            if ($rel.tag_name) { return $rel.tag_name }
+        } catch { Write-Warn "atomgit v5 API 拉取失败，回退 GitHub API" }
+    }
+    # 自定义 Gitea 镜像：从 mirror URL 推导 /api/v1/repos/<o>/<r>/releases/latest
+    if ($env:XIAOBEI_MIRROR -and -not ($Atomgit -or $env:XIAOBEI_SOURCE -eq "atomgit")) {
         try {
             $u = ($env:XIAOBEI_MIRROR.TrimEnd('/') -replace '^https?://', '')
             $slash = $u.IndexOf('/')

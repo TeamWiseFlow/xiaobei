@@ -18,35 +18,38 @@
 **一键首装 / 升级**（预构建 tarball 路线）。新用户首装和老用户升级都跑这一个脚本，重跑即升级、保留运行数据。
 
 ```bash
-# macOS / Linux（默认走 atomgit 国内镜像）
-bash -c "$(curl -fsSL https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.sh)"
-# 海外 / 有梯子（切回 GitHub）
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)" -s -- --github
+# macOS / Linux（默认走 GitHub release，国内用户加 --atomgit 切国内镜像）
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)"
+# 国内镜像（atomgit → GitCode CDN，全程国内直连）
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)" -s -- --atomgit
 ```
 
 ```powershell
 # Windows（PowerShell，需 Git Bash 或 WSL）
-irm https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.ps1 | iex
+# 国内镜像
+irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.ps1 | iex -- -Atomgit
 ```
 
 常用参数（install.sh / install.ps1 同构）：
 
 | 参数 | 作用 |
 |------|------|
-| `--github` / `-GitHub` | 切回 GitHub release（不走默认 atomgit 镜像） |
-| `--mirror <url>` / `-Mirror <url>` | 自定义镜像站根（覆盖默认 atomgit） |
+| `--atomgit` / `-Atomgit` | 切到 atomgit 国内镜像（tarball 走 atomgit.com → GitCode CDN，tag 走 api.atomgit.com v5） |
+| `--github` / `-GitHub` | 显式切回 GitHub release（默认即是，保留向后兼容） |
+| `--mirror <url>` / `-Mirror <url>` | 自定义镜像站根（覆盖默认 GitHub；自定义 Gitea 镜像走 `/api/v1` 推导） |
 | `--force` / `-Force` | 强覆盖已有运行数据（`~/.openclaw`）；默认已装机器重跑只更新 program，不碰运行数据 |
 | `--skip-bind` / `-SkipBind` | 跳过末尾微信扫码绑定（CI / 自动化） |
 | `--skip-browser` / `-SkipBrowser` | 跳过 camoufox-cli 浏览器二进制安装（冒烟 / CI，省 ~557MB Firefox 下载） |
 | `--no-prompt` / `-NoPrompt` | 关闭交互提示（CI / 自动化，隐含 `--skip-bind`） |
 | `--root <dir>` / `-Root <dir>` | 程序目录覆盖（默认 `~/xiaobei`） |
 
-环境变量：`XIAOBEI_REPO`、`XIAOBEI_SOURCE=github`、`XIAOBEI_MIRROR`、`XIAOBEI_TAG`（指定版本）、`XIAOBEI_TARBALL`（本地已下好的 tarball 路径，跳过下载）、`XIAOBEI_HOME`、`OPENCLAW_HOME`。
+环境变量：`XIAOBEI_REPO`、`XIAOBEI_SOURCE`（`atomgit` / `github`）、`XIAOBEI_MIRROR`、`XIAOBEI_TAG`（指定版本）、`XIAOBEI_TARBALL`（本地已下好的 tarball 路径，跳过下载）、`XIAOBEI_HOME`、`OPENCLAW_HOME`。
 
 执行流程：
 
 1. 检测 OS + arch → 选 tarball asset（linux-x64 / mac-arm64 / mac-x64 / win-x64）
-2. 解析最新 release tag（atomgit 走 Gitea API；`--github` 走 GitHub API；`XIAOBEI_TAG` 直接指定）
+2. 解析最新 release tag（`--atomgit` 走 `api.atomgit.com/api/v5`；默认走 GitHub API；`XIAOBEI_TAG` 直接指定）
 3. 下载预构建 tarball → 解压到 `~/xiaobei/`（程序目录）
 4. `pnpm install --prod --frozen-lockfile`（用自带的 portable Node + pnpm，在 `openclaw/` 下）
 5. `pip install --user`（skills 的 Python 依赖）
