@@ -68,6 +68,17 @@ function Write-Ok([string]$msg)    { Write-Host "  [OK] $msg" -ForegroundColor G
 function Write-Warn([string]$msg)  { Write-Host "  [!]  $msg" -ForegroundColor Yellow }
 function Write-Err([string]$msg)   { Write-Host "  [X]  $msg" -ForegroundColor Red }
 
+# 跑原生命令并按行回显 stdout+stderr。pip/npm/camoufox-cli/openclaw 正常会把进度和警告写 stderr，
+# 而本脚本顶部 $ErrorActionPreference="Stop" 会把 2>&1 合并进管道的 stderr 行当 terminating error
+# 抛 NativeCommandError/RemoteException（用户 Win 实测卡在 pip install 这步）。这里临时切到 Continue
+# 跑原生命令，$LASTEXITCODE 仍由调用方据以判成败。
+function Invoke-Streamed([scriptblock]$sb) {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $sb 2>&1 | ForEach-Object { Write-Host "    $_" } }
+    finally { $ErrorActionPreference = $prev }
+}
+
 # ─── 1. 解析最新 release tag ───────────────────────────────────
 function Resolve-Tag {
     if ($env:XIAOBEI_TAG) { return $env:XIAOBEI_TAG }
@@ -145,7 +156,7 @@ function Install-PythonDeps {
     if (-not $reqs) { Write-Ok "无 requirements.txt"; return }
     $merged = ($reqs | ForEach-Object { Get-Content $_ -ErrorAction SilentlyContinue } | Where-Object { $_ -and -not $_.StartsWith("#") } | Sort-Object -Unique)
     if (-not $merged) { Write-Ok "无 python 依赖"; return }
-    & python -m pip install --user $merged 2>&1 | ForEach-Object { Write-Host "    $_" }
+    Invoke-Streamed { python -m pip install --user $merged }
     Write-Ok "python deps installed"
 }
 
@@ -238,7 +249,7 @@ function Install-CamoufoxCli {
         } finally { Pop-Location }
     }
     Write-Host "  下 Firefox binary（首次 ~557MB）..."
-    & camoufox-cli install 2>&1 | ForEach-Object { Write-Host "    $_" }
+    Invoke-Streamed { camoufox-cli install }
     if ($LASTEXITCODE -ne 0) { Write-Warn "camoufox-cli install 失败；可后续手动：camoufox-cli install" }
     else { Write-Ok "camoufox-cli ready" }
 }
@@ -258,7 +269,7 @@ function Install-WeixinPlugin {
     $env:npm_config_registry = "https://registry.npmmirror.com"
     $listOut = (& $ClawCmd plugins list 2>$null | Out-String)
     if ($listOut -match "openclaw-weixin") { Write-Ok "openclaw-weixin plugin already installed"; return }
-    & $ClawCmd plugins install "$pkg@$ver" --pin 2>&1 | ForEach-Object { Write-Host "    $_" }
+    Invoke-Streamed { & $ClawCmd plugins install "$pkg@$ver" --pin }
     if ($LASTEXITCODE -eq 0) { Write-Ok "openclaw-weixin plugin installed" }
     else { Write-Warn "插件安装失败；可后续手动：$ClawCmd plugins install $pkg@$ver --pin" }
 }
@@ -314,10 +325,10 @@ function Install-GatewayAndEnv {
 
     # 尝试 daemon install（Windows 支持情况视 openclaw 版本而定）
     Write-Host "  尝试 openclaw daemon install..."
-    & $ClawCmd daemon install 2>&1 | ForEach-Object { Write-Host "    $_" }
+    Invoke-Streamed { & $ClawCmd daemon install }
     if ($LASTEXITCODE -eq 0) {
         Write-Ok "gateway daemon installed"
-        & $ClawCmd gateway restart 2>&1 | ForEach-Object { Write-Host "    $_" }
+        Invoke-Streamed { & $ClawCmd gateway restart }
     } else {
         Write-Warn "openclaw daemon install 在 Windows 未就绪或失败"
         Write-Host "  请开新 PowerShell 终端前台跑 gateway："
@@ -395,7 +406,7 @@ function Main {
             Set-Content -Path $envFile -Value $lines -Encoding UTF8
             Write-Ok "daemon.env XIAOBEI_HOME refreshed"
         }
-        & $ClawCmd gateway restart 2>&1 | ForEach-Object { Write-Host "    $_" }
+        Invoke-Streamed { & $ClawCmd gateway restart }
     } else {
         Place-Config
         Run-SetupCrew
