@@ -74,8 +74,8 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 ```bash
 # macOS / Linux（默认走 GitHub release，国内用户加 --atomgit 切国内镜像）
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)"
-# 国内镜像（atomgit → GitCode CDN，全程国内直连）
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)" -s -- --atomgit
+# 国内镜像（atomgit → GitCode CDN，全程国内直连，脚本也从 atomgit 拉取）
+bash -c "$(curl -fsSL 'https://api.atomgit.com/api/v5/repos/wiseflow/xiaobei/raw/scripts/install.sh?ref=master')" -s -- --atomgit
 ```
 
 **Windows（PowerShell）：**
@@ -83,8 +83,8 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/mas
 ```powershell
 # Windows（PowerShell，需 Git Bash 或 WSL）
 irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.ps1 | iex
-# 国内镜像
-irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.ps1 | iex -- -Atomgit
+# 国内镜像（脚本和 tarball 全程走 atomgit，不经 GitHub；iex 不支持传参，需用 scriptblock 形式）
+& ([scriptblock]::Create((irm "https://api.atomgit.com/api/v5/repos/wiseflow/xiaobei/raw/scripts/install.ps1?ref=master"))) -Atomgit
 ```
 
 > install.sh / install.ps1 默认走 GitHub release 取最新 tag + 下载 tarball。指定版本：`export XIAOBEI_TAG=v5.6.0`（PowerShell：`$env:XIAOBEI_TAG="v5.6.0"`）。自定义镜像：`--mirror <url>` 或 `XIAOBEI_MIRROR=<url>`（自定义镜像请配 `XIAOBEI_TAG` 指定版本）。

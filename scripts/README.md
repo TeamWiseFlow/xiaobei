@@ -20,15 +20,15 @@
 ```bash
 # macOS / Linux（默认走 GitHub release，国内用户加 --atomgit 切国内镜像）
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)"
-# 国内镜像（atomgit → GitCode CDN，全程国内直连）
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.sh)" -s -- --atomgit
+# 国内镜像（atomgit → GitCode CDN，全程国内直连，脚本也从 atomgit 拉取）
+bash -c "$(curl -fsSL 'https://api.atomgit.com/api/v5/repos/wiseflow/xiaobei/raw/scripts/install.sh?ref=master')" -s -- --atomgit
 ```
 
 ```powershell
 # Windows（PowerShell，需 Git Bash 或 WSL）
 irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.ps1 | iex
-# 国内镜像
-irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.ps1 | iex -- -Atomgit
+# 国内镜像（脚本和 tarball 全程走 atomgit，不经 GitHub；iex 不支持传参，需用 scriptblock 形式）
+& ([scriptblock]::Create((irm "https://api.atomgit.com/api/v5/repos/wiseflow/xiaobei/raw/scripts/install.ps1?ref=master"))) -Atomgit
 ```
 
 常用参数（install.sh / install.ps1 同构）：
@@ -127,8 +127,8 @@ cd openclaw && pnpm build && cd ..   # 首次或修改源码后手动 build
 
 | 场景 | 命令 |
 |------|------|
-| 小白首装（macOS/Linux） | `bash -c "$(curl -fsSL https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.sh)"` |
-| 小白首装（Windows） | `irm https://atomgit.com/wiseflow/xiaobei/raw/branch/master/scripts/install.ps1 \| iex` |
+| 小白首装（macOS/Linux，国内） | `bash -c "$(curl -fsSL 'https://api.atomgit.com/api/v5/repos/wiseflow/xiaobei/raw/scripts/install.sh?ref=master')" -s -- --atomgit` |
+| 小白首装（Windows，国内） | `& ([scriptblock]::Create((irm "https://api.atomgit.com/api/v5/repos/wiseflow/xiaobei/raw/scripts/install.ps1?ref=master"))) -Atomgit` |
 | 老用户升级 | 重跑 install 脚本（保留 `~/.openclaw` 运行数据） |
 | 已 git clone 的开发者升级 | `./scripts/update.sh` |
 | 修改了 patch 后测试 | `./scripts/apply-addons.sh` |

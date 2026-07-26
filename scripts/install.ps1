@@ -1,10 +1,15 @@
-# install.ps1 - wiseflow 一键首装脚本（Windows，预构建 tarball 路线）
+﻿# install.ps1 - wiseflow 一键首装脚本（Windows，预构建 tarball 路线）
 #
 # 用法（PowerShell）：
 #   $env:XIAOBEI_REPO = "TeamWiseFlow/xiaobei"   # 默认即此；国内可指 atomgit 镜像
 #   irm https://raw.githubusercontent.com/TeamWiseFlow/xiaobei/master/scripts/install.ps1 | iex
+#   # 国内镜像（iex 不支持传参，带 -Atomgit 需用 scriptblock 形式；脚本走 atomgit v5 raw API 拉取）：
+#   & ([scriptblock]::Create((irm "https://api.atomgit.com/api/v5/repos/wiseflow/xiaobei/raw/scripts/install.ps1?ref=master"))) -Atomgit
 #   # 或本地：
 #   powershell -ExecutionPolicy Bypass -File install.ps1
+#
+# ⚠️ 本文件必须保持 UTF-8 **带 BOM**：Windows PowerShell 5.1 对无 BOM 的 .ps1 按系统
+#   ANSI 代码页（中文系统 GBK）解析，中文字符串会乱码并产生解析错误，脚本无法运行。
 #
 # 与 install.sh 同构（方案 B 瘦 tarball）：
 #   1. 拉 xiaobei-{tag}-win-x64.tar.gz（Windows bsdtar 原生支持 gzip，免装 zstd）
@@ -154,8 +159,12 @@ function Install-Deps {
     if (-not (Test-Path $NodeExe)) { throw "portable node 未找到：$NodeExe" }
     Push-Location $openclawDir
     try {
+        # postinstall 子进程（esbuild/protobufjs 等）按 PATH 找 node；目标机器多半没装全局
+        # Node（'node' is not recognized 实测），把 portable node 前置进 PATH
+        $env:PATH = "$(Split-Path $NodeExe);$env:PATH"
+        # pnpm 11 不认 npm_config_registry 环境变量（实测仍走 registry.npmjs.org），用显式 --registry
         $env:npm_config_registry = "https://registry.npmmirror.com"
-        & $NodeExe $PnpmMjs install --prod --frozen-lockfile
+        & $NodeExe $PnpmMjs install --prod --frozen-lockfile --registry https://registry.npmmirror.com
         if ($LASTEXITCODE -ne 0) { throw "pnpm install 失败 (exit $LASTEXITCODE)" }
         Write-Ok "deps installed"
     } finally { Pop-Location }
@@ -172,71 +181,111 @@ function Install-PythonDeps {
     $reqs += Get-ChildItem -Path $Root -Filter "requirements.txt" -ErrorAction SilentlyContinue
     $reqs = $reqs | Select-Object -ExpandProperty FullName -Unique
     if (-not $reqs) { Write-Ok "无 requirements.txt"; return }
-    $merged = ($reqs | ForEach-Object { Get-Content $_ -ErrorAction SilentlyContinue } | Where-Object { $_ -and -not $_.StartsWith("#") } | Sort-Object -Unique)
+    # 各行作为 pip 命令行参数传入（非 -r 文件），必须剥掉行内注释（pip 只在
+    # requirements 文件里认注释，参数里 `Pillow # 说明` 直接 Invalid requirement 报错）；
+    # 文件是 UTF-8，显式指定编码防中文注释被 ANSI 误读产生乱码参数。
+    $merged = ($reqs | ForEach-Object { Get-Content $_ -Encoding UTF8 -ErrorAction SilentlyContinue } |
+        ForEach-Object { ($_ -replace '#.*$', '').Trim() } |
+        Where-Object { $_ } | Sort-Object -Unique)
     if (-not $merged) { Write-Ok "无 python 依赖"; return }
     Invoke-Streamed { python -m pip install --user $merged }
-    Write-Ok "python deps installed"
+    if ($LASTEXITCODE -ne 0) { Write-Warn "pip install 非零退出；可后续手动补装 skills 的 python 依赖" }
+    else { Write-Ok "python deps installed" }
 }
 
-# ─── 6. 放 config template + 预填微信 binding ─────────────────
+# ─── 6. 放 config template（对齐 install.sh place_config_template）────
+# template 已预置 channels.openclaw-weixin / bindings / session.dmScope，不再运行时 mutate
+# （sh 版曾因运行时 mutate 把 plugins 顶层写坏致 "Invalid input"，已同构移除）。
+# 健康检查：现有 config 缺 models/agents.defaults（多半是 Install-WeixinPlugin 先跑时
+# openclaw plugins install 自建的极简 config，或 openclaw 首启自动生成）→ 备份后用
+# template 覆盖，否则 channels/bindings 永远缺失、小贝起不来。
 function Place-Config {
     Write-Stage "Placing config template"
     New-Item -ItemType Directory -Force -Path $OpenclawHome | Out-Null
     $cfg = Join-Path $OpenclawHome "openclaw.json"
     $tmpl = Join-Path $Root "config-templates\openclaw.json"
-    if (-not (Test-Path $cfg)) {
-        if (Test-Path $tmpl) { Copy-Item $tmpl $cfg; Write-Ok "placed openclaw.json" }
-        else { Write-Warn "template 未找到：$tmpl" }
-    } elseif ($Force) {
-        $bak = "$cfg.bak.$([int][double]::Parse((Get-Date -UFormat %s)))"
-        Copy-Item $cfg $bak
-        if (Test-Path $tmpl) { Copy-Item $tmpl $cfg -Force; Write-Warn "openclaw.json 已存在，-Force 覆盖（备份到 $bak）" }
-    } else {
-        Write-Ok "openclaw.json 已存在，保留"
+    if (-not (Test-Path $tmpl)) { Write-Err "config template 缺失：$tmpl（tarball 损坏?）"; return }
+
+    $needPlace = $false; $reason = ""
+    if (-not (Test-Path $cfg)) { $needPlace = $true; $reason = "不存在" }
+    elseif ($Force) { $needPlace = $true; $reason = "-Force" }
+    else {
+        try {
+            # 必须显式按 UTF-8 读：openclaw 写的 config 是 UTF-8 无 BOM，PS 5.1 的
+            # Get-Content 默认按 ANSI 代码页读，中文路径旁的 \\ 转义会被双字节吞掉，
+            # 有效 config 被误判"解析失败"遭覆盖（本机实测）。
+            $j = [System.IO.File]::ReadAllText($cfg) | ConvertFrom-Json -ErrorAction Stop
+            if (-not ($j.models -and $j.agents -and $j.agents.defaults)) { $needPlace = $true; $reason = "缺 models/agents.defaults（疑似被极简化）" }
+        } catch { $needPlace = $true; $reason = "解析失败" }
     }
-    if (Test-Path $cfg) {
-        $prefill = @"
-const fs = require('fs');
-const p = process.argv[1], root = process.argv[2];
-const c = JSON.parse(fs.readFileSync(p, 'utf8'));
-c.channels = c.channels || {};
-c.channels['openclaw-weixin'] = { ...(c.channels['openclaw-weixin'] || {}), enabled: true };
-c.session = { ...(c.session || {}), dmScope: 'per-channel-peer' };
-if (!Array.isArray(c.bindings)) c.bindings = [];
-const has = c.bindings.some(b => b?.agentId === 'main' && b?.match?.channel === 'openclaw-weixin');
-if (!has) c.bindings.push({ agentId: 'main', comment: 'openclaw-weixin -> Main Agent onboarding entry', match: { channel: 'openclaw-weixin' } });
-// 把 plugins.load.paths 里的 \${XIAOBEI_HOME} env ref 解析成绝对路径（root），避免 CLI 上下文
-// 没 XIAOBEI_HOME 时 "plugin path not found" 误报。AWK_API_KEY 是 secret 保持 env ref。
-if (c.plugins?.load?.paths) {
-  c.plugins.load.paths = c.plugins.load.paths.map(s =>
-    (typeof s === 'string' && s.indexOf('\${XIAOBEI_HOME}') !== -1)
-      ? s.split('\${XIAOBEI_HOME}').join(root) : s);
-}
-fs.writeFileSync(p, JSON.stringify(c, null, 2) + '\n');
-"@
-        & $NodeExe -e $prefill $cfg $Root
-        Write-Ok "WeChat channel pre-bound"
+    if ($needPlace) {
+        if (Test-Path $cfg) {
+            $bak = "$cfg.bak.$([int][double]::Parse((Get-Date -UFormat %s)))"
+            Copy-Item $cfg $bak
+            Write-Warn "openclaw.json $reason → 用 template 覆盖（旧文件备份到 $bak）"
+        }
+        Copy-Item $tmpl $cfg -Force
+        Write-Ok "placed openclaw.json template"
+    } else {
+        Write-Ok "openclaw.json 已存在且健康（有 models + agents.defaults），保留"
+    }
+
+    # 把 plugins.load.paths 里的 ${XIAOBEI_HOME} env ref 解析成绝对路径，避免 CLI 上下文没
+    # XIAOBEI_HOME 时 "plugin path not found" 误报；AWK_API_KEY 是 secret 保持 env ref 不动。
+    # 文本级替换（template 中 ${XIAOBEI_HOME} 仅出现在 plugins.load.paths）；JSON 字符串里
+    # 反斜杠是转义符，路径统一写正斜杠。幂等：已解析则 no-op。
+    $raw = [System.IO.File]::ReadAllText($cfg)
+    if ($raw.Contains('${XIAOBEI_HOME}')) {
+        $rootFwd = $Root -replace '\\', '/'
+        [System.IO.File]::WriteAllText($cfg, $raw.Replace('${XIAOBEI_HOME}', $rootFwd), [System.Text.UTF8Encoding]::new($false))
+        Write-Ok "resolved XIAOBEI_HOME refs -> $rootFwd"
     }
 }
 
 # ─── 7. setup-crew（需 bash）──────────────────────────────────
+# 找一个真正可用的 bash：优先 Git Bash（吃得了 C:/ 风格路径）；PATH 里的 bash 可能是
+# C:\Windows\system32\bash.exe（WSL 启动器）——没装发行版时直接报错退出，且 WSL bash
+# 对 Windows 路径参数不做转换，都不能直接用。每个候选实测 `bash -c echo` 通过才算数。
+function Find-WorkingBash {
+    $candidates = @()
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git) {
+        $gitRoot = Split-Path (Split-Path $git.Source)
+        $candidates += (Join-Path $gitRoot "bin\bash.exe")
+        $candidates += (Join-Path $gitRoot "usr\bin\bash.exe")
+    }
+    $candidates += "$env:ProgramFiles\Git\bin\bash.exe"
+    $candidates += "${env:ProgramFiles(x86)}\Git\bin\bash.exe"
+    $inPath = Get-Command bash -ErrorAction SilentlyContinue
+    # system32 的 WSL 启动器排最后（仅当其可用且无 Git Bash 时兜底）
+    if ($inPath) { $candidates += $inPath.Source }
+    foreach ($b in $candidates) {
+        if ($b -and (Test-Path $b)) {
+            $out = Capture-Streamed { & $b -c "echo __bash_ok__" }
+            if ($out -match "__bash_ok__") { return $b }
+        }
+    }
+    return $null
+}
+
 function Run-SetupCrew {
     Write-Stage "Setting up crew templates (needs bash)"
     $sh = Join-Path $Root "scripts\setup-crew.sh"
     if (-not (Test-Path $sh)) { Write-Warn "setup-crew.sh 不在 tarball 内，跳过"; return }
-    $bash = Get-Command bash -ErrorAction SilentlyContinue
-    if (-not $bash) {
-        Write-Warn "未找到 bash（setup-crew.sh 是 bash 脚本）"
-        Write-Host "    请装 Git Bash（https://git-scm.com）或 WSL，然后手动跑："
+    $bashExe = Find-WorkingBash
+    if (-not $bashExe) {
+        Write-Warn "未找到可用的 bash（setup-crew.sh 是 bash 脚本；注意 system32\bash.exe 是 WSL 启动器，没装发行版不可用）"
+        Write-Host "    请装 Git Bash（https://git-scm.com）或 WSL 发行版，然后手动跑："
         Write-Host "      set OPENCLAW_HOME=$OpenclawHome"
         Write-Host "      set XIAOBEI_BIN_DIR=$(Join-Path $Root 'bin')"
         Write-Host "      bash `"$sh`""
         return
     }
+    Write-Host "  bash: $bashExe"
     # bash 不认反斜杠（会被当转义），传正斜杠路径给 setup-crew.sh
     $env:OPENCLAW_HOME   = ($OpenclawHome -replace '\\', '/')
     $env:XIAOBEI_BIN_DIR = ((Join-Path $Root "bin") -replace '\\', '/')
-    & bash $sh
+    Invoke-Streamed { & $bashExe ($sh -replace '\\', '/') }
     if ($LASTEXITCODE -ne 0) { Write-Warn "setup-crew.sh 非零退出（可后续手动 --force 修复）" }
     else { Write-Ok "crew templates set up" }
 }
@@ -324,6 +373,34 @@ function Install-AwadaPlugin {
     } finally { Pop-Location }
 }
 
+# ─── 10.5 修复 daemon 启动脚本编码（openclaw 上游 bug 的 workaround）──
+# openclaw daemon install 写出的 gateway.cmd / gateway.vbs 是 UTF-8（无 BOM），
+# 而 cmd.exe / WScript 按系统 ANSI 代码页读取脚本文件——安装路径含非 ASCII 字符
+# （如中文用户名）时路径变乱码，node.exe 找不到，gateway 永远起不来（本机实测）。
+# workaround：把长路径替换成 8.3 短路径（纯 ASCII）后以 ASCII 重写；无 8.3 名
+# 可用时退回按 ANSI 代码页写（cmd.exe 按 ANSI 读，编码一致即可）。幂等。
+function Repair-GatewayCmd {
+    $files = @((Join-Path $OpenclawHome "gateway.cmd"), (Join-Path $OpenclawHome "gateway.vbs"))
+    $fso = $null
+    foreach ($f in $files) {
+        if (-not (Test-Path $f)) { continue }
+        $txt = [System.IO.File]::ReadAllText($f, [System.Text.UTF8Encoding]::new($false))
+        if ($txt -notmatch '[^\x00-\x7F]') { continue }
+        if (-not $fso) { $fso = New-Object -ComObject Scripting.FileSystemObject }
+        $dirs = @($Root, $OpenclawHome, $env:USERPROFILE) | Sort-Object Length -Descending
+        foreach ($d in $dirs) {
+            try { $short = $fso.GetFolder($d).ShortPath } catch { continue }
+            if ($short -and $short -ne $d) { $txt = $txt.Replace($d, $short) }
+        }
+        if ($txt -match '[^\x00-\x7F]') {
+            [System.IO.File]::WriteAllText($f, $txt, [System.Text.Encoding]::Default)
+        } else {
+            [System.IO.File]::WriteAllText($f, $txt, [System.Text.ASCIIEncoding]::new())
+        }
+        Write-Ok "修复 $(Split-Path $f -Leaf) 编码（非 ASCII 路径 → 8.3 短路径）"
+    }
+}
+
 # ─── 11. 交互收 AWK_API_KEY + 起 gateway ──────────────────────
 function Install-GatewayAndEnv {
     Write-Stage "Configuring API key and gateway"
@@ -361,6 +438,7 @@ function Install-GatewayAndEnv {
     Invoke-Streamed { & $ClawCmd daemon install }
     if ($LASTEXITCODE -eq 0) {
         Write-Ok "gateway daemon installed"
+        Repair-GatewayCmd
         Invoke-Streamed { & $ClawCmd gateway restart }
     } else {
         Write-Warn "openclaw daemon install 在 Windows 未就绪或失败"
@@ -411,6 +489,14 @@ function Main {
     $isUpdate = (Test-Path $cfgExisting) -and -not $Force
     if ($isUpdate) {
         Write-Warn "检测到已有安装（$cfgExisting）→ 走更新路线，保留运行数据（-Force 可强覆盖）"
+        # 先停 gateway（对齐 install.sh stop_gateway_if_running）：否则 tar 覆盖
+        # tools\node\node.exe、pnpm 重写 node_modules 会撞运行中 gateway 的文件锁
+        # （"Can't unlink already-existing object: Permission denied"，本机实测）
+        Write-Stage "Stopping gateway before update"
+        if (Test-Path $ClawCmd) { Invoke-Streamed { & $ClawCmd gateway stop } }
+        Get-Process node -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -like "$Root*" } |
+            Stop-Process -Force -ErrorAction SilentlyContinue
     }
 
     Write-Stage "Resolving latest release"
@@ -430,6 +516,8 @@ function Main {
     Install-WeixinPlugin
 
     if ($isUpdate) {
+        # 更新路线也自愈 config（对齐 install.sh：openclaw.json 若被极简化则用 template 修复）
+        Place-Config
         Write-Stage "Refreshing gateway env and restarting"
         $envFile = Join-Path $OpenclawHome "daemon.env"
         if (Test-Path $envFile) {
@@ -439,6 +527,7 @@ function Main {
             Set-Content -Path $envFile -Value $lines -Encoding UTF8
             Write-Ok "daemon.env XIAOBEI_HOME refreshed"
         }
+        Repair-GatewayCmd
         Invoke-Streamed { & $ClawCmd gateway restart }
     } else {
         Place-Config
