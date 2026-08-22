@@ -1,0 +1,449 @@
+{
+  "browser": {
+    "enabled": true,
+    "headless": true,
+    "ssrfPolicy": {
+      "dangerouslyAllowPrivateNetwork": true
+    }
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "orcarouter": {
+        "baseUrl": "https://api.orcarouter.ai/v1",
+        "api": "openai-completions",
+        "apiKey": "${ORCAROUTER_API_KEY}",
+        "models": [
+          {
+            "id": "orcarouter/auto",
+            "name": "OrcaRouter Auto",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 1000000,
+            "maxTokens": 65536,
+            "compat": {
+              "supportsReasoningEffort": true,
+              "supportsUsageInStreaming": true,
+              "maxTokensField": "max_tokens"
+            },
+            "api": "openai-completions"
+          },
+          {
+            "id": "orcarouter/fusion",
+            "name": "OrcaRouter Fusion",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 1000000,
+            "maxTokens": 65536,
+            "compat": {
+              "supportsReasoningEffort": true,
+              "supportsUsageInStreaming": true,
+              "maxTokensField": "max_tokens"
+            },
+            "api": "openai-completions"
+          },
+          {
+            "id": "orcarouter/fusion-mini",
+            "name": "OrcaRouter Fusion Mini",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 1000000,
+            "maxTokens": 65536,
+            "compat": {
+              "supportsReasoningEffort": true,
+              "supportsUsageInStreaming": true,
+              "maxTokensField": "max_tokens"
+            },
+            "api": "openai-completions"
+          },
+          {
+            "id": "orcarouter/fusion-flash",
+            "name": "OrcaRouter Fusion Flash",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 200000,
+            "maxTokens": 65536,
+            "compat": {
+              "supportsReasoningEffort": true,
+              "supportsUsageInStreaming": true,
+              "maxTokensField": "max_tokens"
+            },
+            "api": "openai-completions"
+          },
+          {
+            "id": "orcarouter/free",
+            "name": "OrcaRouter Free",
+            "reasoning": false,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 200000,
+            "maxTokens": 16384,
+            "api": "openai-completions"
+          },
+          {
+            "id": "orcarouter/open-code",
+            "name": "OrcaRouter Open Code",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 200000,
+            "maxTokens": 65536,
+            "compat": {
+              "supportsReasoningEffort": true,
+              "supportsUsageInStreaming": true,
+              "maxTokensField": "max_tokens"
+            },
+            "api": "openai-completions"
+          },
+          {
+            "id": "orcarouter/code-review",
+            "name": "OrcaRouter Code Review",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "contextWindow": 200000,
+            "maxTokens": 65536,
+            "compat": {
+              "supportsReasoningEffort": true,
+              "supportsUsageInStreaming": true,
+              "maxTokensField": "max_tokens"
+            },
+            "api": "openai-completions"
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "orcarouter/orcarouter/auto",
+        "fallbacks": [
+          "orcarouter/orcarouter/fusion",
+          "orcarouter/orcarouter/fusion-mini"
+        ]
+      },
+      "imageModel": {
+        "primary": "orcarouter/orcarouter/fusion-flash"
+      },
+      "memorySearch": {
+        "provider": "none"
+      },
+      "models": {
+        "orcarouter/orcarouter/auto": {
+          "alias": "orcarouter/auto"
+        },
+        "orcarouter/orcarouter/fusion": {
+          "alias": "orcarouter/fusion"
+        },
+        "orcarouter/orcarouter/fusion-mini": {
+          "alias": "orcarouter/fusion-mini"
+        },
+        "orcarouter/orcarouter/fusion-flash": {
+          "alias": "orcarouter/fusion-flash"
+        },
+        "orcarouter/orcarouter/free": {
+          "alias": "orcarouter/free"
+        },
+        "orcarouter/orcarouter/open-code": {
+          "alias": "orcarouter/open-code"
+        },
+        "orcarouter/orcarouter/code-review": {
+          "alias": "orcarouter/code-review"
+        }
+      },
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "thinkingDefault": "medium",
+      "maxConcurrent": 3,
+      "subagents": {
+        "maxConcurrent": 4,
+        "announceTimeoutMs": 3600000,
+        "maxSpawnDepth": 2
+      }
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true,
+        "name": "小贝",
+        "workspace": "~/.openclaw/workspace-main",
+        "skills": [
+          "smart-search",
+          "browser-guide",
+          "email-ops",
+          "council",
+          "session-logs",
+          "tmux"
+        ],
+        "subagents": {
+          "allowAgents": [
+            "it-engineer",
+            "content-producer"
+          ]
+        },
+        "tools": {
+          "exec": {
+            "host": "gateway",
+            "security": "full",
+            "ask": "off"
+          }
+        },
+        "heartbeat": {
+          "every": "1d",
+          "target": "none",
+          "isolatedSession": true
+        },
+        "reasoningDefault": "off"
+      },
+      {
+        "id": "it-engineer",
+        "name": "IT Engineer",
+        "workspace": "~/.openclaw/workspace-it-engineer",
+        "skills": [
+          "healthcheck",
+          "nano-pdf",
+          "skill-creator",
+          "session-logs",
+          "tmux",
+          "weather",
+          "summarize",
+          "gifgrep",
+          "node-connect",
+          "github",
+          "gh-issues",
+          "coding-agent"
+        ],
+        "tools": {
+          "exec": {
+            "host": "gateway",
+            "security": "full",
+            "ask": "off"
+          }
+        },
+        "thinkingDefault": "high",
+        "reasoningDefault": "off"
+      },
+      {
+        "id": "content-producer",
+        "name": "producer",
+        "workspace": "~/.openclaw/workspace-content-producer",
+        "skills": [
+          "smart-search",
+          "browser-guide",
+          "session-logs",
+          "tmux"
+        ],
+        "subagents": {
+          "allowAgents": [
+            "it-engineer"
+          ]
+        },
+        "tools": {
+          "exec": {
+            "host": "gateway",
+            "security": "allowlist",
+            "ask": "off"
+          }
+        },
+        "reasoningDefault": "off"
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "agentId": "main",
+      "comment": "openclaw-weixin -> Main Agent onboarding entry",
+      "match": {
+        "channel": "openclaw-weixin"
+      }
+    }
+  ],
+  "messages": {
+    "ackReactionScope": "group-mentions",
+    "inbound": {
+      "debounceMs": 1500
+    }
+  },
+  "session": {
+    "dmScope": "per-channel-peer",
+    "reset": {
+      "mode": "idle",
+      "idleMinutes": 2880
+    }
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "hooks": {
+    "internal": {
+      "enabled": true,
+      "entries": {
+        "boot-md": {
+          "enabled": false
+        },
+        "command-logger": {
+          "enabled": true
+        },
+        "session-memory": {
+          "enabled": true
+        }
+      }
+    }
+  },
+  "channels": {
+    "openclaw-weixin": {
+      "enabled": true
+    }
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "loopback",
+    "auth": {
+      "mode": "token",
+      "token": ""
+    },
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "nodes": {
+      "denyCommands": [
+        "camera.snap",
+        "camera.clip",
+        "screen.record",
+        "calendar.add",
+        "contacts.add",
+        "reminders.add"
+      ]
+    }
+  },
+  "skills": {
+    "entries": {
+      "notion": {
+        "enabled": false
+      },
+      "obsidian": {
+        "enabled": false
+      },
+      "trello": {
+        "enabled": false
+      },
+      "github": {
+        "enabled": true
+      },
+      "gh-issues": {
+        "enabled": true
+      },
+      "coding-agent": {
+        "enabled": true
+      },
+      "slack": {
+        "enabled": false
+      },
+      "wacli": {
+        "enabled": false
+      },
+      "gemini": {
+        "enabled": false
+      },
+      "openai-whisper": {
+        "enabled": false
+      },
+      "openai-whisper-api": {
+        "enabled": false
+      },
+      "voice-call": {
+        "enabled": false
+      },
+      "sherpa-onnx-tts": {
+        "enabled": false
+      },
+      "spotify-player": {
+        "enabled": false
+      },
+      "mcporter": {
+        "enabled": false
+      },
+      "xurl": {
+        "enabled": false
+      },
+      "clawhub": {
+        "enabled": false
+      },
+      "discord": {
+        "enabled": false
+      },
+      "canvas": {
+        "enabled": false
+      },
+      "taskflow-inbox-triage": {
+        "enabled": false
+      },
+      "ordercli": {
+        "enabled": false
+      }
+    }
+  },
+  "plugins": {
+    "load": {
+      "paths": ["${XIAOBEI_HOME}/awada"]
+    },
+    "entries": {
+      "awada": {
+        "enabled": false
+      },
+      "xai": {
+        "enabled": false
+      },
+      "browser": {
+        "enabled": true
+      },
+      "phone-control": {
+        "enabled": false
+      },
+      "codex": {
+        "enabled": false
+      },
+      "memory-core": {
+        "enabled": true,
+        "config": {
+          "dreaming": {
+            "enabled": false
+          }
+        }
+      },
+      "openclaw-weixin": {
+        "enabled": true
+      }
+    }
+  },
+  "tools": {
+    "exec": {
+      "host": "gateway"
+    },
+    "web": {
+      "fetch": {
+        "ssrfPolicy": {
+          "allowRfc2544BenchmarkRange": true
+        }
+      }
+    }
+  }
+}

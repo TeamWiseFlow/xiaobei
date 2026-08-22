@@ -15,6 +15,7 @@ build 期由 Dockerfile 阶段 3（wiseflow-layer）把 `config-templates/opencl
 |------|------|------|
 | `daemon.env.template` | daemon 环境变量模板，entrypoint 渲染 | ✅ 占位就位（AWK_API_KEY / OFB_KEY / RELAY_BASE_URL / SMTP_*） |
 | `workspace-skeleton/` | 通用 workspace 骨架 | ✅ 结构就位，运行期内容不进镜像 |
+| `config-templates/openclaw-orcarouter.json` | OrcaRouter 网关备选模板（OpenAI 兼容，`api=openai-completions`） | ✅ 新增（镜像 openclaw-awk.json 结构） |
 
 ## openclaw.json 目标态（Phase 7）
 
