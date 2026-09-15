@@ -19,4 +19,5 @@
 | `pixabay-footage` | Pixabay 免费素材搜索下载 | main + content-producer 继承 |
 | `wxwork-drive` | 企业微信微盘 | main + content-producer 继承 |
 | `siliconflow-img-gen` | 硅基流动生图（Phase 5 改火山） | main + content-producer 继承 |
+| `atlascloud-img-gen` | Atlas Cloud 异步图像生成与编辑 | main + content-producer 继承 |
 | `youtube-publish` | YouTube 视频发布（Data API v3 + OAuth2） | main + content-producer 继承 |
