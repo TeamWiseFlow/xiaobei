@@ -4,7 +4,8 @@
 # 职责：
 #   1. 首启从镜像内 runtime-seed 初始化空的 /root/.openclaw 和 /root/.camoufox-cli 卷
 #      （已有卷绝不覆盖——升级镜像时登录态和用户配置会保留）
-#   2. 加载持久化 .env / daemon.env，把 AWK_API_KEY 渲染进 openclaw.json 的 apiKey 字段
+#   2. 加载持久化 .env / daemon.env，把各 LLM 网关 key 渲染进 openclaw.json 的 apiKey 字段
+#      （AWK_API_KEY → bailian-token-plan/awk，ORCAROUTER_API_KEY → orcarouter）
 #   3. 首启生成随机 OPENCLAW_GATEWAY_TOKEN 写 ~/.openclaw/.env（不进镜像层）
 #   4. 启动显示栈：Xvfb（虚拟显示，camoufox 有头模式跑这里）+ fluxbox + x11vnc + websockify + noVNC
 #      用户浏览器开 http://localhost:6080 操作 VNC 桌面，里面能看到 camoufox 浏览器窗口
@@ -118,29 +119,45 @@ start_display_stack() {
   echo "[xiaobei] noVNC web client: http://localhost:6080/vnc.html"
 }
 
-# ─── 5. 渲染 AWK_API_KEY 进 openclaw.json ───────────────────────────
-# 每次启动都用当前 AWK_API_KEY 环境变量覆盖 openclaw.json 里的 apiKey 字段。
+# ─── 5. 渲染 LLM 网关 key 进 openclaw.json ─────────────────────────
+# 每次启动都用当前环境变量覆盖 openclaw.json 里各 provider 的 apiKey 字段。
 #
 # 历史问题：旧版用 raw.replace(/\$\{AWK_API_KEY\}/g, key) 替换 placeholder，
 # 但第一次渲染后 placeholder 就没了，第二次启动找不到 placeholder 就跳过写入——
 # openclaw.json 里永远是第一次的值，后面改环境变量没用。
 #
-# 修复：改成 JSON 解析，直接定位 models.providers["bailian-token-plan"].apiKey，
-# 每次启动用当前 AWK_API_KEY 覆盖。无论 openclaw.json 里是 ${AWK_API_KEY}
-# placeholder 还是已渲染的真值，都能正确更新。
-render_awk_api_key() {
+# 修复：改成 JSON 解析，直接定位 models.providers["<provider>"].apiKey，
+# 每次启动用当前环境变量覆盖。无论 openclaw.json 里是 ${VAR} placeholder 还是
+# 已渲染的真值，都能正确更新。
+#
+# 每个 provider 用各自的 key 环境变量：
+#   bailian-token-plan / awk → AWK_API_KEY
+#   orcarouter                → ORCAROUTER_API_KEY
+render_provider_api_keys() {
   node -e '
     const fs = require("fs");
     const p = process.argv[1];
-    const key = process.env.AWK_API_KEY;
-    if (!key) { console.error("[xiaobei] AWK_API_KEY missing — cannot render openclaw.json"); process.exit(1); }
-
     const config = JSON.parse(fs.readFileSync(p, "utf8"));
     const providers = config?.models?.providers || {};
-    let updated = false;
 
+    // provider 名（归一化小写）→ 该 provider 的 key 环境变量
+    const keyEnvByProvider = {
+      "bailian-token-plan": "AWK_API_KEY",
+      "awk": "AWK_API_KEY",
+      "orcarouter": "ORCAROUTER_API_KEY",
+    };
+
+    let updated = false;
     for (const [name, provider] of Object.entries(providers)) {
-      if (provider && typeof provider.apiKey === "string" && provider.apiKey !== key) {
+      if (!provider || typeof provider.apiKey !== "string") continue;
+      const envVar = keyEnvByProvider[name.toLowerCase()];
+      if (!envVar) continue; // 未知 provider，不碰
+      const key = process.env[envVar];
+      if (!key || key.includes("__FILL")) {
+        console.error(`[xiaobei] ${envVar} missing — skipping provider "${name}"`);
+        continue;
+      }
+      if (provider.apiKey !== key) {
         provider.apiKey = key;
         updated = true;
       }
@@ -148,7 +165,7 @@ render_awk_api_key() {
 
     if (updated) {
       fs.writeFileSync(p, JSON.stringify(config, null, 2) + "\n");
-      console.log("[xiaobei] AWK_API_KEY rendered into openclaw.json");
+      console.log("[xiaobei] provider API keys rendered into openclaw.json");
     }
   ' "$OPENCLAW_HOME/openclaw.json"
 }
@@ -213,12 +230,23 @@ bind_weixin_channel() {
 bootstrap_runtime_state
 load_runtime_environment
 
-if [ -z "${AWK_API_KEY:-}" ] || [[ "$AWK_API_KEY" == __FILL_*__ ]]; then
-  fail "AWK_API_KEY is required; run: AWK_API_KEY=<key> docker compose up -d"
+# 根据 openclaw.json 里实际存在的 provider 校验对应 key（用户换了模板则校验对应 key）
+missing_provider_keys=""
+for provider_env in "bailian-token-plan:AWK_API_KEY" "awk:AWK_API_KEY" "orcarouter:ORCAROUTER_API_KEY"; do
+  provider="${provider_env%%:*}"
+  env_var="${provider_env##*:}"
+  if node -e 'const fs=require("fs");const c=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const p=c?.models?.providers||{};process.exit(p[process.argv[2]]?0:1)' "$OPENCLAW_HOME/openclaw.json" "$provider"; then
+    if [ -z "${!env_var:-}" ] || [[ "${!env_var}" == __FILL_*__ ]]; then
+      missing_provider_keys="${missing_provider_keys} ${env_var}"
+    fi
+  fi
+done
+if [ -n "$missing_provider_keys" ]; then
+  fail "missing required provider key(s):${missing_provider_keys}; run with the matching env var, e.g. AWK_API_KEY=<key> or ORCAROUTER_API_KEY=<key> docker compose up -d"
 fi
 
 ensure_gateway_token
-render_awk_api_key
+render_provider_api_keys
 start_display_stack
 enable_weixin_channel
 bind_weixin_channel

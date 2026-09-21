@@ -3,6 +3,12 @@
 > **开箱即用**：镜像内已装好 openclaw 引擎 + 全部 skills/crews + camoufox-cli + Firefox +
 > openclaw-weixin 插件 + Xvfb/fluxbox/x11vnc/websockify/noVNC 显示栈。
 > 用户本地 build 镜像后只需填 `AWK_API_KEY`，`docker compose up -d` 即可启动。
+>
+> **备选 LLM 网关**：如需使用 [OrcaRouter](https://www.orcarouter.ai)（OpenAI 兼容，
+> 一份 key 路由 DeepSeek/GLM/Qwen/Claude/Gemini 等模型，并在同一端点提供网关级零信任
+> AI Agent 安全防护——默认拒绝审查每条 prompt/response 与工具调用），把
+> `config-templates/openclaw-orcarouter.json` 替换为镜像内的 openclaw.json，并在
+> `.env` 配 `ORCAROUTER_API_KEY`（`sk-orca-...`）即可。
 
 ## 快速开始
 
@@ -103,6 +109,7 @@ compose override 引入。`docker-compose.yml` 已为这种场景预留接入点
 ## 安全边界
 
 - `AWK_API_KEY` 仅从运行环境读取，**不写入镜像层**也不写 `openclaw.json` 的明文。
+- 同理 `ORCAROUTER_API_KEY`（若用 OrcaRouter 模板）也只走环境变量注入。
 - 首启会为 gateway 生成随机 `OPENCLAW_GATEWAY_TOKEN`，以 `0600` 写入持久化 `.env`。
 - Gateway 和 noVNC 在 Compose 中只映射到 `127.0.0.1`。**不要直接把 6080 暴露到公网**。
 - 当前 Camoufox sandbox 需要 `SYS_ADMIN` capability；只运行受信任的官方镜像，并保持

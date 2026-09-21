@@ -24,6 +24,8 @@ services:
       # ${AWK_API_KEY:-__FILL_AWK_API_KEY__} 让 `compose config|ps|down` 在无 .env 时也能
       # 成功；entrypoint 在运行时拒绝 placeholder 值。
       AWK_API_KEY: ${AWK_API_KEY:-__FILL_AWK_API_KEY__}
+      # OrcaRouter 网关 key（用 openclaw-orcarouter.json 模板时配置）
+      ORCAROUTER_API_KEY: ${ORCAROUTER_API_KEY:-__FILL_ORCAROUTER_API_KEY__}
       # wx-mp-hunter posts-list 需 docker exec 进微信客户端容器读 SQLCipher 消息库。
       # WX_BIZ_CONTAINER = 微信客户端容器名（由有权限用户自行 override，不在本公开仓暴露）
       # WX_BIZ_USER_DIR  = 容器内微信用户数据根目录

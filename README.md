@@ -166,6 +166,8 @@ irm https://raw.atomgit.com/wiseflow/xiaobei/raw/master/scripts/install-atomgit.
 > - **主力模型（强烈推荐）**：[阿里云百炼「Token Plan」套餐](https://www.aliyun.com/benefit/ai/aistar?clubBiz=subTask..12766005..10274..) — 一个套餐已经可以覆盖xiaobei系统所需的所有大模型（思考与对话、图像生成、TTS 语音合成、ASR 语音识别和视频生成)。
 >
 > - **仍想用火山方舟 Coding Plan 的用户**：在默认配置模板基础上参考 [openclaw-awk.json](config-templates/openclaw-awk.json)，手动替换 `provider` 和 `agents.default` 字段即可。
+>
+> - **想用 [OrcaRouter](https://www.orcarouter.ai) 的用户**：OrcaRouter 是 OpenAI 兼容的模型网关，一份 key 即可路由 DeepSeek、GLM、Qwen、Claude、Gemini 等主流模型。它还在同一端点运行网关级、零信任的 AI Agent 安全防护——以默认拒绝（default-deny）的方式审查每条 prompt/response 并约束每个工具调用，无需改动应用代码。开通后获得 `ORCAROUTER_API_KEY`（`sk-orca-...`），参考 [openclaw-orcarouter.json](config-templates/openclaw-orcarouter.json) 替换 `provider` 和 `agents.default` 字段即可（或用它替换默认模板）。
 
 > **🎬 视频生成模型配置**
 >
@@ -298,7 +300,8 @@ wiseflow/
 │   └── overrides.sh       # pnpm 依赖覆盖（如替换 playwright → patchright）
 ├── config-templates/      # 配置模板（开箱即用的最佳实践）
 │   ├── openclaw.json      # 默认配置模板（阿里云百炼主力 + fts-only 记忆 + dream 关）
-│   └── openclaw-awk.json  # 火山引擎方舟 Coding Plan 备选模板（主力 GLM-5.2）
+│   ├── openclaw-awk.json  # 火山引擎方舟 Coding Plan 备选模板（主力 GLM-5.2）
+│   └── openclaw-orcarouter.json # OrcaRouter 网关备选模板（主力 orcarouter/auto）
 ├── scripts/               # 工具脚本（详见 scripts/README.md）
 │   ├── lib/               # 脚本共享工具（agent-skills.sh 等）
 │   ├── install.sh         # 一键安装 + 升级（预构建 tarball 路线，macOS + Linux，GitHub 线路；重跑即升级，保留 ~/.openclaw）
