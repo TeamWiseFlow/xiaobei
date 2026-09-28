@@ -86,7 +86,7 @@ When the login page shows a QR code (WeChat Official Account backend, WeChat Cha
 6. If no scan within **3 minutes** and no reply arrives, send: _"扫码超时，将继续处理当前可访问的内容。"_ and proceed.
 
 > **显式有头/无头模式场景规则**：只有以下场景需要显式指定 `camoufox-cli` 的有头/无头参数：
-> 1. **login-manager 登录**（douyin / kuaishou / bilibili / xhs-publish / xhs-browse 5 平台）——强制 `--headed`，用户在浏览器手动扫码/短信/账号密码
+> 1. **login-manager 登录**（douyin / kuaishou / bilibili）——强制 `--headed`，用户在浏览器手动扫码/短信/账号密码。小红书登录使用 `xhs-hunter` 或 `xhs-publish` 各自的登录命令。
 > 2. **需要用户手动过验证**（captcha / 滑块 / 短信）——`--headed`，用户才能在浏览器里手动操作
 > 3. **web-form-fill 表单填报**——强制 `--headed`，便于用户时刻观察填报情况、可随时介入纠正
 >

@@ -4,7 +4,7 @@
 
 ## 1. 按图文 DNA 确定选题
 
-读取 `xhs/dna/<dna-id>/<dna-id>.dna.md` 与 `.template.md`；未指定时用 `dna-0`，目标 DNA 不存在先走 Style DNA workflow 建立。读取 `business_knowledge.md` 和用户素材作为事实与输入。先依据图文 DNA 的选题规则确定本次主题、受众、核心问题和表达方向；用户给定的题目也按 DNA 细化，若与 DNA 不一致，先协调再制作。workflow 不另设内容范围。选题确定后，按 DNA 要求用 `smart-search`、`xhs-content-ops`、`xhs/ref/` 或已有研究核查搜索意图与事实。
+读取 `xhs/dna/<dna-id>/<dna-id>.dna.md` 与 `.template.md`；未指定时用 `dna-0`，目标 DNA 不存在先走 Style DNA workflow 建立。读取 `business_knowledge.md` 和用户素材作为事实与输入。先依据图文 DNA 的选题规则确定本次主题、受众、核心问题和表达方向；用户给定的题目也按 DNA 细化，若与 DNA 不一致，先协调再制作。workflow 不另设内容范围。选题确定后，按 DNA 要求用 `xhs-hunter` 的有界搜索或单篇读取、`xhs/ref/` 及已有研究核查搜索意图；业务事实以 `business_knowledge.md` 和用户材料为准。
 
 按 DNA template 定稿卡片的核心信息；问答卡另写主问题和相关搜索词。DNA 适合反差或反常识表达时，再核查常见看法、新判断及其依据；否则沿用 DNA 的内容结构。案例、数字和引用要有来源；无来源就改为明确的假设或不使用。
 
@@ -25,11 +25,13 @@
 
 ## 4. 小红书发布与记录
 
-按 `xhs-publish` 工具文档先 `xhs-publish check`；需重登时按其消费者域与创作者 SSO 两步流程。把 `note.md` 的实际文字传给 `--body`，把图片按顺序传给 `--images`：
+按 `xhs-publish` 工具文档先 `xhs-publish check`；需重登时运行 `xhs-publish login`，把返回的二维码图片通过当前渠道发给用户；等用户确认后运行 `xhs-publish login-confirm`。把 `note.md` 的实际文字传给 `--body`，把图片按顺序传给 `--images`：
 
 ```bash
 xhs-publish --mode image --title "已确认标题" --body "已确认正文 #话题" --images /绝对路径/page-01.png /绝对路径/page-02.png /绝对路径/page-03.png
 ```
+
+图组含 AI 合成内容时，在发布命令末尾加 `--ai-declaration`；纯实拍或仅使用真实素材的排版卡片不加。
 
 群聊单图只传 `page-01.png`。仅 `ok: true` 且返回笔记 URL 才记为成功；登录、风控、限频按 `xhs-publish` 和 expert-xhs 规则处理，不盲目重发。成功后执行：
 

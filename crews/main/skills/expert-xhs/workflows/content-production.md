@@ -99,7 +99,7 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 
 先建 `xhs/outputs/<note-name>/`，下设 `materials/`。
 
-1. 图文笔记链接 → `xhs-content-ops` 下载正文、图片、互动数据。
+1. 图文笔记链接 → `xhs-hunter fetch` 下载正文、图片、互动数据。
 2. 视频笔记链接 → self-spawn subagent 走 `viral-chaser`。
 3. 本地图片 / 视频 / 音频 / 文档 → 复制或提取进 `materials/`。
 4. 建立素材清单：用户原话、事实、数据、案例、画面素材、授权信息、待确认项。
@@ -110,7 +110,7 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 ### 选题调研
 
 1. 从 DNA 搜索意图地图取主关键词、相关词、长尾句与用户可能提问。
-2. 用 `smart-search` 做平台侧调研，优先小红书 / 知乎 / 抖音等贴合平台。
+2. 用 `xhs-hunter search-notes` 对主关键词做一次有界站内搜索（`--count 20`，不连续翻页）；已有近期样本够用时直接复用。
 3. 提炼真实用户讨论、痛点、争议点、常见提问与高热内容形式。
 4. 有价值线索归档为参考素材，不直接替代用户事实。
 
@@ -242,7 +242,7 @@ Brief 硬性规则：
 ```bash
 # 1. 探活（批量发布只探活一次）
 xhs-publish check
-# exit 0 = 有效；exit 2 = SESSION_EXPIRED -> 按 xhs-publish 文档两步重登（www 重登 + creator SSO）再探活一次
+# exit 0 = 有效；exit 2 = 无会话或认证失效 -> xhs-publish login，发送返回的二维码图片，等用户确认后 xhs-publish login-confirm，再探活一次
 
 # 2. 图文发布
 xhs-publish --mode image --title "标题" --body "正文（含 #话题1 #话题2）" --images img1.jpg img2.jpg img3.jpg
@@ -252,7 +252,7 @@ xhs-publish --mode video --title "标题" --body "正文" --video video.mp4 --co
 ```
 
 - `--body` 必须传实际文字，不能传文件路径或 `$(cat file)`；从 `note.md` 读出后硬编码进命令。
-- AIGC 生成内容按平台规则标注；纯实拍素材不声明。
+- 笔记含 AI 合成内容时，在对应 `xhs-publish` 命令末尾加 `--ai-declaration`，发布时一并提交平台侧声明；纯实拍素材不加。
 - 返回 `{"ok": true, "note_id": ..., "url": ...}` 才算成功；`AUTH_EXPIRED` 重登后重试一次；`RATE_LIMIT` 等 30 分钟后重试。
 - 单账号每天 ≤ 1-3 篇；触发风控立即降级，30 分钟内不重试。
 - 发布失败伴随登录异常迹象时停止重试，记下来走重登流程，不批量撞风控。

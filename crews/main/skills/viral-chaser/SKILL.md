@@ -57,7 +57,7 @@ Use this skill when:
 
 **本技能仅产出追爆报告**，不生成脚本，不制作视频。如需据此生成视频，需另行委托 `content-producer` （spawn subagent）执行。
 
-**Supported platforms:** 抖音（Douyin — 视频作品 + 图集图文作品）、B 站（Bilibili）、小红书（XHS — 仅视频笔记, 如果是图文的话则转向执行 `xhs-content-ops` 技能。）
+**Supported platforms:** 抖音（Douyin — 视频作品 + 图集图文作品）、B 站（Bilibili）、小红书（XHS — 仅视频笔记, 如果是图文的话则转向执行 `xhs-hunter fetch`。）
 
 **Not supported:** 微信视频号、TikTok
 
@@ -89,7 +89,7 @@ All downloaded files, analysis results, and generated reports will be saved unde
 
 ### Step 2 — Run the analyzer（内置探活 + 下载 + 转写 + 关键帧）
 
-一条命令闭环：先探活、再下载、再 ASR、再抽帧。**探活已合并进脚本**，无需单独跑 check-login。
+一条命令闭环：取数、下载、ASR、抽帧。抖音的探活已合并进脚本；小红书由 `xhs-hunter` 管理 PC 会话并下载视频，无需另外拼接取数或下载命令。
 
 ```bash
 viral-chaser <url> [--no-frames]
@@ -101,7 +101,7 @@ viral-chaser <url> [--no-frames]
 
 > **⚠️ exec allowlist 注意**：`OUTPUT_DIR=... viral-chaser ...` 内联 env 前缀会触发 allowlist miss。通过 exec 工具调用时，把 `OUTPUT_DIR` 放到 exec 的 **`env` 字段**里传，不要写成内联前缀；同理避免 `mkdir ... ; echo` 这类分号复合命令。脚本本身已正确读取 `OUTPUT_DIR` 落盘，问题只在调用规范。
 
-**内置探活**（`_shared/check-session.ts`）：douyin 抓取前先做两层探活（Tier1 cookie 关键字段 + Tier2 平台 pong，pong 带 TTL 缓存）；bilibili 公开视频免登录，跳过探活。**xhs 走无 cookie HTML 路线（见下），不依赖签名/cookie，跳过探活**——探活 user/me 通过也不代表 feed 签名路径被接受，HTML 路线根本不走签名，无需探活。
+**登录态**：douyin 抓取前通过 `_shared/check-session.ts` 探活；bilibili 公开视频免探活。小红书复用 `xhs-hunter` 的 PC 会话，签名由 OFB Relay 提供；缺会话时按 `xhs-hunter` 的扫码登录流程处理。
 
 The script outputs a **JSON object to stdout**. Read it and proceed with analysis.
 
@@ -144,7 +144,7 @@ The script outputs a **JSON object to stdout**. Read it and proceed with analysi
 
 - `kind`: `video`（正常视频作品）或 `note`（抖音图集图文作品）。`note` 时 `transcript` 为 `null`、`frames` 为空，另给 `images: [".../image_00.jpg", ...]`（最多 20 张）与 `metadata.imageCount`；图文样本的视觉证据就是这些图片。
 - `metadata.orientation`: 由 width/height 推出的 `vertical` / `horizontal` / `square`；平台拿不到宽高时为空串，必须自己 `ffprobe` 本地成片补齐，不得猜。
-- 各字段平台支持度不同：抖音给全套；小红书 HTML 路线给 `hashtags` 与互动计数（无播放数、无发布时间）；B 站给时长与三项互动。缺失一律在报告里写「接口未返回」，不编造。
+- 各字段平台支持度不同：抖音给全套；小红书从 `xhs-hunter` 取得标题、正文、作者、发布时间、话题与互动计数，时长和宽高从本地视频读取，PC 笔记详情不提供播放数；B 站给时长与三项互动。缺失一律在报告里写「接口未返回」，不编造。
 - `frames`: 最多 12 张，覆盖开场（0s / 3s）、各口播段中点与全片比例点（25% / 50% / 63% / 75% / 90%）——**反转植入类作品的反转点通常在 55%-76%，只抽前几秒会完全错过**。
 
 - `transcript.estimated`: `false` 表示 `segments` 是火山 ASR 返回的**真实时间戳**（utterance 级，毫秒精度转秒）；`true` 仅在接口异常未返回 utterances 时出现，此时按句切分全文并按字数比例在音频时长上估算分段，时间区间为近似值。正常情况下始终为 `false`。
@@ -152,8 +152,8 @@ The script outputs a **JSON object to stdout**. Read it and proceed with analysi
 **Exit codes:**
 - `0` = Success
 - `1` = Error（URL invalid / download failed），或 `SIGN_UNAVAILABLE`（签名缺 OFB_KEY，重登救不了，交 IT engineer 配凭证）
-- `3` = `SECURITY_BLOCK`（小红书软风控）— 脚本已做一次冷却重试；停止本轮该平台采样，不立即重跑、不换 cookie、不重登
-- `2` = `SESSION_EXPIRED`（cookie 失效）— 走 login-manager 重登（`login-manager --platform <p>` 导出+验证），重试一次
+- `3` = `SECURITY_BLOCK`（小红书返回安全限制）— 停止本轮该平台采样，不立即重跑或重登
+- `2` = `SESSION_EXPIRED`（会话缺失或失效）— 小红书走 `xhs-hunter login`；抖音/B 站按对应登录流程处理
 
 ### Step 3 — Read key frames (if available)
 
@@ -317,6 +317,6 @@ Read: <platform>/ref/<slug>/references/frames/frame_01_3s.jpg
 - **Workspace files** are stored in `<platform>/ref/<slug>/` — all downloaded assets and analysis reports are kept together. The `references/` subdirectory contains raw assets from the analyzer.
 - **Bilibili DASH format**: if `mediaFormat` is `DASH`, the video and audio streams are separate. The downloaded `video.mp4` contains the video stream only; audio is in `audio.wav` after extraction. This is transparent to the analysis workflow.
 - **XHS video notes only**: 小红书图文笔记（image-only）不含视频，viral-chaser 会报错并提示。只有视频笔记（type=video）才能下载和分析。
-- **XHS 取数走 SSR HTML 路线（无 cookie 优先）**：`platforms/xhs.ts` 直接 GET `www.xiaohongshu.com/explore/{note_id}?xsec_token=...` 笔记详情页 HTML，解析 og:meta + `window.__INITIAL_STATE__` 拿标题/封面/视频地址/时长/互动计数（`_shared/xhs-html-note.ts`）。**不走 feed API**（`/api/sns/web/v1/feed` 需 xRap relay 签名，极易 406/500/滑块，且探活 user/me 通过不代表 feed 签名路径被接受，会出现「探活绿、feed 红」假绿）。输入必须是带 `xsec_token` 的分享链接（`xhslink.com/...` 或 `www.xiaohongshu.com/explore/...?xsec_token=...`），脚本从短链展开后的 URL 抽 token。无 cookie 抓不到（滑块/空页）时，若本机有 `xhs-browse` cookie 则用同指纹 UA + cookie 回退重试一次。
+- **XHS 取数与下载走 `xhs-hunter`**：传完整笔记链接（短链或含 `xsec_token` 的详情链接），脚本调用 `xhs-hunter fetch --output-dir ... --download-media`，直接使用其 `video.mp4`，再执行转写与抽帧。不可访问或 token 不匹配时，从站内搜索结果重新获取该笔记链接；不要自行请求 HTML 或下载视频 URL。
 - **ASR segments**: 语音转写使用火山引擎豆包语音·录音文件极速版（`volc.bigasr.auc_turbo`），原生返回 utterance 级真实时间戳（`start_time`/`end_time`，毫秒），脚本转成秒后填入 `transcript.segments`，`estimated=false`。仅在接口异常未返回 utterances 时，才按句切分全文并按字数比例在音频时长上估算分段（`estimated=true`）作为兜底。开通/鉴权见文首「前置：开通火山语音模型」。
-- **Exit code 2 — cookie expired:** Execute the login flow described in the login-manager skill（原则 3：douyin / xhs-browse 有头手动登录；bilibili 有头登录），导出 cookie + UA 后重试一次。Do not retry more than once.
+- **Exit code 2 — cookie expired:** 抖音/B站按 `login-manager` 重登；小红书运行 `xhs-hunter login` 扫码并在确认后执行 `xhs-hunter login-confirm`。Do not retry more than once.

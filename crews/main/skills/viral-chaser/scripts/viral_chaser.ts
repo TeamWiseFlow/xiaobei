@@ -12,19 +12,18 @@
  *   3  XHS SECURITY_BLOCK after one cooldown retry; stop, do not re-login
  */
 
-import { mkdirSync, existsSync, rmSync } from "fs"
+import { mkdirSync, existsSync, statSync } from "fs"
 import { execFile } from "child_process"
 import { promisify } from "util"
 import { join } from "path"
 
 import { parseLink } from "./link_parser.ts"
-import { requireSession, readSession, readUserAgent } from "./session.ts"
+import { requireSession, readUserAgent } from "./session.ts"
 import type { SessionData } from "./session.ts"
 import { checkSession } from "../../_shared/check-session.ts"
 import { getDouyinVideo } from "./platforms/douyin.ts"
 import { getBilibiliVideo } from "./platforms/bilibili.ts"
-import { XhsSecurityBlockError } from "../../_shared/xhs-html-note.ts"
-import { getXhsVideo } from "./platforms/xhs.ts"
+import { getXhsVideoViaHunter, XhsHunterFailure } from "./platforms/xhs-hunter.ts"
 import { downloadVideo } from "./downloader.ts"
 import { extractAudio } from "./audio_extractor.ts"
 import { transcribeAudio } from "./transcriber.ts"
@@ -137,8 +136,7 @@ async function main(): Promise<void> {
   // 2. 抓取前探活（pong）合并进下载脚本——单条下载无法批量，每条自带探活最稳，
   //    且 pong 带 TTL 缓存，重复调用成本低。bilibili 公开视频免登录，跳过。
   //    douyin 走 _shared checkSession（Tier1 字段 + Tier2 平台 pong）。
-  //    xhs 走无 cookie HTML 路线（见 platforms/xhs.ts），不依赖签名/cookie，跳过探活——
-  //    探活 user/me 通过也不代表 feed 签名路径被接受，HTML 路线根本不走签名，无需探活。
+  //    xhs 的会话检查、取数和下载统一由 xhs-hunter 处理。
   if (platform === "douyin") {
     const probe = await checkSession(platform)
     if (!probe.ok) {
@@ -151,23 +149,17 @@ async function main(): Promise<void> {
   }
 
   // 3. Load session
-  // - douyin / bilibili：必需，缺失 exit 2（交 login-manager 重登）
-  // - xhs：可选读。xhs 走无 cookie HTML 路线，session 仅作滑块/空页时的 cookie 回退，
-  //   缺失不致命；有则用同指纹 UA + cookie 重试一次。
-  const sessionPlatform = platform === "xhs" ? "xhs-browse" as Platform : platform
-  let session: SessionData | null
-  if (platform === "xhs") {
-    session = readSession(sessionPlatform)
-  } else {
-    session = requireSession(sessionPlatform)
-  }
+  // 抖音、B 站使用本技能的会话；小红书会话由 xhs-hunter 管理。
+  const session: SessionData | null = platform === "xhs" ? null : requireSession(platform)
+  const tmpDir = getTmpDir(contentId)
+  mkdirSync(tmpDir, { recursive: true })
 
   // 4. Fetch video metadata from platform API
   let videoInfo: {
     title: string; desc: string; videoUrl: string; audioUrl?: string
     coverUrl: string; durationMs?: number; durationSeconds?: number
     author: string; stats: Record<string, number>
-    contentId: string; mediaFormat?: string
+    contentId: string; mediaFormat?: string; localVideoPath?: string
     // DNA 采样补充字段（平台能给则给，缺失为 0 / 空）
     width?: number; height?: number; ratio?: string
     createTime?: number; authorSignature?: string; authorUid?: string
@@ -180,20 +172,14 @@ async function main(): Promise<void> {
     } else if (platform === "bilibili") {
       videoInfo = await getBilibiliVideo(contentId, session)
     } else if (platform === "xhs") {
-      // Extract xsec_token from the resolved URL (after short-link expansion),
-      // not the original input — short links carry no token until expanded.
-      const tokenMatch = parsed.resolvedUrl.match(/[?&]xsec_token=([^&]+)/)
-      const xsecToken = tokenMatch ? decodeURIComponent(tokenMatch[1]) : ""
-      const sourceMatch = parsed.resolvedUrl.match(/[?&]xsec_source=([^&]+)/)
-      const xsecSource = sourceMatch ? decodeURIComponent(sourceMatch[1]) : ""
-      videoInfo = await getXhsVideo(contentId, xsecToken, xsecSource, session)
+      videoInfo = await getXhsVideoViaHunter(parsed.resolvedUrl, contentId, tmpDir)
     } else {
       errExit(`不支持的平台: ${platform}`)
     }
   } catch (e) {
-    if (e instanceof XhsSecurityBlockError) {
-      printJson({ ok: false, error: "SECURITY_BLOCK", platform: "xhs", reason: e.message })
-      process.exit(3)
+    if (e instanceof XhsHunterFailure) {
+      printJson({ ok: false, error: e.code, platform: "xhs", reason: e.message })
+      process.exit(e.code === "SESSION_EXPIRED" ? 2 : e.code === "SECURITY_BLOCK" ? 3 : 1)
     }
     const msg = (e as Error).message
     if (msg.includes("cookie") || msg.includes("失效") || msg.includes("auth")) {
@@ -202,9 +188,6 @@ async function main(): Promise<void> {
     }
     errExit(`获取视频信息失败: ${msg}`)
   }
-
-  const tmpDir = getTmpDir(contentId)
-  mkdirSync(tmpDir, { recursive: true })
 
   // 4b. 图文作品分支（抖音图集笔记）：无播放地址但有图片列表时，只下载图片 +
   //     输出文本与 meta，不做音频提取 / ASR / 抽帧。这类样本喂图文 DNA（note 框架），
@@ -216,7 +199,7 @@ async function main(): Promise<void> {
     for (let i = 0; i < imageUrls.length && i < 20; i++) {
       const outName = `image_${String(i).padStart(2, "0")}.jpg`
       try {
-        const r = await downloadVideo(imageUrls[i], tmpDir, outName, readUserAgent(sessionPlatform) || "")
+        const r = await downloadVideo(imageUrls[i], tmpDir, outName, session ? readUserAgent(session.platform) : "")
         if (r?.filePath) imagePaths.push(r.filePath)
       } catch {
         // 单张失败不致命：跳过继续
@@ -254,17 +237,23 @@ async function main(): Promise<void> {
   // 5. Download video
 
   process.stderr.write(`[viral-chaser] 开始下载视频...\n`)
-  // UA 走独立 .ua.json 文件（原则 4：cookie + UA 同指纹同源）。
-  // xhs 无 cookie 路线可能没有 UA 文件，给默认 Chrome UA 兜底。
-  const userAgent = readUserAgent(sessionPlatform) ||
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
   let downloadResult: Awaited<ReturnType<typeof downloadVideo>>
-  try {
-    downloadResult = await downloadVideo(
-      videoInfo!.videoUrl, tmpDir, "video.mp4", userAgent
-    )
-  } catch (e) {
-    errExit(`视频下载失败: ${(e as Error).message}`)
+  if (platform === "xhs") {
+    if (!videoInfo!.localVideoPath) {
+      errExit("xhs-hunter 未返回已下载的视频文件")
+    }
+    downloadResult = {
+      filePath: videoInfo!.localVideoPath,
+      fileSize: statSync(videoInfo!.localVideoPath).size,
+    }
+  } else {
+    const userAgent = (session && readUserAgent(session.platform)) ||
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+    try {
+      downloadResult = await downloadVideo(videoInfo!.videoUrl, tmpDir, "video.mp4", userAgent)
+    } catch (e) {
+      errExit(`视频下载失败: ${(e as Error).message}`)
+    }
   }
 
   // 6. Extract audio

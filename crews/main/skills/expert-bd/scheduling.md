@@ -57,7 +57,7 @@
 
 ### Comment Engagement（评论区拓展）
 
-> ⚠️ 小红书不支持批量自动化（走 `xhs-interact` 严格控制频次）。
+> ⚠️ 小红书不支持批量互动。搜索与评论采集走 `xhs-hunter`；互动需逐条核对并严格控制频次。
 
 ```markdown
 ### Comment Engagement（评论区拓展）

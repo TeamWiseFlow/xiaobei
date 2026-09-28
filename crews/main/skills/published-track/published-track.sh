@@ -30,7 +30,6 @@ case "$cmd" in
   query-pending)          exec bash "$SCRIPT_DIR/scripts/query-pending.sh" "$@" ;;
   check-published)        exec bash "$SCRIPT_DIR/scripts/check-published.sh" "$@" ;;
   set-distribute-status)  exec bash "$SCRIPT_DIR/scripts/set-distribute-status.sh" "$@" ;;
-  get-xhs-user-id)        exec bash "$SCRIPT_DIR/scripts/get-xhs-user-id.sh" "$@" ;;
   init-db)                exec bash "$SCRIPT_DIR/scripts/init-db.sh" "$@" ;;
   migrate-v3)             exec bash "$SCRIPT_DIR/scripts/migrate-v3.sh" "$@" ;;
   *)
@@ -46,7 +45,6 @@ case "$cmd" in
   query-pending          查询待分发内容
   check-published        查某作品是否已发布
   set-distribute-status  设置分发状态
-  get-xhs-user-id        获取/缓存 xhs user_id
   init-db                初始化数据库（幂等）
   migrate-v3             迁移到 v3 schema（dna_id/account/perf_evaluated，幂等）
 

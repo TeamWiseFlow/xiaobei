@@ -43,7 +43,7 @@ metadata:
 | `rss-reader` | 发现并抓取网页 RSS/Atom feed | `rss-reader` |
 | `xianyu-ops` | 闲鱼商品搜索 / 详情 / 私信 | `xianyu-ops` |
 | `twitter-interact` | Twitter/X 点赞 / 转推 / 收藏 / 关注（回复属 `twitter-post` 发布范畴，在 `expert-twitter` 包内） | `twitter-interact` |
-| `xhs-interact` | 小红书评论 / 回复 / 点赞 / 关注（纯浏览器指导，agent 按说明直接驱动 camoufox-cli） | 无 |
+| `xhs-hunter` | 小红书 PC 端搜索、笔记详情与评论采集 | `xhs-hunter` |
 
 跨领域通用技能：`smart-search`（构造各平台搜索 URL）、`browser-guide`（浏览器操作规范）、`email-ops`（邮件发送）。
 

@@ -14,7 +14,7 @@
  *   - 快手:  GraphQL（无需签名）
  *
  * Cookie 来源: login-manager（~/.openclaw/logins/{platform}.json）
- *   小红书（xhs）不走本脚本——走 xhs-engagement 技能（camoufox creator 后台方案）
+ *   小红书（xhs）走 xhs-engagement 的 Creator HTTP 接口
  *
  * Usage:
  *   node fetch-retro-data.ts --platform douyin --content-id <aweme_id>
@@ -323,10 +323,8 @@ async function fetchKuaishou(photoId: string): Promise<RetroResult> {
 
 // ─── 小红书 ────────────────────────────────────────────────────────────────
 //
-// 2026-08-22 起 xhs 不走本脚本——取数走 xhs-engagement 技能（camoufox 打开 creator
-// 后台笔记管理页，复用 xhs-browse session 登录态），与 wx_mp/wx_channel 同模式，
+// xhs 取数由 xhs-engagement 使用独立 Creator HTTP 会话完成。
 // agent 直调 `xhs-engagement fetch --row-id <rowid>`。
-// 旧 profile SSR 方案 2026-07-25 起结构性失效（SSR notes 置空数组），相关代码已移除。
 
 // ─── Main ─────────────────────────────────────────────────────────────────
 
@@ -358,8 +356,7 @@ async function main(): Promise<void> {
       result = await fetchKuaishou(contentId)
       break
     case "xhs":
-      // 2026-08-22 起 xhs 不走本脚本——走 xhs-engagement 技能（camoufox creator 后台方案）
-      process.stderr.write("❌ xhs 不走 fetch-retro-data.ts。请直调 xhs-engagement 技能：xhs-engagement fetch --row-id <rowid>（camoufox 抓 creator 后台方案）\n")
+      process.stderr.write("❌ xhs 不走 fetch-retro-data.ts。请直调 xhs-engagement fetch --row-id <rowid>（Creator HTTP 接口）\n")
       process.exit(1)
     default:
       process.stderr.write(`❌ 不支持的平台: ${platform}\n`)

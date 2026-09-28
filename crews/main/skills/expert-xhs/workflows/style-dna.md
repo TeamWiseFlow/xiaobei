@@ -54,7 +54,7 @@ xhs/dna/{dna-id}/
 
 | 来源 | 处理 |
 | --- | --- |
-| 图文笔记链接 | `xhs-content-ops` 下载正文、图片与互动数据 |
+| 图文笔记链接 | `xhs-hunter fetch` 下载正文、图片与互动数据 |
 | 视频笔记链接 | self-spawn subagent 走 `viral-chaser` 拆解 |
 | 用户提供的草稿 / 文字稿 | 整理为 `.md` / `.txt`，保留数据与账号线索 |
 | 用户想法 / 偏好 | 不生成 report，按用户输入转译进入 DNA |

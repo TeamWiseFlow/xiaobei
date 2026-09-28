@@ -1,6 +1,6 @@
 ---
 name: login-manager
-description: 平台登录态管理。约定各平台登录流程（强制有头手动登录）、探活规则、中央 cookie+UA 存储路径约定。仅管 4 个平台（douyin/kuaishou/bilibili/xhs-browse）。
+description: 抖音、快手、B 站的浏览器登录态管理。约定有头登录、探活和中央 cookie/UA 存储。
 metadata:
   openclaw:
     emoji: 🔑
@@ -11,7 +11,7 @@ metadata:
 
 # Login Manager（平台登录态管理）
 
-管 4 个平台的登录态：`douyin` / `bilibili` / `kuaishou` / `xhs-browse`。其他平台（twitter / weibo / zhihu / xianyu / weixin-channel / wx_mp / xhs-publish 等）**不走本 skill**——各平台专属 skill 自管登录。
+管 3 个浏览器登录态：`douyin` / `bilibili` / `kuaishou`。其他平台由各自 skill 管理。
 
 ## 支持的平台
 
@@ -20,7 +20,6 @@ metadata:
 | `douyin` | `https://www.douyin.com/` | `~/.openclaw/logins/douyin.json` + `douyin.ua.json` |
 | `bilibili` | `https://passport.bilibili.com/login` | `~/.openclaw/logins/bilibili.json` + `bilibili.ua.json` |
 | `kuaishou` | `https://www.kuaishou.com/` | `~/.openclaw/logins/kuaishou.json` + `kuaishou.ua.json` |
-| `xhs-browse` | `https://www.xiaohongshu.com/` | `~/.openclaw/logins/xhs-browse.json` + `xhs-browse.ua.json` |
 
 ---
 
@@ -41,7 +40,7 @@ metadata:
 camoufox-cli --session <platform> --persistent --headed --json open "<登录页 URL>"
 ```
 
-session 名 = 平台 key（`douyin` / `bilibili` / `kuaishou` / `xhs-browse`），每个平台一个持久化 session。
+session 名 = 平台 key（`douyin` / `bilibili` / `kuaishou`），每个平台一个持久化 session。
 
 ### Step 2 — 通知用户登录并等待确认
 
@@ -67,7 +66,7 @@ login-manager --platform <platform>
 
 ## 注意事项
 
-**并发约束**：每平台一个持久化 session，session 名 = 平台 key。同一 platform session 上走 fail-first 队列（同 session 已有命令在跑时新命令直接 fail），不要并发开多个登录流。浏览器类下游 skill（如 `xhs-interact`）用 `--session <平台 key> --persistent` 重起无头 session 复用本 skill 落盘的登录态，用完即 close。
+**并发约束**：每平台一个持久化 session，session 名 = 平台 key。同一 platform session 上走 fail-first 队列（同 session 已有命令在跑时新命令直接 fail），不要并发开多个登录流。浏览器类下游 skill 用 `--session <平台 key> --persistent` 重起无头 session 复用本 skill 落盘的登录态，用完即 close。
 
 **重登纪律**：不自动重试超过一次——频繁重试有封号风险。cookie 只存 `~/.openclaw/logins/`，不进代码 / 日志。profile 丢失 / 指纹错配 → 重建 + 重登录，绝对不允许导入 cookie 造会话。
 
@@ -80,8 +79,8 @@ login-manager --platform <platform>
 > 主力后端 = `target=camoufox`，上面命令针对 camoufox。`target=host` / `target=node` 只按本 skill 的**流程 + 约定**走——何时有头 / 探活节奏 / 中央存储路径是**后端无关**的，照本 skill 执行；不要照搬 `camoufox-cli ...` 命令，用你当前后端自带的浏览器工具语义登录 + 导出 cookie/UA 即可。
 
 **两层探活**（`_shared/check-session.ts`）：
-- Tier 1 cookie 关键字段：douyin→`sessionid`+`sid_tt`+`uid_tt`、bilibili→`SESSDATA`/`DedeUserID`、kuaishou→`webday7`/`userId`/`passToken`、xhs-browse→`web_session`。
-- Tier 2 平台 pong：bilibili `/x/web-interface/nav`、kuaishou graphql `visionProfileUserList`、xhs-browse `edith.xiaohongshu.com/api/sns/web/v2/user/me`、douyin `/aweme/v1/web/history/read/`。pong 带 TTL 缓存（批量探活把 N 次 pong 压成 1 次）。
+- Tier 1 cookie 关键字段：douyin→`sessionid`+`sid_tt`+`uid_tt`、bilibili→`SESSDATA`/`DedeUserID`、kuaishou→`webday7`/`userId`/`passToken`。
+- Tier 2 平台 pong：bilibili `/x/web-interface/nav`、kuaishou graphql `visionProfileUserList`、douyin `/aweme/v1/web/history/read/`。pong 带 TTL 缓存（批量探活把 N 次 pong 压成 1 次）。
 - 签名平台缺 `OFB_KEY` → `SIGN_UNAVAILABLE` 仅警告（presence 已过，登录本身成功），不 fail。
 
 **中央存储路径约定**：
@@ -95,8 +94,6 @@ cookie 和 UA **必须同时导出**——同一指纹下的 cookie 才不会被
 
 **强制有头手动登录**：所有平台一律 `--headed`，用户在浏览器里手动扫码 / 短信 / 账号密码完成登录。agent 不主动触发登录动作，只开浏览器等用户。
 
-**严禁 cookie import 造会话**：浏览器操作一律走真实登录后的**持久化 session**（登录态 + 指纹冻结在 session profile 里），不开临时 session 再 `cookies import`。xhs `a1`/`websectiga` 等设备指纹 cookie 导入到不同指纹的浏览器会话会错配 → 被风控检测。中央存储的 cookie+UA 只给下游**脚本**做 raw HTTP 抓取用（拼进 header 直接发请求，不经浏览器）。
+**严禁 cookie import 造会话**：浏览器操作一律走真实登录后的**持久化 session**（登录态 + 指纹冻结在 session profile 里），不开临时 session 再 `cookies import`。中央存储的 cookie+UA 只给下游**脚本**做 raw HTTP 抓取用（拼进 header 直接发请求，不经浏览器）。
 
-**HTML 登录墙检测**（脚本 / 纯 HTTP 用）：下游 raw HTTP fetch 期望 JSON 时，session 失效平台可能返回 HTML 登录页（200 `text/html` 或 302→login）而非 JSON error，`resp.json()` 抛乱码错。`_shared/relay-sign.ts` 的 `xhsFetch` 已内置登录墙检测（content-type 含 `text/html` 或 body 以 HTML 标签开头 → 抛 `LoginWallError`，消息以 `SESSION_EXPIRED:` 起头），下游捕获后 emit `SESSION_EXPIRED` + exit 2。新增 raw-HTTP 脚本若不走 `xhsFetch` 应复用同款检测（正则大小写不敏感）。
-
-**软风控 ≠ 登录失效**：xhs 速度型软风控页（redirect `website-login/error?error_code=300017/300031` 或「安全限制/请求太频繁」文案）也是 HTML，但语义是**节奏风控**不是登录过期。`xhsFetch` 会先判软风控抛 `XhsSecurityBlockError`（`SECURITY_BLOCK:` 起头）再判登录墙；HTML 路线 `_shared/xhs-html-note.ts` 同款。pong 撞软风控判 UNKNOWN 放行（`check-session.ts` pongXhs，同 douyin status_code=4 先例），**不触发重登**。下游捕获到 SECURITY_BLOCK 应降速/冷却重试。
+**HTML 登录墙检测**（脚本 / 纯 HTTP 用）：下游 raw HTTP fetch 期望 JSON 时，session 失效平台可能返回 HTML 登录页（200 `text/html` 或 302→login）而非 JSON error。下游脚本应检查响应类型，报告登录失效而不把 JSON 解析失败当作数据为空。

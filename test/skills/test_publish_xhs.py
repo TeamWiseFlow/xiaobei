@@ -42,6 +42,11 @@ class NormalizeBodyNewlinesTests(unittest.TestCase):
         )
         self.assertEqual([t["name"] for t in topics], ["职场"])
 
+    def test_formatted_topic_is_not_wrapped_twice(self) -> None:
+        body = "\ufeff#职场[话题]#\ufeff"
+        topics = publish_xhs.extract_topics(body)
+        self.assertEqual(publish_xhs.rewrite_topics_in_body(body, topics), body)
+
 
 class MainBodyNormalizationTests(unittest.TestCase):
     def test_main_publishes_body_with_real_newlines(self) -> None:
@@ -55,19 +60,34 @@ class MainBodyNormalizationTests(unittest.TestCase):
         ]
         captured: dict = {}
 
-        def fake_publish(client, cookie_dict, ua, title, body, images, topics, private):
+        def fake_publish(args, body, topics):
             captured["body"] = body
             return {"ok": True, "note_id": "x", "url": "u"}
 
         with (
-            mock.patch.object(sys, "argv", argv),
-            mock.patch.object(publish_xhs, "load_cookies", return_value=({}, "UA")),
-            mock.patch.object(publish_xhs, "publish_image_note", side_effect=fake_publish),
+            mock.patch.object(publish_xhs, "publish", side_effect=fake_publish),
             mock.patch.object(sys, "stdout", new=io.StringIO()),
         ):
-            publish_xhs.main()
+            self.assertEqual(publish_xhs.main(argv[1:]), 0)
 
         self.assertEqual(captured["body"], "第一行\n第二行")
+
+    def test_ai_declaration_flag_reaches_publish(self) -> None:
+        captured = {}
+
+        def fake_publish(args, body, topics):
+            captured["ai_declaration"] = args.ai_declaration
+            return {"ok": True, "note_id": "x", "url": "u"}
+
+        with (
+            mock.patch.object(publish_xhs, "publish", side_effect=fake_publish),
+            mock.patch.object(sys, "stdout", new=io.StringIO()),
+        ):
+            self.assertEqual(publish_xhs.main([
+                "--mode", "image", "--title", "标题", "--body", "正文",
+                "--images", "img.jpg", "--ai-declaration",
+            ]), 0)
+        self.assertTrue(captured["ai_declaration"])
 
 
 if __name__ == "__main__":

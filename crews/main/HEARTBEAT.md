@@ -68,7 +68,7 @@
 
 | 专家包 | 状态查询 | 取数命令 |
 | --- | --- | --- |
-| expert-xhs | `published-track platform-status --platform xhs` | `xhs-engagement fetch-all` |
+| expert-xhs | `published-track platform-status --platform xhs` | `xhs-engagement daily` |
 | expert-wx-channel | `published-track platform-status --platform wx_channel` | `wx-channel-engagement fetch-all` |
 | expert-wx-mp | `published-track platform-status --platform wx_mp` | `wx-mp-engagement fetch-all` |
 
@@ -129,7 +129,7 @@ content-calibrator eval --platform <platform> --check
 2. **取数端登录态失效列表**（如有）：
    > ⚠️ 以下**取数端**登录态已失效，数据未能更新。请白天通知小贝重新登录：
    > - douyin（抖音）
-   > - xhs-browse（小红书浏览端）
+   > - xhs-creator-local（小红书创作者端）
    > - wx-channel（微信视频号)
 
 3. DNA 表现评估摘要（如有）：列出本轮评估的 DNA（平台 / dna-id / 覆盖篇数）+ 整体判定（改善 / 平稳 / 下滑）+ 关键归因；无触发 DNA 时写「无 DNA 达到评估阈值」并附各 DNA 待评估计数。

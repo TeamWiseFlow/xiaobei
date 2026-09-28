@@ -35,9 +35,6 @@ function getPlatformHeaders(videoUrl: string, userAgent: string): Record<string,
   } else if (videoUrl.includes("bilivideo") || videoUrl.includes("bili") || videoUrl.includes("hdslb")) {
     headers["Referer"] = "https://www.bilibili.com/"
     headers["Origin"] = "https://www.bilibili.com"
-  } else if (videoUrl.includes("xhscdn.com") || videoUrl.includes("xiaohongshu")) {
-    headers["Referer"] = "https://www.xiaohongshu.com/"
-    headers["Origin"] = "https://www.xiaohongshu.com"
   }
 
   return headers

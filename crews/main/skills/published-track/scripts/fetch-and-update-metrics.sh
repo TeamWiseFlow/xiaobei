@@ -49,7 +49,7 @@ extract_content_id() {
 # ─── 平台配置 ──────────────────────────────────────────────────────────────
 
 # 脚本支持的平台（fetch-retro-data.ts 能处理的）
-# 2026-08-22：xhs 移出——走 xhs-engagement 技能（camoufox creator 后台方案），
+# xhs 走 xhs-engagement 的 Creator HTTP 接口，
 # 与 wx_mp/wx_channel 同模式，见下方平台路由
 # 2026-09-16：bilibili / kuaishou 移出——自动取数范围收窄为完全支持 Expert 架构的
 # 4 个平台（douyin 走本脚本；xhs/wx_mp/wx_channel 走各自专家包的 engagement 工具），

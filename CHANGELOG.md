@@ -7,6 +7,14 @@
 - 火山视频仅支持 Seedance 2.5 → 2.0 fast，按时长和参考素材数量筛选候选链，补齐参考音频、首尾帧互斥与 2.5 adaptive 比例适配。
 - `awk-img-gen` 恢复火山：AWK_GEN_KEY → 百炼业务空间 → AWK_API_KEY；Seedream 5.0 lite → 4.5，支持显式平台、火山尺寸校验及 PNG 输出。
 
+### 小红书能力升级
+
+- 新增一级技能 `xhs-hunter`：使用独立的 PC 扫码登录态，支持笔记和用户搜索、主页与推荐流查询、笔记正文及评论采集、图片和视频下载、批量采集与表格导出；供小红书运营和 BD 共用。`viral-chaser` 的小红书视频下载改为调用该技能。
+- `xhs-publish` 与 `xhs-engagement` 改用持久化的 Creator 本地 HTTP 会话，扫码二维码可保存为图片供用户确认；支持图文和视频发布、发布时声明 AI 合成内容，以及已发作品的互动数据抓取。每日取数只扫描最近三页并直接更新 `published-track`。
+- 创作者数据分析写入 `pub_xhs.deep_metrics`；可用时将单篇作品观众画像完整保存到 `pub_xhs.fan_portrait`。取数缺字段或接口无数据时保留已有记录，不写入猜测值。
+- 新增 `xhs-live`、`xhs-im`、`xhs-pugongying`、`xhs-qianfan` 及直播控场、蒲公英合作、千帆合作 workflow：覆盖直播间读取与监听、私信会话、达人合作查询与邀约、分销商资料查询。涉及发送的操作需确认具体内容。
+- PC 与 Creator 共用的 HTTP、会话和 Relay 客户端收敛到 `_shared/xhs_utils`；小红书请求所需计算值由 OFB Relay 提供。`login-manager` 不再管理小红书，移除旧的 `xhs-content-ops`、`xhs-interact` 和小红书浏览器取数链路；`expert-xhs` 的内容调研改走有界的 `xhs-hunter` 请求。
+
 ### Content Producer 新增 Deck Talk workflow
 
 - 新增 `deck-talk` 幻灯讲解 workflow：支持实拍口播、LivePortrait 数字人和仅音频+B-roll 三模式；按 Brief 写逐页/逐段脚本并自检，使用同源音频翻页，验收 HTML 动效与成片。CP 与 main 三平台 Brief/爆款拆解路由接入，通用阶段脚本识别并避免误走分镜/幻灯风险闸门。

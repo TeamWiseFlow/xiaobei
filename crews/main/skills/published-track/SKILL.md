@@ -26,7 +26,7 @@ metadata:
 published-track init-db
 ```
 
-**脚本统一走顶层 wrapper `published-track <子命令>`**（在 PATH 中，零路径拼接）：`record` / `update-metrics` / `fetch-metrics` / `query` / `query-pending` / `check-published` / `set-distribute-status` / `get-xhs-user-id` / `init-db` / `migrate-v3`。ROOT 按 wrapper 真实路径解析（符号链接自动解析），不限调用目录。
+**脚本统一走顶层 wrapper `published-track <子命令>`**（在 PATH 中，零路径拼接）：`record` / `update-metrics` / `fetch-metrics` / `query` / `query-pending` / `check-published` / `set-distribute-status` / `init-db` / `migrate-v3`。ROOT 按 wrapper 真实路径解析（符号链接自动解析），不限调用目录。
 
 ---
 
@@ -38,9 +38,9 @@ published-track init-db
 | 微信视频号 | `pub_wx_channel` | video | plays, likes, comments, shares, favorites |
 | 知乎 | `pub_zhihu` | article/post | views, upvotes, comments, favorites |
 | B站 | `pub_bilibili` | video | plays, danmaku, likes, coins, favorites, shares, comments |
-| 抖音 | `pub_douyin` | video | plays, likes, comments, shares, favorites |
+| 抖音 | `pub_douyin` | video | plays, likes, comments, shares, favorites, deep_metrics |
 | 快手 | `pub_kuaishou` | video | plays, likes, comments, shares |
-| 小红书 | `pub_xhs` | article/video/post | views, likes, favorites, comments, shares |
+| 小红书 | `pub_xhs` | video/post | views, likes, favorites, comments, shares；deep_metrics / deep_captured_at / deep_source；fan_portrait（单篇画像 JSON） |
 | Twitter/X | `pub_twitter` | post/video | views, likes, retweets, replies, bookmarks |
 
 `--platform` 取「表名」去掉 `pub_` 前缀，如 `wx_mp`、`wx_channel`、`xhs`、`bilibili`。
@@ -140,7 +140,7 @@ Exit codes：0=成功/浏览器/手动（非错误），1=一般错误，2=SESSI
 - 创作侧 `creator/item/list`（`_shared/douyin-web.ts` `douyinCreatorItem`）：**播放量唯一来源**（`view_count`）+ 26 字段深指标（5s 完播率 / 2s 跳出率 / 封面曝光与点击率 / 粉丝观看占比 / 关注转化等），**视频与图文(note)作品通用**；creator 域 cookie-only 无需 a_bogus，用中央 douyin cookie 即可。失败时 graceful 降级（只缺播放量/深指标，公开侧数据不受影响）。**深指标存储**：`fetch-and-update-metrics.sh` 经 `--deep-file` 写入 `pub_douyin.deep_metrics`（单行 JSON，`deep_captured_at` / `deep_source` 同行），**只存最新值不留历史**（2026-09-18 定调）；`query.sh` 走 `SELECT *`，deep 列自动可见。
 - **链接格式**：视频 `douyin.com/video/<id>`、图文 `douyin.com/note/<mid>` 均可提取 content_id（2026-09-17 起支持 note）。
 
-- **脚本支持**：douyin（走 `fetch-retro-data.ts` 纯 HTTP + cookie + UA）。**自动取数仅覆盖完全支持 Expert 架构的 4 个平台**：douyin 走本技能 `fetch-metrics`；xhs / wx_mp / wx_channel 均不走本技能的 fetch-metrics（收到这三个平台直接 exit 1 指路）——xhs 走 `expert-xhs` 专家包内的 `xhs-engagement` 工具，wx_mp 走 `expert-wx-mp` 专家包内的 `wx-mp-engagement` 工具，wx_channel 走 `expert-wx-channel` 专家包内的 `wx-channel-engagement` 工具，三者都是 camoufox 抓平台后台方案，与纯 HTTP 链路机制不同。**bilibili / kuaishou 及其余平台不做自动取数**（收到直接 exit 1 报 `PLATFORM_OUT_OF_FETCH_SCOPE`）——发布记录与查询照常支持，只是不抓互动数据。
+- **脚本支持**：douyin（走 `fetch-retro-data.ts` 纯 HTTP + cookie + UA）。**自动取数仅覆盖完全支持 Expert 架构的 4 个平台**：douyin 走本技能 `fetch-metrics`；xhs / wx_mp / wx_channel 均不走本技能的 fetch-metrics（收到这三个平台直接 exit 1 指路）——xhs 走 `expert-xhs` 的 `xhs-engagement`（Creator 本地 HTTP），wx_mp 走 `expert-wx-mp` 的 `wx-mp-engagement`，wx_channel 走 `expert-wx-channel` 的 `wx-channel-engagement`。**bilibili / kuaishou 及其余平台不做自动取数**（收到直接 exit 1 报 `PLATFORM_OUT_OF_FETCH_SCOPE`）——发布记录与查询照常支持，只是不抓互动数据。
 
 ### 流程 2B·用户提供数据（Agent 补录）
 

@@ -13,7 +13,7 @@
  * ffmpeg 压成 32kbps mp3 再传），无需对象存储/公网 URL。百炼把整段并成
  * 单 sentence，_shared/bailian_asr.py 按词级标点切回 utterances，与火山同构。
  *
- * 实现说明：沿用 xhs.ts 同一模式（python3 -c 内联脚本调 requests），避免
+ * 实现说明：调用 _shared/asr.py，由公共路由处理供应商请求，避免
  * Node fetch/FormData 在部分环境的兼容异常。
  *
  * 注意：保留 synthesizeSegments 作为兜底——正常情况下路由会返回真实

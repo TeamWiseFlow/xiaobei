@@ -17,7 +17,7 @@
 不走本 Workflow：
 
 - 用户明确说"把这篇笔记落到某个 DNA 上" -> 走 `style-dna.md`
-- 只下载单篇笔记不做对标 -> 直接用 `xhs-content-ops` 工具
+- 只下载单篇笔记不做对标 -> 直接用 `xhs-hunter fetch` 下载
 - 账号定位和默认 DNA 初始化 -> 走 `account-setup.md`
 - 小红书评论区找客户 / 截流 -> 走 `expert-bd`
 
@@ -42,28 +42,24 @@
 
 ### 泛化词拓展策略（仅泛化词执行）
 
-1. 先用 `smart-search` 查近期与该泛化词相关的小红书热点方向（不用站内抓取脚本做趋势判断）。
-2. 生成 10 个细分方向，原则：词的大小适中、避免过细、不加组合；参考热门话题选热度较高的方向；覆盖不同场景（趋势词、人群词、场景词、意图词各 2-3 个）。
+1. 先从 `business_knowledge.md`、已有 DNA 与参考样本提出候选方向；如需近期站内证据，只对原泛化词运行一次 `xhs-hunter search-notes '泛化词' --count 20 --sort 1`，不连续翻页。
+2. 生成 10 个细分方向，原则：词的大小适中、避免过细、不加组合；有实际近期样本的方向可标注热度线索，其余只列为待验证方向；覆盖不同场景（趋势词、人群词、场景词、意图词各 2-3 个）。
 3. 输出推荐并停止执行，等待用户回复：回复「拓展」→ 逐个搜索细分词；回复「不拓展」/「继续」→ 搜索原关键词。
 
 输出示例：
 
 ```
-我识别到「美妆」是较大的分类，已查询近期热门趋势，推荐以下细分方向：
+我识别到「美妆」是较大的分类，结合已有样本与近期站内线索，推荐以下细分方向：
 柔焦底妆、养肤妆、亚裔妆、油皮定妆、通勤妆、夏日妆容、新手妆容、平价彩妆、妆容教程、彩妆测评
 回复「拓展」将逐个搜索这10个词，回复「不拓展」将继续搜索「美妆」
 ```
 
 ## Step 2 - 搜索对标笔记（低粉爆款策略）
 
-搜索走 **camoufox-cli**（复用 `xhs-browse` 持久化 session，`--session xhs-browse --persistent`，不开独立 session、不 import cookie）：
+搜索走 `xhs-hunter`，复用 PC 登录态：
 
 ```bash
-# 1. 打开搜索页（可按"最多点赞"排序）
-camoufox-cli --session xhs-browse --persistent --json open "https://www.xiaohongshu.com/search_result?keyword=目标关键词"
-
-# 2. snapshot 读搜索结果列表
-# 3. eval 从笔记链接提取 note_id + xsec_token（explore/{feed_id}?xsec_token={token}）
+xhs-hunter search-notes '目标关键词' --count 20 --sort 2 --type 0
 ```
 
 **低粉爆款筛选（关键策略）**：搜索结果不只看互动数，必须看一眼作者粉丝量——
@@ -75,24 +71,24 @@ camoufox-cli --session xhs-browse --persistent --json open "https://www.xiaohong
 搜索纪律：
 
 - 搜索翻页间隔 3-5 秒，下载间隔 5-10 秒；串行执行，不并发多个搜索。
-- 发现登录失效 -> 走 `login-manager` 有头重登流程（复用 `xhs-browse` session），重登后重试一次。
+- 发现登录失效 -> 运行 `xhs-hunter login`，将返回的二维码交给用户扫码，确认后运行 `xhs-hunter login-confirm`；重试一次。
 - 每个关键词选取 3-5 篇代表性图文笔记；对标账号至少批量收集 10 篇（从账号发布列表提取，图文与视频分开建 DNA）。
 - 批量账号样本必须填**账号运营子模块**：账号简介写法（`account-bio`）、内容形式比例与发布习惯（`content-mix-cadence`，含发布时间段与混合节奏，如三篇图文对一篇视频）；只写进 DNA 文档，不进 template。
 - 遇到视频笔记：该篇转 `viral-chaser` 拆解，或跳过只保留图文样本（看对标目的）。
 
 ## Step 3 - 下载样本
 
-对每篇入选笔记运行 `xhs-content-ops`（无 cookie SSR HTML 路线，cookie 仅回退）：
+对每篇入选笔记运行 `xhs-hunter fetch`：
 
 ```bash
-xhs-content-ops --note-id <note_id> --xsec-token <token> --xsec-source pc_feed \
-  --output-dir xhs/ref/{benchmark-dna-id}/{sample-id}/
+xhs-hunter fetch 'https://www.xiaohongshu.com/explore/<note_id>?xsec_token=<token>&xsec_source=pc_search' \
+  --output-dir /absolute/workspace/xhs/ref/{benchmark-dna-id}/{sample-id}/ --download-media
 ```
 
-- 已有完整链接（含 `xhslink.com` 短链）时直接 `--url <url>`，脚本自动解析。
-- `--output-dir` 必须用 Workspace 相对路径（`xhs/ref/...`），不要用 `/tmp`——后续视觉分析要读这些图片。
-- 脚本返回正文、图片列表、作者、`stats`（点赞/收藏/评论/分享）；`noteType: video` 会报错提示走 `viral-chaser`。
-- cookie 回退仍失败（exit 2）-> 走 `login-manager` 重登后重试一次；笔记不可访问（已删除/私密）-> 跳过。
+- 完整链接（含 `xhslink.com` 短链）直接传给 `fetch`。
+- `--output-dir` 使用 Workspace 内绝对路径，供后续视觉分析读取图片。
+- 返回正文、图片、作者与互动数据；视频笔记转 `viral-chaser` 拆解。
+- 登录态失效走 `xhs-hunter login`；笔记不可访问（已删除/私密）则跳过。
 
 下载后按 `style-dna.md` 的样本整理规范生成样本文件，记录互动数据、账号简介、发布时间、内容形式、搜索关键词与用户可能提问；缺失写「未观测」。
 

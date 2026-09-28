@@ -1,134 +1,31 @@
 ---
 name: xhs-publish
-description: Publish image-text notes and video notes to Xiaohongshu (小红书) via creator COS upload + web_api v2. Supports image posts (up to 18 images), video posts, topics/hashtags. 
+description: 通过 Creator 本地 HTTP 会话发布小红书图文和视频笔记，并管理 Creator 扫码登录。
 ---
 
-# 小红书发布（xhs-publish）— 工具说明
+# 小红书发布
 
-> 本文是 `expert-xhs` 专家包内的工具说明书，不独立出现在技能列表中。由相关 Workflow 指引调用。
+本工具由 `expert-xhs` 的发布 Workflow 调用。客户端负责 Creator HTTP 请求、媒体上传和发布，签名由 OFB Relay 提供（需配置 `OFB_KEY`）；`xhs-engagement` 复用同一登录态。会话存于 `~/.openclaw/logins/xhs-creator-local.json`（0600），Cookie 和会话状态持久化。只要 Cookie 有效，后续命令直接复用，不必每次扫码。
 
-**用途**：发布图文 / 视频笔记到小红书。**输入**：标题（≤20 字）、正文（≤1000 字，内联 `#话题`）、图片（≤18 张）或视频文件。**输出**：发布结果 + 笔记链接。
+## 登录流程
 
-通过 creator 平台 COS 上传 + `/web_api/sns/v2/note` 创建笔记，支持图文和视频。**共享 camoufox profile**（session=xhs-browse），login-manager 管消费者域 www 登录，本工具在其上做创作者 SSO；两套 cookie 分别落 `xhs-browse.json` / `xhs-publish.json`，发布时合并。签名走 relay sign 服务。
+1. 发布前运行 `xhs-publish check`。退出码 0 表示有效；2 表示缺少会话或明确认证失效；1 表示接口或环境故障，先排查。
+2. 仅在需要重新登录时运行 `xhs-publish login`。它启动后台扫码任务并返回 `qr_path`，默认图片在 `/tmp/qr-xhs.png`，权限 0600。若二维码尚未生成，按返回错误排查或稍后重试；不要并发启动多个登录。
+3. 使用当前会话的图片发送工具，把 `qr_path` 指向的 PNG 作为图片发给用户，然后**停止并等待用户回复已扫码/已确认**。脚本只生成图片，不代发飞书或微信消息。不要仅发路径给远程用户，也不要把登录二维码发给其他人。
+4. 用户确认后运行 `xhs-publish login-confirm`。退出码 0 且 `ok: true` 才算登录成功；`LOGIN_PENDING` 表示手机端确认还没完成，稍后再查；二维码过期或失败时重新运行 `login`，再发送新图片。登录成功后会话原子落盘；旧会话只有新登录验过时才替换。
 
-上传流程：① 取 COS 上传许可证 `creator.xiaohongshu.com/api/media/v1/upload/web/permit` → ② PUT 文件到 COS（大文件自动分片）→ ③ 创建笔记 `edith.xiaohongshu.com/web_api/sns/v2/note`。
+二维码图片是短期临时文件，登录结束会删除。后台日志在 `~/.openclaw/logs/xhs-creator-login.log`；不向用户转发日志。`xhs-publish check` 使用签名 `user/info` 验证，不反复扫码排查非认证错误。
 
----
-
-## 登录态管理（共享 xhs-browse profile，创作者 cookie 自管）
-
-**两步登录**：发布需同时带消费者域 `web_session` + 创作者域 `galaxy_creator_session_id`。两套由共享 camoufox profile（session=xhs-browse）产出——同一台机器只有一个 profile 涉及小红书平台，避免两个 profile 互踢 web_session 导致频繁重登暴露。
-
-login-manager 管 www 登录（`xhs-browse.json`），本技能在其上做创作者 SSO 导出 `xhs-publish.json`，发布时 `publish_xhs.py` 合并两者。探活走创作者域 `personal_info` **裸 GET**，无需 xhs 签名 / OFB_KEY。
-
-### Step 1 — 发布前探活（批量发布只探活一次）
+## 发布
 
 ```bash
-xhs-publish check
+xhs-publish --mode image --title "标题" --body "正文 #话题" --images /绝对路径/1.png /绝对路径/2.png
+xhs-publish --mode video --title "标题" --body "正文 #话题" --video /绝对路径/video.mp4 --cover /绝对路径/cover.jpg
+# 笔记含 AI 合成内容时，在对应发布命令末尾加 --ai-declaration
 ```
 
-- exit 0 = 有效 → 继续发布
-- exit 2 = `SESSION_EXPIRED` → 走 Step 2 重登，再探活一次
-- exit 1 = crash → 人工排查
+标题 1–20 字，正文 1–1000 字；图文需 1–18 张图片，视频需 `--video`。`--topics` 可补充话题，合计最多 10 个；`--private` 设为仅自己可见。笔记含 AI 合成内容时加 `--ai-declaration`，发布请求会带上创作者端的“笔记含 AI 合成内容”声明；纯实拍内容不加。正文中的 `#话题` 自动整理为 Creator 可识别的内联话题格式。`--body` 传实际文字，多行最好传真实换行；脚本也会把字面量 `\n` 归一化。
 
-### Step 2 — 重登（exit 2 时触发，两步：先 www 后 creator SSO）
+发布前让用户确认标题、正文、图片顺序及可见性。提交成功必须同时有 `ok: true` 和 `note_id`，再记录返回的 `url`。`SUBMISSION_UNKNOWN` 或 `SUBMISSION_UNCONFIRMED` 时先到创作者后台核查，**不要自动重发**。接口明确拒绝时根据错误码处理。操作结果写入 `~/.openclaw/logs/xhs-creator-observe.jsonl`，不含正文或 Cookie。
 
-1. **先保活消费者域**（共享 profile 内 web_session 必须存活）：
-   ```bash
-   login-manager check xhs-browse
-   ```
-   - exit 0 = www 存活 → 直接进步骤 2
-   - exit 2 = www 失效 → `login-manager login xhs-browse` 走有头扫码登录 www（用户交互），完成后导出 `xhs-browse.json` + UA
-   - exit 1 = crash → 人工排查
-
-2. **创作者 SSO 导出 + 验证**（www 已登录 → 自动 SSO，无需扫码）：
-   ```bash
-   xhs-publish login-verify
-   ```
-   脚本闭环（在共享 session=xhs-browse 上）：自检 web_session → open `creator.xiaohongshu.com/login?source=official` 自动 SSO 重定向 → 轮询创作者 cookie 落盘 → 创作者域 `personal_info` 裸 GET 验过才 commit → 写 `~/.openclaw/logins/xhs-publish.json` + `.ua.json` → close session。SSO 未完成 / 验证不过 exit 2、不重试。
-
-> **同时导入 cookie 和 UA**：xhs 的 `a1`/`websectiga` 等设备指纹 cookie 必须配同一指纹的 UA，否则被风控错配。`publish_xhs.py` 已合并读 `xhs-publish.json`（创作者）+ `xhs-browse.json`（消费者）两套 cookie + 对应 `.ua.json`。
-
-> 确保 `Pillow` 已安装（读图片尺寸）：`pip install Pillow`。
-
----
-
-## 使用方式
-
-通过 PATH 调用 wrapper：`xhs-publish "<正文>" [附件...]`。
-
-### 图文笔记
-
-```bash
-xhs-publish --mode image --title "笔记标题" --body "正文内容 #话题1 #话题2" --images img1.jpg img2.jpg img3.jpg
-```
-
-### 视频笔记
-
-```bash
-xhs-publish --mode video --title "笔记标题" --body "正文内容" --video video.mp4 --cover cover.jpg
-```
-
-#### 参数
-
-| 参数 | 必填 | 说明 |
-|------|------|------|
-| `--mode` | 是 | `image` 或 `video` |
-| `--title` | 是 | 笔记标题，最多 20 字 |
-| `--body` | 是 | 正文，最多 1000 字；`#话题` 自动提取为标签，**最多 10 个**（硬约束）。脚本会自动把 body 里 `#话题` 重写为 `\uFEFF#话题[话题]#\uFEFF`（小红书 web API 识别内联话题的硬性格式：`[话题]` 和首尾两个 `#` 是固定字面量，前后包不可见字符 `\uFEFF` BOM） |
-| `--images` | 图文必填 | 图片路径列表，最多 18 张，jpg/png/webp |
-| `--video` | 视频必填 | 视频路径，mp4，建议 9:16 |
-| `--cover` | 否 | 封面图；视频模式默认取第一帧 |
-| `--topics` | 否 | 额外话题名称 |
-| `--private` | 否 | 仅自己可见（默认公开） |
-
-> **⚠️ `--body` 必须传实际文字，不能传文件路径或 `$(cat file)`**：exec sandbox 禁用 `$(...)` 命令替换，`--body post.md` 也会被当字面量字符串。把正文直接硬编码进命令。
-
-> **⚠️ `--body` 换行用真实换行，不要在双引号里写 `\n`**：bash 双引号内的 `\n` 是字面量「反斜杠+n」，发布后正文会全是 `\n` 文本。脚本已兜底把字面量 `\n` 自动归一化为真实换行，但传参仍首选真换行：
->
-> ```bash
-> # ✅ 多行字符串：引号内直接回车换行
-> xhs-publish --mode image --title "标题" --body "第一行
-> 第二行" --images img.jpg
->
-> # ✅ $'...' 转义：\n 被 bash 解释为真实换行
-> xhs-publish --mode image --title "标题" --body $'第一行\n第二行' --images img.jpg
->
-> # ❌ 普通双引号里的 \n 是字面量，发布后正文全是 \n 文本
-> xhs-publish --mode image --title "标题" --body "第一行\n第二行" --images img.jpg
-> ```
-
-成功输出：
-
-```json
-{"ok": true, "note_id": "xxx", "url": "https://www.xiaohongshu.com/explore/xxx"}
-```
-
----
-
-## 内容规范
-
-- 标题 ≤ 20 字，正文 ≤ 1000 字
-- 图片建议 3:4 竖版，最多 18 张；视频建议 9:16，5s–15min
-- AI 生成内容需声明（脚本默认声明）；禁止引流、导流
-- hashtag 最多 10 个（超出会被静默丢弃或限流）
-
----
-
-## 调用顺序
-
-1. 探活：`xhs-publish check`（exit 0 = 有效；批量发布只探活一次）
-2. 运行 `xhs-publish ...` 发布
-3. 看 stdout JSON：`ok: true` → 成功；`error: AUTH_EXPIRED` → 走 Step 2 重登后重试一次；其他 `error` → 原样转述给用户，不自行归因
-
----
-
-## 错误处理
-
-| 错误 | 原因 | 处理 |
-|------|------|------|
-| AUTH_EXPIRED | cookie 失效 | 走 Step 2 重登后重试一次 |
-| UPLOAD_FAILED | COS 上传失败 | 检查文件格式/大小，重试一次 |
-| TITLE_TOO_LONG | 标题超 20 字 | 截断后重试 |
-| BODY_TOO_LONG | 正文超 1000 字 | 精简后重试 |
-| RATE_LIMIT | 发布频率限制 | 等 30 分钟后重试 |
+发布 Workflow 负责判断内容是否需要 AI 声明，并在调用发布命令时传入 `--ai-declaration`。

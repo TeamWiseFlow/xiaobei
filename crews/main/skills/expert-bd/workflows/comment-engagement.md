@@ -2,9 +2,9 @@
 
 通过自媒体平台搜索特定关键词内容，进入内容评论区按预设互动策略进行留言、回复或私信，拓展潜在客户或做品牌宣传（俗称“截流”）。
 
-**依赖**：`smart-search`（构造搜索 URL）、`browser-guide`（浏览器操作）、`bd-record`（去重记录）、`xhs-interact`（小红书互动）、`twitter-interact`（Twitter/X 点赞/转推/关注）、`twitter-post`（Twitter/X 回复，收纳在 `expert-twitter` 包内）。
+**依赖**：`smart-search`（构造搜索 URL）、`browser-guide`（浏览器操作）、`bd-record`（去重记录）、`xhs-hunter`（小红书搜索和评论采集）、`twitter-interact`（Twitter/X 点赞/转推/关注）、`twitter-post`（Twitter/X 回复，收纳在 `expert-twitter` 包内）。
 
-> ⚠️ 小红书不支持本 workflow 的批量自动化（风控严格）；小红书评论互动走 `xhs-interact` 并严格控制频次。
+> ⚠️ 小红书不支持本 workflow 的批量互动。用 `xhs-hunter` 采集笔记与评论；互动逐条执行并严格控制频次。
 
 ---
 
@@ -51,7 +51,7 @@
 3. 导航到帖子详情页
 
 4. 按平台方式发表评论：
-   - 小红书：使用 `xhs-interact` 的"发表评论"流程
+   - 小红书：用 `xhs-hunter` 核实笔记和评论后，按 `browser-guide` 在页面逐条发表评论
    - 其他平台：找到评论区输入框，输入话术，点击发送
    - 评论内容使用预设的话术
 
@@ -117,7 +117,7 @@
 
 | 平台 | 互动方式 | 注意事项 |
 |------|---------|---------|
-| 小红书 | 使用 `xhs-interact` | 每天评论不超过 20 条；评论区可发链接 |
+| 小红书 | `xhs-hunter` 采集，浏览器逐条互动 | 每天评论不超过 20 条；仅发送已确认的话术 |
 | 抖音 | browser 直接操作 | 评论内容避免包含网址和外链 |
 | B站 | browser 直接操作 | 评论区支持链接 |
 | 微博 | browser 直接操作 | 评论支持链接和 @ |

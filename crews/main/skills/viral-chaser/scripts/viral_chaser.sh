@@ -8,7 +8,7 @@
 # Exit codes:
 #   0  Success
 #   1  General error
-#   2  Cookie expired → trigger login-manager
+#   2  Session expired → follow the platform login flow
 
 set -euo pipefail
 

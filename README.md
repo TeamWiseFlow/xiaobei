@@ -40,6 +40,8 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 - xiaobei 可直接指挥content producer，用户可选择将brief出具、节点验收等委托xiaobei;
 - 新增抖音平台图文音乐内容发布能力，支持多图上传、选择推荐配乐与发布链接回收;
 - 小红书和抖音新增原生界面卡片内容生产形态：内置“群聊误发式单图”创意、“问答式连续讨论流三图”创意；
+- 小红书新增笔记与用户搜索、评论采集、图片和视频下载；图文与视频发布、作品数据复盘能力升级。
+- 小红书新增直播控场、私信、蒲公英达人合作和千帆分销商资料查询能力。
 - AIGC 端点支持阿里云百炼 Agent Plan：现在无需去多个平台开通不同账号，最简只用初始安装时的百炼账号就可获得全部能力。
 
 详见 [CHANGELOG.md](CHANGELOG.md)
@@ -276,10 +278,10 @@ v5.6.0 中我们几乎重构了 OpenClaw 原版的浏览器自动化方案（详
 | `browser-guide` | 浏览器操作最佳实践总纲——登录墙 / CAPTCHA / lazy-load / paywall / 有头无头场景规则 / eval 用法 |
 | `smart-search` | 智能搜索——绕开 openclaw 内置 web search 的 api key 依赖，零部署免费方案 |
 | `web-form-fill` | 网络表单填报——从信息搜集到浏览器填报的完整工作流，强制有头模式便于用户随时介入 |
-| `login-manager` | 平台登录态管理——5 平台统一有头手动登录、探活规则、中央 cookie+UA 存储约定 |
-| 各平台发布/互动 skill | `twitter-post` / `twitter-interact` / `weibo-publish` / `zhihu-publish` / `xhs-publish` / `xhs-content-ops` / `douyin-video-publish` / `wechat-channels-publish` / `xianyu-ops` / `wx-mp-hunter` / `wx-mp-engagement` 等平台专属浏览器自动化技能 |
+| `login-manager` | 抖音、快手、B 站登录态管理——有头手动登录、探活和中央 cookie+UA 存储 |
+| 各平台发布/互动 skill | `twitter-post` / `twitter-interact` / `weibo-publish` / `zhihu-publish` / `xhs-publish` / `xhs-hunter` / `douyin-video-publish` / `wechat-channels-publish` / `xianyu-ops` / `wx-mp-hunter` / `wx-mp-engagement` 等平台专属技能 |
 
-这些技能共享同一套 forked camoufox-cli + 持久化 session 机制，登录态在 session profile 里闭环，按场景分离有头/无头模式（登录+填报走有头，自动化操作走无头），靠 session 名字符串约定共享 profile 目录与登录态。
+浏览器技能使用 camoufox-cli 与持久化 session，按场景切换有头/无头模式。小红书的 `xhs-hunter` 使用 PC 会话，`xhs-publish` 与 `xhs-engagement` 共用 Creator 会话；接口所需计算值由 OFB Relay 提供。
 
 ## 目录结构
 

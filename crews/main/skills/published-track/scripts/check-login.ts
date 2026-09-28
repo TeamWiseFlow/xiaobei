@@ -2,7 +2,7 @@
 /**
  * check-login.ts — 登录探活 CLI（两层）薄包装
  *
- * 实际逻辑在 _shared/check-session.ts（viral-chaser / xhs-content-ops 等共用）。
+ * 实际逻辑在 _shared/check-session.ts（供非小红书平台共用）。
  * 本脚本只做 argv 解析 + exit code 约定，供 fetch-and-update-metrics.sh 调用。
  *
  * Usage:
@@ -34,8 +34,8 @@ async function main(): Promise<void> {
     process.exit(0);
   }
   // SIGN_UNAVAILABLE → exit 1（重登救不了，别误导 heartbeat 触发重登）
-  if (r.error === "SIGN_UNAVAILABLE") {
-    out({ ok: false, error: "SIGN_UNAVAILABLE", platform, session: sessionName(platform), reason: r.reason });
+  if (r.error === "SIGN_UNAVAILABLE" || r.error === "UNSUPPORTED_PLATFORM") {
+    out({ ok: false, error: r.error, platform, session: sessionName(platform), reason: r.reason });
     process.exit(1);
   }
   // SESSION_EXPIRED → exit 2

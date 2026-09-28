@@ -12,14 +12,14 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs"
 import { homedir } from "os"
 import { join, dirname } from "path"
 
-export type Platform = "douyin" | "bilibili" | "kuaishou" | "xhs" | "xhs-browse"
+export type Platform = "douyin" | "bilibili" | "kuaishou"
 
 export interface CookieRecord { name: string; value: string; domain?: string }
 
 export interface SessionData {
   platform: Platform
   /** camoufox-cli 原生格式：cookies 是对象数组；向后兼容旧字符串格式 */
-  cookies?: CookieRecord[] | string
+  cookies?: CookieRecord[] | string | Record<string, string>
   /** 旧字段保留兼容；新格式下 UA 走独立 .ua.json 文件 */
   user_agent?: string
   updated_at?: string // ISO 8601
@@ -40,10 +40,7 @@ export function readSession(platform: Platform): SessionData | null {
   if (!existsSync(path)) return null
   try {
     const raw = JSON.parse(readFileSync(path, "utf-8"))
-    // camoufox-cli `cookies export` 原生写裸数组（见 patches/camoufox-cli/src/commands.ts
-    // `writeFileSync(path, JSON.stringify(cookies))`），xhs-publish 也对称导出裸数组。
-    // 统一归一化为 {platform, cookies: [...]}，否则 requireSession 的 `!data.cookies`
-    // 判空会把有效 cookie 误报 SESSION_EXPIRED。与 fetch-retro-data.ts / _shared/check-session.ts 对齐。
+    // camoufox-cli `cookies export` 也可能写裸数组，归一化供 requireSession 使用。
     if (Array.isArray(raw)) return { platform, cookies: raw } as SessionData
     return raw as SessionData
   } catch {
@@ -78,6 +75,8 @@ export function cookieDict(data: SessionData): Record<string, string> {
         dict[c.name] = c.value
       }
     }
+  } else if (raw && typeof raw === "object") {
+    for (const [key, value] of Object.entries(raw)) if (typeof value === "string") dict[key] = value
   } else if (typeof raw === "string" && raw) {
     for (const item of raw.split(";")) {
       const trimmed = item.trim()
@@ -105,8 +104,6 @@ export function requireSession(platform: Platform): SessionData {
 }
 
 /**
- * 抓取前探活（pong）不自动跑——批量场景 Agent 先跑一次 check-login 探活即可，
- * 不必每条机械探活。见 viral-chaser SKILL.md「抓取前探活」。
- * 探活 CLI：published-track/scripts/check-login.ts --platform <p>（共用 _shared/check-session.ts）。
+ * 这里只读取抖音会话；抓取前探活由 viral_chaser.ts 调用 _shared/check-session.ts。
+ * 小红书会话由 xhs-hunter 独立管理。
  */
-

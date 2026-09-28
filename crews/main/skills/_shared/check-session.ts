@@ -11,11 +11,10 @@
  * Tier 2  pong：轻量 authenticated 请求验证 session 服务端是否真有效
  *     bilibili GET /x/web-interface/nav → code==0 && data.isLogin
  *     kuaishou POST graphql visionProfileUserList → data.visionProfileUserList.result==1
- *     xhs      GET /api/sns/web/v2/user/me（xhsFetch 签名）→ success
  *     douyin   GET /aweme/v1/web/history/read/（a_bogus 签名）→ status_code==0
  *   wx_mp 不在本模块——走 wx-mp-hunter check（cgi-bin/home <h2>「新的创作」）。
  *
- *   pong 三态：ok / fail（明确未登录：douyin status_code=8、xhs guest）/ UNKNOWN
+ *   pong 三态：ok / fail（明确未登录：douyin status_code=8）/ UNKNOWN
  *   （端点异常但无法证明未登录：douyin 除 0/8 外的 status_code、HTTP 层错误、网络异常）。
  *   UNKNOWN 不判死——gate 放行，由下游真实请求最终裁决。2026-09-01/02 连续两晚凌晨
  *   douyin pong 回 status_code=4 被判 SESSION_EXPIRED 触发误报重登，但同 cookie 真实
@@ -32,9 +31,6 @@
  *   buildCookieMap(raw) — 从 camoufox-cli cookies export 输出构建 CookieMap
  *   SessionExpiredError / SignUnavailableError 便于 throw 风格调用方使用。
  *
- * xhs-publish 不在本模块——创作者域 cookie（creator.xiaohongshu.com，无 web_session）与
- *   xhs-browse 消费者域是两套独立登录，探活走创作者域 personal_info 裸 GET（无需签名），
- *   自管于 xhs-publish 技能（scripts/creator-session.ts）。见 memory 17。
  */
 
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -55,11 +51,12 @@ export function buildCookieMap(raw: unknown): CookieMap {
 const SESSIONS_DIR = join(homedir(), ".openclaw", "logins");
 const CACHE_DIR = join(homedir(), ".cache", "wiseflow-check-login");
 const PING_TTL_MS = 10 * 60 * 1000;
+const SUPPORTED_PLATFORMS = new Set(["douyin", "bilibili", "kuaishou"]);
 const DEFAULT_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
 /** 需 relay 签名的平台：pong 前必须有 OFB_KEY，否则判 SIGN_UNAVAILABLE 而非 SESSION_EXPIRED */
-const SIGNING_PLATFORMS = new Set(["xhs", "douyin"]);
+const SIGNING_PLATFORMS = new Set(["douyin"]);
 
 export class SessionExpiredError extends Error {
   readonly platform: string;
@@ -84,22 +81,19 @@ export class SignUnavailableError extends Error {
 export interface CheckResult {
   ok: boolean;
   /** 失效时填：SESSION_EXPIRED（应重登）/ SIGN_UNAVAILABLE（应配凭证） */
-  error?: "SESSION_EXPIRED" | "SIGN_UNAVAILABLE";
+  error?: "SESSION_EXPIRED" | "SIGN_UNAVAILABLE" | "UNSUPPORTED_PLATFORM";
   reason?: string;
   detail?: string;
   ping?: "skipped" | "cached" | "ok" | "fail" | "unknown";
 }
 
-/** 平台 key → 中央存储 session 文件名（xhs/xhs-browse 共用 xhs-browse.json） */
+/** 平台 key → 中央存储 session 文件名 */
 export function sessionName(platform: string): string {
-  if (platform === "xhs") return "xhs-browse";
-  if (platform === "xhs-browse") return "xhs-browse";
   return platform;
 }
 
-/** pong 用的归一化平台 key（xhs-browse 归到 xhs 走 user/me 签名 pong；xhs-publish 不在本模块） */
+/** pong 用的平台 key */
 function pongPlatform(platform: string): string {
-  if (platform === "xhs-browse") return "xhs";
   return platform;
 }
 
@@ -142,12 +136,6 @@ function ofbKeyAvailable(): boolean {
 export function presenceCheck(platform: string, map: CookieMap): { ok: boolean; reason?: string; detail?: string } {
   const p = pongPlatform(platform);
   switch (p) {
-    case "xhs": {
-      const ws = map["web_session"];
-      if (!ws?.value) return { ok: false, reason: "missing web_session" };
-      if (expired(ws)) return { ok: false, reason: "web_session expired" };
-      return { ok: true, detail: map["a1"]?.value ? "web_session+a1" : "web_session (a1 missing)" };
-    }
     case "bilibili": {
       const sd = map["SESSDATA"];
       const uid = map["DedeUserID"];
@@ -207,38 +195,6 @@ async function pongKuaishou(map: CookieMap): Promise<{ ok: boolean; reason?: str
   return { ok: false, reason: `visionProfileUserList.result=${data.data?.visionProfileUserList?.result}` };
 }
 
-async function pongXhs(map: CookieMap): Promise<{ ok: boolean; reason?: string; unknown?: boolean }> {
-  const { xhsFetch, XhsSecurityBlockError } = await import("./relay-sign.ts");
-  const cookies: Record<string, string> = {};
-  for (const [k, c] of Object.entries(map)) if (c?.value) cookies[k] = c.value;
-  try {
-    const r = await xhsFetch<{ success?: boolean; code?: number; data?: { user_id?: string; guest?: boolean } }>({
-      baseUrl: "https://edith.xiaohongshu.com",
-      uri: "/api/sns/web/v2/user/me",
-      method: "get",
-      cookies,
-      signFormat: "xyw", // user/me 等 data API 用 xyw（见 relay-sign.ts 注释）
-      timeoutMs: 15_000,
-    });
-    // ⚠️ guest 陷阱（2026-07-27 发现）：xhs 给未登录访客也发 web_session，游客 session 调
-    // v2 user/me 同样 success:true code:0，仅 data.guest=true——不判 guest 会把游客 cookie
-    // 误判为有效登录（登录被平台踢出降级成 guest 后完全探不出来）。
-    if (r?.success && r?.data?.guest !== true) return { ok: true };
-    if (r?.success && r?.data?.guest === true) {
-      return { ok: false, reason: "user/me 返回 guest=true（游客 session，非登录态——可能登录未完成或被平台强制登出）" };
-    }
-    return { ok: false, reason: `user/me success=${r?.success} code=${r?.code}` };
-  } catch (e) {
-    // 软风控 ≠ 登录失效（速度型，cooldown 后可恢复）：pong 撞上判 UNKNOWN 放行，
-    // 由真实请求最终裁决——同 douyin status_code=4 先例。误判 SESSION_EXPIRED 会触发无谓重登。
-    if (e instanceof XhsSecurityBlockError) {
-      return { ok: true, unknown: true, reason: `user/me 被风控软屏蔽: ${e.message.slice(0, 100)}` };
-    }
-    const msg = e instanceof Error ? e.message : String(e);
-    return { ok: false, reason: `user/me error: ${msg.slice(0, 120)}` };
-  }
-}
-
 function genFakeMsToken(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   let t = "";
@@ -283,7 +239,6 @@ async function pong(platform: string, map: CookieMap): Promise<{ ok: boolean; re
   switch (p) {
     case "bilibili": return pongBilibili(map);
     case "kuaishou": return pongKuaishou(map);
-    case "xhs": return pongXhs(map);
     case "douyin": return pongDouyin(map);
     default: return { ok: true }; // 未知平台不 pong，交上层
   }
@@ -330,6 +285,9 @@ function writeCache(platform: string, entry: CacheEntry): void {
  * opts.noPing=true 只做 Tier1 字段检查（不起网络、不签名）。
  */
 export async function verifyCookies(platform: string, map: CookieMap, opts: { noPing?: boolean } = {}): Promise<CheckResult> {
+  if (!SUPPORTED_PLATFORMS.has(platform)) {
+    return { ok: false, error: "UNSUPPORTED_PLATFORM", reason: `unsupported platform: ${platform}` };
+  }
   // Tier 1
   const pres = presenceCheck(platform, map);
   if (!pres.ok) return { ok: false, error: "SESSION_EXPIRED", reason: pres.reason };
@@ -362,6 +320,9 @@ export async function verifyCookies(platform: string, map: CookieMap, opts: { no
  * 不抛——返回 {ok, error, reason}，调用方决定 exit/throw。wx_mp 不支持（走 wx-mp-hunter）。
  */
 export async function checkSession(platform: string, opts: { noPing?: boolean } = {}): Promise<CheckResult> {
+  if (!SUPPORTED_PLATFORMS.has(platform)) {
+    return { ok: false, error: "UNSUPPORTED_PLATFORM", reason: `unsupported platform: ${platform}` };
+  }
   const loaded = loadCookies(platform);
   if (!loaded) {
     return { ok: false, error: "SESSION_EXPIRED", reason: "login file not found" };

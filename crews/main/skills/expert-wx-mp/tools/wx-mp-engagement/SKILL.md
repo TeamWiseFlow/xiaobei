@@ -134,7 +134,7 @@ wx-mp-engagement fetch-all
 
 ## 与 published-track 集成
 
-wx_mp 的互动数据抓取**不走** `fetch-and-update-metrics.sh`——后者只管 xhs/bilibili/douyin/kuaishou 四个纯 HTTP+cookie 平台（login-manager 探活 → fetch-retro-data.ts → update-metrics.sh）。wx_mp 走 camoufox 抓创作者中心，机制完全不同，由本 skill 独立承担，agent 直调本 skill wrapper：
+wx_mp 的互动数据抓取**不走** `fetch-and-update-metrics.sh`，直接使用本工具，agent 直调本工具 wrapper：
 
 ```bash
 wx-mp-engagement fetch --row-id <rowid>
