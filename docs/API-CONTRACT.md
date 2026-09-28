@@ -25,17 +25,11 @@
 
 | 方法 | 路径 | 入参 | 出参 |
 |------|------|------|------|
-| POST | `/sign/xhs/headers` | `{ uri, method?, payload?, params?, cookies, xsec_appid? }` | `{ data: { headers: { x-s, x-s-common, x-t, x-b3-traceid, x-xray-traceid, Cookie, ... } } }`（仅签名） |
+| POST | `/sign/xhs/v2` | `{ version: 2, profile: "pc" | "creator", operation, inputs }` | 通用响应包络；`data` 内容由 `operation` 决定 |
 | POST | `/sign/douyin` | `{ queryString, postData?, ua? }` | `{ data: { a_bogus } }`（仅签名） |
 | POST | `/sign/bilibili/wbi` | `{ params, imgKey, subKey }` | `{ data: { wts, w_rid } }`（仅签名字段，client 合并到原参数） |
 
-**不提供 proxy 端点**（不在 relay 上替 client 调小红书/抖音/B站业务接口）：relay 是固定公网 IP，频繁替 client 代请求会被平台风控/封 IP。client 拿到签名 header / 签名参数后，**在自己的浏览器上下文/小程序里发请求到平台 API**。
-
-`/sign/xhs/headers` 一次性同时返回 **新 + 老**两套签名字段（`x-s` 老格式 / `x-s-common` 新格式），client 按场景选用：
-- 取数 / 浏览 / feed 拉取 → 用 `x-s`
-- 发布 / 写操作（发笔记、点赞、关注、评论）→ 用 `x-s-common`
-
-`xsec_appid` 默认 `xhs-pc-web`；client 调用非 PC web 端时传 `xhs-mp-web` / `xhs-app` 等。
+**不提供 proxy 端点**：Relay 返回计算结果，平台业务请求由 client 直接发送。小红书 PC / Creator 需要签名的请求由 client 在发起平台请求前调用 `/sign/xhs/v2`；不要求所有小红书网络请求都调用 Relay。
 
 - douyin 只签 `a_bogus`（纯函数，client 自带 msToken/webid）；relay 不代发。
 - douyin vendor 有 init-once 全局状态，relay 每次签名 spawn 独立子进程隔离。
