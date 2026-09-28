@@ -128,6 +128,31 @@ class PuGongYingAPI:
         response = requests.get(url, headers=headers, cookies=cookies, timeout=REQUEST_TIMEOUT)
         return response.json()
 
+    def get_self_info_signed(self, cookies, *, captured_headers):
+        """Replay the later signed ``user/info`` request from Chrome.
+
+        ``captured_headers`` must contain the exact ``x-s``, ``x-t``,
+        ``x-s-common`` and ``x-b3-traceid`` values observed in DevTools.
+        This method is intentionally capture-driven because the Pgy session
+        uses a different app identity from the ordinary PC signer.
+        """
+        from xhs_utils.xhs_pugongying_util import get_pugongying_signed_user_info_headers
+        headers = get_pugongying_signed_user_info_headers(
+            x_s=captured_headers.get('x-s', ''),
+            x_t=captured_headers.get('x-t', ''),
+            x_s_common=captured_headers.get('x-s-common', ''),
+            x_b3_traceid=captured_headers.get('x-b3-traceid', ''),
+            referer=captured_headers.get(
+                'referer',
+                'https://pgy.xiaohongshu.com/role-introduce?needLogout=needLogout',
+            ),
+        )
+        response = requests.get(
+            'https://pgy.xiaohongshu.com/api/solar/user/info',
+            headers=headers, cookies=cookies, timeout=REQUEST_TIMEOUT,
+        )
+        return response.json()
+
     def send_invite(self, user_id, cookies, productName, time, inviteContent, contactInfo,
                     *, brand_info=None):
         api = "/api/solar/invite/initiate_invite"

@@ -19,7 +19,7 @@ from xhs_utils.pc_session import SessionMissing, load_auth, save_auth, session_l
 PGY_READ_METHODS = frozenset({
     'get_all_categories', 'get_track', 'get_user_by_page', 'get_some_user',
     'get_user_detail', 'get_user_fans_detail', 'get_user_fans_history',
-    'get_user_notes_detail', 'get_self_info',
+    'get_user_notes_detail', 'get_self_info', 'get_self_info_signed',
 })
 QIANFAN_READ_METHODS = frozenset({
     'get_all_categories', 'get_user_by_page', 'get_some_user',
