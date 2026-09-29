@@ -12,3 +12,5 @@ crews/content-producer/skills/expert-video/tools/deck-render/package-lock.json
 .venv
 tmp
 *.log
+docs/
+test/

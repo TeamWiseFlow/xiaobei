@@ -431,7 +431,6 @@ RULES
 }
 
 # 向 workspace 的 TOOLS.md 追加通用工具调用规范（幂等）
-# 注入内容见 docs/injected_instruction.md
 # 向 AGENTS.md 追加通用标准 section（幂等）
 # 1. Technical Issue Dispatch Protocol
 # 2. sessions_spawn 规范
@@ -502,9 +501,17 @@ inject_media_send_guide() {
 GUIDE
 }
 
+inject_text_newline_guide() {
+  local tools_md="$1"
+  [ -f "$tools_md" ] || return 0
+  python3 "$(dirname "${BASH_SOURCE[0]}")/update-tools-newline-guide.py" "$tools_md"
+}
+
 inject_exec_guide() {
   local tools_md="$1" workspace_dir="$2"
   [ -f "$tools_md" ] || return 0
+  # 独立升级既有 workspace：旧 exec section 不会因幂等检查而挡住换行提示修正。
+  inject_text_newline_guide "$tools_md"
   grep -q "## exec 命令规范" "$tools_md" && return 0
 
   # 按 SOUL.md 的 crew-type 分发（2026-07-07 简化，删 T0~T3 抽象）：
@@ -587,8 +594,6 @@ python3 /tmp/my_script.py
 ```
 
 临时脚本统一写到 `/tmp/` 下，执行后可删除。
-
-> ⚠️ 部分模型（deepseek-v4-flash 等）在 heredoc / `python3 -c` 里会把 `\n` 序列化成字面量反斜杠+n 而非真换行，触发 `SyntaxError`。heredoc 内 Python 源码一律用真实换行，不在字符串里写 `\n` 转义；文本替换优先 `awk`/`sed`。
 GUIDE
     # sed -i 在 BSD（macOS）会把脚本串当成备份后缀吞掉；-i.bak 两端都支持，再清掉 .bak。
     sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
@@ -601,13 +606,6 @@ GUIDE
 
 脚本调用仍建议用绝对路径（如 `python3 @@WS@@/skills/xxx/scripts/yyy.py`），仅为跨环境/跨 workspace 稳定，非安全约束。
 
-## Python 多行脚本规范
-
-多行 Python **不要**用 `python3 -c '...'` 内联——部分模型（deepseek-v4-flash 等）会把 `\n` 序列化成字面量反斜杠+n 而非真换行，触发 `SyntaxError: unexpected character after line continuation character`。
-
-- ✅ 文本替换用 `awk`/`sed`
-- ✅ 多行 Python 先 `cat > /tmp/script.py << 'PYEOF'`（heredoc 内用真实换行，不在字符串里写 `\n`）再 `python3 /tmp/script.py`
-- ❌ `python3 -c 'import json\nwith open(...) as f:\n    ...'`（`\n` 会被写成字面量）
 GUIDE
     sed -i.bak "s|@@WS@@|$ws|g" "$tools_md" && rm -f "$tools_md.bak"
   fi

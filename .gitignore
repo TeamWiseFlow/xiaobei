@@ -39,11 +39,7 @@ skills/wxwork-drive/spaces.json
 
 # 运行时缓存
 crews/main/skills/published-track/xhs-user-id.cache
-
-# AtomCode 会话目录
-.atomcode/
 crews/main/db/
 
 # engagement 技能 probe 调试输出（dump 截图/HTML/innerText，不入仓）
 *-engagement-probe/
-docs/mediacrawlerpro-catchup-2026-09-19.md
