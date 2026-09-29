@@ -5,6 +5,7 @@ package-lock.json
 .deck-render-browser
 
 # default ignore
+/test/
 /shelf/
 /workspace.xml
 /tmp
