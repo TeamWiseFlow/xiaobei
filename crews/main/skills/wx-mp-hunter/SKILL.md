@@ -101,6 +101,8 @@ wx-mp-hunter fetch <url> [--html] [--download-images] [--download-cover] [--outp
 | `cover_url` | 文章分享封面 URL，优先来自 `og:image`，兜底 `twitter:image` / `msg_cdn_url` |
 | `cover_local_path` | 仅使用 `--download-cover` 且下载成功时存在，指向本地封面文件 |
 
+`fetch` 优先读取分享卡片的 `og:title`；对应字段为空时才回退到页面中的 `h1`。`publish_time` 依次从页面日期、JS 时间戳、`og:article:published_time` / `article:published_time` 和正文日期提取；页面未提供时可能为空。
+
 ### 图片本地化
 
 加 `--download-images --output-dir <dir>` 后，脚本并发下载（默认 4 并发、单图 ≤5MB、总量 ≤100MB）到 `<dir>/images/<hash>.<ext>`，并把 `content_markdown` 里的图片 URL 替换为本地相对路径，便于离线阅读 / 二次加工 / 转存。

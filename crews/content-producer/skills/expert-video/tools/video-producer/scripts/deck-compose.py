@@ -17,6 +17,11 @@ def run(command):
     return result.stdout
 
 
+def media_duration(path):
+    payload = json.loads(run(['ffprobe', '-v', 'error', '-show_format', '-of', 'json', path]))
+    return float(payload['format']['duration'])
+
+
 def resolve_inputs(args):
     if args.mode == 'footage':
         if not args.presenter or args.audio or args.avatar_job:
@@ -32,8 +37,14 @@ def resolve_inputs(args):
         if job.get('status') != 'SUCCEEDED' or job.get('timing_pass') is not True:
             raise ValueError('数字人任务未完成或时长核验未通过')
         presenter, audio = Path(job['video_file']), Path(job['audio_file'])
-        if fingerprint(audio) != job['audio_sha256'] or fingerprint(presenter) != job.get('video_sha256'):
-            raise ValueError('数字人视频或驱动音频被替换，需重新核验同源关系')
+        if not presenter.is_file() or not audio.is_file():
+            raise ValueError('数字人 job 溯源文件不存在：请核对 video_file/audio_file，勿手改 job')
+        if fingerprint(audio) != job.get('audio_sha256') or fingerprint(presenter) != job.get('video_sha256'):
+            raise ValueError('数字人 job 溯源不一致：video_file/audio_file 与记录的 SHA-256 不符；勿手改 job，需重新核验同源关系')
+        if 'audio_duration' in job and abs(media_duration(audio) - float(job['audio_duration'])) > .12:
+            raise ValueError('数字人 job 溯源不一致：当前驱动音频时长与任务记录 audio_duration 不符')
+        if 'video_duration' in job and abs(media_duration(presenter) - float(job['video_duration'])) > .12:
+            raise ValueError('数字人 job 溯源不一致：当前视频时长与任务记录 video_duration 不符')
         return presenter, audio
     if not args.audio or args.presenter or args.avatar_job:
         raise ValueError('audio 模式需要 --audio，不接受小窗视频或数字人任务')

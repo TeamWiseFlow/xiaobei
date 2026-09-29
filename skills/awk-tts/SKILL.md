@@ -7,6 +7,7 @@ metadata:
     requires:
       bins:
         - python3
+        - ffmpeg
         - ffprobe
     primaryEnv: VOLC_TTS_ACCESS_KEY
     homepage: https://www.volcengine.com/docs/6561/1598757
@@ -56,6 +57,8 @@ awk-tts \
 # 字级时间戳（旁白对齐用）：火山走流式原生返回，百炼走 SSE + word_timestamp_enabled
 awk-tts --text "..." --enable-subtitle --output ./assets/audio/narration.mp3
 ```
+
+合成后脚本会测真峰值。超过 -2.5 dBTP 时自动衰减并复测，给后续数字人驱动和转码留余量；元数据 `peak_guard` 记录前后峰值。若原始 TTS 已有可闻削波，降低音量不能恢复波形，应重新合成并试听。生成文件用于驱动数字人后不要再换音轨；换音轨须重新生成数字人并核对 job 哈希。
 
 ## Parameters
 

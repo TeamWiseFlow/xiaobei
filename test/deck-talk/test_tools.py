@@ -166,7 +166,11 @@ class DeckTests(unittest.TestCase):
     def test_invalid_chart_data_and_duration(self):
         for value in (float('nan'), float('inf'), -1, 0):
             with self.subTest(value=value), self.assertRaises(ValueError):
-                deck.validate_spec({'scenes': [{'title': 'test', 'duration': 5, 'type': 'chart', 'source': 'fixture', 'data': [{'label': 'a', 'value': value}]}]})
+                deck.validate_spec({'scenes': [{'title': 'test', 'duration': 5, 'type': 'chart', 'source': 'fixture',
+                                               'caption': 'fixture', 'data': [{'label': 'a', 'value': value}]}]})
+        with self.assertRaisesRegex(ValueError, 'caption'):
+            deck.validate_spec({'scenes': [{'title': 'test', 'duration': 5, 'type': 'chart',
+                                            'source': 'internal record', 'data': [{'label': 'a', 'value': 1}]}]})
         with self.assertRaises(ValueError):
             deck.validate_spec({'scenes': [{'title': 'test', 'duration': 1}]})
 
@@ -184,6 +188,27 @@ class DeckTests(unittest.TestCase):
             self.assertIn('@font-face', scene)
             with self.assertRaises(ValueError):
                 deck.scaffold(spec, project)
+
+    def test_portrait_scaffold_uses_native_canvas_and_hides_provenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            spec = tmp/'spec.json'
+            spec.write_text(json.dumps({'width': 1080, 'height': 1920, 'pip': 'bottom-right',
+                                        'scenes': [{'title': '竖屏中文标题', 'duration': 5,
+                                                    'source': '内部制作备注', 'caption': '观众可见图注'}]}, ensure_ascii=False))
+            project = tmp/'project'
+            deck.scaffold(spec, project)
+            scene = (project/'compositions/scene-01.html').read_text()
+            self.assertIn('width:1080px; height:1920px', scene)
+            self.assertNotIn('transform:scale(', scene)
+            self.assertIn('观众可见图注', scene)
+            self.assertNotIn('内部制作备注', scene)
+            self.assertIn('内部制作备注', (project/'deck-spec.json').read_text())
+            scene_path = project/'compositions/scene-01.html'
+            scene_path.write_text(scene.replace('background:#f7f5f0', 'transform:scale(0.5625,1.7778); background:#f7f5f0'))
+            with mock.patch.object(deck, 'run', side_effect=AssertionError('HF must not run')):
+                with self.assertRaisesRegex(ValueError, '非等比'):
+                    deck.check('unused', project)
 
 
 class PiPTests(unittest.TestCase):
@@ -215,6 +240,11 @@ class PiPTests(unittest.TestCase):
             with self.subTest(extra=extra):
                 result = self.command(*extra)
                 self.assertEqual(result.returncode, 1, result.stderr)
+
+    def test_duration_error_lists_media_durations(self):
+        result = self.command('--presenter', self.work/'short.mp4')
+        for label in ('base=', 'audio=', 'presenter=', '容差='):
+            self.assertIn(label, result.stderr)
 
     def test_composition_geometry_and_unique_audio(self):
         result = self.command('--presenter', self.work/'presenter.mp4', '--audio', self.work/'audio.wav', '--subtitle-safe', 40)

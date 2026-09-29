@@ -102,14 +102,21 @@ def main():
     audio = stream(audio_info, 'audio')
     if not audio:
         raise ValueError('请提供 --audio 或含音轨的 base；不会使用 presenter 自带音轨')
-    if abs(duration(audio_info, audio) - seconds) > .12:
-        raise ValueError('唯一音轨与底视频时长不匹配（容差 0.12s），先对齐翻页/裁剪')
+    audio_seconds = duration(audio_info, audio)
+    if abs(audio_seconds - seconds) > .12:
+        raise ValueError(f'唯一音轨与底视频时长不匹配：base={seconds:.3f}s，'
+                         f'audio={audio_seconds:.3f}s，容差=0.120s；先对齐翻页/裁剪')
     box = None
     if args.presenter:
         presenter = probe(args.presenter)
         pv = stream(presenter, 'video')
-        if not pv or duration(presenter, pv) < seconds-.12:
-            raise ValueError('presenter 视频短于底视频，先裁剪对齐；禁止静默定帧/循环/变速')
+        if not pv:
+            raise ValueError('presenter 缺少视频轨')
+        presenter_seconds = duration(presenter, pv)
+        if presenter_seconds < seconds-.12:
+            raise ValueError(f'presenter 视频短于底视频：base={seconds:.3f}s，'
+                             f'audio={audio_seconds:.3f}s，presenter={presenter_seconds:.3f}s，'
+                             '容差=0.120s；先核对数字人驱动音频，禁止静默定帧/循环/变速')
         if pv.get('sample_aspect_ratio', '1:1') not in ('1:1', 'N/A') or any(x.get('rotation', 0) for x in pv.get('side_data_list', [])):
             raise ValueError('presenter 需先归一化方形像素与旋转方向')
         box = geometry(w, h, args)

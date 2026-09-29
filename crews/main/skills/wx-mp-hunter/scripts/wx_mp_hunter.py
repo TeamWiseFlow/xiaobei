@@ -49,6 +49,7 @@ import sys
 import tempfile
 import time
 from datetime import datetime
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Optional
 
@@ -590,21 +591,32 @@ def _strip_tags(html_fragment: str) -> str:
     return re.sub(r"<[^>]+>", "", html_fragment)
 
 
-def _extract_cover_url(html: str) -> str:
+class _MetaTagParser(HTMLParser):
+    """读取 meta property/name 与 content，兼容属性顺序和引号变化。"""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.values: dict[str, str] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+        if tag != "meta":
+            return
+        values = dict(attrs)
+        key = (values.get("property") or values.get("name") or "").lower()
+        content = (values.get("content") or "").strip()
+        if key and content and key not in self.values:
+            self.values[key] = content
+
+
+def _extract_meta_fields(html: str) -> dict[str, str]:
+    parser = _MetaTagParser()
+    parser.feed(html)
+    return parser.values
+
+
+def _extract_cover_url(html: str, meta: dict[str, str]) -> str:
     """提取文章分享封面 URL；og:image 通常是分享卡片封面。"""
-    candidates: list[str] = []
-    og_image = re.search(
-        r'<meta[^>]*property=["\']og:image["\'][^>]*content=["\']([^"\']+)["\']',
-        html,
-    )
-    if og_image:
-        candidates.append(og_image.group(1))
-    twitter_image = re.search(
-        r'<meta[^>]*name=["\']twitter:image["\'][^>]*content=["\']([^"\']+)["\']',
-        html,
-    )
-    if twitter_image:
-        candidates.append(twitter_image.group(1))
+    candidates = [meta.get("og:image", ""), meta.get("twitter:image", "")]
     msg_cdn_url = re.search(
         r'var\s+msg_cdn_url\s*=\s*["\']([^"\']+)["\']',
         html,
@@ -648,7 +660,12 @@ def _extract_article_fields(html: str) -> dict[str, Any]:
         "cover_url": "",
         "error_msg": "",
     }
-    result["cover_url"] = _extract_cover_url(html)
+    # 参考 linxiaozhu/2026 d854e5b：分享卡片元数据优先，DOM 仅在缺值时回填。
+    meta = _extract_meta_fields(html)
+    result["title"] = meta.get("og:title", "")
+    # 微信公众号作者应该用公众号名称
+    result["author"] = ""
+    result["cover_url"] = _extract_cover_url(html, meta)
 
     # ── publish_time: 多路兜底（已在上一轮实现，保留）──────────────────────
     # 1. <em id="publish_time">xxxx年xx月xx日</em>（PC 端常见）
@@ -670,12 +687,8 @@ def _extract_article_fields(html: str) -> dict[str, Any]:
     # 3. og:article:published_time / article:published_time meta
     if not result["publish_time"]:
         for meta_prop in ('og:article:published_time', 'article:published_time'):
-            m_meta = re.search(
-                r'<meta[^>]*property=["\']' + re.escape(meta_prop) + r'["\'][^>]*content=["\']([^"\']+)["\']',
-                html,
-            )
-            if m_meta:
-                result["publish_time"] = m_meta.group(1)[:10]
+            if meta.get(meta_prop):
+                result["publish_time"] = meta[meta_prop][:10]
                 break
     # 4. 正则扫第一个"xxxx年xx月xx日"
     if not result["publish_time"]:
@@ -688,13 +701,15 @@ def _extract_article_fields(html: str) -> dict[str, Any]:
     h1_m = re.search(r'<h1[^>]*>([\s\S]*?)</h1>', html)
     if h1_m:
         # ── B1. 正常图文页（有 <h1>）──────────────────────────────────────
-        result["title"] = _strip_tags(h1_m.group(1)).strip()
+        if not result["title"]:
+            result["title"] = _strip_tags(h1_m.group(1)).strip()
 
         # author 多路兜底
         # 1. <a id="js_name">公众号名</a>
-        m = re.search(r'<a[^>]*id="js_name"[^>]*>([\s\S]*?)</a>', html)
-        if m:
-            result["author"] = _strip_tags(m.group(1)).strip()
+        if not result["author"]:
+            m = re.search(r'<a[^>]*id="js_name"[^>]*>([\s\S]*?)</a>', html)
+            if m:
+                result["author"] = _strip_tags(m.group(1)).strip()
         # 2. var nickname = "..."
         if not result["author"]:
             m = re.search(r'var\s+nickname\s*=\s*[\'"](.+?)[\'"]', html)
@@ -805,9 +820,10 @@ def _extract_article_fields(html: str) -> dict[str, Any]:
     m = re.search(r'<p[^>]*id="js_text_desc"[^>]*>([\s\S]*?)</p>', html)
     if m:
         # author: js_name / js_wx_follow_nickname / wx_follow_nickname
-        m2 = re.search(r'<a[^>]*id="js_name"[^>]*>([\s\S]*?)</a>', html)
-        if m2:
-            result["author"] = _strip_tags(m2.group(1)).strip()
+        if not result["author"]:
+            m2 = re.search(r'<a[^>]*id="js_name"[^>]*>([\s\S]*?)</a>', html)
+            if m2:
+                result["author"] = _strip_tags(m2.group(1)).strip()
         if not result["author"]:
             m2 = re.search(r'<[^>]*id="js_wx_follow_nickname"[^>]*>([\s\S]*?)</[^>]+>', html)
             if m2:
@@ -828,16 +844,13 @@ def _extract_article_fields(html: str) -> dict[str, Any]:
     # 3. og:* meta 提取路（新版分享页：无 h1、无 js_share_source、无 js_text_desc，
     #    author 在 JS getElementById('js_wx_follow_nickname_*') 引用的 DOM id 里，
     #    真实文本 JS 动态填；title / description 在 og:title / og:description meta 里）
-    og_title_m = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]+)"', html)
-    og_desc_m = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]+)"', html)
-    if og_title_m or og_desc_m:
+    og_title = meta.get("og:title", "")
+    og_desc = meta.get("og:description", "")
+    if og_title or og_desc:
         # title: og:title meta
-        if og_title_m:
-            result["title"] = html_module.unescape(og_title_m.group(1)).strip()
+        if og_title:
+            result["title"] = og_title
         # author: og:article:author meta（常为空）→ js_name DOM → wx_follow_nickname DOM
-        m2 = re.search(r'<meta[^>]*property="og:article:author"[^>]*content="([^"]*)"', html)
-        if m2 and m2.group(1).strip():
-            result["author"] = html_module.unescape(m2.group(1)).strip()
         if not result["author"]:
             m2 = re.search(r'<a[^>]*id="js_name"[^>]*>([\s\S]*?)</a>', html)
             if m2:
@@ -854,30 +867,28 @@ def _extract_article_fields(html: str) -> dict[str, Any]:
                 result["author"] = _strip_tags(m2.group(1)).strip()
 
         # content: og:description meta（正文摘要，含 \x0a 转义换行）→ 解码后直接当 markdown
-        if og_desc_m:
-            desc = html_module.unescape(og_desc_m.group(1))
+        if og_desc:
+            desc = og_desc
             # og:description 里 \x0a 是换行转义，统一成 \n
             desc = desc.replace("\\x0a", "\n").replace("\\x0A", "\n")
             result["content_text"] = desc.strip()
             result["content_markdown"] = desc.strip()
             # og:description 里的图片 URL 不在正文里（是摘要），images 从 og:image meta 拿
-            og_img_m = re.search(r'<meta[^>]*property="og:image"[^>]*content="([^"]+)"', html)
-            if og_img_m:
-                img_url = html_module.unescape(og_img_m.group(1)).strip()
+            if meta.get("og:image"):
+                img_url = _normalize_img_url(meta["og:image"])
                 if img_url:
-                    img_url = _normalize_img_url(img_url)
-                    if img_url:
-                        result["images"] = [img_url]
+                    result["images"] = [img_url]
             return result
         # 有 og:title 但没 og:description —— 至少 title 拿到了，继续走兜底
-        if og_title_m:
+        if og_title:
             return result
 
     # 4. 都没命中 —— 已删除页 或 无法识别的新类型
     # 先试拿 author（js_name / js_wx_follow_nickname / wx_follow_nickname）判断是不是删除页
-    m = re.search(r'<a[^>]*id="js_name"[^>]*>([\s\S]*?)</a>', html)
-    if m:
-        result["author"] = _strip_tags(m.group(1)).strip()
+    if not result["author"]:
+        m = re.search(r'<a[^>]*id="js_name"[^>]*>([\s\S]*?)</a>', html)
+        if m:
+            result["author"] = _strip_tags(m.group(1)).strip()
     if not result["author"]:
         m = re.search(r'<[^>]*id="js_wx_follow_nickname"[^>]*>([\s\S]*?)</[^>]+>', html)
         if m:

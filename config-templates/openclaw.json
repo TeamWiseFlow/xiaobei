@@ -9,38 +9,28 @@
   "models": {
     "mode": "merge",
     "providers": {
-      "bailian-token-plan": {
+      "bailian": {
         "baseUrl": "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic",
         "apiKey": "${AWK_API_KEY}",
         "api": "anthropic-messages",
         "models": [
           {
-            "id": "deepseek-v4-flash-0731",
-            "name": "deepseek-v4-flash-0731",
+            "id": "deepseek-v4.1-flash",
+            "name": "deepseek-v4.1-flash",
             "reasoning": false,
-            "input": ["text"],
+            "input": ["text", "image"],
             "contextWindow": 1000000,
             "maxTokens": 393216,
             "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
             "compat": { "thinkingFormat": "openai" }
           },
           {
-            "id": "glm-5.2",
-            "name": "glm-5.2",
-            "reasoning": false,
-            "input": ["text"],
-            "contextWindow": 1000000,
-            "maxTokens": 16384,
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
-            "compat": { "thinkingFormat": "openai" }
-          },
-          {
-            "id": "qwen3.6-flash",
-            "name": "qwen3.6-flash",
-            "reasoning": false,
+            "id": "qwen3.8-flash",
+            "name": "qwen3.8-flash",
+            "reasoning": true,
             "input": ["text", "image"],
-            "contextWindow": 1000000,
-            "maxTokens": 32768,
+            "contextWindow": 983616,
+            "maxTokens": 131072,
             "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
             "compat": { "thinkingFormat": "openai" }
           }
@@ -51,21 +41,23 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "bailian-token-plan/deepseek-v4-flash-0731",
+        "primary": "bailian/deepseek-v4.1-flash",
         "fallbacks": [
-          "bailian-token-plan/glm-5.2"
+          "bailian/qwen3.8-flash"
         ]
       },
       "imageModel": {
-        "primary": "bailian-token-plan/qwen3.6-flash"
+        "primary": "bailian/qwen3.8-flash",
+        "fallbacks": [
+          "bailian/deepseek-v4.1-flash"
+        ]
       },
       "memorySearch": {
         "provider": "none"
       },
       "models": {
-        "bailian-token-plan/deepseek-v4-flash-0731": {},
-        "bailian-token-plan/glm-5.2": {},
-        "bailian-token-plan/qwen3.6-flash": {}
+        "bailian/deepseek-v4.1-flash": {},
+        "bailian/qwen3.8-flash": {}
       },
       "compaction": {
         "mode": "safeguard"
@@ -88,7 +80,6 @@
           "smart-search",
           "browser-guide",
           "email-ops",
-          "council",
           "session-logs",
           "tmux"
         ],

@@ -8,7 +8,7 @@ DECK_RENDER_BROWSER_TEST=1 python3 -m unittest discover -s test/deck-talk -p 'te
 python3 test/deck-talk/run_smoke.py --output-dir /tmp/deck-talk-smoke-new
 ```
 
-- 单元/媒体回归：Brief 识别、逐页脚本与落稿锁定、自检维度、Stage 3–10 裁剪；非法图表/时长；HTML 转义、时序与禁止覆盖；四角几何、字幕避让、圆角透明；短素材/音轨长度/输入覆盖拒绝；24fps 小窗→30fps 合成；频率检测证明唯一音轨；无小窗路径。
+- 单元/媒体回归：Brief 识别、逐页脚本与落稿锁定、自检维度、Stage 3–10 裁剪；非法图表/时长；竖屏原生画布、制作来源隔离、非等比缩放拦截；字级标点翻页校验；四角几何、字幕避让、圆角透明；时长报错列出三段长度；24fps 小窗→30fps 合成；频率检测证明唯一音轨；无小窗路径。
 - 浏览器测试需显式设 `DECK_RENDER_BROWSER_TEST=1`，补测深色主题、左侧留白、图片本地化与实际 preview；默认跳过该项，不启动 Chrome。
 - smoke 用 `deck-spec.json` 的 60 秒四页中文内容（含柱状图），走 scaffold→preview→render→小窗/无小窗→字幕→normalize→video-review→完整解码。`check_animation.py` 另对逐页动画前后抽帧比较正文区像素，避免小窗自身运动掩盖幻灯静止。
 - `--output-dir` 必须为空，产物与日志均落该目录；不覆盖旧样片。`--slides /absolute/slides.mp4` 可显式复用已有 60s/1080p30 渲染，仅用于调试后半链路；报告会标记 slides_reused。

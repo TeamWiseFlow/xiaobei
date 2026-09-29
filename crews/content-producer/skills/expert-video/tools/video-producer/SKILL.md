@@ -57,12 +57,14 @@ video-producer pip-compose --base /absolute/slides.mp4 --presenter /absolute/pre
 
 `motion-audit` 兑付 Stage 9 的动作承诺；Deck Talk 与纸拼贴会生成各自的审核模板。Stage 13c 必调用 `normalize`：有声片归一至 -14 LUFS，明确无声交付时传 `--silent-ok` 核验并记录不适用。`burn-srt`、`duck`、`denoise`、`interp` 是按需要组合的后期命令；`make-cover` 根据 Brief 规划封面。
 
+Deck Talk 在渲染前用 `video-producer deck-boundaries --subtitle <awk-tts 字级时间戳> --spec <deck-spec.json> --output <review/page-boundaries.json>` 验证翻页与标点边界。报告列候选时间和每次翻页的偏差；失败时调整 spec，不能只凭 SRT cue 切页。
+
 **干湿分离（五个都守）**：输出落 `<stem>_<处理名>.mp4`（`_normalized` / `_burned` / `_ducked` / `_denoised` / `_interp`），不覆盖输入；多步串联时下一步以上一步产物为输入（如 ducking 后再 normalize），原产物保留作回退。
 
 常用调用：
 
 ```bash
-video-producer normalize <video.mp4> --output <out.mp4>          # 默认 -14 LUFS / true peak -1.5 dB / LRA 11
+video-producer normalize <video.mp4> --output <out.mp4>          # 默认 -14 LUFS / true peak -2.0 dB / LRA 11
 video-producer burn-srt <video.mp4> <subs.srt> --output <out.mp4> # 默认中文字体：Windows 微软雅黑、Linux/macOS Noto Sans CJK SC；可 --font-name/--font-size/--force-style
 video-producer duck <video.mp4> <narration.mp3> --output <out.mp4>                      # 视频自带 BGM
 video-producer duck <video.mp4> <narration.mp3> --bgm-source <bgm.mp3> --output <out.mp4>  # 外挂 BGM
@@ -72,7 +74,7 @@ video-producer interp <video.mp4> --target-fps 30 --output <out.mp4>  # 更顺�
 
 旁路条件（不满足就报错退出，不静默降级）：
 
-- `normalize`：默认无声轨 / 音频畸变 → exit 2，退回 Stage 12 核对；明确无声交付时传 `--silent-ok`，核验确无音轨后原样输出并写 normalization JSON；input_i 已在 target ±0.3 LUFS 内 → 自动跳过渲染直接拷贝
+- `normalize`：默认无声轨 / 音频畸变 → exit 2，退回 Stage 12 核对；明确无声交付时传 `--silent-ok`，核验确无音轨后原样输出并写 normalization JSON；响度与真峰值都已达标才自动跳过渲染直接拷贝
 - `burn-srt`：ffmpeg 不带 libass → exit 1，改发外挂 SRT；SRT 不存在或格式错 → exit 1
 - `duck`：AI 声画同出模式混轨不可分 → 报甲方决策；视频无声轨且没传 `--bgm-source` → exit 1
 - `denoise`：ffmpeg 不带 afftdn/arnndn → exit 1；`--method arnndn` 没传 `--rnn-model` → exit 1

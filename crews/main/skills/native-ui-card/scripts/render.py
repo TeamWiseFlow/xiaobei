@@ -182,8 +182,15 @@ def inspect(chrome, html_file):
 
 
 def validate_layout(check):
-    if check["body"] > 1442 or check["flow"] > check["available"] + 2 or not check["images"]:
-        raise ValueError(f"版面溢出或头像加载失败，请精简文案: {check}")
+    problems = []
+    if check["body"] > 1442:
+        problems.append(f"整页高度 {check['body']}px 超过上限 1442px（通常是一屏放不下，需要精简整体内容或减少群聊消息条数）")
+    if check["flow"] > check["available"] + 2:
+        problems.append(f"讨论流高度 {check['flow']}px 超过可视区 {check['available']}px（群聊/问答消息条数过多或单条太长，请删减或缩短文案）")
+    if not check["images"]:
+        problems.append("头像加载失败（头像文件缺失、路径错误或图片损坏，请检查 card.json 中所有 avatar 字段）")
+    if problems:
+        raise ValueError("版面溢出：" + "；".join(problems))
 
 
 def screenshot(chrome, html_file, png):
@@ -257,9 +264,11 @@ def main():
     output = args.output.resolve()
     names = ["page-01"] if form == "group" else ["page-01", "page-02", "page-03"]
     targets = [output / f"{n}.{ext}" for n in names for ext in ("html", "png")]
-    targets += [output / n for n in ("note.md", "dna-meta.json", "card.json", "assets-manifest.json")]
+    targets += [output / n for n in ("note.md", "dna-meta.json", "assets-manifest.json")]
+    # card.json 是输入文件（workflow 要求先写入作品目录），不参与「已有同名作品」判断；
+    # 只有真正由本工具生成的产物存在时才需要 --force 覆盖。
     if not args.force and any(p.exists() for p in targets):
-        raise ValueError("输出目录已有同名作品文件；修订时显式加 --force")
+        raise ValueError("输出目录已有本工具生成的产物（page-*.png/html、note.md、dna-meta.json 或 assets-manifest.json）；修订时显式加 --force")
     chrome = find_chrome()
     session = f"native-ui-card-{os.getpid()}-{uuid.uuid4().hex[:8]}" if chrome is None else None
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -278,7 +287,11 @@ def main():
                     camoufox_render(session, path, stage / f"{name}.png")
             note = f'# {title}\n\n{body}\n'
             if tags:
-                note += '\n' + ' '.join('#' + t.lstrip('#') for t in tags) + '\n'
+                # body 已内联话题时不重复追加；只补 body 里缺失的话题（避免 note.md 标签重复两遍）
+                body_has = set(re.findall(r"#([^\s#]+)", body))
+                missing = [t for t in tags if t.lstrip('#') not in body_has]
+                if missing:
+                    note += '\n' + ' '.join('#' + t.lstrip('#') for t in missing) + '\n'
             (stage / "note.md").write_text(note)
             (stage / "dna-meta.json").write_text(json.dumps({"platform": platform, "dna_id": required(spec, "dna_id"), "content_type": "post", "form": f"native-ui-{form}"}, ensure_ascii=False, indent=2) + "\n")
             shutil.copyfile(spec_path, stage / "card.json")

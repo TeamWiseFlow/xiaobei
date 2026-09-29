@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -99,6 +100,8 @@ def validate_spec(spec):
             data = scene.get('data', [])
             if not isinstance(data, list) or not 1 <= len(data) <= 6 or not scene.get('source'):
                 raise ValueError('chart 需要 1–6 个 data 点和 source 来源')
+            if not isinstance(scene.get('caption'), str) or not scene['caption'].strip():
+                raise ValueError('chart 需要观众可见的 caption 标明数据来源；制作备注只放 source')
             for item in data:
                 if not isinstance(item, dict):
                     raise ValueError('data 点必须是 JSON 对象')
@@ -124,12 +127,19 @@ def scaffold(spec_path, project):
     (project / 'compositions').mkdir()
     shutil.copy2(gsap, project / 'assets/gsap.min.js')
     w, h, fps = spec['width'], spec['height'], spec['fps']
-    # Use the same logical 1920x1080 grid at any requested canvas size.
+    # Lay out in the requested canvas. Scaling a landscape page to portrait
+    # distorts glyphs and images even when HyperFrames reports a valid render.
+    portrait = h > w
+    unit = w / (1080 if portrait else 1920)
     dark = spec.get('theme') == 'dark'
     bg, fg, muted, accent = ('#152536', '#ffffff', '#d2deeb', '#80bcff') if dark else ('#f7f5f0', '#1c2b3a', '#465568', '#274b73')
     pip = spec.get('pip', 'bottom-right')
-    left = 560 if pip.endswith('left') else 100
-    width = 1260 if pip != 'none' else 1720
+    reserve = round(w * .26) if pip != 'none' else 0
+    margin = round((72 if portrait else 100) * unit)
+    left = margin + reserve if pip.endswith('left') else margin
+    width = w - 2 * margin - reserve
+    top = round((140 if portrait else 100) * unit)
+    source_top = round(h - (320 if portrait else 260) * unit)
     refs, elapsed = [], 0
     for i, scene in enumerate(spec['scenes'], 1):
         sid = f'scene-{i:02d}'
@@ -143,12 +153,12 @@ def scaffold(spec_path, project):
             step = width / len(data)
             bars = []
             for j, item in enumerate(data):
-                bh = item['value'] / maximum * 360
+                bh = item['value'] / maximum * 360 * unit
                 x = j * step + step * .2
-                bars.append(f'<rect class="bar" x="{x}" y="{420-bh}" width="{step*.6}" height="{bh}" fill="{accent}"/>'
-                            f'<text x="{j*step+step/2}" y="{400-bh}" text-anchor="middle">{esc(item["value"])}</text>'
-                            f'<text x="{j*step+step/2}" y="470" text-anchor="middle">{esc(item["label"])}</text>')
-            body = f'<svg width="{width}" height="510" viewBox="0 0 {width} 510">' + ''.join(bars) + '</svg>'
+                bars.append(f'<rect class="bar" x="{x}" y="{420*unit-bh}" width="{step*.6}" height="{bh}" fill="{accent}"/>'
+                            f'<text x="{j*step+step/2}" y="{400*unit-bh}" text-anchor="middle">{esc(item["value"])}</text>'
+                            f'<text x="{j*step+step/2}" y="{470*unit}" text-anchor="middle">{esc(item["label"])}</text>')
+            body = f'<svg width="{width}" height="{510*unit}" viewBox="0 0 {width} {510*unit}">' + ''.join(bars) + '</svg>'
         else:
             if kind == 'image':
                 source = Path(scene['image'])
@@ -156,18 +166,19 @@ def scaffold(spec_path, project):
                 shutil.copy2(source, project / 'assets' / name)
                 body += f'<img src="assets/{name}" alt="{esc(scene["title"])}">'
             body += '<ul>' + ''.join(f'<li>{esc(x)}</li>' for x in scene.get('points', [])) + '</ul>'
-        source = esc(scene.get('source', ''))
+        # source is production provenance. Only caption is audience-facing.
+        caption = esc(scene.get('caption', ''))
         css = f'''{font_css()}
-        [data-composition-id="{sid}"] .page {{ position:absolute; width:1920px; height:1080px; transform:scale({w/1920},{h/1080}); transform-origin:top left; background:{bg}; color:{fg}; font-family:"{FONT}",sans-serif; }}
-        [data-composition-id="{sid}"] .content {{ position:absolute; left:{left}px; top:100px; width:{width}px; }}
-        [data-composition-id="{sid}"] h1 {{ font-size:60px; line-height:1.25; margin:0 0 24px; }}
-        [data-composition-id="{sid}"] p {{ font-size:28px; color:{muted}; margin:0 0 32px; }}
-        [data-composition-id="{sid}"] li {{ font-size:36px; line-height:1.6; margin:18px 0; }}
-        [data-composition-id="{sid}"] ul {{ padding-left:40px; margin:0; }}
-        [data-composition-id="{sid}"] img {{ float:left; width:48%; height:440px; object-fit:contain; margin-right:40px; }}
-        [data-composition-id="{sid}"] svg text {{ font-family:"{FONT}",sans-serif; font-size:28px; fill:{fg}; }}
+        [data-composition-id="{sid}"] .page {{ position:absolute; width:{w}px; height:{h}px; background:{bg}; color:{fg}; font-family:"{FONT}",sans-serif; }}
+        [data-composition-id="{sid}"] .content {{ position:absolute; left:{left}px; top:{top}px; width:{width}px; }}
+        [data-composition-id="{sid}"] h1 {{ font-size:{round(60*unit)}px; line-height:1.25; margin:0 0 {round(24*unit)}px; }}
+        [data-composition-id="{sid}"] p {{ font-size:{round(28*unit)}px; color:{muted}; margin:0 0 {round(32*unit)}px; }}
+        [data-composition-id="{sid}"] li {{ font-size:{round(36*unit)}px; line-height:1.6; margin:{round(18*unit)}px 0; }}
+        [data-composition-id="{sid}"] ul {{ padding-left:{round(40*unit)}px; margin:0; }}
+        [data-composition-id="{sid}"] img {{ float:left; width:{'100%' if portrait else '48%'}; height:{round((560 if portrait else 440)*unit)}px; object-fit:contain; margin-right:{round(40*unit)}px; }}
+        [data-composition-id="{sid}"] svg text {{ font-family:"{FONT}",sans-serif; font-size:{round(28*unit)}px; fill:{fg}; }}
         [data-composition-id="{sid}"] .bar {{ transform-box:fill-box; transform-origin:bottom; }}
-        [data-composition-id="{sid}"] .source {{ position:absolute; left:{left}px; top:820px; width:{width}px; font-size:22px; color:{muted}; }}'''
+        [data-composition-id="{sid}"] .source {{ position:absolute; left:{left}px; top:{source_top}px; width:{width}px; font-size:{round(22*unit)}px; color:{muted}; }}'''
         animation = f'''const scope = '[data-composition-id="{sid}"]';
         const tl = gsap.timeline({{paused:true}});
         tl.fromTo(scope+' h1', {{opacity:0,y:24}}, {{opacity:1,y:0,duration:0.6}}, 0);
@@ -178,7 +189,7 @@ def scaffold(spec_path, project):
         (project / f'compositions/{sid}.html').write_text(f'''<template id="{sid}-template">
         <div data-composition-id="{sid}" data-width="{w}" data-height="{h}">
         <div class="page"><div class="content"><h1>{esc(scene['title'])}</h1><p>{esc(scene.get('subtitle', ''))}</p>
-        <div class="body">{body}</div></div><div class="source">{source} · {i:02d} / {len(spec['scenes']):02d}</div></div>
+        <div class="body">{body}</div></div><div class="source">{caption}{' · ' if caption else ''}{i:02d} / {len(spec['scenes']):02d}</div></div>
         <style>{css}</style><script>{animation}</script></div></template>''')
         refs.append(f'<div id="{sid}" data-composition-id="{sid}" data-composition-src="compositions/{sid}.html" data-start="{elapsed}" data-duration="{duration}" data-track-index="0"></div>')
         elapsed += duration
@@ -213,6 +224,12 @@ def metadata(project):
 
 def check(hf, project):
     metadata(project)
+    for scene in (project / 'compositions').glob('*.html'):
+        markup = scene.read_text(encoding='utf-8')
+        for page_css in re.findall(r'\.page\s*\{[^}]*\}', markup, re.S):
+            for x, y in re.findall(r'transform\s*:\s*scale\(\s*([\d.]+)\s*,\s*([\d.]+)\s*\)', page_css):
+                if abs(float(x) - float(y)) > .001:
+                    raise ValueError(f'{scene.name} 的 .page 使用非等比 scale({x},{y})，会拉伸字形；请按目标宽高原生排版')
     print(run([hf, 'lint', project]), end='')
     print(run([hf, 'check', project, '--no-browser-gpu']), end='')
 
@@ -282,12 +299,16 @@ def main():
         frames = sorted(output.glob('*.png'))
         if not frames:
             raise RuntimeError('snapshot 未输出 PNG')
-        sheet = Image.new('RGB', (640 * min(3, len(frames)), 390 * math.ceil(len(frames) / 3)), 'white')
+        canvas = metadata(project)
+        thumb_w, thumb_h = (540, 960) if canvas['height'] > canvas['width'] else (640, 360)
+        tile_h = thumb_h + 30
+        sheet = Image.new('RGB', (thumb_w * min(3, len(frames)), tile_h * math.ceil(len(frames) / 3)), 'white')
         draw = ImageDraw.Draw(sheet)
         for i, frame in enumerate(frames):
             with Image.open(frame) as im:
-                sheet.paste(ImageOps.contain(im.convert('RGB'), (640, 360)), ((i % 3)*640, (i // 3)*390))
-            draw.text(((i % 3)*640+8, (i // 3)*390+365), frame.name, fill='black')
+                sheet.paste(ImageOps.contain(im.convert('RGB'), (thumb_w, thumb_h)),
+                            ((i % 3)*thumb_w, (i // 3)*tile_h))
+            draw.text(((i % 3)*thumb_w+8, (i // 3)*tile_h+thumb_h+5), frame.name, fill='black')
         sheet.save(output / 'contact-sheet.jpg')
         return
     if output.suffix.lower() != '.mp4' or output == project / 'index.html':

@@ -25,7 +25,9 @@ import json
 import mimetypes
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -633,6 +635,55 @@ def resolve_output_path(args: argparse.Namespace, root: Path | None = None) -> P
     return output_path
 
 
+def _audio_input_args(path: Path, fmt: str, sample_rate: int | None) -> list[str]:
+    if fmt == "pcm":
+        return ["-f", "s16le", "-ar", str(sample_rate or 24000), "-ac", "1", "-i", str(path)]
+    return ["-i", str(path)]
+
+
+def _true_peak(path: Path, fmt: str, sample_rate: int | None) -> float:
+    """Measure decoded true peak; use the same source for the avatar and final mix."""
+    cmd = ["ffmpeg", "-hide_banner", "-nostats", "-nostdin", *_audio_input_args(path, fmt, sample_rate),
+           "-af", "loudnorm=I=-16:TP=-2.5:LRA=11:print_format=json", "-f", "null", "-"]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if result.returncode:
+        raise ValueError(f"TTS 真峰值测量失败：{result.stderr[-500:]}")
+    match = re.search(r'\{\s*"input_i"\s*:[\s\S]*?\}', result.stderr)
+    if not match:
+        raise ValueError("TTS 真峰值测量没有返回 loudnorm JSON")
+    return float(json.loads(match.group())["input_tp"])
+
+
+def protect_audio_peak(path: Path, fmt: str, sample_rate: int | None) -> dict:
+    """Add headroom to hot TTS output without changing its timing or dynamics."""
+    before = _true_peak(path, fmt, sample_rate)
+    if before <= -2.5:
+        return {"input_true_peak_db": before, "output_true_peak_db": before, "gain_db": 0}
+    # A clipped source cannot be restored; gain prevents another overload in
+    # avatar driving, AAC conversion and final delivery.
+    gain = -(before + 3.0)
+    encoding = {
+        "wav": ["-c:a", "pcm_s16le", "-f", "wav"],
+        "pcm": ["-c:a", "pcm_s16le", "-f", "s16le"],
+        "mp3": ["-c:a", "libmp3lame", "-b:a", "192k", "-f", "mp3"],
+        "ogg_opus": ["-c:a", "libopus", "-b:a", "96k", "-f", "ogg"],
+        "opus": ["-c:a", "libopus", "-b:a", "96k", "-f", "ogg"],
+    }[fmt]
+    with tempfile.TemporaryDirectory(prefix=".tts-peak-", dir=path.parent) as tmp:
+        candidate = Path(tmp) / ("protected." + fmt)
+        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+               *_audio_input_args(path, fmt, sample_rate), "-af", f"volume={gain:.3f}dB",
+               *encoding, str(candidate)]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode:
+            raise ValueError(f"TTS 峰值保护失败：{result.stderr[-500:]}")
+        after = _true_peak(candidate, fmt, sample_rate)
+        if after > -1.5:
+            raise ValueError(f"TTS 峰值保护后仍过高：{after:.2f} dBTP")
+        candidate.replace(path)
+    return {"input_true_peak_db": before, "output_true_peak_db": after, "gain_db": round(gain, 3)}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="火山方舟豆包语音合成 2.0 (seed-tts-2.0)")
     parser.add_argument("fragment_dir", nargs="?", default=None, help="Fragment directory containing tts_requirement.md")
@@ -720,6 +771,11 @@ def main() -> None:
 
     output_path.write_bytes(audio)
 
+    try:
+        peak_guard = protect_audio_peak(output_path, args.format, args.sample_rate)
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
+        die(str(exc))
+
     audio_duration = get_audio_duration(output_path)
 
     metadata_path = output_path.with_suffix(".json")
@@ -731,7 +787,8 @@ def main() -> None:
         "speech_rate": args.speech_rate,
         "loudness_rate": args.loudness_rate,
         "text_chars": len(text),
-        "audio_bytes": len(audio),
+        "audio_bytes": output_path.stat().st_size,
+        "peak_guard": peak_guard,
         "duration": round(audio_duration, 3),
         "file": str(output_path),
     }

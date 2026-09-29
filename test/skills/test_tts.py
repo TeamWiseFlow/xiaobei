@@ -7,10 +7,12 @@ Covers:
 - 相似度：清洗标点空白后序敏感比对（中文无空格不再归零）
 - ASR 自检后端选择标记
 
-All network calls avoided — pure unit tests.
+All network calls avoided; peak guard cases use local FFmpeg fixtures.
 """
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -155,6 +157,36 @@ class TestSubtitleSchema(unittest.TestCase):
         self.assertEqual(converted["text"], "大家好")
         self.assertEqual(converted["words"][0], {"word": "大", "startTime": 0.16, "endTime": 0.24})
         self.assertEqual(converted["phonemes"], [])
+
+
+class TestAudioPeakGuard(unittest.TestCase):
+    def test_hot_tts_wav_gets_headroom(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)/'narration.wav'
+            subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
+                            'sine=frequency=440:duration=0.5', '-af', 'volume=24dB',
+                            '-c:a', 'pcm_s16le', str(path)], check=True)
+            result = tts.protect_audio_peak(path, 'wav', 44100)
+            self.assertGreater(result['input_true_peak_db'], -1)
+            self.assertLessEqual(result['output_true_peak_db'], -1.5)
+            self.assertLess(result['gain_db'], 0)
+
+    def test_compressed_and_raw_formats_keep_supported_output(self):
+        encodings = {
+            'mp3': ['-c:a', 'libmp3lame', '-f', 'mp3'],
+            'ogg_opus': ['-c:a', 'libopus', '-f', 'ogg'],
+            'pcm': ['-c:a', 'pcm_s16le', '-f', 's16le'],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            for fmt, flags in encodings.items():
+                with self.subTest(fmt=fmt):
+                    path = Path(tmp)/f'narration.{fmt}'
+                    subprocess.run(['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
+                                    'sine=frequency=440:duration=0.5', '-af', 'volume=24dB',
+                                    *flags, str(path)], check=True)
+                    result = tts.protect_audio_peak(path, fmt, 44100)
+                    self.assertLessEqual(result['output_true_peak_db'], -1.5)
+                    self.assertGreater(path.stat().st_size, 0)
 
 
 if __name__ == "__main__":

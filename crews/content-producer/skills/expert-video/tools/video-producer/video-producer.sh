@@ -44,6 +44,7 @@ video-producer — 视频制作原子能力（wrapper，expert-video 包内工�
   batch-i2v           Stage 10 特殊生成式镜头批量调公共 aigc-video-gen（可选）
   mix-audio            Stage 11 旁白（awk-tts）+ BGM + 字幕
   narration-align      Stage 11 旁白字级时间戳对齐（整段 narration.mp3 模式；复用 awk-tts 原生时间戳，缺失回退火山 ASR）
+  deck-boundaries      Deck Talk 根据字级标点时间戳建议翻页点并校验 deck-spec
   narration-layout     Stage 11 逐句旁白排布 + 防重叠守卫 + 越界断言 + SRT + 可选混音（逐句 mp3 模式）
   clip-trim            Stage 12 精确切素材段（入点/出点/倍速/归一化/调色/多窗/定帧缓推）
   deck-compose        三模式 deck-talk 合成（实拍 / 数字人 / 仅音频）

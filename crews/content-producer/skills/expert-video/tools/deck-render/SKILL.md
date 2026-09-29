@@ -27,6 +27,7 @@ deck-render render /absolute/project/composition --output /absolute/project/rend
 
 - `check-setup` 检查 Node ≥22、ffmpeg/ffprobe、锁定 npm 依赖、Playwright Chromium headless shell 和当前系统默认中文字体（Windows 微软雅黑；Linux/macOS Noto Sans CJK SC），并运行 HF doctor。doctor 中 Whisper/Kokoro/MusicGen 属可选；本工具不用它们。
 - `scaffold` 只写空目录。产物是根 `index.html`、每页一个 `compositions/scene-NN.html`、本地 GSAP 与图片副本、`deck-spec.json`。先按时间戳确定时长，再生成；之后直接编辑 HTML，不用 scaffold 覆盖设计。
+- 指定 1080×1920 等竖屏尺寸时，`.page` 直接按竖屏画布生成；不可把横屏 HTML 用 `scale(x,y)` 非等比拉伸。`check` 会拦截 `.page` 的非等比缩放。
 - `check` 顺序执行 HF lint 和 check（runtime/layout/contrast）。错误阻断；警告必须人工查看，不能把退出码 0 当作视觉验收通过。
 - `preview` 先 check，再 snapshot，落 PNG 与 `contact-sheet.jpg`，**不是常驻 HTTP 服务**。默认按 spec 每页中点取图；手改 HTML 时序后必须同步 spec 或传 `--at 2,12,24`。输出目录必须为空，改版用新目录。
 - `render` 每次先 check，再渲染；`--workers 1–24`，质量 draft/looks/delivery。输出 MP4 必须与 HTML 根的宽高、fps、duration 一致；结果与耗时落同名 `.render.json`。已有产物需明确 `--force`；临时输出通过校验才替换，不覆盖输入。
@@ -44,7 +45,7 @@ deck-render render /absolute/project/composition --output /absolute/project/rend
   "pip": "bottom-right",
   "scenes": [
     {"type": "title", "title": "一个清晰的命题", "subtitle": "对应口播第一段", "duration": 8, "points": ["第一条要点"]},
-    {"type": "chart", "title": "示例数据，不代表业务事实", "duration": 10, "source": "演示数据", "data": [{"label": "甲", "value": 12}, {"label": "乙", "value": 18}]}
+    {"type": "chart", "title": "示例数据，不代表业务事实", "duration": 10, "source": "演示数据", "caption": "演示数据", "data": [{"label": "甲", "value": 12}, {"label": "乙", "value": 18}]}
   ]
 }
 ```
@@ -52,9 +53,9 @@ deck-render render /absolute/project/composition --output /absolute/project/rend
 - `theme` = light/dark。`pip` = top-left/top-right/bottom-left/bottom-right/none；有小窗时整侧留白，底部另留字幕带。默认与 1080p 的 `pip-compose` 参数匹配；改小窗尺寸/画幅时复核并调整版式。
 - `scenes` 非空；每页 `duration` 为 3–30 秒，页时长之和必须对应唯一口播音轨；翻页取句边界。工具不自动改稿/合页/伸缩音频。
 - 每页标题最多 32 字；`points` 最多 4 条、每条最多 48 字。`subtitle` 与 `source` 要简短，超出版式须重排，通过 check 与目检。
-- `type` = title/points/chart/image。chart 是正数柱状图（1–6 项，label 最多 8 字），必须给 source；负数/零/折线等改写 scene SVG，不伪造数据迁就模板。
-- image 页给 `image` 绝对路径、`source` 来源与授权，图片复制进 assets。source 指向项目素材来源记录；正文只放简短标识。
-- 默认 1920×1080 / 30fps；宽高为至少 360 的偶数，fps 为 1–60 整数。非 16:9 时脚手架只作起点，须重排设计，禁止直接交付被拉伸的版面。
+- `type` = title/points/chart/image。chart 是正数柱状图（1–6 项，label 最多 8 字），必须给制作溯源 `source` 和面向观众标明数据来源的 `caption`；负数/零/折线等改写 scene SVG，不伪造数据迁就模板。
+- image 页给 `image` 绝对路径、`source` 来源与授权，图片复制进 assets。`source` 仅留制作溯源，不渲染；仅 `caption` 会显示给观众。`caption` 不写“原图已裁净”“内部素材”等制作备注。
+- 默认 1920×1080 / 30fps；宽高为至少 360 的偶数，fps 为 1–60 整数。竖屏用原生版式脚手架，生成后仍须重排与逐页目检。
 
 ## HTML 纪律
 

@@ -20,7 +20,7 @@ caller 决定是 rename 替换还是双轨保留。
 Usage:
   video-producer normalize <video.mp4>
   video-producer normalize <video.mp4> --output <out.mp4>
-  video-producer normalize <video.mp4 --target-lufs -14 --true-peak -1.5
+  video-producer normalize <video.mp4> --target-lufs -14 --true-peak -2.0
 
 Exit codes:
   0  ok，归一化完成
@@ -40,7 +40,7 @@ from pathlib import Path
 
 # 平台通用标准——不动这套阈值除非平台规范变了
 DEFAULT_TARGET_LUFS = -14.0
-DEFAULT_TRUE_PEAK_DB = -1.5      # 真实峰上限，留 0.5dB headroom 避削顶
+DEFAULT_TRUE_PEAK_DB = -2.0      # 留转码余量；已达响度但峰值超标时仍须处理
 DEFAULT_LRA = 11.0                # loudness range 目标，短视频通用 7–13，取中
 AGGRESSIVE_THRESHOLD = -20.0     # 平滑触发阈，industry de-facto
 
@@ -60,12 +60,12 @@ def run(cmd: list[str], timeout: int = 60) -> tuple[int, str, str]:
         die(f"timeout running: {' '.join(cmd[:3])}...")
 
 
-def ffprobe_loudness(video: str) -> dict | None:
+def ffprobe_loudness(video: str, target_lufs: float, true_peak: float, lra: float) -> dict | None:
     """Pass 1: ffmpeg loudnorm 单 pass 测量当前响度。返回测量 dict 或 None."""
     cmd = [
         "ffmpeg", "-hide_banner", "-nostats", "-y",
         "-i", video,
-        "-af", f"loudnorm=I={DEFAULT_TARGET_LUFS}:TP={DEFAULT_TRUE_PEAK_DB}:LRA={DEFAULT_LRA}:"
+        "-af", f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:"
                f"print_format=json",
         "-f", "null", "-",
     ]
@@ -85,7 +85,7 @@ def ffprobe_loudness(video: str) -> dict | None:
 def normalize(video: str, output: str, target_lufs: float,
               true_peak: float, lra: float) -> dict:
     """双 pass loudnorm。Pass 1 测量，Pass 2 应用."""
-    m = ffprobe_loudness(video)
+    m = ffprobe_loudness(video, target_lufs, true_peak, lra)
     if not m:
         die("Pass 1 测量失败——ffmpeg loudnorm 没出 JSON，输入可能无声轨或损坏", code=2)
 
@@ -102,8 +102,8 @@ def normalize(video: str, output: str, target_lufs: float,
     normalization_lra = float(m.get("normalization_lra", 0))
 
     # 已经达标就不重渲染（省时间、避免不必要重压缩）
-    if abs(input_i - target_lufs) < 0.3:
-        print(f"[ok] input_i={input_i:.2f} LUFS 已在 ±0.3 LUFS of target {target_lufs}，"
+    if abs(input_i - target_lufs) < 0.3 and input_tp <= true_peak - .25:
+        print(f"[ok] input_i={input_i:.2f} LUFS 且 input_tp={input_tp:.2f} dBTP 已达标，"
               f"跳过归一化直接拷贝")
         shutil.copy2(video, output)
         return {"skipped": True, "input_i": input_i, "reason": "already_at_target"}

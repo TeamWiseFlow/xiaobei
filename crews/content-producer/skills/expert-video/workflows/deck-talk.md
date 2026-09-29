@@ -22,7 +22,7 @@ type 类 workflow；`Brief.workflow=deck-talk`。本文指导 Stage 1–2 的逐
 | presenter | footage 提供 main 已剪视频路径与授权；avatar 提供肖像路径与授权；audio 不提供人物素材 |
 | audio | audio/avatar 提供锁定音频路径；footage 从已剪视频提取原音轨。需合成时明确音色档案 voice.json 与声音来源 |
 | visual_source / audio_origin | slides / broll / mixed；声音来源 recorded / cloned / designed / stock-tts，不得混淆 |
-| materials | 图表数据、单位、日期范围、来源；图片绝对路径与授权；不根据动画效果编造数值 |
+| materials | 图表数据、单位、日期范围、来源；图片绝对路径与授权；标记第三方平台界面、品牌/logo 与版权状态，不根据动画效果编造数值 |
 | form / gates / acceptance | 规格、字幕与封面要求、两道闸门批准人及代理范围、验收标准 |
 
 **avatar 使用包内 `tools/liveportrait/SKILL.md`**：先准备唯一最终人声音轨，再生成人物口型；不另建公共 avatar-gen 技能。若要复刻声音或设计音色，先读公共 awk-tts，保存音色档案、试听确认后再合成长音频。优先沿用用户原声。
@@ -41,8 +41,8 @@ Stage 3–10 仍逐阶段执行 `video-producer` 同名命令，生成对应脚�
 | 5 | `character-register` 登记 footage/avatar 的身份、授权、同源音轨和小窗位置；audio 模式明确“无人物”；若画面另含跨镜生成角色，再登记特征与参考图。落 `characters/registry.json` |
 | GATE A | 呈交脚本、逐页/段分镜、画面状态、人物/声音方案；按通用闸门等待批准 |
 | 6 | `slot-plan` 按镜规划图表、图片、B-roll 与口播对应，落 `slots/slot-plan.json`；给出每页/段的可核验素材槽 |
-| 7 | `asset-resolve` 入库并 probe 图表/图片/真人素材，记录来源授权、弃选项；合成声音先落实音色与试听。原声或已批准生成的唯一口播音轨可先对齐时间戳，落 `script/deck-spec.json`，Stage 11 再核定最终声画对齐 |
-| 8 | `slideshow-risk` 仍做合成前审核，落 `slots/slideshow-risk.json`；按可读性、句边界节奏、素材覆盖、真实动作、来源授权评估。幻灯元素动画与 B-roll 画面动作分别验收，不套通用动镜头占比阈值；fail 必返工 |
+| 7 | `asset-resolve` 入库并 probe 图表/图片/真人素材，记录来源授权、弃选项；逐张检查第三方界面截图、竞品/无关品牌、logo 与版权状态，未获准发布的画面换成自有示意图。合成声音先落实音色与试听，检查真峰值与可闻削波；保护后音频作为数字人、字幕和成片的唯一同源输入。可先对齐字级时间戳，落 `script/deck-spec.json`，Stage 11 再核定最终声画对齐 |
+| 8 | `slideshow-risk` 仍做合成前审核，落 `slots/slideshow-risk.json`；按可读性、标点边界节奏、素材覆盖、真实动作、来源授权与第三方品牌画面评估。幻灯元素动画与 B-roll 画面动作分别验收，不套通用动镜头占比阈值；fail 必返工 |
 | 9 | `delivery-promise-lock` 逐页/段锁定时长、人物模式、音频来源、素材和真实动效，落 `slots/delivery-promise.json`；Stage 13b 按该承诺核验 |
 | GATE B | slides/mixed 的幻灯段执行 scaffold + check + preview；交逐页/逐段联系表、真人小窗取帧/位置方案、素材来源、成本估算。avatar 必须先交 5–10 秒样片再批准全量；audio 模式交声音与 B-roll 取帧，不索要露脸视频 |
 | 10 | `render-shot` 建立 `render/deck-render-plan.json`，再依计划实际渲染：slides 用 deck-render；broll/mixed 用 clip-trim + assemble 合成底画面；footage 沿用 main 已剪视频，avatar 用 liveportrait generate / resume。计划文件不代表渲染完成 |
@@ -59,7 +59,8 @@ Stage 3–10 仍逐阶段执行 `video-producer` 同名命令，生成对应脚�
 2. 排名/类别对比用柱状图，时间变化用折线图，步骤关系用流程图，单指标可用 KPI 卡。脚手架内置正数柱状图，其余在 scene HTML/SVG 中设计；引用 registry 块须检查许可证、将字体与依赖本地化，不能引入上游 workflow。
 3. 有小窗时整侧预留版面，字幕留底部安全带。脚手架默认匹配 1080p、小窗宽 22%、1:1、margin=32、subtitle-safe=160；调整 corner/size/aspect 后须重新目检。真人居中裁切可能切脸，必要时提前裁剪或改 aspect。
 4. 声画只用一条源音频：用于 narration-align、页时长、字幕、最终合成；presenter 自带音轨不混入。实拍必须同源，不能只因时长相同就认为口型对齐。
-5. 翻页落句边界；每页 3–30 秒。过短合页、过长拆页，在 deck-script 记对应原文范围；不改口播。末页时长覆盖尾音，音频与视频总长偏差超过 0.12 秒时返工。
+5. 翻页落句号、逗号等标点对应的字级时间戳，不以 SRT cue 边界代替；先用 `video-producer deck-boundaries --subtitle /absolute/narration.subtitle.json --spec /absolute/deck-spec.json --output /absolute/review/page-boundaries.json` 核对。录音 ASR 则传 `narration-segments.json`，须含逐字/词且保留标点；verdict=fail 时调整页时长再渲染。每页 3–30 秒。过短合页、过长拆页，在 deck-script 记对应原文范围；不改口播。末页时长覆盖尾音，音频与视频总长偏差超过 0.12 秒时返工。
+6. `source` 保存素材来源与授权，`caption` 只写观众该看到的图注；制作备注不得写入 `caption` 或 HTML 可见文字。GATE B 与交付前逐页看截图，查品牌/logo、图注和制作痕迹。
 
 ## GATE A / B
 
@@ -86,7 +87,11 @@ video-producer deck-compose --mode avatar --base /absolute/project/render/base.m
 video-producer deck-compose --mode audio --base /absolute/project/render/broll.mp4 --audio /absolute/project/audio/narration.wav --output /absolute/project/composed.mp4
 ```
 
-`deck-compose` 校验模式输入并调用 pip-compose，记录唯一音频的路径与哈希。所有底画面必须已与锁定音频等长（容差 0.12 秒），不循环/变速声音迁就画面。人物小窗变化只重跑合成及字幕/审片。技术调试可用 `pip-compose --dry-run` 检查区域；对外交付遵循明确的三模式契约。
+`deck-compose` 校验模式输入并调用 pip-compose，记录唯一音频的路径与哈希。所有底画面必须已与锁定音频等长（容差 0.12 秒），不循环/变速声音迁就画面；avatar 模式还须保持 job 的音频路径、哈希和时长，不手改 job 音频字段。人物小窗变化只重跑合成及字幕/审片。技术调试可用 `pip-compose --dry-run` 检查区域；对外交付遵循明确的三模式契约。
+
+## 中断后续跑
+
+重新接单先读 `brief.md`、两道闸门记录、`script/deck-spec.json`、`slots/delivery-promise.json` 和已有媒体；对照 Stage 10–13 的实际文件与哈希，只接着完成缺失步骤。已有 LivePortrait job 用 `liveportrait resume --job <job>` 查询和下载，不重复提交；已有 slides 且与当前 spec 一致时直接复用。审片或 normalize 尚未完成，不能把中间 MP4 当交付。LLM 网络错误由运行框架处理，本 workflow 的续跑依靠落盘产物与重新派单。
 
 B-roll 使用 `clip-trim` 切段、`assemble --manifest` 按序拼接，时间轴从锁定音频的句边界确定。mixed 先将幻灯段和 B-roll 段归一化后拼接；无幻灯的 audio+broll 模式不调用 deck-render，不强制 HTML 动效证明。主音轨在最终合成时替换底画面全部原声。BGM 如有需求，三模式合成后再按通用 ducking 混音，保留原音频来源记录。
 
