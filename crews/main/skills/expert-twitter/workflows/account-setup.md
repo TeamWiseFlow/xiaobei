@@ -4,7 +4,7 @@
 
 核心判断：冷启动阶段不要把 X 当朋友圈，也不要当公众号。它更像开放广场：陌生人会快速扫过你的头像、简介、主贴和回复。所有动作都服务一个问题：**陌生人看到你 3 秒钟，凭什么停下来？**
 
-每一步要么落到工具（`twitter-post` / `smart-search` / `published-track`），要么明确是 agent 推理或用户动作，不允许模糊的"专家来分析"。互动操作（点赞 / 转推 / 收藏 / 关注）不在本包，需要时走 `expert-bd` 的 `twitter-interact`。
+每一步要么落到工具（`twitter-post` / `smart-search` / `published-track`），要么明确是 agent 推理或用户动作，不允许模糊的"专家来分析"。互动操作按需使用本包 `twitter-interact`。
 
 本 Workflow 的产出物（定位句、简介草稿、置顶帖选题、账号观察表、选题库、复盘记录表等）统一存在 Workspace 根平台运营文件夹 `twitter/`。
 
@@ -96,7 +96,7 @@
 执行约束：
 
 - 所有发帖走 `twitter-post`，遵守其频率限制（单帖间隔 ≥ 30 分钟、单日 ≤ 50 帖）；每次发布成功后执行 `published-track record`（`--platform twitter`，`dna_id` 留空）。
-- 点赞、转推、关注等互动操作不在本包，需要时走 `expert-bd` 的 `twitter-interact`，不在起号流程中默认安排。
+- 点赞、转推、关注等互动操作按需使用本包 `twitter-interact`，不在起号流程中默认安排。
 - 回复质量按下方公式把关，差回复不发。
 
 ### 回复质量公式

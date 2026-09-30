@@ -147,7 +147,7 @@ crews/main/
 
 命名约定：
 
-- 专家包统一加 `expert-` 前缀，与「操作型技能」（如 `douyin-video-publish`）区分。
+- 专家包统一加 `expert-` 前缀，与「操作型技能」（如 `douyin-publish`）区分。
 - 专家包内不使用 `AGENTS.md` 作为文件名（避免与 workspace bootstrap 文件混淆，也避免被误解为会被自动注入）。
 - 专家包内不保存可变 DNA。运行期生成的 DNA report、DNA 文档和 DNA template 一律写入 Workspace 的 `<platform>/dna/<dna-id>/`；专家包只保留方法论、框架和工具。
 - 非内容平台专家包（`expert-bd` / `expert-ir`，2026-08-27 落地）没有 DNA 与数据复盘概念：不配 style-profiler，也不要求 4.7 的 6 类 workflow 基线集；workflow 按业务场景组织（如 Lead Hunting / Investor Pipeline），运行期数据只有 Workspace `db/` 下的 SQLite 库。其余分层原则同样适用：薄根 `SKILL.md`（入口 + 路由）+ `workflows/*.md`（场景编排）+ `tools/`（原子技能收纳，SKILL.md 瘦身为工具说明书）+ 顶层 `<tool>.sh` wrapper 暴露到 PATH（`skill-wrappers.sh` 的 `*/tools/*/` 扫描层）。
@@ -661,7 +661,7 @@ expert-wx-mp 改造的最后一块：把 `content-calibrator` × `published-trac
 → mark-evaluated → 用户逐条确认 → style-dna update 回写 DNA
 ```
 
-脚本入口走 PATH wrapper（D21 分发器 wrapper）：`content-calibrator eval`（`--check` / 聚合 / `--force` / `--mark-evaluated`）、`published-track record|update-metrics|fetch-metrics|...`，agent 零路径拼接。旧 rubric 脚本（score-only / commit-prediction / cal-toggle / detect-bump-signals / validate-rubric 等）与 seed 文件（rubric_notes.md / rubric-memo.md / .cheat-state.json）已删除；`cal_*` DB 列保留做历史兼容，停写。
+脚本入口走 PATH wrapper（D21 分发器 wrapper）：`content-calibrator eval`（`--check` / 聚合 / `--force` / `--mark-evaluated`）、`published-track record|update-metrics|query|...`，平台取数由各专家包内的 engagement 工具执行，agent 零路径拼接。旧 rubric 脚本（score-only / commit-prediction / cal-toggle / detect-bump-signals / validate-rubric 等）与 seed 文件（rubric_notes.md / rubric-memo.md / .cheat-state.json）已删除；`cal_*` DB 列保留做历史兼容，停写。
 
 ### 10.4 review 与引擎的落位（2026-08-21 补充）
 

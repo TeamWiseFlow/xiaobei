@@ -11,13 +11,12 @@ metadata:
 
 # Login Manager（平台登录态管理）
 
-管 3 个浏览器登录态：`douyin` / `bilibili` / `kuaishou`。其他平台由各自 skill 管理。
+管 2 个浏览器登录态：`bilibili` / `kuaishou`。抖音使用 `expert-douyin` 包内的 `douyin-login` 独立 API 登录。其他平台由各自 skill 管理。
 
 ## 支持的平台
 
 | 平台 key | 登录页 URL（有头打开） | 中央存储文件 |
 |----------|----------------------|---------|
-| `douyin` | `https://www.douyin.com/` | `~/.openclaw/logins/douyin.json` + `douyin.ua.json` |
 | `bilibili` | `https://passport.bilibili.com/login` | `~/.openclaw/logins/bilibili.json` + `bilibili.ua.json` |
 | `kuaishou` | `https://www.kuaishou.com/` | `~/.openclaw/logins/kuaishou.json` + `kuaishou.ua.json` |
 
@@ -40,7 +39,7 @@ metadata:
 camoufox-cli --session <platform> --persistent --headed --json open "<登录页 URL>"
 ```
 
-session 名 = 平台 key（`douyin` / `bilibili` / `kuaishou`），每个平台一个持久化 session。
+session 名 = 平台 key（`bilibili` / `kuaishou`），每个平台一个持久化 session。
 
 ### Step 2 — 通知用户登录并等待确认
 
@@ -79,8 +78,8 @@ login-manager --platform <platform>
 > 主力后端 = `target=camoufox`，上面命令针对 camoufox。`target=host` / `target=node` 只按本 skill 的**流程 + 约定**走——何时有头 / 探活节奏 / 中央存储路径是**后端无关**的，照本 skill 执行；不要照搬 `camoufox-cli ...` 命令，用你当前后端自带的浏览器工具语义登录 + 导出 cookie/UA 即可。
 
 **两层探活**（`_shared/check-session.ts`）：
-- Tier 1 cookie 关键字段：douyin→`sessionid`+`sid_tt`+`uid_tt`、bilibili→`SESSDATA`/`DedeUserID`、kuaishou→`webday7`/`userId`/`passToken`。
-- Tier 2 平台 pong：bilibili `/x/web-interface/nav`、kuaishou graphql `visionProfileUserList`、douyin `/aweme/v1/web/history/read/`。pong 带 TTL 缓存（批量探活把 N 次 pong 压成 1 次）。
+- Tier 1 cookie 关键字段：bilibili→`SESSDATA`/`DedeUserID`、kuaishou→`webday7`/`userId`/`passToken`。
+- Tier 2 平台 pong：bilibili `/x/web-interface/nav`、kuaishou graphql `visionProfileUserList`。pong 带 TTL 缓存（批量探活把 N 次 pong 压成 1 次）。
 - 签名平台缺 `OFB_KEY` → `SIGN_UNAVAILABLE` 仅警告（presence 已过，登录本身成功），不 fail。
 
 **中央存储路径约定**：

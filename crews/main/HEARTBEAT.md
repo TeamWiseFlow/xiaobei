@@ -45,22 +45,16 @@
 
 ### 工作流程
 
-#### Step 1: 通过 published-track 对抖音已发布作品取数
+#### Step 1: 通过抖音专家包对已发布作品取数
 
 1. 执行 `published-track platform-status --platform douyin`。仅返回 `ok=true, enabled=true` 时继续；未启用直接进入 Step 2，状态读取失败记入汇总后进入 Step 2。
-2. 查询最近 30 条已发布作品（图文和视频合计 30 条，不再按天数过滤）：
+2. 执行一次：
 
    ```bash
-   published-track query --platform douyin --limit 30
+   douyin-engagement daily
    ```
 
-3. 按查询结果顺序，取每条作品的 `id`，依次执行：
-
-   ```bash
-   published-track fetch-metrics --platform douyin --id <id>
-   ```
-
-   `/note/` 和 `/video/` 链接均自动识别，无需传 `--content-id`。查询为空直接进入 Step 2。单条失败保留原始 stderr 和 exit code，继续下一条；遇到 `SESSION_EXPIRED` / exit 2，记入 `EXPIRED_PLATFORMS`，停止抖音取数并进入 Step 2。
+   `/note/` 和 `/video/` 链接均自动识别。工具逐条报告失败；遇到 `SESSION_EXPIRED` / exit 2，记入 `EXPIRED_PLATFORMS`，停止抖音取数并进入 Step 2。
 
 #### Step 2: 依次对小红书、视频号、公众号取数
 

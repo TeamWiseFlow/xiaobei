@@ -125,7 +125,7 @@ content-calibrator init --platform <platform_id>
 
 ## Heartbeat 集成（凌晨任务）
 
-1. 数据采集：按 published-track 流程全量更新（每日必跑）。**评估前必须保证数据新鲜**——各平台取数手段由 published-track 的 `fetch-metrics` 或平台专家包的取数工具提供，本技能只消费 DB，不直接取数。
+1. 数据采集：按各平台专家包的 engagement 工具更新（每日必跑）。**评估前必须保证数据新鲜**；本技能只消费 DB，不直接取数。
 2. 阈值检查：各启用平台跑 `content-calibrator eval --platform <platform> --check`；全部 `triggered=false` → 本轮评估结束。
 3. 有触发 → **该平台的复盘走其专家包 review workflow**（如 wx_mp → expert-wx-mp 的 Review Workflow）：取数刷新、聚合、平台归因、写 `evals/{date}.eval.md`、标记，都在 review workflow 内完成。无专家包 review workflow 的平台按上方共性步骤执行，归因只到「观察」级。
 4. 汇总：上报本轮评估的 DNA、整体判定与待用户确认的优化建议。**Agent 不得自动更新 DNA。**

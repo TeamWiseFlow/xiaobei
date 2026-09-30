@@ -5,7 +5,7 @@ description: BD 线索与互动记录数据库（SQLite）：已探索创作者�
 
 # bd-record — BD 记录数据库工具
 
-在 Workspace `db/bd_record.db` 中维护持久化 SQLite 数据库，供 Lead Hunting（创作者探索）与 Comment Engagement（帖子互动）去重使用。
+在 Workspace `db/bd_record.db` 中维护持久化 SQLite 数据库，供 Lead Hunting（创作者探索）与 授权触达（帖子互动）去重使用。
 
 ## 数据库位置
 
@@ -70,7 +70,7 @@ bd-record record-creator \
 ```
 返回 JSON：`{"ok": true, "id": <记录ID>}` 或 `{"ok": false, "error": "..."}`
 
-### 帖子互动记录（Comment Engagement 用）
+### 帖子互动记录（授权触达 用）
 
 **检查帖子是否已互动**：
 ```bash

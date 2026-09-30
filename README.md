@@ -32,10 +32,8 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 
 ---
 
-## 🚀 **V5.7.2~5.7.3 更新**
+## 🚀 **V5.7.3 更新**
 
-- 小红书、抖音、视频号 DNA系统升级到2.0架构，Let's do this like an expert！
-- content producer 升级为专家系统，现在除了AIGC大片外，还可以复刻众多短视频平台流行的“套路”，更易获得平台推荐流量;
 - content producer 新增 `deck-talk` 幻灯讲解 workflow，支持实拍口播、数字人讲解和纯音频配 B-roll 三种模式，按 Brief 编排逐页或逐段内容、动效与音轨;
 - xiaobei 可直接指挥content producer，用户可选择将brief出具、节点验收等委托xiaobei;
 - 新增抖音平台图文音乐内容发布能力，支持多图上传、选择推荐配乐与发布链接回收;
@@ -278,8 +276,8 @@ v5.6.0 中我们几乎重构了 OpenClaw 原版的浏览器自动化方案（详
 | `browser-guide` | 浏览器操作最佳实践总纲——登录墙 / CAPTCHA / lazy-load / paywall / 有头无头场景规则 / eval 用法 |
 | `smart-search` | 智能搜索——绕开 openclaw 内置 web search 的 api key 依赖，零部署免费方案 |
 | `web-form-fill` | 网络表单填报——从信息搜集到浏览器填报的完整工作流，强制有头模式便于用户随时介入 |
-| `login-manager` | 抖音、快手、B 站登录态管理——有头手动登录、探活和中央 cookie+UA 存储 |
-| 各平台发布/互动 skill | `twitter-post` / `twitter-interact` / `weibo-publish` / `zhihu-publish` / `xhs-publish` / `xhs-hunter` / `douyin-video-publish` / `wechat-channels-publish` / `xianyu-ops` / `wx-mp-hunter` / `wx-mp-engagement` 等平台专属技能 |
+| `login-manager` | 快手、B 站登录态管理——有头手动登录、探活和中央 cookie+UA 存储；抖音使用 `douyin-login` 独立 API 会话 |
+| 各平台发布/互动 skill | `twitter-post` / `twitter-interact` / `weibo-publish` / `zhihu-publish` / `xhs-publish` / `xhs-hunter` / `douyin-hunter` / `douyin-publish` / `douyin-engagement` / `douyin-im` / `douyin-interact` / `douyin-live` / `wechat-channels-publish` / `xianyu-ops` / `wx-mp-hunter` / `wx-mp-engagement` 等平台专属技能 |
 
 浏览器技能使用 camoufox-cli 与持久化 session，按场景切换有头/无头模式。小红书的 `xhs-hunter` 使用 PC 会话，`xhs-publish` 与 `xhs-engagement` 共用 Creator 会话；接口所需计算值由 OFB Relay 提供。
 

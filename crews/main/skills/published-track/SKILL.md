@@ -26,7 +26,7 @@ metadata:
 published-track init-db
 ```
 
-**脚本统一走顶层 wrapper `published-track <子命令>`**（在 PATH 中，零路径拼接）：`record` / `update-metrics` / `fetch-metrics` / `query` / `query-pending` / `check-published` / `set-distribute-status` / `init-db` / `migrate-v3`。ROOT 按 wrapper 真实路径解析（符号链接自动解析），不限调用目录。
+**脚本统一走顶层 wrapper `published-track <子命令>`**（在 PATH 中，零路径拼接）：`record` / `update-metrics` / `query` / `query-pending` / `check-published` / `set-distribute-status` / `init-db` / `migrate-v3`。ROOT 按 wrapper 真实路径解析（符号链接自动解析），不限调用目录。
 
 ---
 
@@ -38,7 +38,7 @@ published-track init-db
 | 微信视频号 | `pub_wx_channel` | video | plays, likes, comments, shares, favorites |
 | 知乎 | `pub_zhihu` | article/post | views, upvotes, comments, favorites |
 | B站 | `pub_bilibili` | video | plays, danmaku, likes, coins, favorites, shares, comments |
-| 抖音 | `pub_douyin` | video | plays, likes, comments, shares, favorites, deep_metrics |
+| 抖音 | `pub_douyin` | video/post | 自动取 likes, comments, shares, favorites；plays 与 deep_metrics 保留历史值或用户补录 |
 | 快手 | `pub_kuaishou` | video | plays, likes, comments, shares |
 | 小红书 | `pub_xhs` | video/post | views, likes, favorites, comments, shares；deep_metrics / deep_captured_at / deep_source；fan_portrait（单篇画像 JSON） |
 | Twitter/X | `pub_twitter` | post/video | views, likes, retweets, replies, bookmarks |
@@ -110,37 +110,11 @@ published-track record \
 
 ## 块二·数据更新
 
-### 流程 2A·自动更新（定时任务用）
+### 流程 2A·平台专家工具取数
 
-`fetch-and-update-metrics.sh` 封装探活 → API 抓取 → DB 写入，凌晨复盘心跳调用（仅 douyin 一个纯 HTTP 平台）：
+本技能只负责发布记录、查询和 `update-metrics` 写库。按平台使用专家包内的取数工具：抖音 `douyin-engagement`、小红书 `xhs-engagement`、微信公众号 `wx-mp-engagement`、微信视频号 `wx-channel-engagement`。各工具按作品 ID 或发布记录行 ID 匹配并写库；不要从公开作品的缺失字段推断零值。B站、快手及其余平台由用户提供数据时再调用 `update-metrics` 补录。
 
-```bash
-# 通过 source-folder 从 DB 查 publish_url → 抓取 → 写入
-published-track fetch-metrics \
-  --platform <platform> --source-folder "<platform>/outputs/xxx"
-
-# 按 id 逐条抓（同 folder 多条记录各自独立统计，推荐）
-published-track fetch-metrics \
-  --platform douyin --id <rowid>
-```
-
-返回 JSON 统一格式：
-
-| 场景 | 返回示例 |
-|------|---------|
-| 脚本获取成功 | `{"ok":true,"method":"script","platform":"bilibili","content_id":"BVxxx","metrics_params":"..."}` |
-| Cookie 失效 | `{"ok":false,"error":"SESSION_EXPIRED","platform":"douyin","method":"script","hint":"..."}` |
-| 需浏览器获取 | `{"ok":false,"method":"browser","platform":"twitter","hint":"..."}` |
-| 需手动提供 | `{"ok":false,"method":"manual","platform":"twitter","hint":"该平台互动数据无法自动获取..."}` |
-
-Exit codes：0=成功/浏览器/手动（非错误），1=一般错误，2=SESSION_EXPIRED。
-
-**douyin 取数双车道**（`fetch-retro-data.ts`）：
-- 公开侧 `aweme/detail`：点赞/评论/分享/收藏。**play_count 公开侧恒为 0**（播放量仅创作者可见）。
-- 创作侧 `creator/item/list`（`_shared/douyin-web.ts` `douyinCreatorItem`）：**播放量唯一来源**（`view_count`）+ 26 字段深指标（5s 完播率 / 2s 跳出率 / 封面曝光与点击率 / 粉丝观看占比 / 关注转化等），**视频与图文(note)作品通用**；creator 域 cookie-only 无需 a_bogus，用中央 douyin cookie 即可。失败时 graceful 降级（只缺播放量/深指标，公开侧数据不受影响）。**深指标存储**：`fetch-and-update-metrics.sh` 经 `--deep-file` 写入 `pub_douyin.deep_metrics`（单行 JSON，`deep_captured_at` / `deep_source` 同行），**只存最新值不留历史**（2026-09-18 定调）；`query.sh` 走 `SELECT *`，deep 列自动可见。
-- **链接格式**：视频 `douyin.com/video/<id>`、图文 `douyin.com/note/<mid>` 均可提取 content_id（2026-09-17 起支持 note）。
-
-- **脚本支持**：douyin（走 `fetch-retro-data.ts` 纯 HTTP + cookie + UA）。**自动取数仅覆盖完全支持 Expert 架构的 4 个平台**：douyin 走本技能 `fetch-metrics`；xhs / wx_mp / wx_channel 均不走本技能的 fetch-metrics（收到这三个平台直接 exit 1 指路）——xhs 走 `expert-xhs` 的 `xhs-engagement`（Creator 本地 HTTP），wx_mp 走 `expert-wx-mp` 的 `wx-mp-engagement`，wx_channel 走 `expert-wx-channel` 的 `wx-channel-engagement`。**bilibili / kuaishou 及其余平台不做自动取数**（收到直接 exit 1 报 `PLATFORM_OUT_OF_FETCH_SCOPE`）——发布记录与查询照常支持，只是不抓互动数据。
+抖音自动取数仅更新公开详情实际返回的点赞、评论、分享和收藏，播放量与后台深指标当前不自动获取；不可得的字段保留原值，库内默认零不代表平台实测零。视频与图文链接都可作为发布记录链接。`pub_douyin.plays`、`deep_metrics`、`deep_captured_at`、`deep_source` 保留用于历史兼容和用户主动提供数据时的补录；不能把历史值描述成本次自动取数结果。深指标仍只保留最新 JSON 及其时间、来源。
 
 ### 流程 2B·用户提供数据（Agent 补录）
 
@@ -207,10 +181,10 @@ published-track check-published \
 
 所有发布技能（wx-mp-publisher、xhs-publish、gaoqian-article、wechat-channels-publish、bilibili-publish 等）的流程统一为 **发布 → 记录**（`published-track record` 带 `--account`；DNA 关联经 `dna-meta.json` 自动建立）。各技能 SKILL.md 的"发布记录"段标注此要求，主 agent 无需额外提醒。
 
-**平台代号对照**：`wx-mp-publisher`/`sync-from-mp` → `wx_mp`；`wechat-channels-publish` → `wx_channel`；`xhs-publish` → `xhs`; `douyin-video-publish` / `douyin-note-publish` → `douyin`；`bilibili-publish` → `bilibili`；`kuaishou-publish` → `kuaishou`；`zhihu-publish` → `zhihu`; `twitter-post` → `twitter`；`weibo-publish` → `weibo`.
+**平台代号对照**：`wx-mp-publisher`/`sync-from-mp` → `wx_mp`；`wechat-channels-publish` → `wx_channel`；`xhs-publish` → `xhs`; `douyin-publish` → `douyin`；`bilibili-publish` → `bilibili`；`kuaishou-publish` → `kuaishou`；`zhihu-publish` → `zhihu`; `twitter-post` → `twitter`；`weibo-publish` → `weibo`.
 
 ## 平台启用状态与定时取数
 
 `published-track platform-status --platform <douyin|xhs|wx_channel|wx_mp>` 只读工作区 `<platform>/calibration/platform-state.json` 的 `enabled` 字段，兼容旧 `.platform-state.json`。文件不存在返回 `enabled=false, reason=NOT_INITIALIZED`；字段缺失、类型错误或文件损坏返回 `ok=false, enabled=false` 与错误。不因查询而初始化或启用平台。
 
-heartbeat 每个平台取数前查状态，仅 `ok=true, enabled=true` 时取数。抖音用 `published-track query --platform douyin --limit 30` 查询图文与视频合计最近 30 条，按返回的每条 `id` 依次 `published-track fetch-metrics --platform douyin --id <id>`。无需按天数过滤或手传 `--content-id`。登录失效停止该平台，其他单条错误记录后继续。完整定时流程见 HEARTBEAT.md。
+heartbeat 每个平台取数前查状态，仅 `ok=true, enabled=true` 时取数。抖音交给 `douyin-engagement daily`，其他平台交给各自专家包的 engagement 工具。完整定时流程见 HEARTBEAT.md。

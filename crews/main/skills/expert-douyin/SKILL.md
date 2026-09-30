@@ -1,6 +1,6 @@
 ---
 name: expert-douyin
-description: 抖音账号运营专家。承接定位起号、内容 DNA（视频 / 图文两套框架）、选题与包装、图文生产、已有素材轻加工、视频全案 Brief 与口播文案、发布与数据复盘；全片制作委托 content-producer。
+description: 抖音账号运营专家。承接定位起号、内容 DNA、内容生产、发布与数据复盘，以及作品互动、媒体私信及直播控场；全片制作委托 content-producer。
 metadata:
   openclaw:
     emoji: 🎵
@@ -39,11 +39,16 @@ metadata:
 | 工具 | 用途 | 命令 |
 |------|------|------|
 | `douyin-style-profiler` | 生成单篇作品（视频 / 图文，`--kind`）的 DNA report，并聚合 DNA 文档与 template（视频 = Brief + 口播文案模板；图文 = 写作模板） | `douyin-style-profiler` |
-| `douyin-comments` | 抓取抖音视频评论（对标分析 / 标签反推用，纯 HTTP 不起浏览器） | `douyin-comments` |
-| `douyin-note-publish` | 图组、文案与可选配乐 → 图文发布 | `douyin-note-publish` |
-| `douyin-video-publish` | 成片 → 抖音创作者中心发布（浏览器自动化） | `douyin-video-publish` |
+| `douyin-engagement` | 读取已发作品公开互动量并更新发布记录 | `douyin-engagement` |
+| `douyin-interact` | 作品点赞、收藏、评论和回复；写入前预览 | `douyin-interact` |
+| `douyin-live` | 直播房间、PK 快照、贡献榜、弹幕与点赞 | `douyin-live` |
+| `douyin-login` | 独立 API 扫码/短信登录及会话状态 | `douyin-login` |
+| `douyin-im` | 会话、文本/图片/视频/附件/卡片与实时消息 | `douyin-im` |
+| `douyin-publish` | API 视频/图文上传发布和结果核查 | `douyin-publish` |
 
-跨领域通用技能：`viral-chaser`（抖音 / B站 / 小红书视频下载拆解，DNA 采样与仿写参考的取数主力）、`smart-search`（跨平台搜索，选题调研优先走社交平台，不用通用搜索引擎）、`content-calibrator`（DNA 表现评估）、`published-track`（发布记录与指标库）、`login-manager`（抖音登录态维护）。
+跨领域通用技能：`douyin-hunter`（搜索、作品、详情和评论采集）、`viral-chaser`（视频下载拆解与 DNA 采样）、`smart-search`（跨平台搜索）、`content-calibrator`（DNA 评估）、`published-track`（发布记录与指标库）。全部抖音请求共用 `douyin-login` 的独立 API 会话；媒体传输及消息连接由本机完成。
+
+按业务选择工具时查阅同包 `references/api-capabilities.md`。读取成功不代表发布、私信或直播写操作材料完整。
 
 原生界面卡片出图使用 main crew 共享技能 `native-ui-card`，具体选题、审核、发布与记录按 `workflows/native-ui-cards.md`。
 
@@ -68,8 +73,8 @@ DNA 是**从一批作品样本提取并聚合出的内容生产规则集**：视
 ## 平台速查与硬性红线
 
 - **发布限频**：单抖音号每 24h ≤ 5 条；触发风控立即降级，30 分钟内不重试。
-- **串行发布**：`douyin-video-publish` 与 `douyin-note-publish` 共用 `douyin` session 和发布锁，同一时间只能有一个发布任务在跑（浏览器 session 竞态）。
-- **AIGC 标注**：AI 生成的内容按平台规则标注，`douyin-video-publish fill` 已内置自主声明"内容由AI生成"。
+- **串行发布**：`douyin-publish` 的视频和图文共用账号发布锁，同一时间只跑一个发布任务。
+- **AIGC 标注**：AI 生成的内容按平台规则标注，发布保留 `--declaration aigc`，声明字段缺失时停止，交 IT engineer 核对配置。
 - **简介引流**：视频简介可提及产品与业务，但不放明显引流信息；禁止二维码、联系方式；可引导主动搜索或看主页。
-- **登录态**：浏览器操作一律走 `login-manager` 真实登录后的持久化 session，严禁 `cookies import` 造会话。
+- **登录态**：使用 `douyin-login` 独立 API 会话；安全材料必须属于同一次登录，不导入旧浏览器会话，不伪造 token。
 - **数据诚实**：互动数据只来自平台接口、`viral-chaser` 返回或用户提供的线索，不编造；估算值必须标注估算方法，不可得的数据写明"数据不可得"。

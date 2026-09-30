@@ -229,13 +229,13 @@ def camoufox_render(session, html_file, png):
     finish_png(png)
 
 
-def find_chrome():
+def find_chrome(allow_camoufox=True):
     system = shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser")
     if system:
         return system
-    if shutil.which("camoufox-cli"):
+    if allow_camoufox and shutil.which("camoufox-cli"):
         return None
-    raise RuntimeError("缺少 Chrome/Chromium 和 camoufox-cli；请安装浏览器")
+    raise RuntimeError("缺少 Chrome/Chromium；请安装用于本地卡片渲染的 Chromium")
 
 
 def main():
@@ -269,7 +269,7 @@ def main():
     # 只有真正由本工具生成的产物存在时才需要 --force 覆盖。
     if not args.force and any(p.exists() for p in targets):
         raise ValueError("输出目录已有本工具生成的产物（page-*.png/html、note.md、dna-meta.json 或 assets-manifest.json）；修订时显式加 --force")
-    chrome = find_chrome()
+    chrome = find_chrome(allow_camoufox=platform != "douyin")
     session = f"native-ui-card-{os.getpid()}-{uuid.uuid4().hex[:8]}" if chrome is None else None
     output.parent.mkdir(parents=True, exist_ok=True)
     try:

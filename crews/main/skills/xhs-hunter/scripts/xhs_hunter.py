@@ -359,12 +359,25 @@ def normalize_note(raw: dict, url: str) -> dict:
     streams = ((video.get('media') or {}).get('stream') or {})
     if not isinstance(streams, dict):
         streams = {}
-    variants = [streams.get('h264') or []] + [
-        entries for name, entries in streams.items() if name != 'h264' and isinstance(entries, list)
-    ]
-    video_url = next((entry.get('master_url') or entry.get('url')
-                      for entries in variants for entry in entries
-                      if isinstance(entry, dict) and (entry.get('master_url') or entry.get('url'))), None)
+    preferred_codecs = ('h264', 'EF4', 'h265', 'EF5')
+    codec_order = (*preferred_codecs, *(name for name in streams if name not in preferred_codecs))
+    video_url = None
+    for codec in codec_order:
+        entries = streams.get(codec)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            backup_urls = entry.get('backup_urls')
+            if not isinstance(backup_urls, list):
+                backup_urls = []
+            video_url = next((value for value in (entry.get('master_url'), entry.get('url'), *backup_urls)
+                              if isinstance(value, str) and value), None)
+            if video_url:
+                break
+        if video_url:
+            break
     if not video_url:
         origin_key = (video.get('consumer') or {}).get('origin_video_key')
         if origin_key:

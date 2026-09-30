@@ -19,3 +19,5 @@ numpy>=1.26,<3   # expert-xhs Creator 视频元数据
 opencv-python-headless>=4.10,<5  # expert-xhs Creator 媒体上传与视频封面
 openpyxl>=3.1,<4  # xhs-hunter 批量笔记导出 Excel
 aiohttp>=3.10,<4  # expert-xhs 直播与私信 WebSocket
+protobuf>=6.31.1,<7  # expert-douyin 私信及直播消息解码
+websocket-client>=1.8,<2  # expert-douyin 本地 WebSocket 收发

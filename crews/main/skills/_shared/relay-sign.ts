@@ -6,7 +6,6 @@
  * RELAY_BASE_URL + OFB_KEY 由 entrypoint 从 daemon.env 注入。
  *
  * 端点对应 relay 仓 services/sign/：
- *   POST /api/v1/sign/douyin        → 算 a_bogus
  *   POST /api/v1/sign/bilibili/wbi  → 算 WBI 签名 {wts, w_rid}（client 合并到原参数）
  */
 
@@ -48,24 +47,6 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
     throw new Error(`relay ${path} 失败 (${resp.status}): ${env.error ?? resp.statusText}`);
   }
   return env.data as T;
-}
-
-// ── douyin ──────────────────────────────────────────────────────────────────
-
-export interface DouyinSignInput {
-  queryString: string;
-  postData?: string;
-  ua?: string;
-}
-
-/** 算 a_bogus（relay 子进程隔离 vendor），client 自行拼 URL 发请求 */
-export async function douyinSign(input: DouyinSignInput): Promise<string> {
-  const data = await postJson<{ a_bogus: string }>("/api/v1/sign/douyin", {
-    queryString: input.queryString,
-    postData: input.postData ?? "",
-    ua: input.ua,
-  });
-  return data.a_bogus
 }
 
 // ── bilibili ─────────────────────────────────────────────────────────────────

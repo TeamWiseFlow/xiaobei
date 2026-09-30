@@ -10,7 +10,7 @@ metadata:
 
 先由调用方确定选题、受众、观点和发布平台，再准备卡片文案。本技能按输入内容生成图片和作品文件，不替调用方决定内容方向。通过 PATH 调用 `native-ui-card --input /绝对路径/card.json --output /绝对路径/作品目录`；修改同一作品时加 `--force`。不要拼接脚本路径或直接改打包 CSS。
 
-输入是 JSON：公共字段包括 `form`（`group` 或 `qa`）、`platform`（`xhs` 或 `douyin`）、`title`、`body`、`topics` 和 `dna_id`。群聊内容放在 `group`，问答内容放在 `qa`；随技能打包的示例 JSON 仅说明字段结构，使用时应替换全部文案、身份和事实。工具自动查找 PATH 中的 Chrome/Chromium，找不到时使用已安装的 `camoufox-cli`；渲染不借用平台登录会话。生成 2160×2880 的 `page-01.png`（群聊）或按顺序的 `page-01.png` 至 `page-03.png`（问答），以及 HTML、`note.md`、`dna-meta.json`、`card.json`、`assets-manifest.json`。如文本遮挡、头像失效或版面溢出，命令会报错；精简文案后重渲染，并逐张目视复核。
+输入是 JSON：公共字段包括 `form`（`group` 或 `qa`）、`platform`（`xhs` 或 `douyin`）、`title`、`body`、`topics` 和 `dna_id`。群聊内容放在 `group`，问答内容放在 `qa`；随技能打包的示例 JSON 仅说明字段结构，使用时应替换全部文案、身份和事实。工具自动查找 PATH 中的 Chrome/Chromium，抖音卡片必须使用该本地渲染器；小红书卡片找不到 Chromium 时可使用已安装的 `camoufox-cli`。渲染不借用平台登录会话。生成 2160×2880 的 `page-01.png`（群聊）或按顺序的 `page-01.png` 至 `page-03.png`（问答），以及 HTML、`note.md`、`dna-meta.json`、`card.json`、`assets-manifest.json`。如文本遮挡、头像失效或版面溢出，命令会报错；精简文案后重渲染，并逐张目视复核。
 
 ## 内容与结构
 

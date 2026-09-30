@@ -1,6 +1,6 @@
 ---
 name: expert-bd
-description: 商务拓展（BD）专家。承接找客户、评论区拓展（截流）、商业情报采集、竞争对手/重点客户动向监控、每日简报等完整商务拓展工作，也覆盖推特与小红书的互动操作（点赞/转推/收藏/关注/评论）、闲鱼商品搜索与私信等配套操作。用户只需要说目标和给素材，具体流程和判定标准由专家自己把握。零散的记录、查询、采集、互动等操作也可以直接做。不涉及投资人关系（找投资人/融资跟进/项目申报走 expert-ir）。
+description: 商务拓展（BD）专家。承接找客户、评论区拓展（截流）、商业情报采集、竞争对手/重点客户动向监控、每日简报等完整商务拓展工作，平台互动委托对应专家包，覆盖闲鱼商品搜索与私信等配套操作。用户只需要说目标和给素材，具体流程和判定标准由专家自己把握。零散的记录、查询、采集、互动等操作也可以直接做。不涉及投资人关系（找投资人/融资跟进/项目申报走 expert-ir）。
 metadata:
   openclaw:
     emoji: 💼
@@ -15,7 +15,6 @@ metadata:
 | 场景 | Workflow | 什么时候触发 |
 |------|----------|-------------|
 | 潜在客户探索 | Lead Hunting | 按关键词搜索平台内容，策略 A 分析发布者画像 / 策略 B 评论区挖掘潜客，去重记录，可选触达 |
-| 评论区拓展（“截流”式获客） | Comment Engagement | 按关键词搜索内容后进评论区留言 / 回复 / 私信，做获客或品宣 |
 | 信息搜集/竞对监控/每日简报 | Intel Gathering | 监控指定信源（自媒体账号 / 网页），按预设标准提取商业情报，生成简报 / 报告 / 监控表格 |
 | 竞争对手 / 重点客户动向监控 | Competitor Watch | 以对象为中心的动向监控：多信源采集 → 动向识别分级 → 重大动向告警 + 定期简报 |
 
@@ -42,8 +41,8 @@ metadata:
 | `info-record` | 情报条目数据库（采集去重 + 按日查询） | `info-record` |
 | `rss-reader` | 发现并抓取网页 RSS/Atom feed | `rss-reader` |
 | `xianyu-ops` | 闲鱼商品搜索 / 详情 / 私信 | `xianyu-ops` |
-| `twitter-interact` | Twitter/X 点赞 / 转推 / 收藏 / 关注（回复属 `twitter-post` 发布范畴，在 `expert-twitter` 包内） | `twitter-interact` |
 | `xhs-hunter` | 小红书 PC 端搜索、笔记详情与评论采集 | `xhs-hunter` |
+| `douyin-hunter` | 抖音站内搜索、账号作品、作品详情与评论采集 | `douyin-hunter` |
 
 跨领域通用技能：`smart-search`（构造各平台搜索 URL）、`browser-guide`（浏览器操作规范）、`email-ops`（邮件发送）。
 
@@ -58,4 +57,4 @@ metadata:
 
 - 找投资人 / 融资材料 / 投资人跟进 → `expert-ir`。
 - 项目申报 / 补贴 / 创业大赛 → `expert-ir` 专家包（Project Application Workflow）。
-- X/Twitter 起号、定位、发帖编排走 `expert-twitter`；本包只承担其互动与获客场景。
+- X/Twitter 起号、定位、发帖编排走 `expert-twitter`；本包负责线索与获客策略；平台写操作调用各平台专家包内的互动或私信工具。

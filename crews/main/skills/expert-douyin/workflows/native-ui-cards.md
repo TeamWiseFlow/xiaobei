@@ -23,18 +23,13 @@
 
 ## 4. 抖音发布与记录
 
-先读 `douyin-note-publish` 工具及其共用登录流程，执行 `douyin-note-publish open-page` 并检查登录状态。抖音视频和图文共用 session/发布锁，同一时间只跑一个发布任务。按顺序上传 `page-01.png`（问答式再加 `page-02.png`、`page-03.png`），上传后读取真实音乐候选，选与卡片氛围相符的一首；明确要原声才用 `--original-sound`。
+先读 `douyin-publish` 工具说明，用 `douyin-engagement check` 验证 API 会话。按顺序上传 `page-01.png`（问答式加 `page-02.png`、`page-03.png`），用户确认内容并要求发布后执行：
 
 ```bash
-douyin-note-publish upload --images /绝对路径/page-01.png /绝对路径/page-02.png /绝对路径/page-03.png
-douyin-note-publish music-list
-douyin-note-publish music-select --choice "刚返回的choice"
-douyin-note-publish fill --title "已确认标题" --caption "已确认描述 #话题"
-douyin-note-publish publish
-douyin-note-publish get-note-link --title "已确认标题"
+douyin-publish note --images /绝对路径/page-01.png /绝对路径/page-02.png /绝对路径/page-03.png --title "已确认标题" --caption "已确认描述 #话题" --confirm
 ```
 
-只有拿到与图文相符的 `/note/` URL 才算完成。若 `get-note-link` 显示同名标题冲突、`LINK_UNCONFIRMED` 或 exit 3，先在创作者管理页核对最新作品的完整标题和图片数并补取链接，**禁止自动重发**。登录异常或限频按工具文档处理。成功后执行：
+只有返回确认的作品 ID 和 `/note/` URL 才算完成。提交结果未知时用 `douyin-publish status --job-file "返回的任务文件"` 核查，禁止自动重发。成功后执行：
 
 ```bash
 published-track record --platform douyin --title "已发布标题" --content-type post --source-folder douyin/outputs/<work-name>/ --publish-url "确认的note URL" --account <账号alias>

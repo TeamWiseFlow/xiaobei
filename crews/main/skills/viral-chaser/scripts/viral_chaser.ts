@@ -8,7 +8,7 @@
  * Exit codes:
  *   0  Success — prints JSON result to stdout
  *   1  General error (URL invalid, download failed, etc.)
- *   2  Cookie invalid / not logged in → caller should run login-manager
+ *   2  Login rejected → use the corresponding platform login tool
  *   3  XHS SECURITY_BLOCK after one cooldown retry; stop, do not re-login
  */
 
@@ -20,8 +20,7 @@ import { join } from "path"
 import { parseLink } from "./link_parser.ts"
 import { requireSession, readUserAgent } from "./session.ts"
 import type { SessionData } from "./session.ts"
-import { checkSession } from "../../_shared/check-session.ts"
-import { getDouyinVideo } from "./platforms/douyin.ts"
+import { getDouyinViaHunter, DouyinHunterFailure } from "./platforms/douyin-hunter.ts"
 import { getBilibiliVideo } from "./platforms/bilibili.ts"
 import { getXhsVideoViaHunter, XhsHunterFailure } from "./platforms/xhs-hunter.ts"
 import { downloadVideo } from "./downloader.ts"
@@ -135,22 +134,11 @@ async function main(): Promise<void> {
 
   // 2. 抓取前探活（pong）合并进下载脚本——单条下载无法批量，每条自带探活最稳，
   //    且 pong 带 TTL 缓存，重复调用成本低。bilibili 公开视频免登录，跳过。
-  //    douyin 走 _shared checkSession（Tier1 字段 + Tier2 平台 pong）。
-  //    xhs 的会话检查、取数和下载统一由 xhs-hunter 处理。
-  if (platform === "douyin") {
-    const probe = await checkSession(platform)
-    if (!probe.ok) {
-      const err = probe.error === "SIGN_UNAVAILABLE" ? "SIGN_UNAVAILABLE" : "SESSION_EXPIRED"
-      process.stderr.write(
-        JSON.stringify({ ok: false, error: err, reason: probe.reason, platform }) + "\n",
-      )
-      process.exit(err === "SIGN_UNAVAILABLE" ? 1 : 2)
-    }
-  }
+  //    抖音和小红书由各自 hunter 负责会话检查、取数与下载。
 
   // 3. Load session
   // 抖音、B 站使用本技能的会话；小红书会话由 xhs-hunter 管理。
-  const session: SessionData | null = platform === "xhs" ? null : requireSession(platform)
+  const session: SessionData | null = platform === "xhs" || platform === "douyin" ? null : requireSession(platform)
   const tmpDir = getTmpDir(contentId)
   mkdirSync(tmpDir, { recursive: true })
 
@@ -159,7 +147,7 @@ async function main(): Promise<void> {
     title: string; desc: string; videoUrl: string; audioUrl?: string
     coverUrl: string; durationMs?: number; durationSeconds?: number
     author: string; stats: Record<string, number>
-    contentId: string; mediaFormat?: string; localVideoPath?: string
+    contentId: string; mediaFormat?: string; localVideoPath?: string; localImagePaths?: string[]
     // DNA 采样补充字段（平台能给则给，缺失为 0 / 空）
     width?: number; height?: number; ratio?: string
     createTime?: number; authorSignature?: string; authorUid?: string
@@ -168,7 +156,7 @@ async function main(): Promise<void> {
 
   try {
     if (platform === "douyin") {
-      videoInfo = await getDouyinVideo(contentId, session)
+      videoInfo = await getDouyinViaHunter(contentId, tmpDir)
     } else if (platform === "bilibili") {
       videoInfo = await getBilibiliVideo(contentId, session)
     } else if (platform === "xhs") {
@@ -177,6 +165,10 @@ async function main(): Promise<void> {
       errExit(`不支持的平台: ${platform}`)
     }
   } catch (e) {
+    if (e instanceof DouyinHunterFailure) {
+      printJson({ ok: false, error: e.code, platform: "douyin", reason: e.message })
+      process.exit(e.code === "SESSION_EXPIRED" ? 2 : 1)
+    }
     if (e instanceof XhsHunterFailure) {
       printJson({ ok: false, error: e.code, platform: "xhs", reason: e.message })
       process.exit(e.code === "SESSION_EXPIRED" ? 2 : e.code === "SECURITY_BLOCK" ? 3 : 1)
@@ -195,16 +187,7 @@ async function main(): Promise<void> {
   const imageUrls = videoInfo!.imageUrls ?? []
   if (!videoInfo!.videoUrl && imageUrls.length) {
     process.stderr.write(`[viral-chaser] 图文作品：下载 ${imageUrls.length} 张图片...\n`)
-    const imagePaths: string[] = []
-    for (let i = 0; i < imageUrls.length && i < 20; i++) {
-      const outName = `image_${String(i).padStart(2, "0")}.jpg`
-      try {
-        const r = await downloadVideo(imageUrls[i], tmpDir, outName, session ? readUserAgent(session.platform) : "")
-        if (r?.filePath) imagePaths.push(r.filePath)
-      } catch {
-        // 单张失败不致命：跳过继续
-      }
-    }
+    const imagePaths: string[] = videoInfo!.localImagePaths ?? []
     printJson({
       ok: true,
       platform,
@@ -238,9 +221,9 @@ async function main(): Promise<void> {
 
   process.stderr.write(`[viral-chaser] 开始下载视频...\n`)
   let downloadResult: Awaited<ReturnType<typeof downloadVideo>>
-  if (platform === "xhs") {
+  if (platform === "xhs" || platform === "douyin") {
     if (!videoInfo!.localVideoPath) {
-      errExit("xhs-hunter 未返回已下载的视频文件")
+      errExit("hunter 未返回已下载的视频文件")
     }
     downloadResult = {
       filePath: videoInfo!.localVideoPath,

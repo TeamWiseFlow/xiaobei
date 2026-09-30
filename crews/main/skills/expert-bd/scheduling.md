@@ -55,30 +55,6 @@
 **执行**：按 `expert-bd` 的 Lead Hunting Workflow 执行
 ```
 
-### Comment Engagement（评论区拓展）
-
-> ⚠️ 小红书不支持批量互动。搜索与评论采集走 `xhs-hunter`；互动需逐条核对并严格控制频次。
-
-```markdown
-### Comment Engagement（评论区拓展）
-
-**状态**：已启用
-
-**目标平台**：
-- dy：<关键词1>
-- fb：<关键词1>
-
-**互动策略**：<direct_comment / reply_dm / direct_dm>
-
-**互动话术**：
-- <话术内容>
-
-**执行参数**：
-- 频率：<描述>
-
-**执行**：按 `expert-bd` 的 Comment Engagement Workflow 执行
-```
-
 ### Intel Gathering（商业情报采集）
 
 ```markdown
@@ -135,7 +111,6 @@
 ```
 ## BD 巡检
 - Lead Hunting：扫了 X 个新内容，发现 Y 个潜在客户（已写入 bd-record）
-- Comment Engagement：对 Z 个帖子互动（已写入 bd-record）
 - Intel Gathering：采集 W 条情报（已写入 info-record）
 - Competitor Watch：识别 V 条动向，重大 M 条（已告警 / 已写入 info-record）
 （无新内容的模式跳过）

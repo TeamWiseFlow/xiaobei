@@ -89,7 +89,7 @@ All downloaded files, analysis results, and generated reports will be saved unde
 
 ### Step 2 — Run the analyzer（内置探活 + 下载 + 转写 + 关键帧）
 
-一条命令闭环：取数、下载、ASR、抽帧。抖音的探活已合并进脚本；小红书由 `xhs-hunter` 管理 PC 会话并下载视频，无需另外拼接取数或下载命令。
+一条命令闭环：取数、下载、ASR、抽帧。抖音由 `douyin-hunter` 管理会话、作品详情与媒体下载；小红书由 `xhs-hunter` 管理 PC 会话并下载视频。无需另外拼接取数或下载命令。
 
 ```bash
 viral-chaser <url> [--no-frames]

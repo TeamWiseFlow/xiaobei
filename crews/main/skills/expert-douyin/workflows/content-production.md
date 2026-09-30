@@ -88,7 +88,7 @@ DNA template 是 main agent 的生产输入模板：
 | 目标观众 | 未指定时按 DNA 受众关系推导；涉及业务事实时再核对 `business_knowledge.md` |
 | 视频时长 | 仅视频：未指定时按 DNA template 的时长带；再无要求默认 30-90 秒 |
 | 图文图组 | 仅图文：确定图片数量、图序、逐页信息与首图要求，按图文 template 制作 |
-| 封面 | 默认生成；用户自带封面时优先使用 |
+| 封面 | 视频默认生成独立封面图片，用户自带封面时优先使用；发布时通过 `--cover` 传入确认后的图片绝对路径。图文封面按首图要求制作 |
 | 简介与话题标签 | 用户指定时逐字使用；未指定时按 DNA template 标题与文案维度推导 |
 
 优先级固定为：
@@ -248,36 +248,18 @@ main 自做的素材组装 / 轻剪辑先通过 `video-review`；CP 交付按其
 
 ## Step 6 - 发布
 
-按成品形态选择工具，先读对应工具说明及其引用的共用登录流程；打开页面并确认登录态后再发布。视频示例：
+先读 `douyin-publish` 工具说明。执行 `douyin-hunter check` 确认独立 API 会话；需要验证创作者资料读取时执行 `douyin-publish call creator_profile`。未登录时使用 `douyin-login`。
+
+视频发布时，将 Step 5 确认的封面图片通过 `--cover` 传入；CP 交付的 `cover.jpg` 或用户提供的封面均使用实际文件的绝对路径。检查文件存在、非空且不超过 50MB。工具自动上传封面图片，并在视频发布时关联该封面；已有确认封面时不得省略 `--cover`，避免使用上传视频返回的默认封面帧。用户已要求发布且成品确认后执行：
 
 ```bash
-# 1. open 上传页 + agent 判定登录态（必做，不可跳过）
-douyin-video-publish open-page
-# 用页面元素（用户头像/用户名）判定登录态；未登录走 login-manager --platform douyin 有头重登
-
-# 2. 发布
-douyin-video-publish run --video douyin/outputs/<work-name>/<成片文件> --title "标题" --caption "简介 #话题1 #话题2"
+douyin-publish video --video /绝对路径/成片.mp4 --cover /绝对路径/cover.jpg --title "标题" --caption "简介 #话题" --confirm
+douyin-publish note --images /绝对路径/cover.png /绝对路径/page2.png --title "图文标题" --caption "正文 #话题" --confirm
 ```
 
-图文示例：
+AI 生成的内容保留 `--declaration aigc`；纯实拍且无需声明才传 `--declaration none`。配乐只有取得并核实可用的平台 music ID 后才传 `--music-id`，不能编造候选或音乐 ID。
 
-```bash
-douyin-note-publish open-page
-# 判定登录态后上传；音乐候选由上传后的页面提供
-douyin-note-publish upload --images /path/cover.png /path/page2.png
-douyin-note-publish music-list
-# 根据作品内容选择实际候选，复制其 choice
-douyin-note-publish music-select --choice "实际候选choice"
-douyin-note-publish fill --title "图文标题" --caption "描述 #话题"
-douyin-note-publish publish
-douyin-note-publish get-note-link --title "图文标题"
-```
-
-- 发布前必做 `open-page` + 登录态判定，否则可能因 cookie 未预热而不生效。
-- AIGC 生成的内容按平台规则标注：`fill` 已内置自主声明"内容由AI生成"，无需额外操作；纯实拍素材不声明。
-- 登录异常按工具引用的共用登录流程处置。已点击发布后遇 exit 2 / exit 3 / 超时，先核实管理页并补取链接，不直接重跑 `run` 或 `publish`。
-- 图文和视频合计同一时间只能有一个发布任务在跑（浏览器 session 竞态），多平台分发时抖音这条必须串行。
-- 限频：单抖音号每 24h ≤ 5 条；触发风控立即降级，30 分钟内不重试。
+只有返回确认的作品 ID 与 URL 才记录成功。提交后超时、exit 3 或 `PUBLISH_RESULT_UNKNOWN` 时，执行 `douyin-publish status --job-file "返回的任务文件"`，禁止自动重发。单账号发布串行，每 24 小时视频和图文合计不超过 5 条；风控后至少 30 分钟内不重试。
 
 ## Step 7 - 记录
 
@@ -290,4 +272,4 @@ douyin-note-publish get-note-link --title "图文标题"
 ```
 
 2. 调 `published-track record`：`--platform douyin`、`--source-folder douyin/outputs/<work-name>/`、`--account <发布所用账号 alias>`、`--publish-url <对应发布工具返回的 url>`；图文 `--content-type post`、视频 `--content-type video`（`dna_id` 自动从 `dna-meta.json` 读取）。
-3. exit 3 仅补取链接或人工核实，禁止自动重新发布。发布流程到此结束；互动数据由 heartbeat 的 `published-track query --platform douyin --limit 30` + 逐条 `fetch-metrics --platform douyin --id <id>` 统一抓取（自动识别 note/video），复盘走 `review.md`。
+3. exit 3 仅补取链接或人工核实，禁止自动重新发布。发布流程到此结束；互动数据由 `douyin-engagement daily` 抓取并更新，复盘走 `review.md`。

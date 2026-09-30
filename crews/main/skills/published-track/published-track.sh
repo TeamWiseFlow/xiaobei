@@ -25,7 +25,6 @@ case "$cmd" in
   record)                 exec bash "$SCRIPT_DIR/scripts/record.sh" "$@" ;;
   update-metrics)         exec bash "$SCRIPT_DIR/scripts/update-metrics.sh" "$@" ;;
   platform-status)       exec python3 "$SCRIPT_DIR/scripts/platform-status.py" "$@" ;;
-  fetch-metrics)          exec bash "$SCRIPT_DIR/scripts/fetch-and-update-metrics.sh" "$@" ;;
   query)                  exec bash "$SCRIPT_DIR/scripts/query.sh" "$@" ;;
   query-pending)          exec bash "$SCRIPT_DIR/scripts/query-pending.sh" "$@" ;;
   check-published)        exec bash "$SCRIPT_DIR/scripts/check-published.sh" "$@" ;;
@@ -40,7 +39,6 @@ case "$cmd" in
   record                 发布记录入库（upsert；自动读 dna-meta.json 落 dna_id）
   update-metrics         更新单条/同 folder 记录的互动指标
   platform-status       查询平台是否启用（只读 calibration/platform-state.json）
-  fetch-metrics          探活→API 抓取→写库（仅 douyin；xhs/wx_mp/wx_channel 走各专家包 engagement 工具）
   query                  通用查询（--platform [--limit]）
   query-pending          查询待分发内容
   check-published        查某作品是否已发布

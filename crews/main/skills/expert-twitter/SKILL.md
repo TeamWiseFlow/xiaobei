@@ -34,6 +34,7 @@ metadata:
 | 工具 | 用途 | 命令 |
 |------|------|------|
 | `twitter-post` | 发推（文本/图/视频/串推/引用/回复/长文），camoufox-cli 浏览器自动化 | 无（纯浏览器指导，agent 按说明直接驱动 camoufox-cli） |
+| `twitter-interact` | 点赞、转推、收藏与关注，按已授权目标执行 | `twitter-interact` |
 
 跨领域工具与技能：
 
@@ -52,7 +53,7 @@ metadata:
 
 ## 边界
 
-- 推特互动操作（点赞 / 转推 / 收藏 / 关注）与评论区获客 / 截流 → `expert-bd`（`twitter-interact` / Comment Engagement Workflow），本包不承担互动职能。
+- 推特互动使用本包 `twitter-interact`；获客策略和线索管理由 `expert-bd` 负责。
 - 找投资人 / 融资跟进 → `expert-ir`。
 - 其他平台运营 → 对应 `expert-*` 专家包。
 

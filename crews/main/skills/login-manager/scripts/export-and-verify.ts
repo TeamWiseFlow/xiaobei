@@ -11,7 +11,7 @@
  *
  * Usage:
  *   node --experimental-strip-types export-and-verify.ts --platform <p>
- *   平台 ∈ douyin | bilibili | kuaishou
+ *   平台 ∈ bilibili | kuaishou
  *   前置：Agent 已 `camoufox-cli --session <p> --persistent --headed open <loginUrl>` 且用户已登录
  *
  * Exit:
@@ -30,8 +30,8 @@ const execFileAsync = promisify(execFile);
 const CAMOUFOX_CLI = process.env.CAMOUFOX_CLI ?? "camoufox-cli";
 const LOGINS_DIR = join(homedir(), ".openclaw", "logins");
 
-type Platform = "douyin" | "bilibili" | "kuaishou";
-const SUPPORTED: Platform[] = ["douyin", "bilibili", "kuaishou"];
+type Platform = "bilibili" | "kuaishou";
+const SUPPORTED: Platform[] = ["bilibili", "kuaishou"];
 
 function printJson(data: unknown): void {
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
@@ -83,7 +83,7 @@ async function main(): Promise<void> {
   }
   if (!platform) errExit("missing --platform");
   if (!SUPPORTED.includes(platform as Platform)) {
-    errExit(`unsupported platform: ${platform}（仅支持 douyin/bilibili/kuaishou）`);
+    errExit(`unsupported platform: ${platform}（仅支持 bilibili/kuaishou；抖音使用 douyin-login）`);
   }
 
   const sessionFile = join(LOGINS_DIR, `${platform}.json`);

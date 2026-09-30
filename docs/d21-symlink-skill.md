@@ -1,5 +1,7 @@
 # D21 全局技能软链化 + Wrapper 覆盖审计
 
+> 抖音现行操作以 `expert-douyin` / `douyin-hunter` 为准，全部使用独立 API 会话；本文中的旧抖音浏览器发布、登录与集中取数设计仅为历史记录。
+
 > 2026-07-04 · DEVPLAN §Phase 7 续 D21 · **2026-07-12 更新：软链化已在 `apply-addons.sh` / `crew-workspaces.sh` 落地；本轮交付薄转发 wrapper 30 个 + wrapper 暴露到 `~/.openclaw/bin/`**。
 >
 > 背景：当前 `~/.openclaw/skills/` 是**拷贝**（改 repo 要 reinstall）；弱模型路径拼接错主要来自 baseDir 拼接 + allowlist miss。D19 已消掉 allowlist miss（内 crew T3 full），剩"拼错绝对路径"靠 wrapper 上 PATH 解。
