@@ -910,8 +910,8 @@ class XHSLoginApi:
     def phone_login(self):
         logger.info('[1/5] 正在初始化匿名设备...')
         try:
+            # SMS uses the activated anonymous device; webprofile is a QR-flow step.
             cookies = self.generate_init_cookies()
-            self.ensure_webprofile(cookies)
         except Exception as exc:
             logger.error(f'匿名设备验收失败，未发送验证码: {exc}')
             return None

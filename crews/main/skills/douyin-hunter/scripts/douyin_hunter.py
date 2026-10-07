@@ -28,7 +28,7 @@ def normalize(raw):
         )
 
     video = raw.get("video") or {}
-    images = [media(i) for i in raw.get("images", [])]
+    images = [media(i) for i in (raw.get("images") or [])]
     images = [i for i in images if i]
     stats = raw.get("statistics") or {}
     metrics = {
@@ -63,7 +63,7 @@ def normalize(raw):
         "height": video.get("height"),
         "hashtags": [
             e["hashtag_name"]
-            for e in raw.get("text_extra", [])
+            for e in (raw.get("text_extra") or [])
             if e.get("hashtag_name")
         ],
     }

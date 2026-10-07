@@ -5,7 +5,7 @@ description: 抖音 API 私信会话、文本/媒体/分享卡片发送与实时
 
 # 抖音私信
 
-使用 `douyin-login` 的独立 API 会话。协议版本由受控环境 `DOUYIN_IM_SDK_VERSION`、`DOUYIN_IM_BUILD_NUMBER` 提供，取值不写入仓库。会话文件位于 `~/.openclaw/douyin-im/`、权限 0600，包含本人/收件人 ID 与票据。操作前核对目标，文件必须属于当前 API 账号。
+使用 `douyin-login` 的独立 API 会话。协议版本由登录初始化自动取得并保存在 API 会话中，无需人工配置。会话文件位于 `~/.openclaw/douyin-im/`、权限 0600，包含本人/收件人 ID 与票据。操作前核对目标，文件必须属于当前 API 账号。
 
 ```bash
 douyin-im create --my-user-id 本人ID --to-user-id 收件人ID
@@ -22,4 +22,4 @@ douyin-im listen --duration 60 --max-events 100 --output /受控目录/messages.
 
 语音消息只能传兼容客户端已形成的 `--content-file`，`--kind audio`（加 `--encrypted` 使用对应消息类型）；当前网页协议没有本地音频录制/上传能力，不将普通音频文件伪装成语音。监听支持文本、图片、语音、分享与已读通知；有时限、事件上限、心跳及有限重连，不自动回复收到的消息。
 
-创建会话先向 Relay 请求封包扩展，再以最终封包和一次性 context 签请求；不得重用 context。请求结果未知时先查会话，不自动重发私信。操作成功仅表示平台接受请求，不承诺对方已收到或已读。
+创建会话先向 Relay 请求封包扩展，再以最终封包和一次性 context 签请求；不得重用 context。工具处理平台的 JSON 或 protobuf 响应，并校验业务状态及返回会话。创建成功后复用返回的 `conversation_file`，后续先用 `info` 查询，不重复创建。`PLATFORM_IM_INVALID_RESPONSE` 表示响应无法解析，不代表票据失效；请求结果未知时先查会话并报告，不自动重发私信。操作成功仅表示平台接受请求，不承诺对方已收到或已读。

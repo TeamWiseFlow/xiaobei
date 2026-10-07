@@ -16,6 +16,10 @@ description: 通过 Creator 本地 HTTP 会话发布小红书图文和视频笔�
 
 二维码图片是短期临时文件，登录结束会删除。后台日志在 `~/.openclaw/logs/xhs-creator-login.log`；不向用户转发日志。`xhs-publish check` 使用签名 `user/info` 验证，不反复扫码排查非认证错误。
 
+## 彻底清空本地账号与换号
+
+用户要求彻底清空本地小红书账号时，先结束小红书业务请求和后台扫码任务，再删除创作者端 `~/.openclaw/logins/xhs-creator-local.json` 与采集端 `~/.openclaw/logins/xhs-pc-local.json`、对应登录状态及二维码、含凭据的备份；设置了 `XHS_CREATOR_SESSION_FILE` 或 `XHS_PC_SESSION_FILE` 时清理其实际路径，保留业务数据和其他平台会话。换号时先结束旧扫码任务，再按本节流程用目标账号重新登录；需要保留旧号时先将其会话以 0600 权限备份，不保留时先清空。创作者端与采集端独立登录，整体换号还须按 `xhs-hunter` 的登录流程切换采集端，确认两端均由目标账号扫码，并分别运行 `xhs-publish check` 和 `xhs-hunter check` 验证；只重登一端不会切换另一端。
+
 ## 发布
 
 ```bash

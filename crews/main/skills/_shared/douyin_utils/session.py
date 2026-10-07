@@ -11,7 +11,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
 
-DEFAULT_SESSION = Path.home() / ".openclaw/douyin-api/session.json"
+DEFAULT_SESSION = Path(
+    os.environ.get(
+        "DOUYIN_API_SESSION", str(Path.home() / ".openclaw/douyin-api/session.json")
+    )
+).expanduser()
 SECURITY_FIELDS = {
     "ticket",
     "ts_sign",
@@ -25,6 +29,14 @@ SECURITY_FIELDS = {
 
 class SessionError(RuntimeError):
     pass
+
+
+def runtime_fields(result):
+    runtime, expires = result.get("runtime"), result.get("runtime_expires_at")
+    if (not isinstance(runtime, str) or not runtime or type(expires) is not int
+            or not 0 < expires <= 2**53 - 1):
+        raise SessionError("INVALID_RELAY_RESPONSE")
+    return runtime, expires
 
 
 def read_private(path):
@@ -72,11 +84,21 @@ def session_lock(path=DEFAULT_SESSION):
 class ApiSession:
     def __init__(self, path=DEFAULT_SESSION):
         self.path = Path(path)
+        self.configured_path = self.path
         self.state = read_private(self.path)
+        if set(self.state) == {"active_session_file"}:
+            target = self.state["active_session_file"]
+            if not isinstance(target, str) or not Path(target).is_absolute() or Path(target) == self.path:
+                raise SessionError("API_SESSION_INVALID")
+            self.path = Path(target)
+            self.state = read_private(self.path)
         if (
             not isinstance(self.state.get("userAgent"), str)
             or not self.state["userAgent"]
         ):
+            raise SessionError("API_SESSION_INVALID")
+        expiry = self.state.get("runtime_expires_at")
+        if expiry is not None and (type(expiry) is not int or not 0 < expiry <= 2**53 - 1):
             raise SessionError("API_SESSION_INVALID")
         if not isinstance(self.state.get("cookies"), list):
             raise SessionError("API_SESSION_INVALID")
@@ -85,6 +107,24 @@ class ApiSession:
             for k in ("security", "security_by_host", "csrf", "tokens", "device")
         ):
             raise SessionError("API_SESSION_INVALID")
+
+    @property
+    def runtime_expired(self):
+        expiry = self.state.get("runtime_expires_at")
+        return bool(self.state.get("runtime_expired") or expiry is not None and expiry <= time.time())
+
+    def require_runtime(self):
+        if self.runtime_expired:
+            raise SessionError("RUNTIME_EXPIRED")
+
+    def set_runtime(self, result):
+        runtime, expires = runtime_fields(result)
+        self.state.update(relay_runtime=runtime, runtime_expires_at=expires)
+        self.state.pop("runtime_expired", None)
+
+    def mark_runtime_expired(self):
+        self.state["runtime_expired"] = True
+        self.save()
 
     @property
     def ua(self):
@@ -160,6 +200,7 @@ class ApiSession:
         if changed:
             self.state.pop("uid", None)
             self.state.pop("sec_uid", None)
+            self.state.pop("relay_security_expires_at", None)
             self.state.pop("csrf", None)
             self.state.pop("login_context", None)
             for material in [
@@ -220,6 +261,8 @@ class ApiSession:
             except (ValueError, TypeError):
                 raise SessionError("PLATFORM_SECURITY_RESPONSE_INVALID")
         self.save()
+
+        return entries
 
     def save(self):
         write_private(self.path, self.state)

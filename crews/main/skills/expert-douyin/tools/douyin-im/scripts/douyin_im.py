@@ -130,7 +130,11 @@ def create(my_id: int, to_id: int) -> dict:
     url = IM_BASE + "/v2/conversation/create"
     _, ua = _session(IM_HOST)
     unsigned = envelope(
-        609, create_body(my_id, to_id), ua, device=session().state.get("device", {})
+        609,
+        create_body(my_id, to_id),
+        ua,
+        device=session().state.get("device", {}),
+        protocol=session().state.get("im_protocol", {}),
     )
     data = prepare(
         "im",
@@ -160,7 +164,11 @@ def create(my_id: int, to_id: int) -> dict:
         content_type="application/x-protobuf",
         binary_response=True,
     )
-    return parse_response(response, expect_conversation=True)
+    conversation = parse_response(response, expect_conversation=True, expected_command=609)
+    participants = re.fullmatch(r"0:1:(\d+):(\d+)", conversation["conversation_id"])
+    if not participants or set(participants.groups()) != {str(my_id), str(to_id)}:
+        raise ValueError("CONVERSATION_ACCOUNT_MISMATCH")
+    return conversation
 
 
 def inspect(state: dict) -> dict:
@@ -174,12 +182,24 @@ def inspect(state: dict) -> dict:
         "request",
         "POST",
         url,
-        raw_body=envelope(610, body, ua, device=session().state.get("device", {})),
+        raw_body=envelope(
+            610,
+            body,
+            ua,
+            device=session().state.get("device", {}),
+            protocol=session().state.get("im_protocol", {}),
+        ),
         expected_uid=state["my_user_id"],
         content_type="application/x-protobuf",
         binary_response=True,
     )
-    return parse_response(response, expect_conversation=True)
+    conversation = parse_response(response, expect_conversation=True, expected_command=610)
+    if (
+        conversation["conversation_id"] != state["conversation_id"]
+        or conversation["conversation_short_id"] != int(state["conversation_short_id"])
+    ):
+        raise ValueError("CONVERSATION_ACCOUNT_MISMATCH")
+    return conversation
 
 
 def send(state: dict, message: str | dict, message_type: int = 7) -> dict:
@@ -208,6 +228,7 @@ def send(state: dict, message: str | dict, message_type: int = 7) -> dict:
         identity_token=token,
         identity_device_id=device_id,
         device=session().state.get("device", {}),
+        protocol=session().state.get("im_protocol", {}),
     )
     response = request(
         "im",
@@ -219,7 +240,7 @@ def send(state: dict, message: str | dict, message_type: int = 7) -> dict:
         content_type="application/x-protobuf",
         binary_response=True,
     )
-    return parse_response(response)
+    return parse_response(response, expected_command=100)
 
 
 def main() -> int:

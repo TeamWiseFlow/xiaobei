@@ -39,10 +39,10 @@ metadata:
 | 工具 | 用途 | 命令 |
 |------|------|------|
 | `douyin-style-profiler` | 生成单篇作品（视频 / 图文，`--kind`）的 DNA report，并聚合 DNA 文档与 template（视频 = Brief + 口播文案模板；图文 = 写作模板） | `douyin-style-profiler` |
-| `douyin-engagement` | 读取已发作品公开互动量并更新发布记录 | `douyin-engagement` |
+| `douyin-engagement` | 读取本人已发作品播放量、公开互动量并更新发布记录 | `douyin-engagement` |
 | `douyin-interact` | 作品点赞、收藏、评论和回复；写入前预览 | `douyin-interact` |
 | `douyin-live` | 直播房间、PK 快照、贡献榜、弹幕与点赞 | `douyin-live` |
-| `douyin-login` | 独立 API 扫码/短信登录及会话状态 | `douyin-login` |
+| `douyin-login` | 独立 API 扫码/短信登录、两种入口的 MFA、登录超时及重新登录 | `douyin-login` |
 | `douyin-im` | 会话、文本/图片/视频/附件/卡片与实时消息 | `douyin-im` |
 | `douyin-publish` | API 视频/图文上传发布和结果核查 | `douyin-publish` |
 
@@ -74,7 +74,7 @@ DNA 是**从一批作品样本提取并聚合出的内容生产规则集**：视
 
 - **发布限频**：单抖音号每 24h ≤ 5 条；触发风控立即降级，30 分钟内不重试。
 - **串行发布**：`douyin-publish` 的视频和图文共用账号发布锁，同一时间只跑一个发布任务。
-- **AIGC 标注**：AI 生成的内容按平台规则标注，发布保留 `--declaration aigc`，声明字段缺失时停止，交 IT engineer 核对配置。
+- **AIGC 标注**：AI 生成的内容按平台规则标注，发布保留 `--declaration aigc`。工具按本次任务自动获取平台声明选项；获取失败或选项不可用时停止并报告，不改为 `none` 绕过标注。
 - **简介引流**：视频简介可提及产品与业务，但不放明显引流信息；禁止二维码、联系方式；可引导主动搜索或看主页。
 - **登录态**：使用 `douyin-login` 独立 API 会话；安全材料必须属于同一次登录，不导入旧浏览器会话，不伪造 token。
 - **数据诚实**：互动数据只来自平台接口、`viral-chaser` 返回或用户提供的线索，不编造；估算值必须标注估算方法，不可得的数据写明"数据不可得"。

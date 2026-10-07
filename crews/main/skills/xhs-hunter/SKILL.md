@@ -27,6 +27,10 @@ xhs-hunter login-confirm
 
 后续运行 `xhs-hunter check` 检查登录态。Cookie 有效时可重复使用；失效或二维码超时后重新运行 `xhs-hunter login` 扫码。扫码二维码文件只用于当前登录，路径不代表登录成功。终端直连场景还可运行交互式 `xhs-hunter login-phone`，按提示输入手机号和验证码；此命令的输入提示不是 JSON。
 
+## 彻底清空本地账号与换号
+
+用户要求彻底清空本地小红书账号时，先结束小红书业务请求和后台扫码任务，再删除采集端 `~/.openclaw/logins/xhs-pc-local.json` 与创作者端 `~/.openclaw/logins/xhs-creator-local.json`、对应登录状态及二维码、含凭据的备份；设置了 `XHS_PC_SESSION_FILE` 或 `XHS_CREATOR_SESSION_FILE` 时清理其实际路径，保留业务数据和其他平台会话。换号时先结束旧扫码任务，再按本节流程用目标账号重新登录；需要保留旧号时先将其会话以 0600 权限备份，不保留时先清空。采集端与创作者端独立登录，整体换号还须按 `xhs-publish` 的登录流程切换创作者端，确认两端均由目标账号扫码，并分别运行 `xhs-hunter check` 和 `xhs-publish check` 验证；只重登一端不会切换另一端。
+
 ## 常用命令
 
 ```bash

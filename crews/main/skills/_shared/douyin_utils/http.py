@@ -3,12 +3,13 @@
 from __future__ import annotations
 import base64
 import json
+import re
 from functools import wraps
-from pathlib import Path
 from urllib.parse import quote, unquote_plus, urlencode, urlsplit, urlunsplit
 import requests
 from relay_sign import RelaySignError, douyin_v2
 from .session import ApiSession, DEFAULT_SESSION, SessionError, session_lock
+from .verification import creator_verification
 
 API_SESSION_FILE = DEFAULT_SESSION
 ALLOWED_HOSTS = {
@@ -23,6 +24,10 @@ ALLOWED_HOSTS = {
     "webcast100-ws-web-hl.douyin.com",
 }
 GATEWAY_HOSTS = {"imagex.bytedanceapi.com", "vod.bytedanceapi.com"}
+# Platform-assigned upload nodes vary by region and are only valid for media.
+MEDIA_UPLOAD_HOST = re.compile(
+    r"tos-[a-z0-9](?:[a-z0-9-]{0,57}[a-z0-9])?\.(?:douyin|snssdk|bytedancevod)\.com"
+)
 STATIC_HEADERS = {
     "accept",
     "content-type",
@@ -47,9 +52,40 @@ def serialized(function):
 
 
 class DouyinRequestError(RuntimeError):
-    def __init__(self, code, *, status=None):
+    def __init__(self, code, *, status=None, missing_fields=None, response_info=None, response_prefix=None, response_headers=None, verification=None):
         super().__init__(code)
         self.code, self.status = code, status
+        self.missing_fields = list(missing_fields or [])
+        self.response_info = response_info
+        self.response_prefix = response_prefix
+        self.response_headers = response_headers
+        self.verification = verification
+
+
+def response_info(response):
+    body = response.content
+    prefix = body[:512].lstrip().lower()
+    info = {
+        "http_status": response.status_code,
+        "content_type": str(response.headers.get("content-type", "")).split(";", 1)[0][:128],
+        "body_bytes": len(body),
+        "body_kind": "empty" if not body else "html" if prefix.startswith((b"<!doctype html", b"<html")) else "other",
+        "header_names": sorted(str(name).lower() for name in response.headers),
+    }
+    log_id = response.headers.get("x-tt-logid", "")
+    if isinstance(log_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", log_id):
+        info["log_id"] = log_id
+    return info
+
+
+def private_response_headers(response):
+    # Decision values can contain private material; never put them in response_info.
+    return {
+        str(name).lower(): str(value)[:8192]
+        for name, value in response.headers.items()
+        if str(name).lower() in {"content-type", "x-tt-logid", "bd_passport_security_gateway"}
+        or str(name).lower().startswith(("x-tt-verify-", "bd-ticket-guard-"))
+    }
 
 
 def session():
@@ -59,8 +95,25 @@ def session():
         raise DouyinRequestError(str(exc)) from exc
 
 
+def require_runtime(state):
+    try:
+        state.require_runtime()
+    except SessionError as exc:
+        raise DouyinRequestError(str(exc)) from exc
+
+
+def adopt_runtime(state, result):
+    if "runtime" in result or "runtime_expires_at" in result:
+        try:
+            state.set_runtime(result)
+        except SessionError as exc:
+            raise DouyinRequestError(str(exc)) from exc
+        state.save()
+
+
 def _session(host):
     state = session()
+    require_runtime(state)
     return state.cookies("https://" + host + "/"), state.ua
 
 
@@ -71,6 +124,7 @@ def _url(url, *, media=False, websocket=False):
         or media
         and (
             p.hostname in GATEWAY_HOSTS
+            or MEDIA_UPLOAD_HOST.fullmatch(p.hostname or "")
             or any(
                 (p.hostname or "").endswith("." + suffix)
                 for suffix in (
@@ -127,6 +181,13 @@ def _dynamic(profile, operation, inputs):
     try:
         value = douyin_v2(profile, operation, inputs)
     except RelaySignError as exc:
+        if exc.code == "RUNTIME_EXPIRED" and inputs.get("runtime"):
+            try:
+                current = session()
+                if current.state.get("relay_runtime") == inputs["runtime"]:
+                    current.mark_runtime_expired()
+            except DouyinRequestError:
+                pass
         raise DouyinRequestError(exc.code, status=exc.status) from exc
     except (requests.RequestException, RuntimeError) as exc:
         raise DouyinRequestError("SIGN_UNAVAILABLE") from exc
@@ -174,12 +235,15 @@ def prepare(
     ):
         raise DouyinRequestError("INVALID_STATIC_HEADERS")
     state = session()
+    require_runtime(state)
     if expected_uid is not None and str(state.state.get("uid", "")) != str(
         expected_uid
     ):
         raise DouyinRequestError("API_ACCOUNT_MISMATCH")
     cookie, ua = state.cookies(url.replace("wss://", "https://", 1)), state.ua
     inputs = {"method": method, "url": url, "body": "", "ua": ua, "cookie": cookie}
+    if state.state.get("relay_runtime"):
+        inputs["runtime"] = state.state["relay_runtime"]
     if body:
         inputs["body_base64"] = base64.b64encode(body).decode()
     if security is None:
@@ -199,10 +263,12 @@ def prepare(
             "body",
             "body_base64",
             "security",
+            "runtime",
         }:
             raise DouyinRequestError("INVALID_RELAY_FIELDS")
         inputs.update(fields)
     result = _dynamic(profile, operation, inputs)
+    adopt_runtime(state, result)
     returned = result.get("cookies", {})
     if (
         not isinstance(returned, dict)
@@ -227,6 +293,7 @@ def prepare(
             ]
         )
         state.save()
+    require_runtime(state)
     return result
 
 
@@ -243,6 +310,7 @@ def _send(method, url, *, headers, data, timeout):
             timeout=timeout,
             allow_redirects=False,
             impersonate="chrome",
+            default_headers=False,
             quote=False,
         )
     except Exception as exc:
@@ -268,6 +336,7 @@ def request(
     security=None,
     fields=None,
     return_response=False,
+    capture_response=False,
     payload=None,
     body_text=None,
     expected_uid=None,
@@ -299,6 +368,7 @@ def request(
     if method == "GET" and (text or raw_body is not None or payload is not None):
         raise DouyinRequestError("INVALID_BODY_ENCODING")
     state = session()
+    require_runtime(state)
     if expected_uid is not None and str(state.state.get("uid", "")) != str(
         expected_uid
     ):
@@ -308,6 +378,8 @@ def request(
         state.ua,
     )
     inputs = {"method": method, "url": url, "body": text, "ua": ua, "cookie": cookie}
+    if state.state.get("relay_runtime"):
+        inputs["runtime"] = state.state["relay_runtime"]
     if raw_body is not None:
         inputs["body_base64"] = base64.b64encode(raw_body).decode()
     if context:
@@ -347,10 +419,12 @@ def request(
             "security",
             "context",
             "headers",
+            "runtime",
         }:
             raise DouyinRequestError("INVALID_RELAY_FIELDS")
         inputs.update(fields)
     dynamic = _dynamic(profile, operation, inputs)
+    adopt_runtime(state, dynamic)
     signed_url = _merge_query(url, dynamic["query"])
     headers = dynamic["headers"]
     if any(
@@ -395,14 +469,21 @@ def request(
         if body is not None or body_text is not None
         else None
     )
+    require_runtime(state)
     response = _send(
         method,
         signed_url,
         headers={
             "User-Agent": ua,
             **({"Cookie": cookie} if profile != "media" else {}),
-            "Accept": "application/json",
-            **static_headers,
+            "Accept": next((v for k, v in static_headers.items() if k.lower() == "accept"), "application/json"),
+            **({
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Dest": "empty",
+            } if profile == "creator" else {}),
+            **{k: v for k, v in static_headers.items() if k.lower() != "accept"},
             **headers,
         },
         data=wire,
@@ -414,6 +495,15 @@ def request(
         raise DouyinRequestError(str(exc)) from exc
     if return_response:
         return response
+    verification = creator_verification(dict(response.headers)) if profile == "creator" else None
+    if verification:
+        raise DouyinRequestError(
+            "PLATFORM_VERIFICATION_REQUIRED", status=response.status_code,
+            response_info=response_info(response),
+            response_prefix=response.content[:512] if capture_response else None,
+            response_headers=private_response_headers(response) if capture_response else None,
+            verification=verification,
+        )
     if response.status_code in (401, 403):
         raise DouyinRequestError("PLATFORM_AUTH_REJECTED", status=response.status_code)
     if response.status_code == 429:
@@ -428,7 +518,10 @@ def request(
         data = json.loads(response.content)
     except (ValueError, UnicodeError) as exc:
         raise DouyinRequestError(
-            "PLATFORM_NON_JSON", status=response.status_code
+            "PLATFORM_NON_JSON", status=response.status_code,
+            response_info=response_info(response),
+            response_prefix=response.content[:512] if capture_response else None,
+            response_headers=private_response_headers(response) if capture_response else None,
         ) from exc
     if not isinstance(data, dict):
         raise DouyinRequestError("PLATFORM_BAD_RESPONSE")

@@ -38,7 +38,7 @@ published-track init-db
 | 微信视频号 | `pub_wx_channel` | video | plays, likes, comments, shares, favorites |
 | 知乎 | `pub_zhihu` | article/post | views, upvotes, comments, favorites |
 | B站 | `pub_bilibili` | video | plays, danmaku, likes, coins, favorites, shares, comments |
-| 抖音 | `pub_douyin` | video/post | 自动取 likes, comments, shares, favorites；plays 与 deep_metrics 保留历史值或用户补录 |
+| 抖音 | `pub_douyin` | video/post | 本人作品 plays；likes, comments, shares, favorites；deep_metrics 保留历史值或用户补录 |
 | 快手 | `pub_kuaishou` | video | plays, likes, comments, shares |
 | 小红书 | `pub_xhs` | video/post | views, likes, favorites, comments, shares；deep_metrics / deep_captured_at / deep_source；fan_portrait（单篇画像 JSON） |
 | Twitter/X | `pub_twitter` | post/video | views, likes, retweets, replies, bookmarks |
@@ -114,7 +114,7 @@ published-track record \
 
 本技能只负责发布记录、查询和 `update-metrics` 写库。按平台使用专家包内的取数工具：抖音 `douyin-engagement`、小红书 `xhs-engagement`、微信公众号 `wx-mp-engagement`、微信视频号 `wx-channel-engagement`。各工具按作品 ID 或发布记录行 ID 匹配并写库；不要从公开作品的缺失字段推断零值。B站、快手及其余平台由用户提供数据时再调用 `update-metrics` 补录。
 
-抖音自动取数仅更新公开详情实际返回的点赞、评论、分享和收藏，播放量与后台深指标当前不自动获取；不可得的字段保留原值，库内默认零不代表平台实测零。视频与图文链接都可作为发布记录链接。`pub_douyin.plays`、`deep_metrics`、`deep_captured_at`、`deep_source` 保留用于历史兼容和用户主动提供数据时的补录；不能把历史值描述成本次自动取数结果。深指标仍只保留最新 JSON 及其时间、来源。
+抖音通过 `douyin-engagement` 自动更新创作者作品列表中核验的本人播放量，以及公开详情实际返回的点赞、评论、分享和收藏；后台深指标当前不自动获取。视频与图文链接都可作为发布记录链接。播放量匹配必须满足当前登录账号 UID 与完整作品 ID 一致；列表未返回、字段缺失或请求失败时保留原值，不能用公开详情的播放零值覆盖。只将本次结果 `metrics` 中的字段视为新采集值，结合 `field_sources`、`unavailable_reasons` 报告来源与缺项；库内默认零和保留的历史值不代表本次平台实测。`deep_metrics`、`deep_captured_at`、`deep_source` 继续用于历史兼容和用户主动提供数据时的补录，深指标只保留最新 JSON 及其时间、来源。
 
 ### 流程 2B·用户提供数据（Agent 补录）
 

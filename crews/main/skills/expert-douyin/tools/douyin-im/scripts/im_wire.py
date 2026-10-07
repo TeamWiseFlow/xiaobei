@@ -47,10 +47,12 @@ def envelope(
     identity_token: str = "",
     identity_device_id: str = "",
     device: dict | None = None,
+    protocol: dict | None = None,
 ) -> bytes:
     """Build a platform request envelope; Relay supplies only dynamic fields."""
-    sdk_version = os.environ.get("DOUYIN_IM_SDK_VERSION", "")
-    build_number = os.environ.get("DOUYIN_IM_BUILD_NUMBER", "")
+    protocol = protocol or {}
+    sdk_version = os.environ.get("DOUYIN_IM_SDK_VERSION") or protocol.get("sdk_version", "")
+    build_number = os.environ.get("DOUYIN_IM_BUILD_NUMBER") or protocol.get("build_number", "")
     if not sdk_version or not build_number:
         raise ValueError("IM_PROTOCOL_CONFIG_MISSING")
     device = device or {}
@@ -197,35 +199,137 @@ def string(value: int | bytes | None) -> str:
         raise ValueError("INVALID_WIRE_TEXT") from exc
 
 
-def parse_response(data: bytes, *, expect_conversation: bool = False) -> dict:
-    outer = fields(data)
-    error = string(first(outer, 3))
-    message = string(first(outer, 4))
-    if error or (message and message != "OK"):
-        raise ValueError("PLATFORM_IM_REJECTED")
-    if not expect_conversation:
-        if message != "OK":
+def parse_response(
+    data: bytes, *, expect_conversation: bool = False, expected_command: int | None = None
+) -> dict:
+    """Accept the platform's JSON or protobuf response without logging tickets."""
+    if len(data) > MAX_WIRE_BYTES:
+        raise ValueError("WIRE_RESPONSE_TOO_LARGE")
+    if not data:
+        raise ValueError("PLATFORM_IM_UNCONFIRMED")
+    if data.lstrip().startswith((b"{", b"[")):
+        try:
+            result = json.loads(data)
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError("PLATFORM_IM_INVALID_RESPONSE") from exc
+        if not isinstance(result, dict):
+            raise ValueError("PLATFORM_IM_INVALID_RESPONSE")
+        status = result.get("status_code")
+        if status is not None and (type(status) not in (int, str) or status not in (0, "0")):
+            raise ValueError("PLATFORM_IM_REJECTED")
+        message = result.get("message")
+        if message and message != "OK":
+            raise ValueError("PLATFORM_IM_REJECTED")
+        command = result.get("cmd")
+        if expected_command is not None and str(command) != str(expected_command):
             raise ValueError("PLATFORM_IM_UNCONFIRMED")
-        return {"accepted": True}
-    body = first(outer, 6)
-    if not isinstance(body, bytes):
-        raise ValueError("CONVERSATION_MISSING")
-    response_body = fields(body)
-    listing = first(response_body, 609) or first(response_body, 610)
-    if not isinstance(listing, bytes):
-        raise ValueError("CONVERSATION_MISSING")
-    listing_fields = fields(listing)
-    item = first(listing_fields, 1)
-    if not isinstance(item, bytes):
-        raise ValueError("CONVERSATION_MISSING")
-    conversation = fields(item)
-    conversation_id = string(first(conversation, 1))
-    short_id = first(conversation, 2)
-    ticket = string(first(conversation, 4))
-    if not conversation_id or not isinstance(short_id, int) or not ticket:
+        if status is None and (message != "OK" or result.get("error_desc")):
+            raise ValueError("PLATFORM_IM_UNCONFIRMED")
+        if not expect_conversation:
+            body = result.get("body")
+            sent = body.get("send_message_body") if isinstance(body, dict) else None
+            if isinstance(sent, dict):
+                if any(sent.get(k) not in (None, 0, "0") for k in ("status", "check_code")):
+                    raise ValueError("PLATFORM_IM_REJECTED")
+                ident = sent.get("server_message_id")
+                if (
+                    isinstance(ident, bool)
+                    or not isinstance(ident, (int, str))
+                    or not str(ident).isdigit()
+                    or int(ident) <= 0
+                ):
+                    raise ValueError("PLATFORM_IM_UNCONFIRMED")
+            elif message != "OK":
+                raise ValueError("PLATFORM_IM_UNCONFIRMED")
+            return {"accepted": True}
+        names = {
+            609: "create_conversation_v2_body",
+            610: "get_conversation_info_list_v2_body",
+        }
+        name = names.get(expected_command or command)
+        body = result.get("body")
+        if not name or not isinstance(body, dict):
+            raise ValueError("CONVERSATION_MISSING")
+        listing = body.get(name)
+        if listing is None and name == "get_conversation_info_list_v2_body":
+            listing = body.get("get_conversation_info_list_v2_response_body")
+        if not isinstance(listing, dict):
+            raise ValueError("CONVERSATION_MISSING")
+        conversation = listing.get("conversation")
+        if not isinstance(conversation, dict):
+            items = listing.get("conversation_info_list")
+            if (
+                not isinstance(items, list)
+                or len(items) != 1
+                or not isinstance(items[0], dict)
+            ):
+                raise ValueError("CONVERSATION_MISSING")
+            conversation = items[0]
+        if any(listing.get(k) not in (None, 0, "0") for k in ("status", "check_code")):
+            raise ValueError("PLATFORM_IM_REJECTED")
+    else:
+        try:
+            outer = fields(data)
+        except ValueError as exc:
+            raise ValueError("PLATFORM_IM_INVALID_RESPONSE") from exc
+        status = first(outer, 3)
+        numeric_status = isinstance(status, int)
+        # Current envelopes put status_code at 3, error_desc at 4 and log_id at 7.
+        # The description is "OK" on success; log_id is never an error message.
+        message = string(first(outer, 4))
+        if (
+            (numeric_status and status != 0)
+            or (not numeric_status and string(status))
+            or (message and message != "OK")
+        ):
+            raise ValueError("PLATFORM_IM_REJECTED")
+        if expected_command is not None and first(outer, 1) != expected_command:
+            raise ValueError("PLATFORM_IM_UNCONFIRMED")
+        if not expect_conversation:
+            if message != "OK":
+                raise ValueError("PLATFORM_IM_UNCONFIRMED")
+            return {"accepted": True}
+        body = first(outer, 6)
+        if not isinstance(body, bytes):
+            raise ValueError("CONVERSATION_MISSING")
+        response_body = fields(body)
+        listing = (
+            first(response_body, expected_command)
+            if expected_command
+            else first(response_body, 609) or first(response_body, 610)
+        )
+        if not isinstance(listing, bytes):
+            raise ValueError("CONVERSATION_MISSING")
+        item = first(fields(listing), 1)
+        if not isinstance(item, bytes):
+            raise ValueError("CONVERSATION_MISSING")
+        item_fields = fields(item)
+        if not isinstance(first(item_fields, 2), int):
+            nested = first(item_fields, 1)
+            if not isinstance(nested, bytes):
+                raise ValueError("CONVERSATION_MISSING")
+            item_fields = fields(nested)
+        conversation = {
+            "conversation_id": string(first(item_fields, 1)),
+            "conversation_short_id": first(item_fields, 2),
+            "ticket": string(first(item_fields, 4)),
+        }
+    conversation_id = conversation.get("conversation_id")
+    short_id = conversation.get("conversation_short_id")
+    ticket = conversation.get("ticket")
+    if (
+        not isinstance(conversation_id, str)
+        or not conversation_id
+        or isinstance(short_id, bool)
+        or not isinstance(short_id, (str, int))
+        or not str(short_id).isdigit()
+        or not 0 < int(short_id) < 2**63
+        or not isinstance(ticket, str)
+        or not ticket
+    ):
         raise ValueError("CONVERSATION_INCOMPLETE")
     return {
         "conversation_id": conversation_id,
-        "conversation_short_id": short_id,
+        "conversation_short_id": int(short_id),
         "ticket": ticket,
     }

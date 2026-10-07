@@ -248,7 +248,7 @@ main 自做的素材组装 / 轻剪辑先通过 `video-review`；CP 交付按其
 
 ## Step 6 - 发布
 
-先读 `douyin-publish` 工具说明。执行 `douyin-hunter check` 确认独立 API 会话；需要验证创作者资料读取时执行 `douyin-publish call creator_profile`。未登录时使用 `douyin-login`。
+先读 `douyin-publish` 工具说明。执行 `douyin-hunter check` 确认独立 API 会话，再执行 `douyin-publish check --kind video`；图文传 `--kind note`，原创且无需声明时加 `--declaration none`。该检查不上传或发布；预览成功不能代替声明和发布安全材料检查。缺失安全材料时按 `missing_fields` 报告研发，未登录时使用 `douyin-login`。
 
 视频发布时，将 Step 5 确认的封面图片通过 `--cover` 传入；CP 交付的 `cover.jpg` 或用户提供的封面均使用实际文件的绝对路径。检查文件存在、非空且不超过 50MB。工具自动上传封面图片，并在视频发布时关联该封面；已有确认封面时不得省略 `--cover`，避免使用上传视频返回的默认封面帧。用户已要求发布且成品确认后执行：
 

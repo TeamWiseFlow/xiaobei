@@ -235,6 +235,7 @@ class PcDeviceProfile:
     source: str = 'reference'
     browser_exact_inputs: bool = False
     _cookie_map: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    _release_web_build: Optional[str] = field(default=None, init=False, repr=False)
     _named_b1_states: Dict[str, B1RuntimeState] = field(
         default_factory=dict, init=False, repr=False
     )
@@ -298,7 +299,10 @@ class PcDeviceProfile:
         self._sync_release_for_web_build()
 
     def _sync_release_for_web_build(self) -> None:
+        if self._release_web_build == self.web_build:
+            return
         self.release.update(compute('pc', 'release', {'web_build': self.web_build}))
+        self._release_web_build = self.web_build
 
     @property
     def cookie_map(self) -> Dict[str, str]:
