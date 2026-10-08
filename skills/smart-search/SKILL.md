@@ -1,6 +1,6 @@
 ---
 name: smart-search
-description: 智能搜索路由器。根据用户意图选择最佳搜索源，构造 URL 并导航，获取内容。仅在默认搜索手段效果不佳启用本技能。
+description: 智能搜索路由器。根据用户意图选择最佳搜索源，构造 URL 并导航，获取内容。仅在默认搜索手段效果不佳启用。排除抖音、小红书、微信公众号和微信视频号；前三者直调对应 hunter，视频号暂无方案。
 metadata:
   openclaw:
     emoji: 🔍
@@ -9,6 +9,17 @@ metadata:
 # Smart Search 智能搜索路由器
 
 本技能**只负责搜索和阅读**，不负责发布、点赞、关注、回复等互动操作（那些由各平台专属技能处理）。
+
+## 不支持的平台（先判断）
+
+本技能不支持 douyin、xhs、wx-mp（微信公众号）和微信视频号，也不为它们构造浏览器搜索 URL 或站内回退。
+
+| 指定平台或平台链接 | 处理 |
+|---|---|
+| 抖音 | `douyin-hunter` |
+| 小红书 | `xhs-hunter` |
+| 微信公众号 / wx-mp / mp.weixin.qq.com | 直接调用一级技能 `wx-mp-hunter` |
+| 微信视频号 / channels / wechat-channels | 明确告知目前没有搜索和内容获取方案，不能宣称支持 |
 
 ## 使用流程
 
@@ -21,7 +32,7 @@ metadata:
 
 ### 用户明确指定平台时
 
-直接使用对应平台。平台名与站点知识文件对应：
+先检查上方排除表；支持的平台与站点知识文件对应：
 
 | 用户可能说 | 站点文件 | 搜索类型 |
 |-----------|---------|---------|
@@ -29,8 +40,6 @@ metadata:
 | Bing / 必应 | `sites/general.md` → Bing | 通用搜索（推荐） |
 | 夸克 / Quark | `sites/general.md` → Quark | 通用搜索（fallback） |
 | 知乎 | `sites/zhihu.md` | 中文问答 |
-| 小红书 / XHS / 红薯 | `sites/xiaohongshu.md` | 生活方式/真实体验 |
-| 抖音 / Douyin | `sites/douyin.md` | 短视频 |
 | B站 / Bilibili | `sites/bilibili.md` | 视频/番剧 |
 | 微博 / Weibo | `sites/weibo.md` | 热点/舆论 |
 | YouTube / 油管 | `sites/youtube.md` | 视频 |
@@ -38,7 +47,6 @@ metadata:
 | Reddit | `sites/reddit.md` | 社区讨论 |
 | GitHub | `sites/github.md` | 代码/项目 |
 | LinkedIn / 领英 | `sites/linkedin.md` | 职业/招聘 |
-| 微信视频号 | `sites/wechat-channels.md` | 视频号内容 |
 | 雪球 | `sites/financial.md` → 雪球 | 股票/金融 |
 | arXiv | `sites/academic.md` → arXiv | 学术预印本 |
 | 百度学术 | `sites/academic.md` → 百度学术 | 中文学术 |
@@ -61,13 +69,13 @@ metadata:
 | **info** | reuters.com / bbc.com / ft.com / 36kr.com / 财新 / 新浪财经 / 澎湃 | 行业新闻 / 公司动态 / 政策 | 时效性强；中文 + 英文混合；财经类需付费墙 |
 | **media** | youtube.com / bilibili.com / pexels-footage / pixabay-footage（本仓 skill）| 视频 / 音乐 / 媒体库 | 视频 metadata 重要；版权注意 |
 | **shopping** | amazon.com / taobao.com / jd.com / pdd.cn | 电商 / 价格 / 评测 | 国内电商需登录；价格波动大 |
-| **social** | x.com / weibo.com / xiaohongshu.com / douyin.com | 实时讨论 / 社区 | 短文本；高噪；需 cookie |
+| **social** | x.com / weibo.com | 实时讨论 / 社区 | 短文本；高噪；需 cookie |
 | **tech** | github.com / stackoverflow.com / jianshu.com / juejin.cn / segmentfault.com / v2ex.com | 代码 / 开源 / 编程 | 强时效；英文为主；stackoverflow 答案质量高 |
 | **travel** | ctrip.com / booking.com / tripadvisor.com / mafengwo.cn | 旅游 / 交通 | 季节性强；多语种；图片重要 |
 | **other** | duckduckgo.com / startpage.com / kagi.com / sogou.com / yandex.com | 兜底 / 隐私搜索 / 国内外通用 | 隐私优 DDG；国内兜底 sogou；俄罗斯 Yandex |
 
 **快速选择规则**：
-1. 用户**明确指定平台** → 用指定平台（不分类）
+1. 用户**明确指定平台** → 先检查排除表，支持的平台再按站点文件执行
 2. 用户**未指定** → 按"用户未指定平台时"表的意图特征路由
 3. **国内**网络环境下 → DuckDuckGo 可能不稳，**优先** Bing / 夸克
 
@@ -86,8 +94,8 @@ metadata:
 |---------|------|------|
 | 中文通用/热点 | Bing | — |
 | 中文深度问答 | 知乎 | — |
-| 生活方式/真实体验 | 小红书 | — |
-| 短视频内容 | 抖音 | — |
+| 生活方式/真实体验 | 转 `xhs-hunter` | — |
+| 短视频内容 | 转 `douyin-hunter` | — |
 | 视频/番剧 | B站 | — |
 | 中文舆论/热搜 | 微博 | — |
 | 英文通用 | Bing | — |
@@ -108,7 +116,7 @@ metadata:
 
 ## Keyword 编码
 
-- **空格**：`+` 用于 Bing、GitHub、Bilibili；`%20` 用于 Douyin、Twitter、Facebook、Zhihu；两者皆可用于 Baidu、Quark、YouTube
+- **空格**：`+` 用于 Bing、GitHub、Bilibili；`%20` 用于 Twitter、Facebook、Zhihu；两者皆可用于 Baidu、Quark、YouTube
 - **特殊字符**：URL-encode（`#` → `%23`，`&` → `%26`，`?` → `%3F`）
 - **中文**：URL-encode（浏览器导航时自动处理）
 
@@ -120,8 +128,6 @@ metadata:
 |------|-----------|
 | 知乎 | `https://www.zhihu.com` |
 | 微博 | `https://weibo.com` |
-| 小红书 | `https://www.xiaohongshu.com` |
-| 抖音 | `https://www.douyin.com` |
 | YouTube | `https://www.youtube.com` |
 | Twitter/X | `https://x.com` |
 | Reddit | `https://www.reddit.com` |
@@ -148,12 +154,12 @@ camoufox-cli --session "$SESSION" --json open "<url>"
 camoufox-cli --session "$SESSION" --json close
 ```
 
-涉及登录的平台搜索（知乎 / 微博 / 小红书 / 抖音 / Twitter / Reddit / 雪球 / LinkedIn 等）走持久化 session。
+涉及登录的平台搜索（知乎 / 微博 / Twitter / Reddit / 雪球 / LinkedIn 等）走持久化 session。
 
 ### 页面加载等待
 
 - 通用站点：`camoufox-cli --session <s> --json wait` 或 `sleep 3-5`
-- 重度客户端渲染（Twitter/X、小红书、抖音）：**5 秒以上**
+- 重度客户端渲染（Twitter/X）：**5 秒以上**
 - `snapshot` 显示内容不完整时再等几秒重新 `snapshot`
 
 ### 超时错误处理

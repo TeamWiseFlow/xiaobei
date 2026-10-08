@@ -23,13 +23,13 @@
 
 ## 4. 抖音发布与记录
 
-先读 `douyin-publish` 工具说明，用 `douyin-engagement check` 验证 API 会话。按顺序上传 `page-01.png`（问答式加 `page-02.png`、`page-03.png`），用户确认内容并要求发布后执行：
+先读 `douyin-publish` 工具说明，用 `douyin-engagement check` 验证 Camoufox 持久化创作者会话；未登录执行 `douyin-publish login`。按顺序上传 `page-01.png`（问答式加 `page-02.png`、`page-03.png`），用户确认内容并要求发布后执行：
 
 ```bash
-douyin-publish note --images /绝对路径/page-01.png /绝对路径/page-02.png /绝对路径/page-03.png --title "已确认标题" --caption "已确认描述 #话题" --confirm
+douyin-publish note --images /绝对路径/page-01.png /绝对路径/page-02.png /绝对路径/page-03.png --title "已确认标题" --caption "已确认描述 #话题" --original-sound --confirm
 ```
 
-只有返回确认的作品 ID 和 `/note/` URL 才算完成。提交结果未知时用 `douyin-publish status --job-file "返回的任务文件"` 核查，禁止自动重发。成功后执行：
+只有返回确认的作品 ID 和 `/note/` URL 才算完成。提交结果未知时先核实管理页，并用 `douyin-note-publish get-note-link --title "完整标题"` 取链，禁止自动重发。成功后执行：
 
 ```bash
 published-track record --platform douyin --title "已发布标题" --content-type post --source-folder douyin/outputs/<work-name>/ --publish-url "确认的note URL" --account <账号alias>

@@ -1,6 +1,6 @@
 ---
 name: expert-bd
-description: 商务拓展（BD）专家。承接找客户、评论区拓展（截流）、商业情报采集、竞争对手/重点客户动向监控、每日简报等完整商务拓展工作，平台互动委托对应专家包，覆盖闲鱼商品搜索与私信等配套操作。用户只需要说目标和给素材，具体流程和判定标准由专家自己把握。零散的记录、查询、采集、互动等操作也可以直接做。不涉及投资人关系（找投资人/融资跟进/项目申报走 expert-ir）。
+description: 商务拓展（BD）专家。承接找客户、评论区拓展、商业情报、竞对监控、竞争对手直播调研，以及抖音/小红书评论、私信和直播间互动；内容采集调用一级 hunter，平台创作发布与本人作品数据走平台专家包。不涉及投资人关系。
 metadata:
   openclaw:
     emoji: 💼
@@ -16,7 +16,10 @@ metadata:
 |------|----------|-------------|
 | 潜在客户探索 | Lead Hunting | 按关键词搜索平台内容，策略 A 分析发布者画像 / 策略 B 评论区挖掘潜客，去重记录，可选触达 |
 | 信息搜集/竞对监控/每日简报 | Intel Gathering | 监控指定信源（自媒体账号 / 网页），按预设标准提取商业情报，生成简报 / 报告 / 监控表格 |
-| 竞争对手 / 重点客户动向监控 | Competitor Watch | 以对象为中心的动向监控：多信源采集 → 动向识别分级 → 重大动向告警 + 定期简报 |
+| 竞争对手 / 重点客户动向监控 | Competitor Watch | 以对象为中心采集账号、网页与直播信源，识别动向并交付告警或简报 |
+| 评论、私信与线索触达 | Interaction | 根据真实内容拟定互动、预览、执行已授权动作并记录结果 |
+| 竞争对手直播调研 | [Live Research](workflows/live-research.md) | 观察竞品公开直播间的商品、促销、话术与观众反馈，形成有时间与来源的调研报告 |
+| 直播间互动 | [Live Interaction](workflows/live-interaction.md) | 在指定公开直播间参与讨论、答疑或拓展合作，执行已授权的评论与点赞 |
 
 ## 执行方式与定时任务
 
@@ -41,10 +44,15 @@ metadata:
 | `info-record` | 情报条目数据库（采集去重 + 按日查询） | `info-record` |
 | `rss-reader` | 发现并抓取网页 RSS/Atom feed | `rss-reader` |
 | `xianyu-ops` | 闲鱼商品搜索 / 详情 / 私信 | `xianyu-ops` |
-| `xhs-hunter` | 小红书 PC 端搜索、笔记详情与评论采集 | `xhs-hunter` |
-| `douyin-hunter` | 抖音站内搜索、账号作品、作品详情与评论采集 | `douyin-hunter` |
+| `douyin-interact` | 抖音点赞/取消、收藏/取消、评论/回复及收藏夹迁移 | `douyin-interact` |
+| `douyin-im` | 抖音私信会话、文本/媒体/分享卡片发送和收信 | `douyin-im` |
+| `douyin-live` | 抖音公开直播调研与互动：事件、商品、榜单、PK、弹幕及点赞 | `douyin-live` |
+| `xhs-im` | 小红书单聊/群聊查询、文本私信、已读、撤回与删除会话 | `xhs-im` |
+| `xhs-live` | 小红书公开直播调研与互动：房间、商品、事件监听与文字评论 | `xhs-live` |
 
-跨领域通用技能：`smart-search`（构造各平台搜索 URL）、`browser-guide`（浏览器操作规范）、`email-ops`（邮件发送）。
+内容搜索、详情、评论采集和下载统一调用一级技能 `xhs-hunter` / `douyin-hunter` / `wx-mp-hunter`。小红书/抖音评论与 @ 提醒、点赞收藏提醒和新增关注通知也调用对应 hunter；私信会话、私信历史及私信未读查询仍使用本包 IM 工具。`smart-search` 只处理支持的其他平台；微信视频号目前没有内容获取方案。抖音互动使用 hunter 包内 `douyin-login` 的独立 API 会话，小红书互动复用 `xhs-hunter` PC 会话。创作、发布、本人作品数据与创作者服务分别走 `expert-xhs` / `expert-douyin`。
+
+跨领域通用技能：`browser-guide`（其他平台浏览器规范）、`email-ops`（邮件发送）。操作前读同包 `references/interaction-capabilities.md`，确认哪些可执行、哪些有条件、哪些尚不支持；不能把尚未真机验证当作已验收。
 
 ## 数据与记录
 
@@ -57,4 +65,6 @@ metadata:
 
 - 找投资人 / 融资材料 / 投资人跟进 → `expert-ir`。
 - 项目申报 / 补贴 / 创业大赛 → `expert-ir` 专家包（Project Application Workflow）。
-- X/Twitter 起号、定位、发帖编排走 `expert-twitter`；本包负责线索与获客策略；平台写操作调用各平台专家包内的互动或私信工具。
+- X/Twitter 起号、定位、发帖编排走 `expert-twitter`，其写操作按对应工具说明处理。
+- 抖音/小红书互动工具统一归本包；没有实现的写操作明确说明能力缺口，不将网页读取或预览标为互动成功。
+- 直播能力主要用于竞争对手调研与直播间互动；目标可以是自己的房间或他人的公开房间，以实际访问和发言权限为准。主播后台开关播、禁言/踢人和商品管理不在本包能力范围内。

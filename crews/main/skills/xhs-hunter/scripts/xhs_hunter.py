@@ -413,7 +413,8 @@ def _download(url: str, path: Path) -> None:
                     stream.write(chunk)
 
 
-def fetch_note(url: str, output_dir: str | None = None, download_media: bool = False) -> dict:
+def fetch_note(url: str, output_dir: str | None = None, download_media: bool = False,
+               video_only: bool = False) -> dict:
     url = _note_url(url)
     response = call_method('get_note_info', [url])
     if not response['ok']:
@@ -423,10 +424,14 @@ def fetch_note(url: str, output_dir: str | None = None, download_media: bool = F
         return {'ok': False, 'error': 'NOTE_UNAVAILABLE',
                 'message': '笔记详情为空；token 无效或笔记不可见，请从搜索或用户列表重新获取对应链接',
                 'url': url}
-    return save_note(note, output_dir, download_media)
+    if video_only and (note.get('type') != 'video' or not note.get('video_url')):
+        return {'ok': False, 'error': 'VIDEO_REQUIRED',
+                'message': '图文请使用 expert-xhs workflow 分析，下载使用 xhs-hunter'}
+    return save_note(note, output_dir, download_media, video_only=video_only)
 
 
-def save_note(note: dict, output_dir: str | None, download_media: bool) -> dict:
+def save_note(note: dict, output_dir: str | None, download_media: bool,
+              *, video_only: bool = False) -> dict:
     result = {'ok': True, 'note': note}
     if output_dir:
         directory = Path(output_dir).expanduser().resolve()
@@ -435,7 +440,7 @@ def save_note(note: dict, output_dir: str | None, download_media: bool) -> dict:
         result['note_path'] = str(directory / 'note.json')
         if download_media:
             files = []
-            for index, image in enumerate(note['images'], 1):
+            for index, image in enumerate([] if video_only else note['images'], 1):
                 target = directory / f'image-{index:02d}.jpg'
                 _download(image, target)
                 files.append(str(target))
@@ -549,6 +554,7 @@ def main() -> int:
     note.add_argument('url')
     note.add_argument('--output-dir')
     note.add_argument('--download-media', action='store_true')
+    note.add_argument('--video-only', action='store_true', help='只接受视频且只下载视频文件')
     comments = subs.add_parser('comments')
     comments.add_argument('url')
     comments.add_argument('--limit', type=int, help='最多读取前 N 条一级评论，范围 1..1000')
@@ -611,7 +617,7 @@ def main() -> int:
                 raise ValueError('--count 必须在 1 至 100 之间')
             result = call_method('search_some_user', [args.keyword, args.count])
         elif args.command == 'fetch':
-            result = fetch_note(args.url, args.output_dir, args.download_media)
+            result = fetch_note(args.url, args.output_dir, args.download_media, args.video_only)
         elif args.command == 'comments':
             if args.limit is not None and not 1 <= args.limit <= 1000:
                 raise ValueError('--limit 必须在 1 至 1000 之间')

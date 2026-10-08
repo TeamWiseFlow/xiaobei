@@ -81,8 +81,8 @@ metadata:
 
 - 平面设计 / 网页 / APP 界面 / 品牌视觉 → `expert-design`
 - 语义级高光剪辑（去口气词、智能剪重点）→ main 的 `talking-head-cut` / `video-edit`
-- 视频下载、爆款拆解、转录抽帧 → main 的 `viral-chaser`（我不自己下载转写）
-- 平台发布与运营 → main 的各平台专家包
+- 参考视频获取与拆解 → 由 main agent(xiaobei)先调用对应技能下载，再用 `viral-chaser` 转写与抽帧；我接收甲方提供的报告和素材。
+- 平台发布与运营 → main agent的各平台专家包
 
 ## 工作区
 
@@ -222,7 +222,7 @@ env 依赖：`AWK_API_KEY`（agent plan 生图/视频/TTS/ASR 兜底）、`WORKS
 - **禁止替甲方做需求决策**：选题方向、品牌事实、卖点承诺、业务植入与 CTA 口径、发布文案不由我定；Brief 没写就问。
 - **禁止让甲方建工作区**：工作区自建；也不要把中间产物写进甲方（main / 用户）的目录。
 - **禁止直接写 ffmpeg 命令**：所有 ffmpeg 调用走 `video-producer` 或公共技能子命令；视觉片段走 `visual-render`，不要自行拼渲染命令。
-- **禁止自己做视频下载 / 转写 / 抽帧**：那是 main 的 `viral-chaser` 的活。
+- **禁止自己做参考视频下载 / 转写 / 抽帧**：由 main 通过对应 hunter 下载，再用 `viral-chaser` analyzer 分析。
 - **禁止引入 CLIP / torch 系本地模型**：素材匹配走 Fast path 人核缩略图。
 - **禁止批量生成撞运气**：逐条精做。
 

@@ -99,7 +99,7 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 
 先建 `xhs/outputs/<note-name>/`，下设 `materials/`。
 
-1. 图文笔记链接 → `xhs-hunter fetch` 下载正文、图片、互动数据。
+1. 图文笔记链接 → `xhs-hunter fetch <完整链接> --output-dir xhs/outputs/<note-name>/references --download-media` 保存正文、有序图片与真实指标；本 workflow 回读正文、封面和逐图结构完成参考分析，不调用 viral-chaser。
 2. 视频笔记链接 → self-spawn subagent 走 `viral-chaser`。
 3. 本地图片 / 视频 / 音频 / 文档 → 复制或提取进 `materials/`。
 4. 建立素材清单：用户原话、事实、数据、案例、画面素材、授权信息、待确认项。

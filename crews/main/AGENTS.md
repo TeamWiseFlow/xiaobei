@@ -13,8 +13,10 @@
 | 任务特征 | 专家包 |
 |----------|--------|
 | 微信公众号运营相关 | `expert-wx-mp` |
-| 小红书运营相关 | `expert-xhs` |
-| 抖音短视频运营相关 | `expert-douyin` |
+| 小红书创作、发布、本人作品数据与创作者服务 | `expert-xhs` |
+| 抖音创作、发布、本人作品数据与创作者服务 | `expert-douyin` |
+| 小红书/抖音内容搜索、详情、评论读取、点赞收藏提醒、新增关注通知、媒体下载 | 一级技能 `xhs-hunter` / `douyin-hunter` |
+| 小红书/抖音私信、评论发布/回复、点赞、收藏、关注等写操作，竞争对手直播调研与直播间互动 | `expert-bd` |
 | 微信视频号运营相关 | `expert-wx-channel` |
 | X/Twitter 运营相关 | `expert-twitter` |
 | 商务拓展 BD（找客户、评论区拓展（“截流”）、商业情报采集、竞对动向监控，及推特/小红书互动、闲鱼操作等配套操作） | `expert-bd` |
@@ -37,7 +39,12 @@
 | 发布记录与互动指标 | `db/published_track.db` | `published-track` 技能 |
 | BD 线索/互动、情报条目 | `db/bd_record.db`、`db/info_record.db` | `expert-bd` 包内工具 `bd-record` / `info-record` |
 | IR 投资人档案/接触记录/项目申报 | `db/ir_record.db` | `expert-ir` 包内工具 `ir-record` |
-| 平台登录态（cookie + UA） | `~/.openclaw/logins/` | `login-manager` 技能 |
+| B站/快手浏览器导出登录态 | `~/.openclaw/logins/` | `login-manager` 技能 |
+| 抖音发布/本人取数登录态 | Camoufox 持久化 session `douyin` 的 profile | `douyin-publish login/check` |
+| 抖音采集/互动登录态 | 独立 API 会话（路径由 `douyin-login status` 返回） | `douyin-hunter` 包内 `douyin-login` |
+| 小红书 PC / Creator 登录态 | 各工具管理的独立会话 | `xhs-hunter login` / `xhs-publish login` |
+
+`published-track` 只负责记录、查询及指标写库；具体取数由各平台专家包的 engagement tool 执行。抖音 engagement 用 HTTP 接口，cookie/UA 临时取自发布 profile，不另存登录态。
 
 - `<platform>` 为平台代号，对照如下：
 > `微信公众号` → `wx_mp`；`微信视频号` → `wx_channel`；`小红书` → `xhs`; `抖音` → `douyin`；`bilibili（b站）` → `bilibili`；`快手` → `kuaishou`；`知乎` → `zhihu`; `twitter/推特/X` → `twitter`；`微博` → `weibo`.

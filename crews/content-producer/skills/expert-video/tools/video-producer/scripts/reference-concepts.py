@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """reference-concepts（可选工具）— 吃甲方给的参考拆解报告出 2–3 差异化概念。
 
-本工具不做视频下载/转写/抽帧——那是 main 的 viral-chaser 的活。只接报告原档当输入。
+本工具只接报告原档当输入；参考视频由 main 调用对应 hunter 下载，再用 viral-chaser 转写与抽帧。
 默认流程不含本阶段：仅当甲方（多为直接对话模式下的用户）提供了参考拆解报告时才用。
 
 Usage:

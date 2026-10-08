@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""多供应商 TTS（火山豆包 2.0 + 阿里云百炼）— stdlib only (no httpx/requests).
+"""多供应商 TTS（火山豆包 2.0 + 阿里云百炼），ASR 自检复用公共路由。
 
 供应商优先级（2026-09 拍板，凭据在哪家走哪家）：
   1. 火山方舟豆包语音合成 2.0（seed-tts-2.0 字符版）
@@ -16,7 +16,8 @@
 火山凭据：VOLC_TTS_APP_ID + VOLC_TTS_ACCESS_KEY（旧双头，优先）或 VOLC_TTS_APP_KEY（新单头）
 Resource ID 默认 seed-tts-2.0，可由 VOLC_TTS_RESOURCE_ID 覆盖
 
-ASR 自检同样按 火山 → 百炼 优先级选转写后端，Jaccard 0.5 阈值。
+ASR 自检复用 skills/_shared/asr.py，按 火山 → 百炼业务空间 → Agent Plan 回退。
+清洗文本后做序敏感相似度比对，阈值 0.5；自检失败仅警告。
 """
 
 import argparse
@@ -33,6 +34,9 @@ import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_shared"))
+from asr import asr  # noqa: E402
 
 DEFAULT_API_BASE = "https://openspeech.bytedance.com/api/v3"
 DEFAULT_TTS_PATH = "/tts/unidirectional"
@@ -65,18 +69,16 @@ SPEECH_RATE_MAX = 100
 LOUDNESS_RATE_MIN = -50
 LOUDNESS_RATE_MAX = 100
 
-DEFAULT_ASR_RESOURCE_ID = "volc.bigasr.auc_turbo"
-DEFAULT_ASR_MODEL = "bigasr"
-
 # ── 百炼 TTS 常量 ─────────────────────────────────────────────────────────────
 
 BAILIAN_WS_BASE_TEMPLATE = "https://{wsid}.cn-beijing.maas.aliyuncs.com/api/v1"
 BAILIAN_AGENT_PLAN_BASE = "https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1"
 BAILIAN_TTS_PATH = "/services/audio/tts/SpeechSynthesizer"
-BAILIAN_ASR_PATH = "/services/aigc/multimodal-generation/generation"
-# 候选链：plus 主力，flash 兜底（模型未开通/未找到时切换）
-BAILIAN_TTS_MODELS = ["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]
+# 业务空间：plus 主力，3.1 flash 优先于 3.0 flash；Agent Plan 保留原候选链。
+BAILIAN_TTS_MODELS = ["qwen-audio-3.0-tts-plus", "qwen-audio-3.1-tts-flash", "qwen-audio-3.0-tts-flash"]
+BAILIAN_PLAN_TTS_MODELS = ["qwen-audio-3.0-tts-plus", "qwen-audio-3.0-tts-flash"]
 BAILIAN_DEFAULT_VOICE = "longanhuan_v3.6"
+BAILIAN_31_DEFAULT_VOICE = "longanhuan_v3.1"
 BAILIAN_DEFAULT_SAMPLE_RATE = 24000
 BAILIAN_FORMATS = {"mp3", "pcm", "wav", "opus"}
 # 火山 ogg_opus 在百炼叫 opus
@@ -269,6 +271,7 @@ def read_text(args: argparse.Namespace, root: Path | None = None) -> str:
 
 def apply_tts_settings(args: argparse.Namespace, settings: dict, provider: str = "volc") -> None:
     default_voice = BAILIAN_DEFAULT_VOICE if provider == "bailian" else DEFAULT_SPEAKER
+    args.voice_is_default = args.voice is None and not settings.get("voice")
     if args.voice is None:
         args.voice = settings.get("voice") or default_voice
     if args.speech_rate is None and settings.get("speech_rate") is not None:
@@ -450,26 +453,27 @@ def resolve_tts_provider():
     )
 
 
-def bailian_voice(voice: str | None) -> str:
+def bailian_voice(voice: str | None, model: str = "") -> str:
     """百炼模式音色选择：用户传了火山系 speaker 时警告并换百炼默认音色。"""
+    default_voice = BAILIAN_31_DEFAULT_VOICE if model == "qwen-audio-3.1-tts-flash" else BAILIAN_DEFAULT_VOICE
     if voice and (
         voice in VALID_VOICES
         or "_bigtts" in voice
         or voice.startswith(("S_", "saturn_", "ICL_"))
     ):
         print(
-            f"[warn] 音色 {voice} 是火山系音色，百炼不识别；改用百炼默认音色 {BAILIAN_DEFAULT_VOICE}",
+            f"[warn] 音色 {voice} 是火山系音色，百炼不识别；改用百炼默认音色 {default_voice}",
             file=sys.stderr,
         )
-        return BAILIAN_DEFAULT_VOICE
-    return voice or BAILIAN_DEFAULT_VOICE
+        return default_voice
+    return voice or default_voice
 
 
 def build_bailian_payload(args: argparse.Namespace, text: str, model: str) -> dict:
     """构造百炼 SpeechSynthesizer 请求体（model 由调用方传入，便于候选链 fallback）。"""
     inp: dict = {
         "text": text,
-        "voice": bailian_voice(args.voice),
+        "voice": bailian_voice(None if getattr(args, "voice_is_default", False) is True else args.voice, model),
         "format": FORMAT_ALIAS.get(args.format, args.format),
         "sample_rate": args.sample_rate if args.sample_rate is not None else BAILIAN_DEFAULT_SAMPLE_RATE,
     }
@@ -583,15 +587,18 @@ class BailianTtsHTTPError(Exception):
 
 def create_speech_bailian_with_fallback(
     base: str, api_key: str, args: argparse.Namespace, text: str, *, timeout: int,
+    mode: str = "workspace",
 ) -> tuple[bytes, list[dict], str]:
-    """沿 BAILIAN_TTS_MODELS 候选链合成。返回 (audio, sentences, used_model)。"""
-    models = [args.model] if getattr(args, "model", None) else list(BAILIAN_TTS_MODELS)
+    """沿选定端点的候选链合成。返回 (audio, sentences, used_model)。"""
+    candidates = BAILIAN_PLAN_TTS_MODELS if mode == "agent-plan" else BAILIAN_TTS_MODELS
+    models = [args.model] if getattr(args, "model", None) else list(candidates)
     for idx, model in enumerate(models):
         payload = build_bailian_payload(args, text, model)
         try:
             audio, sentences = create_speech_bailian(
                 base, api_key, payload, streaming=bool(args.enable_subtitle), timeout=timeout,
             )
+            args.voice = payload["input"]["voice"]
             return audio, sentences, model
         except BailianTtsHTTPError as exc:
             print(f"[error] 百炼 TTS HTTP {exc.code}: {exc.body[:500]}", file=sys.stderr)
@@ -763,7 +770,7 @@ def main() -> None:
             f"format={args.format} subtitle={args.enable_subtitle} chars={len(text)} timeout={timeout}s"
         )
         audio, sentences, used_model = create_speech_bailian_with_fallback(
-            base, api_key, args, text, timeout=timeout,
+            base, api_key, args, text, timeout=timeout, mode=mode,
         )
         meta_extra = {"provider": f"bailian-{mode}", "model": used_model}
     if not audio:
@@ -831,85 +838,25 @@ def get_audio_duration(filepath: Path) -> float:
     return 0.0
 
 
-# ── ASR 自检（火山录音文件极速版，与 viral-chaser 同凭据池）────────────────────
-
-def _volc_asr_configured() -> bool:
-    app_id = os.environ.get("VOLC_ASR_APP_ID", "").strip()
-    access_key = os.environ.get("VOLC_ASR_ACCESS_KEY", "").strip()
-    app_key = os.environ.get("VOLC_ASR_APP_KEY", "").strip()
-    return bool((app_id and access_key) or app_key)
-
-
-def _bailian_asr_endpoint() -> tuple[str, str] | None:
-    """百炼 ASR 端点 (base, key)：业务空间优先，否则 agent plan。"""
-    wsid = (os.environ.get("WORKSPACE_ID") or "").strip()
-    if wsid:
-        key = (
-            os.environ.get("MODELSTUDIO_API_KEY")
-            or os.environ.get("DASHSCOPE_API_KEY")
-            or ""
-        ).strip()
-        if key:
-            return BAILIAN_WS_BASE_TEMPLATE.format(wsid=wsid), key
-    key = (os.environ.get("AWK_API_KEY") or "").strip()
-    if key:
-        return BAILIAN_AGENT_PLAN_BASE, key
-    return None
-
-
-def transcribe_audio_bailian_asr(audio_path: Path) -> str:
-    """调百炼同步 Flash ASR（qwen-audio-3.0-asr-flash）转写，返回文本；失败返回空串。"""
-    endpoint = _bailian_asr_endpoint()
-    if endpoint is None:
-        return ""
-    base, key = endpoint
-    model = (os.environ.get("BAILIAN_ASR_MODEL") or "qwen-audio-3.0-asr-flash").strip()
-    try:
-        raw = audio_path.read_bytes()
-        ext = audio_path.suffix.lower().lstrip(".")
-        fmt = ext if ext in ("mp3", "wav", "ogg", "opus", "m4a", "aac", "flac") else "mp3"
-        mime = "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
-        data_uri = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
-    except OSError:
-        return ""
-    body = {
-        "model": model,
-        "input": {"messages": [{"role": "user", "content": [
-            {"type": "input_audio", "input_audio": {"data": data_uri}},
-        ]}]},
-        "parameters": {"format": fmt},
-    }
-    req = urllib.request.Request(
-        f"{base.rstrip('/')}{BAILIAN_ASR_PATH}",
-        data=json.dumps(body).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-            "X-DashScope-SSE": "disable",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            parsed = json.loads(resp.read())
-        return ((parsed.get("output") or {}).get("text")) or ""
-    except (urllib.error.HTTPError, urllib.error.URLError, json.JSONDecodeError):
-        return ""
-
+# ── ASR 自检（复用公共路由，与视频转写、剪辑、旁白对齐共用后端）──────────────
 
 def run_asr_check(audio_path: Path, script_text: str, threshold: float = 0.5) -> None:
-    """转写音频并与脚本文本比对 Jaccard 相似度。仅 WARN 不 abort。后端优先级：火山 → 百炼。"""
-    if _volc_asr_configured():
-        print("[info] Running ASR self-check (火山录音文件极速版)")
-        transcribed = transcribe_audio_volc_asr(audio_path)
-    elif _bailian_asr_endpoint() is not None:
-        print("[info] Running ASR self-check (百炼 qwen-audio-3.0-asr-flash)")
-        transcribed = transcribe_audio_bailian_asr(audio_path)
-    else:
-        print("[info] ASR check skipped: 无 ASR 凭据（VOLC_ASR_* 或百炼）")
-        return
-    if not transcribed:
+    """共用公共 ASR 路由转写并比对文本；自检失败仅警告，不中断 TTS。"""
+    print("[info] Running ASR self-check (公共 ASR 路由)")
+    try:
+        result = asr(str(audio_path))
+    except Exception:
         print("[warn] ASR check: transcription failed, skipping comparison")
+        return
+    if not result.get("ok"):
+        if "凭证未配置" in result.get("error", ""):
+            print("[info] ASR check skipped: 无 ASR 凭据（VOLC_ASR_* 或百炼）")
+        else:
+            print("[warn] ASR check: transcription failed, skipping comparison")
+        return
+    transcribed = result.get("text") or ""
+    if not transcribed:
+        print("[warn] ASR check: empty transcription, skipping comparison")
         return
 
     sim = similarity_ratio(transcribed, script_text)
@@ -918,51 +865,6 @@ def run_asr_check(audio_path: Path, script_text: str, threshold: float = 0.5) ->
     if sim < threshold:
         print(f"[warn] 转写: {transcribed[:120]}")
         print(f"[warn] 脚本: {script_text[:120]}")
-
-
-def transcribe_audio_volc_asr(audio_path: Path) -> str:
-    """调火山录音文件极速版 ASR（v3 recognize/flash，与 _shared/volc_asr.py 同源），返回转写文本。"""
-    api_base = os.environ.get("VOLC_ASR_API_BASE", "https://openspeech.bytedance.com/api/v3").strip()
-    resource_id = os.environ.get("VOLC_ASR_RESOURCE_ID", DEFAULT_ASR_RESOURCE_ID).strip()
-
-    headers = {
-        "X-Api-Resource-Id": resource_id,
-        "X-Api-Request-Id": str(uuid.uuid4()),
-        "X-Api-Sequence": "-1",
-        "Content-Type": "application/json",
-    }
-    app_id = os.environ.get("VOLC_ASR_APP_ID", "").strip()
-    access_key = os.environ.get("VOLC_ASR_ACCESS_KEY", "").strip()
-    app_key = os.environ.get("VOLC_ASR_APP_KEY", "").strip()
-    if app_id and access_key:
-        headers["X-Api-App-Key"] = app_id
-        headers["X-Api-Access-Key"] = access_key
-        uid = app_id
-    else:
-        headers["X-Api-Key"] = app_key
-        uid = app_key
-
-    ext = audio_path.suffix.lower().lstrip(".")
-    fmt = ext if ext in ("wav", "mp3", "ogg") else "wav"
-    body = {
-        "user": {"uid": uid},
-        "audio": {"data": base64.b64encode(audio_path.read_bytes()).decode("ascii"), "format": fmt},
-        "request": {"model_name": "bigmodel", "show_utterances": False, "enable_itn": True, "enable_punc": True},
-    }
-    req = urllib.request.Request(
-        f"{api_base.rstrip('/')}/auc/bigmodel/recognize/flash",
-        data=json.dumps(body).encode("utf-8"),
-        headers=headers,
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            if resp.headers.get("X-Api-Status-Code", "") != "20000000":
-                return ""
-            result = json.loads(resp.read().decode())
-            return (result.get("result") or {}).get("text", "") or ""
-    except (urllib.error.HTTPError, urllib.error.URLError, json.JSONDecodeError):
-        return ""
 
 
 def _clean_for_similarity(text: str) -> str:

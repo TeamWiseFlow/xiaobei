@@ -150,6 +150,7 @@ def main():
     s.add_argument("--id")
     s.add_argument("--output-dir")
     s.add_argument("--download-media", action="store_true")
+    s.add_argument("--video-only", action="store_true", help="仅接受视频；图文在下载前拒绝")
     s = sub.add_parser("comments")
     s.add_argument("--url")
     s.add_argument("--id")
@@ -205,6 +206,8 @@ def main():
         if not isinstance(raw, dict) or not raw.get("aweme_id"):
             raise DouyinRequestError("ITEM_DETAIL_MISSING")
         note = normalize(raw)
+        if a.video_only and note["kind"] != "video":
+            raise ValueError("VIDEO_REQUIRED")
         paths = []
         if a.output_dir:
             d = Path(a.output_dir).expanduser().resolve()

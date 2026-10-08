@@ -1,6 +1,6 @@
 ---
 name: awk-img-gen
-description: 火山 Seedream / 阿里云百炼图像生成与编辑。默认 AWK_GEN_KEY 火山优先（Seedream 5.0 lite → 4.5），其次百炼业务空间，最后 AWK_API_KEY agent plan。业务空间（WORKSPACE_ID）走 qwen-image-3.0 系候选链，agent plan 走 wan2.7-image；文生图默认，1-3 张参考图触发编辑/多图融合。封面海报直接渲染文字，不要后期拼字。
+description: 阿里云百炼图像生成与编辑。支持显式选择 DashScope 业务空间或 Agent Plan；默认优先业务空间，两种模式均默认 qwen-image-3.0-pro，Agent Plan 可回退 wan2.7-image。文生图默认，1-3 张参考图触发编辑/多图融合。直出带字封面海报。
 metadata:
   openclaw:
     emoji: 🖼️
@@ -12,17 +12,16 @@ metadata:
 
 # 图像生成（awk-img-gen）
 
-走火山方舟 `/api/v3/images/generations` 或百炼 DashScope 同步 `multimodal-generation` 接口生成/编辑图片，落盘 PNG + `prompts.json` 索引 + `index.html` 缩略图 gallery。
+走百炼同步 `multimodal-generation` 接口生成/编辑图片，落盘 PNG + `prompts.json` 索引 + `index.html` 缩略图 gallery。
 
-> **凭据**（自动选路，可用 `--platform volc|dashscope` 显式指定平台）：
+> **凭据**（默认 `--platform auto`；可用 `--platform dashscope` / `--platform plan` 固定模式）：
 >
 > | 模式 | 触发条件 | 端点 | 模型候选链 |
 > |------|---------|------|-----------|
-> | 火山（优先） | `AWK_GEN_KEY` | `https://ark.cn-beijing.volces.com/api/v3` | `doubao-seedream-5-0-lite-260128` → `doubao-seedream-4-5-251128` |
-> | 业务空间（其次） | `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`（或 `DASHSCOPE_API_KEY`） | `https://{WORKSPACE_ID}.cn-beijing.maas.aliyuncs.com/api/v1` | `qwen-image-3.0-pro` → `qwen-image-3.0` → `qwen-image-2.0-pro-2026-06-22` |
-> | agent plan | 无业务空间凭据时用 `AWK_API_KEY` | `https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1` | `wan2.7-image-pro` → `wan2.7-image` |
+> | DashScope 业务空间 | `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`（或 `DASHSCOPE_API_KEY`） | `https://{WORKSPACE_ID}.cn-beijing.maas.aliyuncs.com/api/v1` | `qwen-image-3.0-pro` → `qwen-image-3.0` → `qwen-image-2.0-pro-2026-06-22` |
+> | Agent Plan | `AWK_API_KEY` | `https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1` | `qwen-image-3.0-pro` → `wan2.7-image-pro` → `wan2.7-image` |
 >
-> 火山使用普通方舟 API Key（非 Coding Plan / Token Plan），只读 `AWK_GEN_KEY`，不使用 `ARK_API_KEY` 或百炼 `AWK_API_KEY`。平台按凭据选择，调用失败不会自动切换到其他平台。
+> `auto` 优先使用完整的业务空间凭据，否则使用 Agent Plan。显式指定 `dashscope` / `plan` 时只使用对应端点、凭据和候选链；缺少对应凭据就报错，不切换模式。`--model` 只覆盖模型，不改变模式。
 > 候选链自动 fallback（模型未开通/未找到/无权限时切下一个）；`--model` 显式指定时关闭 fallback。
 > 所有凭据都缺 → exit 1 并打印配置指引；实拍图兜底改走 `pexels-footage` / `pixabay-footage`。
 > 应该 spawn IT engineer subagent 配置环境变量，**不要自己写环境变量文件**。
@@ -42,6 +41,12 @@ awk-img-gen --prompt "your prompt here"
 # 竖版 9:16（短视频封面）
 awk-img-gen --prompt "..." --image-size 1536x2688
 
+# 固定使用 DashScope 业务空间（需 WORKSPACE_ID + 业务空间 key）
+awk-img-gen --platform dashscope --prompt "your prompt here"
+
+# 固定使用 Agent Plan（只读 AWK_API_KEY，即使已有业务空间凭据）
+awk-img-gen --platform plan --prompt "your prompt here"
+
 # 指定模型（显式指定时不 fallback）
 awk-img-gen --prompt "..." --platform dashscope --model "qwen-image-2.0-pro-2026-06-22"
 
@@ -57,24 +62,16 @@ awk-img-gen --prompt "blend" \
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--prompt` | required | 图像描述；要渲染的文字**直接写完整句子**；火山建议中文 ≤300 字、英文 ≤600 词 |
-| `--platform` | auto | `auto` / `volc`（别名 `volcengine`）/ `dashscope`；指定平台后不跨平台选路，`--model` 不改变平台 |
+| `--prompt` | required | 图像描述；要渲染的文字**直接写完整句子** |
+| `--platform` | auto | `auto` / `dashscope` / `plan`；`dashscope` 固定业务空间，`plan` 固定 Agent Plan，缺对应凭据时报错；`--model` 不改变模式 |
 | `--model` | auto | Model ID；缺省按模式走候选链自动 fallback，显式指定时不 fallback |
-| `--image-size` | `2048x2048` | 火山：`WxH` 或 `2K/3K/4K`，默认 2048x2048；百炼：`WxH` 或 `auto`，编辑模式缺省跟随输入图 |
-| `--seed` | — | 仅百炼：随机种子 [0, 2147483647]；火山不支持此选项 |
+| `--image-size` | `2048x2048` | `WxH` 或 `auto`，编辑模式缺省跟随输入图 |
+| `--seed` | — | 随机种子 [0, 2147483647] |
 | `--watermark` | `false` | 是否加水印（xiaobei 默认不加，避免后续 image 工具处理） |
 | `--prompt-extend` | off | 允许百炼自动扩写 prompt（API 默认开；本脚本默认**关**，保证封面文字/布局指令精确；氛围图想要更丰富细节时可开） |
 | `--image` | — | 参考图 1（启用编辑模式） |
 | `--image2` / `--image3` | — | 参考图 2 / 3（多图融合） |
 | `--out-dir` | `./tmp/awk-img-<ts>` | 输出目录 |
-
-### 火山尺寸
-
-总像素须在 3686400~16777216，宽高比 1:16~16:1；支持 `WxH`、`W*H`、`W×H` 输入，发送时统一为 `WxH`。默认 2048x2048；横版可用 2848x1600，竖版可用 1600x2848。
-
-使用 `2K/3K/4K` 档位时在 prompt 说明比例；4.5 不接受 `3K` 档位，回退时脚本转换为 `3072x3072`，如需固定其他比例请直接传明确的宽高。火山不支持 `auto`、`--seed`、`--prompt-extend`，这些选项会在请求前报错。
-
-每次生成单图（`sequential_image_generation=disabled`）；支持 1–3 张 URL / data URI / 本地参考图。参考图须满足火山限制：单张 ≤30MB、宽高均 >14px、总像素 196~3600万、宽高比 1:16~16:1。
 
 ### 百炼推荐尺寸（qwen-image 文档推荐值）
 
@@ -90,7 +87,7 @@ awk-img-gen --prompt "blend" \
 
 ## Output
 
-- `*.png` 图像（火山返回图用 Pillow 转为 PNG；脚本下载到本地，Pillow 由仓根依赖统一安装）
+- `*.png` 图像（脚本下载到本地）
 - `prompts.json` 索引 → prompt + model + provider_mode + URL + file
 - `index.html` 缩略图 gallery
 
@@ -102,7 +99,7 @@ awk-img-gen --prompt "blend" \
 
 | 参数 | 推荐值 | 原因 |
 |------|--------|------|
-| `--model` | 缺省（走候选链主力） | 按当前平台使用 Seedream / qwen-image / wan2.7-image 候选链 |
+| `--model` | 缺省（走候选链主力） | 两种模式均默认 qwen-image-3.0-pro；回退模型见凭据表 |
 | `--image-size` | 按平台比例选推荐尺寸 | 9:16 用 `1536x2688`，16:9 用 `2688x1536` |
 | `--prompt-extend` | 不加（保持默认关） | 扩写会改写你精心排版的文字与布局指令 |
 
@@ -133,7 +130,6 @@ awk-img-gen --prompt "blend" \
 
 | Variable | Description |
 |----------|-------------|
-| `AWK_GEN_KEY` | 火山普通方舟 API Key，生图/视频共用；自动选路优先，非 Coding/Token Plan |
-| `WORKSPACE_ID` | 百炼业务空间 ID；无火山凭据或显式指定百炼时优先于 Agent Plan |
+| `WORKSPACE_ID` | 百炼业务空间 ID；`auto` 时配齐业务空间 key 就优先使用；`dashscope` 模式必需 |
 | `MODELSTUDIO_API_KEY` / `DASHSCOPE_API_KEY` | 业务空间 API key（与 `WORKSPACE_ID` 配对） |
-| `AWK_API_KEY` | 百炼 agent plan key（token-plan 端点；无业务空间凭据时使用） |
+| `AWK_API_KEY` | 百炼 Agent Plan key；`plan` 模式必需，`auto` 时在无完整业务空间凭据时使用 |

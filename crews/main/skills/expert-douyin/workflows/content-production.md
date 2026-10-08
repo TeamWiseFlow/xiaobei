@@ -88,7 +88,7 @@ DNA template 是 main agent 的生产输入模板：
 | 目标观众 | 未指定时按 DNA 受众关系推导；涉及业务事实时再核对 `business_knowledge.md` |
 | 视频时长 | 仅视频：未指定时按 DNA template 的时长带；再无要求默认 30-90 秒 |
 | 图文图组 | 仅图文：确定图片数量、图序、逐页信息与首图要求，按图文 template 制作 |
-| 封面 | 视频默认生成独立封面图片，用户自带封面时优先使用；发布时通过 `--cover` 传入确认后的图片绝对路径。图文封面按首图要求制作 |
+| 封面 | 视频生成独立封面图片，用户自带封面时优先使用；浏览器发布入口不接收 `--cover`，自定义封面需在上传页设置并核对后分步发布。图文封面按首图要求制作 |
 | 简介与话题标签 | 用户指定时逐字使用；未指定时按 DNA template 标题与文案维度推导 |
 
 优先级固定为：
@@ -108,6 +108,7 @@ DNA 约束的是选题与观看理由、标题与封面写法、内容创意原�
 先建立作品目录 `douyin/outputs/<work-name>/`（work-name 用主题的短 slug；选题尚未确定时可先用暂代名，选题确定后随之定名），下设 `materials/` 子目录，获取到的素材统一放入 `materials/`。
 
 1. 按类型获取输入：
+   - 抖音参考图文链接 -> `douyin-hunter fetch --url <链接> --output-dir douyin/outputs/<work-name>/references --download-media` 保存正文、有序图片与真实指标；本 workflow 回读正文、封面和逐图结构完成参考分析，不调用 viral-chaser。
    - 抖音参考视频链接 -> self-spawn subagent 走 `viral-chaser` 拆解，转录、关键帧、时长、互动线索落入 `douyin/outputs/<work-name>/references/`（仿照制作时它就是参考素材）。
    - 本地视频 / 图片 / 音频素材 -> 复制进 `materials/`。
    - 用户文字输入（想法、脚本、要点）-> 保存为 `.md` 放入 `materials/`。
@@ -248,18 +249,18 @@ main 自做的素材组装 / 轻剪辑先通过 `video-review`；CP 交付按其
 
 ## Step 6 - 发布
 
-先读 `douyin-publish` 工具说明。执行 `douyin-hunter check` 确认独立 API 会话，再执行 `douyin-publish check --kind video`；图文传 `--kind note`，原创且无需声明时加 `--declaration none`。该检查不上传或发布；预览成功不能代替声明和发布安全材料检查。缺失安全材料时按 `missing_fields` 报告研发，未登录时使用 `douyin-login`。
+先读 `douyin-publish` 工具说明。执行 `douyin-publish check` 验证 Camoufox 持久化创作者会话；未登录用 `douyin-publish login` 打开有头窗口完成登录。不调用 douyin-login 或 login-manager 准备发布会话。
 
-视频发布时，将 Step 5 确认的封面图片通过 `--cover` 传入；CP 交付的 `cover.jpg` 或用户提供的封面均使用实际文件的绝对路径。检查文件存在、非空且不超过 50MB。工具自动上传封面图片，并在视频发布时关联该封面；已有确认封面时不得省略 `--cover`，避免使用上传视频返回的默认封面帧。用户已要求发布且成品确认后执行：
+浏览器视频入口使用上传页实际封面，用户要求自定义封面时，在创作者上传页完成设置并核对，再用分步工具发布；不能宣称已自动关联 CP 交付的 cover.jpg。原声图文必须明确 `--original-sound`，需要页面配乐时走图文分步工具。用户已要求发布且成品确认后执行：
 
 ```bash
-douyin-publish video --video /绝对路径/成片.mp4 --cover /绝对路径/cover.jpg --title "标题" --caption "简介 #话题" --confirm
-douyin-publish note --images /绝对路径/cover.png /绝对路径/page2.png --title "图文标题" --caption "正文 #话题" --confirm
+douyin-publish video --video /绝对路径/成片.mp4 --title "标题" --caption "简介 #话题" --confirm
+douyin-publish note --images /绝对路径/cover.png /绝对路径/page2.png --title "图文标题" --caption "正文 #话题" --original-sound --confirm
 ```
 
-AI 生成的内容保留 `--declaration aigc`；纯实拍且无需声明才传 `--declaration none`。配乐只有取得并核实可用的平台 music ID 后才传 `--music-id`，不能编造候选或音乐 ID。
+视频保留创作者页面 AIGC 声明流程；图文默认声明 AI，纯实拍图文按实际来源传 `--declaration none`。配乐调用 `douyin-note-publish music-list/music-select` 核实页面候选，不传 API 的 `--music-id`，不编造音乐信息。
 
-只有返回确认的作品 ID 与 URL 才记录成功。提交后超时、exit 3 或 `PUBLISH_RESULT_UNKNOWN` 时，执行 `douyin-publish status --job-file "返回的任务文件"`，禁止自动重发。单账号发布串行，每 24 小时视频和图文合计不超过 5 条；风控后至少 30 分钟内不重试。
+只有返回确认的作品 ID 与 URL 才记录成功。提交后超时、exit 3 或取链失败时先核实管理页，视频用 `douyin-video-publish get-link --session douyin`，图文用 `douyin-note-publish get-note-link --title "完整标题"`；禁止自动重发。单账号发布与取数串行，每 24 小时视频和图文合计不超过 5 条；风控后至少 30 分钟内不重试。
 
 ## Step 7 - 记录
 

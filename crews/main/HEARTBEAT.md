@@ -24,7 +24,7 @@
 
 4. **⛔ 登录失效一律「跳过 + 记录 + 汇总上报」，严禁硬行恢复登录**
 
-   任何平台的取数端登录失效（`SESSION_EXPIRED` / 探活失败 / 浏览器跳登录页等）时，**必须**：
+   任何平台的取数端明确登录失效（`SESSION_EXPIRED` / 接口返回认证失效 / 浏览器跳登录页等）时，**必须**：
    - 立即**跳过该平台**本轮取数，不再尝试任何取数动作；
    - 把平台名记入 `EXPIRED_PLATFORMS`，在 Step 4 统一汇报，由用户**白天**重新登录；
    - **不得**在凌晨心跳里扫码登录、不得唤醒用户。
@@ -32,8 +32,6 @@
    **严禁的"硬行恢复"动作**（任一都可能触发平台风控/限流/封号）：
    - ❌ 用 CDP `Network.setCookies` 把本地存的 cookie **注入**浏览器去"造"一个登录会话
    - ❌ 反复刷新/重导航 profile 页试图"刷出"登录态
-
-   > 本规范下方 Step 1 / Step 4 已写明，但 **2026-06-29 凌晨 Agent 未遵守**：xhs-browse 浏览器无登录态时，Agent 用 CDP 注入 22 个 cookie 强造会话后批量抓取，**当日触发小红书风控、账号被处罚**。故在此特别前置强调。
 
 5. **⚠️ 小红书 (xhs) 封号风险显著高于其他平台**
 
@@ -51,14 +49,15 @@
 
 | 平台专家包 | 状态查询 | 批量取数命令 |
 | --- | --- | --- |
-| expert-douyin | `published-track platform-status --platform douyin` | `douyin-engagement daily` |
+| expert-douyin | `published-track platform-status --platform douyin` | `douyin-engagement daily`（HTTP 取数，临时复用发布 profile 登录态；不调用 login-manager 或 hunter 登录修复） |
 | expert-xhs | `published-track platform-status --platform xhs` | `xhs-engagement daily` |
 | expert-wx-channel | `published-track platform-status --platform wx_channel` | `wx-channel-engagement fetch-all` |
 | expert-wx-mp | `published-track platform-status --platform wx_mp` | `wx-mp-engagement fetch-all` |
 
 - 取数窗口、作品匹配、分页和指标来源按对应专家包的 engagement 工具说明执行；由工具回填 `published-track`，心跳不额外逐条取数或补翻页。
 - 按各工具的逐条结果汇总完整成功、部分成功、跳过和失败。提供 `complete` 时，`complete=false` 必须报告缺项；有 `unavailable` / `unavailable_reasons` 或分析错误时，列出本次实际取得的指标、缺项及原因。缺失值不填零，不把保留的旧值算作本次取得；`ok=true` 不代表所有指标齐全。
-- 失败保留原始输出及退出码。登录失效或超时（如 `SESSION_EXPIRED`、`API_SESSION_MISSING`、`API_SESSION_EXPIRED`、`RUNTIME_EXPIRED`、`PLATFORM_AUTH_REJECTED`、`PLATFORM_LOGIN_REJECTED` 或 exit 2）记入 `EXPIRED_PLATFORMS`；身份验证待处理也记入汇总。停止该平台本轮后续取数，继续下一平台，不自动重新登录或发送验证码。
+- 失败保留原始输出及退出码。明确登录失效（如 `SESSION_EXPIRED`、`API_SESSION_MISSING`、`API_SESSION_EXPIRED`、`RUNTIME_EXPIRED`、`PLATFORM_AUTH_REJECTED`、`PLATFORM_LOGIN_REJECTED` 或 exit 2）记入 `EXPIRED_PLATFORMS`；身份验证待处理也记入汇总。停止该平台本轮后续取数，继续下一平台，不自动重新登录或发送验证码。
+- `PROFILE_SESSION_UNAVAILABLE` / `PROFILE_SESSION_INVALID`（exit 1）及超时按技术故障汇总，保留 `stage` / `reason`；登录状态未确认，不记入 `EXPIRED_PLATFORMS`，不提示用户重新登录。
 - `NOT_ON_FIRST_PAGE` 按对应工具规则跳过该记录；`CREATOR_ITEM_NOT_FOUND` 保留作品 ID 并报告待核对链接及账号，不按标题猜作品 ID。
 
 目前定时取数支持表内四个平台，其他平台跳过。全部平台处理后进入 Step 2。

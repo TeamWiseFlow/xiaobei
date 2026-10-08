@@ -7,11 +7,11 @@
   - 成功时 content.video_url 即成片下载地址。
 
 模型：仅 Seedance 2.5 → Seedance 2.0 fast；按参数能力筛选候选链。
-鉴权：HTTP header `Authorization: Bearer ${AWK_GEN_KEY}`。
+鉴权：HTTP header `Authorization: Bearer ${VOLC_SEEDANCE_API_KEY}`。
 
-⚠️ 火山视频生成只认 AWK_GEN_KEY，不回退 ARK_API_KEY：ARK_API_KEY 是火山主模型
+⚠️ 火山视频生成只认 VOLC_SEEDANCE_API_KEY，不回退 ARK_API_KEY：ARK_API_KEY 是火山主模型
 （doubao 对话）的 key，用户可能只想用火山主模型而不用火山生成视频；若回退会
-误触发火山视频生成。想用火山生成视频必须单独配 AWK_GEN_KEY。
+误触发火山视频生成。想用火山生成视频必须单独配 VOLC_SEEDANCE_API_KEY。
 """
 
 from __future__ import annotations
@@ -196,9 +196,9 @@ def cmd_video(args: argparse.Namespace) -> None:
     # --prev-segment: 抽取上一段末帧作为本段首帧（人物故事首尾帧对齐）
     resolve_prev_segment(args)
 
-    api_key = (os.environ.get("AWK_GEN_KEY") or "").strip()
+    api_key = (os.environ.get("VOLC_SEEDANCE_API_KEY") or "").strip()
     if not api_key:
-        die("AWK_GEN_KEY 未设置（火山生图/视频共用的普通 API key，非 Coding/Token Plan，不可与 ARK_API_KEY 混用）")
+        die("VOLC_SEEDANCE_API_KEY 未设置（火山 Seedance 视频生成专用的普通方舟 API key，非 Coding/Token Plan，不可与 ARK_API_KEY 混用）")
 
     output_path = ensure_safe_output(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)

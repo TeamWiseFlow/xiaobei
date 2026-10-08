@@ -1,6 +1,6 @@
 ---
 name: expert-xhs
-description: 小红书账号运营专家。承接定位起号、内容 DNA（图文 / 视频两套框架）、搜索意图与用户问题、图文笔记生产、已有素材轻加工、视频全案 Brief 与口播文案、发布与数据复盘；全片制作委托 content-producer。
+description: 小红书账号运营专家。承接定位起号、内容 DNA（图文 / 视频两套框架）、图文笔记生产、已有素材轻加工、视频全案 Brief 与口播文案、发布与数据复盘；全片制作委托 content-producer。
 metadata:
   openclaw:
     emoji: 📕
@@ -21,7 +21,6 @@ metadata:
 | 账号对标 | Account Benchmark | 对标账号 / 对标笔记分析（关键词提取 + 低粉爆款搜索），并与默认或指定 DNA 逐项比较 |
 | 改稿与调整 | Editing | 改标题、改正文、换封面、换标签、换风格 |
 | 数据复盘 | Review | xhs 全部数据复盘：DNA 评估、用户临时看数据 / 复盘 / 评估 DNA |
-| 直播控场 | Live Control | 监看直播事件、整理问题与经确认的直播文字互动 |
 | 蒲公英合作 | Pugongying Cooperation | 达人筛选、画像评估、合作邀约与跟进 |
 | 千帆合作 | Qianfan Cooperation | 分销商筛选、合作数据尽调与提案 |
 
@@ -33,7 +32,7 @@ metadata:
 - 其他文档中出现的 `xhs/dna/`、`xhs/ref/`、`xhs/outputs/`、`campaign_assets/`、`xhs/calibration/` 才是 Workspace 相对路径，统一从 Workspace 根目录解析。
 - 只有命令清单中明确列出的 wrapper 名称可以直接作为 shell 命令调用；其余 Tool 名称仅用于定位对应说明。
 
-零散操作（只想发篇笔记、只想下载一篇参考笔记、只想抓个数据）直接用下面的工具。
+零散操作（只想发篇笔记、只想抓本人作品数据）直接用下面的工具。
 
 ## 工具清单
 
@@ -44,12 +43,10 @@ metadata:
 | `xhs-style-profiler` | 生成单篇作品（图文 / 视频，`--kind`）的 DNA report，并聚合 DNA 文档、搜索意图地图与 template | `xhs-style-profiler` |
 | `xhs-publish` | 图文 / 视频笔记发布（Creator HTTP 路线，签名由 OFB Relay 提供） | `xhs-publish` |
 | `xhs-engagement` | Creator 已发作品指标取数，写入 published-track 的 pub_xhs 表 | `xhs-engagement` |
-| `xhs-live` | 直播广场/房间信息、WebSocket 事件监听、文字评论 | `xhs-live` |
-| `xhs-im` | 私信会话、未读、历史、WebSocket 收发 | `xhs-im` |
 | `xhs-pugongying` | 蒲公英达人筛选、画像、邀约 | `xhs-pugongying` |
 | `xhs-qianfan` | 千帆分销商筛选、合作品类与商品数据 | `xhs-qianfan` |
 
-跨领域通用技能：`viral-chaser`（小红书视频笔记拆解，视频下载委托 `xhs-hunter`）、`xhs-hunter`（站内内容搜索、图文与视频笔记采集，直播/私信/蒲公英/千帆工具复用其会话）、`content-calibrator`（DNA 表现评估）、`published-track`（发布记录与指标库）。小红书登录由 `xhs-hunter` 和 `xhs-publish` 分别管理，与 `login-manager` 无关。内容调研只使用 `xhs-hunter` 的有界站内请求和已保存的材料；按下方限频规则串行执行。
+跨领域通用技能：`viral-chaser`（小红书视频笔记拆解，视频下载委托 `xhs-hunter`）、`xhs-hunter`（站内内容搜索、图文与视频笔记采集，expert-bd 互动与蒲公英/千帆工具复用其 PC 会话）、`content-calibrator`（DNA 表现评估）、`published-track`（发布记录与指标库）。小红书登录由 `xhs-hunter` 和 `xhs-publish` 分别管理，与 `login-manager` 无关。内容调研只使用 `xhs-hunter` 的有界站内请求和已保存的材料；按下方限频规则串行执行。
 
 原生界面卡片出图使用 main crew 共享技能 `native-ui-card`，具体选题、审核、发布与记录按 `workflows/native-ui-cards.md`。
 
@@ -77,4 +74,6 @@ DNA 是**从一批作品样本提取并聚合出的内容生产规则集**：图
 - **内容硬限制**：标题 ≤ 20 字，正文 ≤ 1000 字，图片 ≤ 18 张，话题标签 ≤ 10 个（超出会被静默丢弃或限流）；图片建议 3:4 竖版，视频建议 9:16。
 - **不引流**：标题、正文、简介、图片均不得出现联系方式、二维码或站外导流；禁止谐音绕检测；行动引导只放平台内动作（评论 / 收藏 / 关注 / 进店 / 咨询）。
 - **AIGC 标注**：笔记含 AI 合成内容时，发布命令加 `--ai-declaration`，由 Creator 发布接口提交平台侧声明；纯实拍内容不加。
-- **数据诚实**：互动数据只来自 `xhs-hunter` / `xhs-engagement` / `viral-chaser` 返回或用户提供的线索，不编造；对标统计的占比必须基于实际下载样本并标注分母；估算值必须标注估算方法，不可得的数据写明"数据不可得"。
+- **数据诚实**：互动数据只来自 `xhs-hunter` / `xhs-engagement` 返回或用户提供的线索，不编造；`viral-chaser` analyzer 只返回本地视频分析数据。对标统计的占比必须基于实际下载样本并标注分母；估算值必须标注估算方法，不可得的数据写明"数据不可得"。
+
+内容搜索、获取与媒体下载调用一级技能 `xhs-hunter`。视频先由 hunter 下载，再按 `viral-chaser` 流程运行本地 analyzer；图文分析在本包 workflow 内完成。私信、评论、竞争对手直播调研与直播间互动统一转 `expert-bd`，本包只保留创作、发布、本人已发作品数据与创作者服务。蒲公英平台合作邀约属于创作者服务；普通私信仍调用 expert-bd。

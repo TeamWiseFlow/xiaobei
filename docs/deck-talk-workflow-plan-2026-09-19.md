@@ -114,7 +114,7 @@ HeyGen 实时交互数字人平台（api.liveavatar.com，LiveKit/WebRTC 流式�
 
 **结论**：来源 (b) 数字人收敛为 SaaS API——**首推火山即梦 OmniHuman**（大陆直连、单图+音频→口播视频、1 元/秒、与仓内火山生态同源）；**备选 HeyGen**（质量标杆，代理+credit，定位出海内容线）。可灵 avatar 列观察（待验证大陆端点）。百度曦灵/腾讯数智人不接（多供应商维护成本 > 收益，即梦+HeyGen 已覆盖国内外两线）。
 
-**凭据注意**：即梦 OmniHuman 走 visual.volcengineapi.com 的 **AK/SK V4 签名**，与仓内现有 `AWK_GEN_KEY`（火山方舟 Ark，Bearer key）**是两套凭据**，也与 `VOLC_ASR_*` 不同——需新开通智能视觉服务并新增 env（命名开发时定，如 `JIMENG_AK`/`JIMENG_SK`），缺失时子命令 exit 2 交 IT engineer，不静默降级。
+**凭据注意**：即梦 OmniHuman 走 visual.volcengineapi.com 的 **AK/SK V4 签名**，与仓内视频生成使用的 `VOLC_SEEDANCE_API_KEY`（火山方舟 Ark，Bearer key）**是两套凭据**，也与 `VOLC_ASR_*` 不同——需新开通智能视觉服务并新增 env（命名开发时定，如 `JIMENG_AK`/`JIMENG_SK`），缺失时子命令 exit 2 交 IT engineer，不静默降级。
 
 ### 3.4 本机运行时核查（2026-09-19 实测）
 

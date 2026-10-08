@@ -2,7 +2,7 @@
 
 通过自媒体平台搜索特定关键词内容，按搜集策略筛选潜在客户。策略 A 逐一分析创作者主页判定是否为潜在客户；策略 B 扫描帖子评论区，根据评论内容挖掘潜在客户。
 
-**依赖**：`smart-search`（其他平台搜索 URL）、`browser-guide`（其他平台浏览器操作）、`douyin-hunter`（抖音搜索与账号作品）、`douyin-im`（抖音私信）、`wx-mp-hunter`(微信公众号内容获取)、`email-ops`（邮件）、`bd-record`（去重记录）。
+**依赖**：`smart-search`（其他平台搜索 URL）、`browser-guide`（其他平台浏览器操作）、`douyin-hunter` / `xhs-hunter`（抖音/小红书搜索、账号、作品与评论）、`douyin-im`（抖音私信）、`wx-mp-hunter`(微信公众号内容获取)、`email-ops`（邮件）、`bd-record`（去重记录）。
 
 ---
 
@@ -29,7 +29,7 @@
 
 对配置的每个平台，按顺序执行：
 
-1. 抖音用 `douyin-hunter search`；其他平台使用对应搜索工具或 `smart-search` 构造 URL
+1. 抖音用 `douyin-hunter search`，小红书用 `xhs-hunter search`，微信公众号用 `wx-mp-hunter`；其他支持的平台用对应搜索工具或 smart-search，微信视频号暂无获取方案
 2. 导航到搜索结果页，等待页面加载完成
 3. 收集搜索结果列表中的内容链接（最多取配置的最大探索量）
    - 内容按由新到旧排序（使用平台默认排序）
@@ -48,7 +48,7 @@
    ```
    如果 `{"exists": true}`，则跳过该创作者，继续下一个
 
-3. 抖音用 `douyin-hunter call user_profile` 与 `douyin-hunter user-posts` 读取资料和作品；其他平台导航到创作者主页
+3. 抖音用 `douyin-hunter call user_profile` 与 `douyin-hunter user-posts` 读取资料和作品；小红书调用 `xhs-hunter call get_user_info` 与 `user-notes`；其他支持的平台导航到创作者主页
 
 4. 读取创作者主页介绍
 
@@ -80,7 +80,7 @@
 
 1. 提取帖子标识（platform, post_url, post_title）
 
-2. 抖音用 `douyin-hunter comments` 采样；其他平台导航到帖子详情页并等待评论区加载
+2. 抖音用 `douyin-hunter comments` 采样；小红书用 `xhs-hunter comments`；其他支持的平台导航到帖子详情页并等待评论区加载
 
 3. 如果支持按时间排序，切换到按时间排序，确保评论从新到旧排列
 
@@ -119,7 +119,7 @@
    - 策略 B：平台、昵称、user_id、IP属地、评论内容、评论日期、原贴url
 
 3. 按配置的反馈形式执行（仅策略 A 支持 Cold Touch 私信 / Email 联系）：
-   - **Cold Touch 私信**：逐一给符合标准的创作者发送预设话术私信；抖音先核实数字 UID 并用 `douyin-im create --my-user-id <本账号UID> --to-user-id <收件人UID> --confirm` 建会话，再用返回的 `conversation_file` 执行 `douyin-im send --conversation-file <文件> --text <消息> --confirm`。其他平台使用其消息功能，每个私信之间保持 30-60 秒间隔
+   - **Cold Touch 私信**：逐一给符合标准的创作者发送预设话术私信；抖音核实数字 UID 后用 `douyin-im send-to --to-user-id <收件人UID> --text "已授权正文" --confirm`，会话建立与保存由脚本完成；小红书用 expert-bd 的 `xhs-im send <收件人ID> "已授权正文" --confirm`。其他平台使用其消息功能，每个私信之间保持 30-60 秒间隔
    - **Email 联系**：先校验 `email-ops` 所需环境变量是否齐全，若不全则跳过 Email 步骤并记录；齐全则使用 `email-ops` 发送邮件，每封邮件之间保持 30-60 秒间隔
 
 4. 使用 message 工具将汇总报告发送给用户

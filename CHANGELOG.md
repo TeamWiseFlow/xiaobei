@@ -1,11 +1,15 @@
-# v5.7.3(2026-09-30)
+# v5.7.3(2026-10-10)
 
+- `aigc-video-gen music` 增加百炼业务空间 `fun-music-v1`：支持提示词/歌词、纯音乐、演唱性别及 MP3/WAV，同步生成后下载音频并保存 metadata；新增音乐专用选路，自动优先 MiniMax 再完整百炼业务空间，支持显式 `--platform dashscope`，火山/Agent Plan 视频凭据不触发音乐生成。
 - deck-render、通用视觉片段、片尾和字幕按系统选择默认中文字体：Windows 使用自带微软雅黑且安装器不再下载 Noto；Linux/macOS 保留 Noto Sans CJK SC。旧 Python 动效兼容入口也可读取 Windows 字体文件。
 - `expert-video` 的新视觉片段统一走 `video-producer visual-render`（HyperFrames/GSAP）；片尾改用该渲染器，拼贴 B-roll 改为独立纸片与可控时间轴，并把可选 i2v 批调收进 `video-producer`，删除独立 `collage-broll` 工具。旧 JSON 动效项目暂保留兼容入口。
 - 安装/更新与 Docker 构建预装 deck-render 的 FFmpeg、锁定 HyperFrames/Playwright Chromium 和 Noto Sans CJK SC；运行时从包内浏览器路径启动渲染。
 - awk-tts 新增声音复刻/音色设计、音色状态查询与绑定档案；默认沿火山 → 百炼业务空间 → Agent Plan 选路，火山支持新版单 key 和旧版双头鉴权。
-- 火山视频仅支持 Seedance 2.5 → 2.0 fast，按时长和参考素材数量筛选候选链，补齐参考音频、首尾帧互斥与 2.5 adaptive 比例适配。
-- `awk-img-gen` 恢复火山：AWK_GEN_KEY → 百炼业务空间 → AWK_API_KEY；Seedream 5.0 lite → 4.5，支持显式平台、火山尺寸校验及 PNG 输出。
+- 百炼业务空间 TTS 候选链增加 `qwen-audio-3.1-tts-flash`，排序在 3.0 Flash 前，并适配模型专属默认音色和自定义音色档案；公共 ASR 与 TTS 自检按 `qwen-audio-3.1-asr-flash` → `qwen-audio-3.0-asr-flash` 尝试，显式模型关闭模型回退，Agent Plan 保留原模型候选。
+- ASR 路由及火山/百炼后端统一放入公共 `skills/_shared`；视频转写、口播剪辑、CP 旁白对齐、TTS 自检及 Awada 语音消息共用一套实现，TTS 自检也按火山 → 百炼业务空间 → Agent Plan 回退，全部失败仅警告。
+- 火山视频仅支持 Seedance 2.5 → 2.0 fast，按时长和参考素材数量筛选候选链，补齐参考音频、首尾帧互斥与 2.5 adaptive 比例适配；专用凭据改名为 `VOLC_SEEDANCE_API_KEY`（原 `AWK_GEN_KEY`）。
+- `aigc-video-gen` 的百炼业务空间改用 `wan3.0-video` → `wan3.0-video-prime`，统一适配文生、首帧/首尾帧与多模态参考，支持2–30秒/智能时长、480P、参考音频和无声输出；Agent Plan 保留 HappyHorse/Wan2.7 候选链，显式模型也执行参数与素材校验。
+- `awk-img-gen` 仅保留百炼业务空间与 Agent Plan，移除火山生图；新增 `--platform dashscope|plan` 固定端点、凭据和候选链，默认优先业务空间再 Agent Plan。Agent Plan 默认调用 `qwen-image-3.0-pro`，不可用时回退 `wan2.7-image-pro` → `wan2.7-image`。
 
 ### 小红书能力升级
 

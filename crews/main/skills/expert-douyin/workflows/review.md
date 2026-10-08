@@ -29,7 +29,7 @@
 
 数据限制（归因时必须如实标注）：
 
-- `douyin-engagement` 自动读取创作者作品列表中经账号 UID 和完整作品 ID 核验的本人播放量，以及公开详情实际返回的点赞、评论、分享和收藏。完播、跳出、平均观看、曝光、点击率、画像及留存当前不自动获取。按本次结果的 `metrics`、`field_sources`、`unavailable_reasons` 判断实际采集值；`complete: false` 时必须标注缺项，库内默认零不能当作实测零。
+- `douyin-engagement` 临时复用发布 profile 的 cookie/UA，通过 HTTP 读取本人作品 item/list，以完整作品 ID 匹配；公开详情只补充缺失的点赞、评论、分享和收藏。基础指标及平台实际返回的完播、跳出、封面点击率等深指标分别来自 `metrics` 与 `deep`，深指标回填 `deep_metrics`。按 `field_sources`、`unavailable_reasons` 和采集时间判断数据可用性；缺项不补零，历史值不视为本次采集。画像、留存等未返回的字段仍写数据不可得。
 - 播放量缺失或过期时不计算点赞率、评论率等以播放为分母的指标；根据可得互动量及同账号基线分析。不能从视频时长或互动量推导实测完播、跳出、观看时长，基础取数成功不代表后台数据完整。
 - 精确的传播系数（每次分享带来多少新观众）不可得；只能用 分享/(点赞+评论) 作为传播效率的代理估算。
 - 用户级留存数据不可得。
@@ -40,7 +40,7 @@
 | 漏斗卡点 | 先怀疑的 template 语义段 | 可回溯的 DNA 维度 |
 |---------|--------------------------|------------------|
 | 播放低（推荐/点击瓶颈） | 选题、标题与封面 | topic-angle、title-cover |
-| 点击后快速划走（有用户提供的观看证据） | 内容创意、制作规格、口播文案 | content-idea、production-spec、narration-script |
+| 点击后快速划走（有本次采集或用户提供的观看证据） | 内容创意、制作规格、口播文案 | content-idea、production-spec、narration-script |
 | 点赞低 | 内容创意、选题 | content-idea、topic-angle |
 | 评论低 | 内容创意（讨论点）、口播文案 | content-idea、narration-script |
 | 分享低 | 选题、内容创意 | topic-angle、content-idea |

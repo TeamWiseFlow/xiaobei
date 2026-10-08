@@ -315,8 +315,15 @@ GLOBAL_SKILL_COUNT=0
 if [ -d "$PROJECT_ROOT/skills" ]; then
   mkdir -p "$OPENCLAW_HOME/skills"
   for skill_dir in "$PROJECT_ROOT"/skills/*/; do
+    [ -d "$skill_dir" ] || continue
+    skill_name="$(basename "$skill_dir")"
+    # 公共共享库随技能一起部署，不作为可调用 skill 加入 allowlist。
+    if [ "$skill_name" = "_shared" ]; then
+      rm -rf "$OPENCLAW_HOME/skills/$skill_name"
+      ln -s "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
+      continue
+    fi
     if [ -f "${skill_dir}SKILL.md" ]; then
-      skill_name="$(basename "$skill_dir")"
       rm -rf "$OPENCLAW_HOME/skills/$skill_name"
       ln -s "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
       GLOBAL_SKILL_COUNT=$((GLOBAL_SKILL_COUNT + 1))

@@ -1,6 +1,6 @@
 ---
 name: published-track
-description: 发布记录追踪。使用 SQLite 数据库记录所有平台发布内容及其互动数据，按平台分表管理。三大块：与发布技能结合（发布记录 + DNA 关联）、数据更新、查询与设置。发布数据的 DNA 表现评估由 content-calibrator 消费。
+description: 发布记录与指标数据库管理，负责记录入库、指标回填、查询和设置；具体平台取数由专家包的 engagement tool 完成，DNA 表现评估由 content-calibrator 消费。
 metadata:
   openclaw:
     emoji: "📊"
@@ -114,7 +114,7 @@ published-track record \
 
 本技能只负责发布记录、查询和 `update-metrics` 写库。按平台使用专家包内的取数工具：抖音 `douyin-engagement`、小红书 `xhs-engagement`、微信公众号 `wx-mp-engagement`、微信视频号 `wx-channel-engagement`。各工具按作品 ID 或发布记录行 ID 匹配并写库；不要从公开作品的缺失字段推断零值。B站、快手及其余平台由用户提供数据时再调用 `update-metrics` 补录。
 
-抖音通过 `douyin-engagement` 自动更新创作者作品列表中核验的本人播放量，以及公开详情实际返回的点赞、评论、分享和收藏；后台深指标当前不自动获取。视频与图文链接都可作为发布记录链接。播放量匹配必须满足当前登录账号 UID 与完整作品 ID 一致；列表未返回、字段缺失或请求失败时保留原值，不能用公开详情的播放零值覆盖。只将本次结果 `metrics` 中的字段视为新采集值，结合 `field_sources`、`unavailable_reasons` 报告来源与缺项；库内默认零和保留的历史值不代表本次平台实测。`deep_metrics`、`deep_captured_at`、`deep_source` 继续用于历史兼容和用户主动提供数据时的补录，深指标只保留最新 JSON 及其时间、来源。
+平台接口、登录、作品匹配、分页和字段来源由各专家包的 engagement tool 管理，本技能不发起平台请求，也不保留取数脚本。仅将工具实际返回的字段写入；缺项不补零，失败保留旧值。库内默认零与历史值不代表本次采集结果。`deep_metrics`、`deep_captured_at`、`deep_source` 保存工具提供的深指标 JSON、采集时间和来源，每次只保留最新值。
 
 ### 流程 2B·用户提供数据（Agent 补录）
 

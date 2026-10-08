@@ -49,6 +49,22 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return env.data as T;
 }
 
+export interface DouyinSignInput {
+  queryString: string;
+  postData?: string;
+  ua?: string;
+}
+
+/** Legacy web-detail signature; platform requests stay on the client. */
+export async function douyinSign(input: DouyinSignInput): Promise<string> {
+  const data = await postJson<{ a_bogus: string }>("/api/v1/sign/douyin", {
+    queryString: input.queryString,
+    postData: input.postData ?? "",
+    ua: input.ua,
+  });
+  return data.a_bogus;
+}
+
 // ── bilibili ─────────────────────────────────────────────────────────────────
 
 export interface BilibiliWbiSignInput {

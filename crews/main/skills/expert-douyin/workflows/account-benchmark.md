@@ -32,6 +32,7 @@
 
 | 来源 | 工具 |
 | --- | --- |
+| 图文链接（对标账号代表作） | 调用 `douyin-hunter fetch --download-media --output-dir <样本目录> --url <链接>`，按本包 Style DNA workflow 回读正文与有序图片后分析，不调用 viral-chaser |
 | 视频链接（对标账号代表作） | self-spawn subagent 走 `viral-chaser`（转录 + 时长 + 标题/描述 + 互动线索 + 关键帧） |
 | 对标视频评论 | `douyin-hunter comments --url <视频链接> --count 40 --output douyin/ref/{benchmark-dna-id}/comments/{sample-id}.json`；根据结果另写分析摘要 |
 | 本地文字稿 / 脚本 | 整理为 `.md` 直接输入 profiler |

@@ -50,6 +50,8 @@ xhs/dna/{dna-id}/
 
 ## 样本获取
 
+图文样本在本 workflow 内分析，不调用 viral-chaser。先用对应 hunter 的 `fetch --download-media --output-dir` 保存正文、真实指标与有序图片，再逐图观察封面、图组结构、正文表达及 CTA，整理为样本稿并调用本包 style-profiler 的 `--kind note`。视频样本由 viral-chaser 获取转录和关键帧，下载仍由 hunter 完成。
+
 **先判作品类型**（视频 / 图文）：它决定用哪套维度框架、`--kind` 取值与目标 dna-id；同一个 DNA 不混型。
 
 | 来源 | 处理 |

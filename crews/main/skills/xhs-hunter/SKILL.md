@@ -1,6 +1,6 @@
 ---
 name: xhs-hunter
-description: 小红书(xhs)内容采集与搜索。用于搜索笔记和用户、查看推荐流与频道、获取用户主页和作品、读取笔记正文/图片/视频/评论/消息、批量下载媒体及导出表格；为 main 的小红书运营和 BD 共用。
+description: 小红书(xhs)内容采集与搜索。用于搜索笔记和用户、查看推荐流与频道、获取用户主页和作品、读取笔记正文/图片/视频/评论、评论与@提醒、点赞收藏提醒、新增关注通知、批量下载媒体及导出表格。
 metadata:
   openclaw:
     emoji: 🔎
@@ -52,6 +52,21 @@ xhs-hunter call get_unread_message
 
 `fetch` 的 `note.metrics` 保留平台原始字符串，并提供 `liked_count_num` 等数值字段；`user-notes` 的现有计数字段也增加对应 `_num` 字段。遇到 `"2.7万"` 等缩写时用 `_num` 运算，无法解析时 `_num` 为 `null`，不要猜测数值。
 
+## 互动通知读取
+
+笔记评论、评论与 @ 提醒、点赞收藏提醒及新增关注通知均由本技能读取。
+
+```bash
+xhs-hunter call get_unread_message
+xhs-hunter call get_metions --args '[""]'
+xhs-hunter call get_likesAndcollects --args '[""]'
+xhs-hunter call get_new_connections --args '[""]'
+```
+
+`get_unread_message` 返回未读通知统计；其余三个命令分别读取首批评论/@提醒、点赞收藏提醒和新增关注通知。保留实际方法名 `get_metions`。结果以平台响应为准，失败不当作没有通知。
+
+私信会话、私信历史及私信未读查询由 expert-bd 的 `xhs-im` 提供；笔记评论发布、点赞、收藏和关注等写操作按 expert-bd 能力表执行，目前缺少接口的项目保留为不支持。
+
 ## 批量采集
 
 ```bash
@@ -74,3 +89,5 @@ xhs-hunter call <method> --args '[...]' --kwargs '{...}'
 `user-notes` 和 `feed` 默认最多取 20 条，可通过 `--count` 调整至 100；需要完整翻页时使用 `call get_user_all_notes` 等全量接口。
 
 `call` 还暴露搜索历史同步和网页埋点上报等 PC 接口。只有任务确实需要时才调用这些会改变服务端状态的接口。阅读、采集和下载均不发布内容；创作者端发布与自有作品数据仍使用 `xhs-publish`、`xhs-engagement`。
+
+本技能是一级内容采集、互动通知读取与下载入口；私信、评论发布/回复、点赞、收藏、关注等写操作及直播互动走 expert-bd，创作、发布、本人作品数据与创作者服务走 expert-xhs。`fetch --video-only --download-media` 仅接受视频且只下载视频文件，供 viral-chaser 使用；图文默认 fetch 下载有序图片，分析在 expert-xhs workflow 完成。

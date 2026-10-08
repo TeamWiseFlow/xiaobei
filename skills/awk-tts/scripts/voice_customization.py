@@ -12,7 +12,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
 from bailian_media import APIError, download, fingerprint, media_info, request, save_json, upload, workspace
 
-MODELS = ['qwen-audio-3.0-tts-plus', 'qwen-audio-3.0-tts-flash']
+MODELS = ['qwen-audio-3.0-tts-plus', 'qwen-audio-3.1-tts-flash', 'qwen-audio-3.0-tts-flash']
 CUSTOMIZATION = '/services/audio/tts/customization'
 
 

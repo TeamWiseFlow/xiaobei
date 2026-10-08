@@ -11,7 +11,7 @@ metadata:
 
 # Login Manager（平台登录态管理）
 
-管 2 个浏览器登录态：`bilibili` / `kuaishou`。抖音使用 `expert-douyin` 包内的 `douyin-login` 独立 API 登录。其他平台由各自 skill 管理。
+管 2 个浏览器登录态：`bilibili` / `kuaishou`。抖音发布/取数用 `douyin-publish login` 的 Camoufox 持久化会话，采集/互动用 `douyin-hunter` 包内 `douyin-login` 独立 API 登录，两者均不经过本技能。其他平台由各自 skill 管理。
 
 ## 支持的平台
 
