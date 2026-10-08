@@ -11,12 +11,33 @@
 - `aigc-video-gen` 的百炼业务空间改用 `wan3.0-video` → `wan3.0-video-prime`，统一适配文生、首帧/首尾帧与多模态参考，支持2–30秒/智能时长、480P、参考音频和无声输出；Agent Plan 保留 HappyHorse/Wan2.7 候选链，显式模型也执行参数与素材校验。
 - `awk-img-gen` 仅保留百炼业务空间与 Agent Plan，移除火山生图；新增 `--platform dashscope|plan` 固定端点、凭据和候选链，默认优先业务空间再 Agent Plan。Agent Plan 默认调用 `qwen-image-3.0-pro`，不可用时回退 `wan2.7-image-pro` → `wan2.7-image`。
 
+### 平台职责与视频分析
+
+- `expert-douyin` / `expert-xhs` 聚焦创作、发布、本人作品数据与创作者服务；私信及其他互动写操作、竞争对手直播调研与直播间互动统一收进 `expert-bd`，直播 workflow 按调研与互动拆分。内容搜索、账号/作品/评论读取、互动提醒与媒体下载统一由一级 `douyin-hunter` / `xhs-hunter` 提供。
+- `viral-chaser` 改为编排 hunter 取资料与下载，再用本地 analyzer 提取音频、公共 ASR 转写和全片关键帧；删除 analyzer 内的登录、探活、链接解析与下载链路。图文由 hunter 下载、对应平台专家 workflow 分析，后续 B 站与快手沿用相同职责划分。
+- 公共 `smart-search` 不支持抖音、小红书、微信公众号和微信视频号；前三者直接调用对应 hunter，视频号暂未提供搜索与取内容方案。`published-track` 只管理发布记录、查询与指标入库，各平台 engagement 工具负责取数后回填。
+
+### 抖音发布、采集与本人取数
+
+- 抖音视频/图文恢复 Camoufox 持久化 session `douyin` 的浏览器发布链，统一入口提供本地预览与确认发布；本人作品取数通过 HTTP 临时读取同一 profile 的 cookie/UA，不另存登录态、不走 login-manager。创作者 `item/list` 优先提供播放量与深指标，公开详情仅补缺失互动计数。
+- 视频发布支持显式传入 3:4 竖封面和 4:3 横封面，一键与分步流程都上传并保存双封面；比例不符时等比补浅灰底，保留完整内容，Brief 与交付规则同步要求双封面和文字安全区。
+- 上传完成以视频可播放、真实上传/转码状态结束且连续就绪为准，排除常驻提示中的“上传中”文案；标题与简介改为真实键盘输入后读回，兼容 Slate 话题节点、Unicode 空白、短标题与空简介，简介校验完整正文。AIGC 声明确认单选框选中后才保存，缺视频、标题、封面或声明时停止提交。
+- 封面预览在当前页面内按每次上传重新观察，避免大图列表超过命令行长度、上次运行残留与旧预览误判；设置封面后视频元素消失时，仅重开同一草稿一次，恢复后复核视频时长、标题、简介、双封面与 AIGC 声明。补传视频后重新填表与设置封面。
+- 新增草稿续编、状态检查与短信验证续接，验证码通过私有文件读取、真实键盘输入；等待验证或结果未知时保留页面和提交记录，阻止重复提交及共用浏览器的关闭操作。取链按本次提交前作品 ID、提交时间和完整标题核查，不将最新旧作品误记为成功。
+- `douyin-hunter` 媒体下载支持 `douyinpic.com`；用户、作品和评论 ID 按字符串完整传递，账号作品查询使用完整 `sec_uid` 并核对返回作者，禁止使用终端摘要中的缩略 ID。
+
+### 录屏交付与安装可靠性
+
+- `ui-demo` 有头演习的后续命令统一保持 `--headed`，避免 daemon 切换模式导致窗口与页面丢失；录屏按实际时长、关键帧与分辨率检查，经 IM 交付前转为 MP4。无声原始录屏按素材检查，整理成片画布并合成音轨后再走成片闸门。
+- `video-edit extract` 新增 `--mode full`，自动读取时长并转换完整 MP4/WebM 等视频；支持保持原始分辨率、无音轨以及 H.264 / yuv420p / faststart 输出。
+- 源码/Docker 与四个 tarball 安装器共用 `install-skill-deps.mjs`，扫描公共、crew 与嵌套工具的技能依赖；哈希命中后仍检查 `node_modules` 和单包是否存在，目录丢失时补装，安装失败或结果不完整时不写成功哈希。`ui-demo` 缺依赖时返回明确的修复指引。
+
 ### 小红书能力升级
 
-- 新增一级技能 `xhs-hunter`：使用独立的 PC 扫码登录态，支持笔记和用户搜索、主页与推荐流查询、笔记正文及评论采集、图片和视频下载、批量采集与表格导出；供小红书运营和 BD 共用。`viral-chaser` 的小红书视频下载改为调用该技能。
+- 新增一级技能 `xhs-hunter`：使用独立的 PC 扫码登录态，支持笔记和用户搜索、主页与推荐流查询、笔记正文及评论采集、图片和视频下载、批量采集与表格导出；供小红书运营和 BD 共用，并为 `viral-chaser` 提供视频资料与下载。
 - `xhs-publish` 与 `xhs-engagement` 改用持久化的 Creator 本地 HTTP 会话，扫码二维码可保存为图片供用户确认；支持图文和视频发布、发布时声明 AI 合成内容，以及已发作品的互动数据抓取。每日取数只扫描最近三页并直接更新 `published-track`。
 - 创作者数据分析写入 `pub_xhs.deep_metrics`；可用时将单篇作品观众画像完整保存到 `pub_xhs.fan_portrait`。取数缺字段或接口无数据时保留已有记录，不写入猜测值。
-- 新增 `xhs-live`、`xhs-im`、`xhs-pugongying`、`xhs-qianfan` 及直播控场、蒲公英合作、千帆合作 workflow：覆盖直播间读取与监听、私信会话、达人合作查询与邀约、分销商资料查询。涉及发送的操作需确认具体内容。
+- 新增 `xhs-live`、`xhs-im`、`xhs-pugongying`、`xhs-qianfan`：直播间读取与监听、私信会话归 `expert-bd`；达人合作查询与邀约、分销商资料查询及蒲公英/千帆合作 workflow 归 `expert-xhs`。涉及发送的操作需确认具体内容。
 - PC 与 Creator 共用的 HTTP、会话和 Relay 客户端收敛到 `_shared/xhs_utils`；小红书请求所需计算值由 OFB Relay 提供。`login-manager` 不再管理小红书，移除旧的 `xhs-content-ops`、`xhs-interact` 和小红书浏览器取数链路；`expert-xhs` 的内容调研改走有界的 `xhs-hunter` 请求。
 
 ### Content Producer 新增 Deck Talk workflow

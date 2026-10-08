@@ -82,6 +82,7 @@ def download(url, target):
                 for d in (
                     "douyinvod.com",
                     "douyin.com",
+                    "douyinpic.com",
                     "byteimg.com",
                     "ibytedtos.com",
                     "pstatp.com",

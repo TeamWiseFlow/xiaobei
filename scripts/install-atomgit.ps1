@@ -799,6 +799,11 @@ function Main {
     Extract-Tarball $tb
 
     Install-Deps
+    Write-Stage "Installing per-skill Node.js dependencies"
+    & $NodeExe (Join-Path $Root 'scripts\install-skill-deps.mjs') `
+        --root $Root --state-dir $OpenclawHome `
+        --npm-cli (Join-Path $Root 'tools\node\node_modules\npm\bin\npm-cli.js')
+    if ($LASTEXITCODE -ne 0) { throw "skill Node.js dependency install failed (exit $LASTEXITCODE)" }
     Install-PythonDeps
     Install-AwadaPlugin
     Write-Stage "Installing deck-render runtime"

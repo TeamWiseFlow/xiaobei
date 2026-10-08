@@ -24,7 +24,7 @@ case "$cmd" in
 用法: video-edit <子命令> [参数...]
 
 子命令:
-  extract    从 MP4 抽段（head/tail/slice）并可选多段拼接
+  extract    从视频抽段（head/tail/slice）、全片转 MP4（full）并可选多段拼接
   assemble   把 artifacts/ 下按数字前缀排序的片段拼成成片
   audio-mix  给视频加旁白/背景音乐（混音）
   subtitles  烧录 SRT/ASS 字幕

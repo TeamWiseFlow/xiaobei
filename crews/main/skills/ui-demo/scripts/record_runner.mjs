@@ -22,12 +22,11 @@
 // 退出码：
 //   0 = 成功
 //   1 = 参数错误 / 步骤执行出错（已录到的部分仍会保存）
-//   3 = camoufox 浏览器未安装（提示先跑 `camoufox-cli install`）
+//   3 = Node 依赖或 camoufox 浏览器未安装（按错误提示修复）
 
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { Camoufox } from "camoufox-js";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 function die(msg, code = 1) {
   console.error(JSON.stringify({ ok: false, error: msg }));
@@ -169,6 +168,19 @@ function makeHelpers(page, baseURL) {
 
 // ── 主流程 ──────────────────────────────────────────────────────────────
 const opts = parseArgs(process.argv.slice(2));
+
+let Camoufox;
+try {
+  ({ Camoufox } = await import("camoufox-js"));
+  await import("playwright-core");
+} catch (e) {
+  if (["ERR_MODULE_NOT_FOUND", "MODULE_NOT_FOUND"].includes(e.code)) {
+    const skillDir = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
+    const quotedDir = "'" + skillDir.replaceAll("'", "'\\''") + "'";
+    die(`ui-demo Node 依赖缺失（camoufox-js / playwright-core）。请重跑统一安装流程；单独修复可运行: npm install --prefix ${quotedDir} --omit=dev --no-audit --no-fund（${e.message}）`, 3);
+  }
+  die(`ui-demo Node 依赖加载失败: ${e.message}`, 3);
+}
 
 const outputAbs = path.resolve(opts.output);
 fs.mkdirSync(path.dirname(outputAbs), { recursive: true });

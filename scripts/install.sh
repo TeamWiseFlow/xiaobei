@@ -1111,6 +1111,11 @@ main() {
     # ─── Step 3: pnpm install --prod（拉依赖，无 OOM）────────
     ui_stage "Installing dependencies (pnpm install --prod)"
     pnpm_install_prod
+    run_required_step "Installing per-skill Node.js dependencies" \
+        env PATH="$WISEFLOW_ROOT/tools/node/bin:$PATH" \
+        "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/install-skill-deps.mjs" \
+        --root "$WISEFLOW_ROOT" --state-dir "$OPENCLAW_HOME" \
+        --npm-cli "$WISEFLOW_ROOT/tools/node/lib/node_modules/npm/bin/npm-cli.js"
 
     # ─── Step 4: python skill deps ───────────────────────────
     ui_stage "Installing python skill deps"

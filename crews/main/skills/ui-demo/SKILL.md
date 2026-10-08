@@ -29,6 +29,10 @@ metadata:
 
 **有头/无头总原则**：全程默认无头。只有两种情况用有头：① 用户明确表示要旁观（见 Phase 2 的必问环节）；② 无头模式无法正常工作（页面渲染异常、必须人工过验证码等），此时改有头并告知用户原因。
 
+**⚠️ 同一 session 的模式必须保持一致：以 `--headed` 打开后，后续每条 `camoufox-cli` 命令（包括 `eval`、`snapshot`、`screenshot`、`scroll`、cookie 导出和 `close`）都必须带 `--headed`，直到关闭 session。漏带会重启 daemon、关闭浏览器窗口并丢失当前页面。需要切换模式时，先按原模式 `close`，再按新模式 `open`。**
+
+以下未带 `--headed` 的示例适用于无头 session；有头 session 使用时必须补上该参数。Phase 3 的 `ui-demo` 执行器创建独立浏览器，不复用演习 daemon。
+
 ---
 
 ## Phase 1: Discover（camoufox-cli 探查）
@@ -80,7 +84,11 @@ camoufox-cli --session ui-demo --json screenshot /tmp/ui-demo-check.png
 
   ```bash
   camoufox-cli --session ui-demo --headed --viewport 1280x720 --json open <起始url>
+  camoufox-cli --session ui-demo --headed --json snapshot
+  camoufox-cli --session ui-demo --headed --json screenshot /tmp/ui-demo-check.png
   ```
+
+  **⚠️ 有头演习后续所有命令必须持续带 `--headed`，包括导出 cookie 和最终 `close`；漏带会重启 daemon 并丢页面。** 从有头探查进入本步骤时，先关闭旧 session 的命令也必须带 `--headed`。
 
   旁观模式下的演习纪律：
   - 每一步操作**前**，在聊天里先说这一步要做什么（对应未来的字幕文案），再执行；
@@ -102,7 +110,7 @@ camoufox-cli --session ui-demo --json screenshot /tmp/ui-demo-check.png
 ### 演习收尾（强制）
 
 1. 把**录制计划**发给用户确认：步骤清单（每步一句话+字幕文案）、预计时长、明确不录的内容。用户认了才进 Phase 3。
-2. 若 Phase 3 需要登录态，先导出 cookie（见下），再关演习 session：
+2. 若 Phase 3 需要登录态，先导出 cookie，再关演习 session。以下为无头示例；**有头演习两条命令都必须加 `--headed`**：
 
    ```bash
    camoufox-cli --session ui-demo --json cookies export <project-dir>/cookies.json
@@ -133,7 +141,9 @@ ui-demo --steps <project-dir>/demo-steps.mjs \
 | `--base-url` | env `BASE_URL` | 注入 steps 函数的 `baseURL` |
 | `--cookies` | — | 演习 session 导出的 cookie 文件，录制前注入（跳过登录画面） |
 
-退出码：0 成功 / 1 参数错或步骤出错（已录到的部分仍保存）/ 3 浏览器未装（先 `camoufox-cli install`）。
+退出码：0 成功 / 1 参数错或步骤出错（已录到的部分仍保存）/ 3 技能 Node 依赖或浏览器未装（按 `error` 提示修复；浏览器未装时先 `camoufox-cli install`）。
+
+Node 依赖由统一安装流程按本技能 `package.json` 安装到技能目录；全局 `camoufox-cli` 的嵌套依赖不能替代本技能依赖。收到依赖缺失提示时，重跑统一安装流程，或执行提示中的 `npm install --prefix ... --omit=dev` 修复命令。
 
 ### demo-steps 文件模板
 
@@ -221,9 +231,23 @@ export default async function run(demo) {
 
 ## 交付
 
-1. 录完先看一遍关键帧确认画面正常（可 `video-review <demo.webm>` 自检辅助）
-2. 把视频文件本体发给用户，附时长与分辨率
-3. 需要转格式、与其他素材拼接、加 BGM/旁白 → 交给 `video-edit` 技能
+1. 确认录制报告 `ok=true`、文件非空。用 `video-edit frames` 抽帧，核对每个关键步骤、字幕、鼠标和首尾画面；从抽帧报告读取实际时长，与录制计划比对，分辨率以录制报告 `resolution` 为准：
+
+   ```bash
+   video-edit frames <project-dir>/output/demo.webm --interval 3 --width 1280 \
+       --output-dir <project-dir>/review/frames
+   ```
+
+2. **原始录屏素材不直接运行 `video-review` 成片闸门**：内容区可能低于 720p，且默认无音轨，不能据此判定录制异常。需要进入成片流水线时，用 `video-edit` 按目标成片分辨率（如 1280x720 / 1920x1080）整理画布、按需求合成旁白/BGM，再运行 `video-review`；仅转为 MP4 不会补足分辨率或音轨。
+3. 经微信等 IM 渠道交付时，先用 `video-edit extract` 将完整录屏转为 **MP4（H.264 + yuv420p + faststart）**，避免 WebM 上传/预览失败。`--keep-resolution` 保持录屏内容区尺寸，`--mode full` 由脚本自动读取时长并处理全片：
+
+   ```bash
+   video-edit extract --input <project-dir>/output/demo.webm --mode full \
+       --keep-resolution --no-audio --output <project-dir>/output/demo.mp4
+   ```
+
+   转码后复查时长与关键帧。此 MP4 仍是无声录屏素材，适用上面的素材自检规则。
+4. 按用户要求发送视频文件本体，附实际时长、分辨率与无音轨说明。拼接、配音、配乐等后处理走 `video-edit` 技能。
 
 ---
 
@@ -231,6 +255,7 @@ export default async function run(demo) {
 
 - [ ] Phase 1 完成，每个页面字段映射已确认（CSS/text 选择器，不是 @ref）
 - [ ] Phase 2 完成：已问过用户是否旁观；全流程走通无报错
+- [ ] 演习 session 的 `--headed` 一致性已检查；cookie 导出与 `close` 也使用原模式
 - [ ] 录制计划（步骤+字幕+不录清单）已经用户确认
 - [ ] 脚本选择器来自 Phase 1/2 的实际观察，无假设
 - [ ] 所有点击使用 `moveAndClick`（含描述性 label）
@@ -249,6 +274,7 @@ export default async function run(demo) {
 6. **混淆标题和正文输入框** → Phase 1 必须明确区分，标题和正文通常是独立的元素
 7. SPA 路由切换后覆盖层丢失 → steps 里调 `injectOverlays()` 手动补
 8. 演习完不 close session → daemon + Firefox 常驻吃内存，演习收尾必须 close
+9. 有头 session 后续命令漏带 `--headed` → daemon 重启丢页面；所有命令直到 `close` 都保持一致
 
 ---
 
@@ -257,7 +283,7 @@ export default async function run(demo) {
 ### 1. 超时与 session 正忙
 
 - camoufox-cli 命令超时：**不要立即重启浏览器或放弃任务**。等待 30 秒后原 session 继续；仍失败再等 30 秒；60 秒后仍报错才 `close` 重开；重开后仍报错才停下反馈用户。
-- 命令返回 "session ui-demo 正忙" → 有上一条命令还在跑，等待片刻重试，不要并发下发命令。
+- 同一 session 的命令必须串行：等待上一条完成，再发下一条。返回 "session ui-demo 正忙" 时等待片刻重试，不要同时重试或切换 `--headed` 模式。
 
 ### 2. 文件上传
 
