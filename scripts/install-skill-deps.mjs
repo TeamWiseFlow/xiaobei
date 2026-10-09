@@ -56,12 +56,12 @@ function main(argv) {
       script = path.resolve(dir, installer.script);
     }
     return { dir, script, dependencies: Object.keys(pkg.dependencies || {}) };
-  });
+  }).filter(skill => skill.script || skill.dependencies.length > 0);
   const currentHash = digest.digest("hex");
   const stamp = path.join(path.resolve(opts["state-dir"]), ".skill-pkg-hash");
   const storedHash = fs.existsSync(stamp) ? fs.readFileSync(stamp, "utf8").trim() : "";
   const missing = skill => {
-    if (!fs.existsSync(path.join(skill.dir, "node_modules")) || skill.dependencies.some(
+    if (skill.dependencies.some(
       name => !fs.existsSync(path.join(skill.dir, "node_modules", name, "package.json"))
     )) return true;
     if (!skill.script) return false;
