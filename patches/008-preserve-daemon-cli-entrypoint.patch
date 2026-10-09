@@ -1,0 +1,31 @@
+diff --git a/scripts/write-cli-compat.ts b/scripts/write-cli-compat.ts
+index 78190551b7f..dd75c17cefe 100644
+--- a/scripts/write-cli-compat.ts
++++ b/scripts/write-cli-compat.ts
+@@ -13,6 +13,26 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+ const distDir = path.join(rootDir, "dist");
+ const cliDir = path.join(distDir, "cli");
+
++// tsdown already emits this public barrel. Keep its complete named exports
++// instead of replacing it with a shim inferred from private chunk aliases.
++const publicEntrypoint = path.join(cliDir, "daemon-cli.js");
++if (fs.existsSync(publicEntrypoint)) {
++  const source = fs.readFileSync(publicEntrypoint, "utf8");
++  const exportNames = new Set(
++    [...source.matchAll(/export\s*\{([^}]+)\}/g)].flatMap((match) =>
++      match[1].split(",").map((spec) =>
++        spec
++          .trim()
++          .split(/\s+as\s+/)
++          .at(-1),
++      ),
++    ),
++  );
++  if (LEGACY_DAEMON_CLI_EXPORTS.every((name) => exportNames.has(name))) {
++    process.exit(0);
++  }
++}
++
+ const findCandidates = () =>
+   fs.readdirSync(distDir).filter((entry) => {
+     const isDaemonCliBundle =
