@@ -1,129 +1,42 @@
 ---
 name: weibo-publish
-description: 通过 forked camoufox-cli 持久化 session weibo 在微博发布图文/视频内容。微博 API 对个人开发者不友好，浏览器方案更实用。
+description: 微博内容发布：脚本预览、媒体上传、提交结果保存和 published-track 入库。
 metadata:
   openclaw:
-    emoji: 📢
+    emoji: 📤
+    requires:
+      bins:
+        - node
 ---
+
 
 # 微博发布
 
-通过 **camoufox-cli** 持久化 session `weibo`（有且只有一个，fail-first 队列：同 session 已有命令在跑时新命令直接 fail）在微博上发布内容（文字、图片、视频）。微博 API 对个人开发者申请门槛高，浏览器自动化是更实用的方案。
+登录使用 `weibo-hunter login/export`，执行前检查 `weibo-publish check`。
 
-> **主力后端 = `target=camoufox`**。下方命令 / 示例只针对 `target=camoufox`。
-> **`target=host` / `target=node`**：只按本 skill 的「流程 + 提示事项」走——何时有头 / 何时无头 / 频率限制 / 错误处理约定是**后端无关**的，照本 skill 执行。不要照搬 `camoufox-cli ...` 命令，用你当前后端自带的浏览器工具语义调用即可。
+`weibo-publish methods` 返回支持参数及取值。
 
----
-
-## 前置条件
-
-1. 持久化 session `weibo` 已登录（登录态存 session profile 里）。本 skill 与 login-manager **完全无关**——自管探活 + 登录，**不导出 cookie/UA 落中央存储**。
-2. 首次使用 / 登录态失效时，走自管**有头手动**登录流：
-   - `camoufox-cli --session weibo --persistent --headed --viewport 1920x1080 --json open "https://weibo.com"`
-   - `--viewport 1920x1080`：camoufox 默认按指纹给移动端窗口比例，二维码看不全；强制桌面 1920×1080
-   - 告知用户「**微博** 浏览器已打开，请在窗口里手动登录，完成后告诉我」
-   - 等用户回复后 `snapshot` 验登录态就位
-   - 登录后**close session**——登录态落磁盘 profile，不留进程占内存；本 skill 下次 `--session weibo --persistent` 重起无头即恢复，用完再 close。
-
-> **不导出 cookie/UA**——登录态只在 session profile 里闭环，不落 `~/.openclaw/logins/`。本 skill 不调用 `cookies export` / `identity export`。
-
----
-
-## 发布文字微博
-
-```
-1. 启持久化 session + 打开微博首页：
-   camoufox-cli --session weibo --persistent --json open "https://weibo.com"
-2. sleep 3 加载，snapshot 拿到输入框 ref
-   - 输入框选择器：textarea.W_input 或 [node-type="textEl"] 或 textarea[placeholder*="有什么新鲜事"]
-   - 如果找不到，open "https://weibo.com" 刷新后重试
-3. click <ref> 聚焦输入框
-4. camoufox-cli --session weibo --persistent --json type <ref> "微博内容"
-   - 最长 2000 字符
-5. snapshot 找发布按钮 ref：a[node-type="submit"] 或 button[action-type="post"] 或文本为"发布"的按钮
-6. camoufox-cli --session weibo --persistent --json click <发布按钮-ref>
-7. sleep 3，snapshot 确认发布成功（输入框清空或出现"发布成功"提示）
+```bash
+weibo-publish publish --text "正文" --source-folder /绝对路径/weibo/outputs/作品 --account default
+weibo-publish publish --text "正文" --source-folder /绝对路径/weibo/outputs/作品 --account default --confirm
 ```
 
----
+默认只预览，不访问平台。`--text @/绝对路径/content.md` 读取正文文件；媒体用真实本地文件。`--record-title` 可指定记录标题。文字、最多 15 张图片或视频；图像与视频互斥。支持 --visibility public/private/friends/fans、--topic 和 --poi-name。没有自动删除接口。文字、图文与短视频发布已有实号成功记录；更大文件的上传、其他参数组合与审核结果仍须分别核验。
 
-## 发布图文微博
+视频发布先上传整份文件、确认上传与等待转码，再提交微博。上传请求默认最多等待 300 秒；预览的 `video_transport` 显示上传与进程总超时。慢速网络可按本次上传需要设置 `PLATFORM_API_WEIBO_VIDEO_UPLOAD_TIMEOUT_SECONDS`，只接受 30–900 的整数秒数；进程总超时为上传超时加 420 秒，默认 720 秒。确认发布时沿用预览的设置；调用工具的执行超时应大于进程总超时，并为前置校验和保存收据留余量。工具返回运行中时继续等待同一进程，不另起发布。
 
-```
-1. 启 session + 打开首页（同文字微博步骤 1-2）
-2. snapshot 拿到图片上传按钮 ref：a[node-type="uploadImg"] 或 .W_icon_pic 图标
-3. camoufox-cli --session weibo --persistent --json upload <图片-input-ref> <image.jpg> [更多图片...]
-   - forked cli upload 命令底层走 Playwright setInputFiles，无需 CDP setFileInput hack
-   - 最多 9 张图片，单张不超过 5MB
-4. sleep 等待上传完成（snapshot 看缩略图出现在编辑区）
-5. 输入文字内容（同文字微博步骤 3-4）
-6. 发布（同文字微博步骤 5-7）
+```bash
+PLATFORM_API_WEIBO_VIDEO_UPLOAD_TIMEOUT_SECONDS=600 weibo-publish publish --text @/绝对路径/content.md --video /绝对路径/video.mp4 --source-folder /绝对路径/weibo/outputs/作品 --account default
 ```
 
----
+核对文本、媒体、账号、可见范围与声明后，已有发布授权时加 --confirm。需要平台 AI 声明而接口没有声明字段时停止，交用户在原平台完成；不要将简介里的“AI”字样当作平台声明。不要填不存在的参数或模拟上传成功。
 
-## 发布视频微博
+脚本串行发布并保存 `publish-result.weibo.json`，取得完整微博 ID 后生成规范链接并自动调用 published-track record，关联作品目录的 dna-meta.json 和账号 alias。提交明确成功但未返回微博 ID 时，先保存 accepted 收据，再最多查询 7 次本人作品首页（每次最多 20 条、间隔 5 秒），用本次上传的媒体 ID、作者与提交时间精确匹配视频；不按最新一条、标题或正文猜作品。
 
-```
-1. 启 session + 打开首页（同文字微博步骤 1-2）
-2. snapshot 拿到视频上传入口 ref：a[node-type="uploadVideo"]
-   或 open "https://weibo.com/p/103495:home"（视频发布页）
-3. camoufox-cli --session weibo --persistent --json upload <视频-input-ref> <video.mp4>
-   - 视频限制：mp4 格式，最长 15 分钟，不超过 2GB
-4. sleep 等待上传完成（snapshot 看进度条到 100%）
-5. 填写描述文字（type 命令）
-6. 发布（click 发布按钮）
-```
+`published:true, recorded:false` 表示作品已识别、记录失败，重跑同一目录只补入库。`accepted:true, resolution_pending:true` 表示平台已接受提交，但作品 ID 尚未确认；保留 accepted 收据，稍后重跑同一目录只做结果查询，不再发布。调用工具的执行超时还应为这些查询留余量。已有 submitting/unknown 结果文件时禁止重发，先检查本人作品或原平台并由用户核实结果；不要删除收据换目录重发。下一条独立作品使用新的作品目录。
 
----
+提交结果与实际可见、审核通过分开记录。返回失败、风控或超时后停止，不换通道重发。发布调用和结果文件不负责平台指标采集。
 
-## 必做约束
+视频失败先读取返回值及收据的 `diagnostic.detail.request`：`video_upload` 的 NETWORK/timeout 表示上传请求超时；`video_transcode` 表示等待转码阶段；`video_submit` 表示最终提交阶段。诊断仅返回超时秒数、HTTP 状态和 CSRF 头是否存在，不输出 Cookie 或 Token。不要仅凭视频体积将超时判成平台大小限制，也不要把 `invalid csrf token` 判为整份登录态过期。
 
-- **用完即 close 持久化 session `weibo`**——登录态 + 指纹冻结在磁盘 profile，不留进程占内存；下次发布 `--session weibo --persistent` 重起无头即恢复。只在 session 卡死时 `camoufox-cli --session weibo --json close` teardown。
-- 同 session 已有命令在跑时，新命令 fail-first（返回 `session weibo 正忙，请等待当前操作完成后再试`）——读到这条文本就等当前操作完成再重试，不要盲试。
-- 每次发布间隔 60 秒以上，避免触发反垃圾。
-
----
-
-## Pitfalls
-
-### pitfall: css_module_hash_drift
-
-- **触发**：用 CSS module hash 选择器（如 `.publishBtn_1a2b3c`）
-- **症状**：下次部署后选择器失效
-- **workaround**：用 `node-type` 属性或 placeholder 文本定位，不用 hash class
-
-### pitfall: input_box_collapsed
-
-- **触发**：微博首页输入框默认折叠
-- **症状**：输入框高度很小，无法直接输入
-- **workaround**：先 `click` 输入框使其展开，sleep 1 后再 `type`
-
-### pitfall: anti_spam_on_rapid_post
-
-- **触发**：短时间内连续发布多条微博
-- **症状**：出现验证码或"操作过于频繁"
-- **workaround**：每次发布间隔 60 秒以上
-
-### pitfall: weibo_url_shortener
-
-- **触发**：微博内容中包含 URL
-- **症状**：URL 被自动缩短为 t.cn 格式
-- **workaround**：这是正常行为，不影响发布
-
----
-
-## 错误处理
-
-| 情况 | 处理 |
-|------|------|
-| 未登录 / 登录墙 | 走前置条件的有头手动登录流，重试一次 |
-| 输入框找不到 | 刷新页面后重试，或用 placeholder 文本定位 |
-| 图片上传失败 | 检查文件大小（<5MB），重试一次 |
-| 视频上传超时 | 检查文件大小和网络，等待更长时间 |
-| 验证码 / 频率限制 | 等待 60 秒后重试 |
-| session 正忙（fail-first） | 等当前操作完成再重试，不要盲试 |
-
-## 发布后
-
-**必须**调用 `published-track` 技能记录本次发布。
+视频提交的 CSRF 头从本次实际请求 Cookie 中取 `XSRF-TOKEN`，包括本次流程响应的 Cookie 更新。缺少 Token 时脚本停止提交：先用 `weibo-publish check` 在线校验 API 会话，再用 `weibo-hunter login-status` 检查专属 `weibo` 窗口；需要重新 export 时遵循 hunter 登录指引，不从旧 profile 单独补 Token。仍被拒时保留收据与诊断交研发核查，不自动重登或删除 unknown 收据再提交。

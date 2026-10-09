@@ -491,6 +491,16 @@ install_python_deps() {
     ui_success "Python deps done"
 }
 
+install_deck_render() {
+    local node="$WISEFLOW_ROOT/$PORTABLE_NODE"
+    local node_bin_dir="$(dirname "$node")"
+    local args=()
+    [[ "$SKIP_BROWSER" == "true" ]] && args+=(--skip-browser)
+    run_required_step "Installing deck-render runtime" \
+        env PATH="$node_bin_dir:$PATH" \
+        bash "$WISEFLOW_ROOT/scripts/install-deck-render.sh" "${args[@]}"
+}
+
 # ═══════════════════════════════════════════════════════════════════
 # UI helpers
 # ═══════════════════════════════════════════════════════════════════
@@ -532,7 +542,7 @@ ui_error() {
     fi
 }
 
-# 步数总数在 main 里按 is_update 动态设（首装 11 / 更新 9）；此默认仅防 ui_stage 在 main 前被调。
+# 步数总数在 main 里按 is_update 动态设（首装 12 / 更新 11）；此默认仅防 ui_stage 在 main 前被调。
 INSTALL_STAGE_TOTAL=11
 INSTALL_STAGE_CURRENT=0
 
@@ -966,7 +976,7 @@ Options:
   --root <dir>       Program install directory (default: ~/xiaobei; runtime data stays in ~/.openclaw)
   --force            Overwrite existing runtime data (~/.openclaw); default preserves it on re-install
   --skip-bind        Skip the WeChat QR binding at the end (CI/automation)
-  --skip-browser     Skip camoufox-cli browser binary install (smoke/CI, saves ~557MB Firefox)
+  --skip-browser     Skip Camoufox Firefox and deck-render Chromium downloads (smoke/CI)
   --verbose          Print debug output
   --no-prompt        Disable prompts (CI/automation)
   --help, -h         Show this help
@@ -1075,11 +1085,11 @@ main() {
         ui_warn "检测到已有安装（$OPENCLAW_HOME/openclaw.json）→ 走更新路线，保留运行数据（传 --force 可强覆盖）"
     fi
 
-    # 步数总数按路线动态设：首装 11 步（含 config/crew/gateway），更新 10 步（自愈 config + 刷 program+restart）。
+    # 步数总数按路线动态设：首装 12 步（含 config/crew/gateway），更新 11 步（自愈 config + 刷 program+restart）。
     if [[ "$is_update" == "true" ]]; then
-        INSTALL_STAGE_TOTAL=10
-    else
         INSTALL_STAGE_TOTAL=11
+    else
+        INSTALL_STAGE_TOTAL=12
     fi
 
     # 更新路线：先停 gateway。否则 pnpm install --prod 重写 node_modules 时与运行中的 gateway
@@ -1101,6 +1111,11 @@ main() {
     # ─── Step 3: pnpm install --prod（拉依赖，无 OOM）────────
     ui_stage "Installing dependencies (pnpm install --prod)"
     pnpm_install_prod
+    run_required_step "Installing per-skill Node.js dependencies" \
+        env PATH="$WISEFLOW_ROOT/tools/node/bin:$PATH" \
+        "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/install-skill-deps.mjs" \
+        --root "$WISEFLOW_ROOT" --state-dir "$OPENCLAW_HOME" \
+        --npm-cli "$WISEFLOW_ROOT/tools/node/lib/node_modules/npm/bin/npm-cli.js"
 
     # ─── Step 4: python skill deps ───────────────────────────
     ui_stage "Installing python skill deps"
@@ -1110,11 +1125,15 @@ main() {
     ui_stage "Installing awada plugin deps"
     install_awada_plugin
 
-    # ─── Step 6: camoufox-cli + Firefox binary（幂等）────────
+    # ─── Step 6: HyperFrames + Playwright Chromium + CJK 字体 ──
+    ui_stage "Installing deck-render runtime"
+    install_deck_render
+
+    # ─── Step 7: camoufox-cli + Firefox binary（幂等）────────
     ui_stage "Installing camoufox-cli browser"
     install_camoufox_cli
 
-    # ─── Step 7: openclaw-weixin 插件（幂等）─────────────────
+    # ─── Step 8: openclaw-weixin 插件（幂等）─────────────────
     ui_stage "Installing WeChat plugin"
     install_weixin_plugin
 

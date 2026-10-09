@@ -1,0 +1,26 @@
+{
+  "form": "group",
+  "platform": "xhs",
+  "title": "书架越整理越乱？",
+  "body": "收纳盒买了不少，常看的书还是找不到。你会先买工具，还是先调整书的位置？",
+  "topics": ["书架整理", "日常收纳"],
+  "dna_id": "dna-0",
+  "group": {
+    "name": "周末徒步交流群",
+    "members": "126",
+    "self_name": "阿禾",
+    "self_avatar": "avatar-29.jpg",
+    "before": [
+      {"nick": "花开富贵", "avatar": "avatar-03.jpg", "text": "周六山里下雨吗？"},
+      {"nick": "老周", "avatar": "avatar-16.jpg", "text": "我带点热水，大家别忘了雨衣。"}
+    ],
+    "point": "我先把常看的书放到顺手的位置，\n再决定要不要买收纳盒。\n找不到书，可能只是收得太深。",
+    "highlight": "找不到书，可能只是收得太深。",
+    "apology": "哎呀发错群了，本来要发给整理书架的朋友🙈",
+    "after": [
+      {"nick": "小太阳", "avatar": "avatar-09.jpg", "text": "哈哈，徒步群突然开始聊书架"},
+      {"nick": "咖啡续命", "avatar": "avatar-13.jpg", "text": "我就是收纳盒买太多，常看的书反而找不到。"},
+      {"nick": "随遇而安", "avatar": "avatar-25.jpg", "text": "那我今晚先把那排盒子撤掉试试👀"}
+    ]
+  }
+}

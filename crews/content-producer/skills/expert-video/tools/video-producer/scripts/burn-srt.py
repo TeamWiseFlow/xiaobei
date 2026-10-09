@@ -20,7 +20,7 @@ ffmpeg subtitles 滤镜要点：
 Usage:
   video-producer burn-srt <video.mp4> <subs.srt>
   video-producer burn-srt <video.mp4> <subs.srt> --output <out.mp4>
-  video-producer burn-srt <video.mp4> <subs.srt> --font-name "Noto Sans CJK SC" --font-size 24
+  video-producer burn-srt <video.mp4> <subs.srt> --font-name "<已安装中文字体>" --font-size 24
 
 Exit codes:
   0  ok，字幕烧完
@@ -36,9 +36,11 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'deck-render' / 'scripts'))
+from font_policy import font_family
 
 # 默认字幕样式——黑白配 + 半透底框，短视频通用可读样式
-DEFAULT_FONT_NAME = "Noto Sans CJK SC"  # 中文兜底；libass 找不到时回退 fontconfig 默认
+DEFAULT_FONT_NAME = font_family()
 DEFAULT_FONT_SIZE = 24
 DEFAULT_FORCE_STYLE = (
     "FontName={font},FontSize={size},"

@@ -357,6 +357,12 @@ ADDON_ARGS=(--no-build --no-restart)
 "$PROJECT_ROOT/scripts/apply-addons.sh" "${ADDON_ARGS[@]}"
 echo ""
 
+# apply-addons installs npm packages but does not provision the pinned browser
+# or host font. Run the same idempotent step as tarball and Docker installs.
+echo "🎞️  Ensuring deck-render runtime..."
+"$PROJECT_ROOT/scripts/install-deck-render.sh"
+echo ""
+
 # ─── 6.5. 重新 build + 全局安装 camoufox-cli fork ──────────────
 # apply-addons.sh 只调 `camoufox-cli install`（拉浏览器二进制），不 rebuild fork。
 # 老用户全局装的 camoufox-cli 还是旧版，需要 rebuild dist + npm install -g 覆盖。

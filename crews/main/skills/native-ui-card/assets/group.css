@@ -1,0 +1,49 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #ededed; }
+  body {
+    width: 1080px; height: 1440px;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "HarmonyOS Sans SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+    color: #1a1a1a; padding: 0;
+    display: flex; flex-direction: column;
+  }
+  .chat-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 26px 32px; background: #f7f7f7;
+    border-bottom: 1px solid #e2e2e2; flex-shrink: 0;
+  }
+  .back { font-size: 40px; color: #111; line-height: 1; }
+  .group-info { text-align: center; }
+  .group-name { font-size: 34px; font-weight: 600; color: #111; }
+  .group-sub { font-size: 24px; color: #9a9a9a; margin-top: 2px; }
+  .more { font-size: 36px; color: #111; line-height: 1; }
+  .stream {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+    padding: 10px 0; overflow: hidden;
+  }
+  .time { text-align: center; color: #b0b0b0; font-size: 24px; padding: 8px 0 2px; flex-shrink: 0; }
+  .msg { display: flex; padding: 5px 36px; flex-shrink: 0; }
+  .msg .avatar {
+    width: 80px; height: 80px; border-radius: 12px;
+    margin-right: 20px; object-fit: cover; flex-shrink: 0;
+  }
+  .msg .body { max-width: 650px; }
+  .msg .nick { font-size: 24px; color: #9a9a9a; margin-bottom: 4px; }
+  .msg .bubble {
+    font-size: 30px; line-height: 1.45;
+    background: #fff; padding: 14px 22px; border-radius: 8px;
+    color: #1a1a1a; white-space: pre-wrap; word-break: break-word;
+    box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+  }
+  .msg.me { justify-content: flex-end; }
+  .msg.me .avatar { order: 2; margin-right: 0; margin-left: 20px; }
+  .msg.me .nick { text-align: right; }
+  .msg.me .bubble { background: #95ec69; }
+  .hl { color: #ff2442; font-weight: 700; }
+  .msg.sticker .bubble { background: transparent; padding: 0; box-shadow: none; }
+  .sticker-img { width: 180px; height: 180px; border-radius: 8px; object-fit: cover; display: block; }
+  .input-bar {
+    margin-top: auto; display: flex; align-items: center; gap: 20px;
+    padding: 20px 32px; background: #f7f7f7; border-top: 1px solid #e2e2e2; flex-shrink: 0;
+  }
+  .input-ph { flex: 1; background: #fff; border-radius: 10px; padding: 20px 26px; font-size: 28px; color: #c0c0c0; }
+  .mic { font-size: 32px; color: #666; }

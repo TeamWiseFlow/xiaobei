@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "catbus-cli": "file:.runtime/catbus-cli.tgz",
+    "wreq-js": "3.2.0"
+  },
+  "xiaobei": {
+    "dependencyInstaller": {
+      "script": "scripts/install-runtime.mjs",
+      "inputs": ["runtime-profile.json"]
+    }
+  }
+}

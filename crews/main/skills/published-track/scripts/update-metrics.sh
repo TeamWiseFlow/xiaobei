@@ -42,6 +42,7 @@ Metrics (at least one of metrics / --deep-file required):
   --deep-file <path>       Deep-metrics JSON file (single line) → deep_metrics column
                            (latest value only, no history). Written via sqlite readfile().
   --deep-source <str>      Data source tag stored in deep_source (e.g. douyin:creator_item_list).
+  --fan-portrait-file <path>  Single-note XHS audience portrait JSON → pub_xhs.fan_portrait.
 
 Examples:
   update-metrics.sh --platform xhs --id 10 --views 100 --likes 10
@@ -64,6 +65,7 @@ PLATFORM="" SOURCE_FOLDER="" ROW_ID=""
 # deep 指标走 JSON 文件而非 --col=value（JSON 进 shell 参数是引号地狱，readfile 免疫）
 DEEP_FILE=""
 DEEP_SOURCE=""
+FAN_PORTRAIT_FILE=""
 # bash 3.2 兼容：不用关联数组，平行索引数组存 metric 键值；同名键后值覆盖
 METRIC_KEYS=()
 METRIC_VALS=()
@@ -87,6 +89,7 @@ while [[ $# -gt 0 ]]; do
     --id)             ROW_ID="$2"; shift 2 ;;
     --deep-file)      DEEP_FILE="$2"; shift 2 ;;
     --deep-source)    DEEP_SOURCE="$2"; shift 2 ;;
+    --fan-portrait-file) FAN_PORTRAIT_FILE="$2"; shift 2 ;;
     --*=*)
       KEY="${1#--}"
       KEY="${KEY%%=*}"
@@ -143,7 +146,7 @@ fi
 COLS=$(sqlite3 "$DB" "PRAGMA table_info($TABLE);" | awk -F'|' '{print $2}' | grep -v -E '^(id|created_at|source_folder|content_type|title|publish_date)$' | tr '\n' ' ')
 
 # Build SET clause（deep-only 写入也算有效——无标量指标但有 --deep-file 时继续）
-if [ ${#METRIC_KEYS[@]} -eq 0 ] && [ -z "$DEEP_FILE" ]; then
+if [ ${#METRIC_KEYS[@]} -eq 0 ] && [ -z "$DEEP_FILE" ] && [ -z "$FAN_PORTRAIT_FILE" ]; then
   echo '{"ok":false,"error":"no metrics provided to update"}'
   exit 1
 fi
@@ -162,16 +165,6 @@ for ((i=0; i<${#METRIC_KEYS[@]}; i++)); do
   SET_PARTS+=("$KEY='$ESC_VAL'")
 done
 
-# Always update updated_at
-SET_PARTS+=("updated_at=strftime('%Y-%m-%d %H:%M:%S','now','localtime')")
-
-SET_CLAUSE=$(IFS=','; echo "${SET_PARTS[*]}")
-
-if [ ${#METRIC_KEYS[@]} -gt 0 ]; then
-  sqlite3 "$DB" "UPDATE $TABLE SET $SET_CLAUSE WHERE $WHERE_CLAUSE;"
-fi
-
-# ── deep 指标写入（JSON 文件 → deep_metrics 列，只存最新值）────────────────
 DEEP_UPDATED=false
 if [ -n "$DEEP_FILE" ]; then
   if [ ! -f "$DEEP_FILE" ]; then
@@ -191,9 +184,46 @@ if [ -n "$DEEP_FILE" ]; then
     echo "{\"ok\":false,\"error\":\"deep columns not available in $TABLE (init-db self-heal failed)\",\"hint\":\"手动跑 init-db.sh 补列后重试\"}"
     exit 1
   fi
-  # CAST(readfile() AS TEXT)：readfile 返回 BLOB，不 cast 的话 -json 查询会渲染成 base64
-  sqlite3 "$DB" "UPDATE $TABLE SET deep_metrics=CAST(readfile('$DEEP_FILE') AS TEXT), deep_captured_at=strftime('%Y-%m-%d %H:%M:%S','now','localtime'), deep_source='${DEEP_SOURCE:-unknown}' WHERE $WHERE_CLAUSE;"
+  ESC_DEEP_SOURCE="${DEEP_SOURCE:-unknown}"
+  ESC_DEEP_SOURCE="${ESC_DEEP_SOURCE//\'/\'\'}"
+  SET_PARTS+=("deep_metrics=CAST(readfile('$DEEP_FILE') AS TEXT)")
+  SET_PARTS+=("deep_captured_at=strftime('%Y-%m-%d %H:%M:%S','now','localtime')")
+  SET_PARTS+=("deep_source='$ESC_DEEP_SOURCE'")
   DEEP_UPDATED=true
 fi
 
-echo "{\"ok\":true,\"table\":\"$TABLE\",\"located_by\":\"${LOCATE_KEY}\",\"updated_columns\":${#METRIC_KEYS[@]},\"deep_updated\":$DEEP_UPDATED}"
+FAN_PORTRAIT_UPDATED=false
+if [ -n "$FAN_PORTRAIT_FILE" ]; then
+  if [ "$PLATFORM" != "xhs" ]; then
+    echo '{"ok":false,"error":"fan portrait is only supported for xhs"}'
+    exit 1
+  fi
+  if [ ! -f "$FAN_PORTRAIT_FILE" ]; then
+    echo "{\"ok\":false,\"error\":\"fan portrait file not found: $FAN_PORTRAIT_FILE\"}"
+    exit 1
+  fi
+  if ! [[ "$FAN_PORTRAIT_FILE" =~ ^[A-Za-z0-9_./-]+$ ]]; then
+    echo '{"ok":false,"error":"fan portrait file path contains invalid characters"}'
+    exit 1
+  fi
+  if [ "$(sqlite3 "$DB" "SELECT json_valid(CAST(readfile('$FAN_PORTRAIT_FILE') AS TEXT));")" != "1" ]; then
+    echo '{"ok":false,"error":"fan portrait file is not valid JSON"}'
+    exit 1
+  fi
+  if [ "$(sqlite3 "$DB" "SELECT count(*) FROM pragma_table_info('pub_xhs') WHERE name='fan_portrait';")" = "0" ]; then
+    bash "$(dirname "$0")/init-db.sh" >/dev/null 2>&1 || true
+  fi
+  if [ "$(sqlite3 "$DB" "SELECT count(*) FROM pragma_table_info('pub_xhs') WHERE name='fan_portrait';")" = "0" ]; then
+    echo '{"ok":false,"error":"fan_portrait column not available in pub_xhs"}'
+    exit 1
+  fi
+  SET_PARTS+=("fan_portrait=CAST(readfile('$FAN_PORTRAIT_FILE') AS TEXT)")
+  FAN_PORTRAIT_UPDATED=true
+fi
+
+# 验证完成后一次 UPDATE，基础指标、深度指标和画像要么同时写入，要么都不写入。
+SET_PARTS+=("updated_at=strftime('%Y-%m-%d %H:%M:%S','now','localtime')")
+SET_CLAUSE=$(IFS=','; echo "${SET_PARTS[*]}")
+sqlite3 "$DB" "UPDATE $TABLE SET $SET_CLAUSE WHERE $WHERE_CLAUSE;"
+
+echo "{\"ok\":true,\"table\":\"$TABLE\",\"located_by\":\"${LOCATE_KEY}\",\"updated_columns\":${#METRIC_KEYS[@]},\"deep_updated\":$DEEP_UPDATED,\"fan_portrait_updated\":$FAN_PORTRAIT_UPDATED}"

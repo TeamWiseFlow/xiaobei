@@ -5,6 +5,9 @@ on:
     branches: [master]
     types: [opened, synchronize, reopened]  # 明确排除 closed
 
+permissions:
+  contents: read
+
 # 同一 PR/分支有新 commit 时，自动取消正在运行的旧任务
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -17,6 +20,7 @@ jobs:
         os: [ubuntu-24.04, macos-latest]
       fail-fast: false
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -34,6 +38,16 @@ jobs:
         # 不指定 version，action-setup v6 自动读 package.json 的 packageManager
         # （显式 version 会与其冲突报 "Multiple versions of pnpm specified"）
         uses: pnpm/action-setup@v6
+
+      - name: Setup Python and cache downloads
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            skills/**/requirements.txt
+            crews/**/requirements.txt
 
       - name: Read pinned openclaw version
         id: pin
@@ -58,4 +72,21 @@ jobs:
         run: bash scripts/setup-crew.sh
 
       - name: Run apply-addons.sh
-        run: bash scripts/apply-addons.sh
+        # Crew setup is checked above; CI has no gateway service to restart.
+        run: bash scripts/apply-addons.sh --skip-crew --no-restart
+
+      - name: Check installed CLI entrypoints
+        working-directory: openclaw
+        run: |
+          node --input-type=module -e '
+            const cli = await import("./dist/cli/daemon-cli.js");
+            for (const name of ["registerDaemonCli", "runDaemonInstall", "runDaemonRestart", "runDaemonStart", "runDaemonStatus", "runDaemonStop", "runDaemonUninstall"]) {
+              if (typeof cli[name] !== "function") throw new Error(`Missing daemon CLI export: ${name}`);
+            }
+          '
+          node openclaw.mjs --version
+          node openclaw.mjs daemon --help
+          node openclaw.mjs gateway --help
+
+      - name: Check repeated skill dependency installation
+        run: node scripts/install-skill-deps.mjs --root "$GITHUB_WORKSPACE" --state-dir "$HOME/.openclaw"

@@ -32,18 +32,20 @@ PALETTE = {
     "MUTED": (150, 165, 188),
 }
 
-# 字体目录候选（按序探测，找到含 Noto Sans SC 四件套的目录即用）
+# 旧渲染器沿用当前系统的中文字体；Windows 使用系统微软雅黑。
 FONT_DIR_CANDIDATES = [
     "/usr/share/fonts/opentype/noto-sc",
     "/usr/share/fonts/opentype/noto",
     "/usr/share/fonts/truetype/noto",
     "/usr/share/fonts/noto-cjk",
 ]
+if os.name == 'nt':
+    FONT_DIR_CANDIDATES.insert(0, str(Path(os.environ.get('WINDIR', 'C:/Windows')) / 'Fonts'))
 FONT_FILES = {
-    "black": ["NotoSansSC-Black.otf", "NotoSansCJKsc-Black.otf"],
-    "bold": ["NotoSansSC-Bold.otf", "NotoSansCJKsc-Bold.otf"],
-    "med": ["NotoSansSC-Medium.otf", "NotoSansCJKsc-Medium.otf"],
-    "reg": ["NotoSansSC-Regular.otf", "NotoSansCJKsc-Regular.otf"],
+    "black": ["NotoSansSC-Black.otf", "NotoSansCJKsc-Black.otf", "msyhbd.ttc"],
+    "bold": ["NotoSansSC-Bold.otf", "NotoSansCJKsc-Bold.otf", "msyhbd.ttc"],
+    "med": ["NotoSansSC-Medium.otf", "NotoSansCJKsc-Medium.otf", "msyh.ttc"],
+    "reg": ["NotoSansSC-Regular.otf", "NotoSansCJKsc-Regular.otf", "msyh.ttc"],
 }
 
 
@@ -161,8 +163,8 @@ class FontBank:
             if d.is_dir() and any((d / f).is_file() for names in FONT_FILES.values() for f in names):
                 return d
         raise MgError(
-            "找不到 Noto Sans SC/CJK 字体目录（探测过: " + ", ".join(candidates) +
-            "）；装 fonts-noto-cjk 或在 spec 传 font_dir / 设 MG_FONT_DIR", code=2)
+            "找不到中文字体目录（探测过: " + ", ".join(candidates) +
+            "）；Linux/macOS 安装 Noto Sans CJK，Windows 检查微软雅黑，或在 spec 传 font_dir / 设 MG_FONT_DIR", code=2)
 
     def get(self, weight: str, size: int) -> ImageFont.FreeTypeFont:
         if weight not in FONT_FILES:

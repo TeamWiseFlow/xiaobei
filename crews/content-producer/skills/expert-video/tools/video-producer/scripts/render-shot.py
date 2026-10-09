@@ -22,7 +22,8 @@ import json
 import sys
 from pathlib import Path
 
-import _brief
+from _collage_stages import run_if_collage
+from _deck_stages import run_if_deck
 
 
 def die(msg: str) -> None:
@@ -38,7 +39,9 @@ def main() -> None:
     args = parser.parse_args()
 
     project = Path(args.project_dir).resolve()
-    if _brief.collage_guard(project, "Stage 10 render-shot"):
+    if run_if_collage(project, 10):
+        return
+    if run_if_deck(project, 10):
         return
     decompose_path = project / "storyboard" / "shot_decompose.json"
     resolve_path = project / "slots" / "asset-resolve.json"

@@ -399,20 +399,34 @@ function Expose-SkillWrappers {
     }
 
     $exposed = 0
-    foreach ($skillsRoot in @((Join-Path $Root "skills"), (Join-Path $Root "crews\main\skills"))) {
+    $skillsRoots = @((Join-Path $Root "skills"))
+    $crewsDir = Join-Path $Root "crews"
+    if (Test-Path $crewsDir) {
+        $skillsRoots += @(Get-ChildItem -Path $crewsDir -Directory | ForEach-Object {
+            Join-Path $_.FullName "skills"
+        })
+    }
+    foreach ($skillsRoot in $skillsRoots) {
         if (-not (Test-Path $skillsRoot)) { continue }
         Get-ChildItem -Path $skillsRoot -Directory | ForEach-Object {
-            $skillName = $_.Name
-            if ($skillName.StartsWith("_")) { return }  # skip _shared etc
-            $wrapper = Join-Path $_.FullName "$skillName.sh"
-            if (-not (Test-Path $wrapper)) { return }
-            $shim = Join-Path $binDir "$skillName.cmd"
-            $wrapperFwd = ($wrapper -replace '\\', '/')
-            $bashFwd = ($bashExe -replace '\\', '/')
-            $body = "@echo off`r`n`"$bashFwd`" `"$wrapperFwd`" %*`r`n"
-            $enc = New-Object System.Text.UTF8Encoding($false)
-            [System.IO.File]::WriteAllText($shim, $body, $enc)
-            $exposed++
+            $wrapperDirs = @($_)
+            $toolsDir = Join-Path $_.FullName "tools"
+            if (Test-Path $toolsDir) {
+                $wrapperDirs += @(Get-ChildItem -Path $toolsDir -Directory)
+            }
+            foreach ($wrapperDir in $wrapperDirs) {
+                $skillName = $wrapperDir.Name
+                if ($skillName.StartsWith("_")) { continue }  # skip _shared etc
+                $wrapper = Join-Path $wrapperDir.FullName "$skillName.sh"
+                if (-not (Test-Path $wrapper)) { continue }
+                $shim = Join-Path $binDir "$skillName.cmd"
+                $wrapperFwd = ($wrapper -replace '\\', '/')
+                $bashFwd = ($bashExe -replace '\\', '/')
+                $body = "@echo off`r`n`"$bashFwd`" `"$wrapperFwd`" %*`r`n"
+                $enc = New-Object System.Text.UTF8Encoding($false)
+                [System.IO.File]::WriteAllText($shim, $body, $enc)
+                $exposed++
+            }
         }
     }
 
@@ -785,8 +799,20 @@ function Main {
     Extract-Tarball $tb
 
     Install-Deps
+    Write-Stage "Installing per-skill Node.js dependencies"
+    & $NodeExe (Join-Path $Root 'scripts\install-skill-deps.mjs') `
+        --root $Root --state-dir $OpenclawHome `
+        --npm-cli (Join-Path $Root 'tools\node\node_modules\npm\bin\npm-cli.js')
+    if ($LASTEXITCODE -ne 0) { throw "skill Node.js dependency install failed (exit $LASTEXITCODE)" }
     Install-PythonDeps
     Install-AwadaPlugin
+    Write-Stage "Installing deck-render runtime"
+    $deckArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $Root 'scripts\install-deck-render.ps1'), '-Root', $Root)
+    if ($script:SkipBrowser) { $deckArgs += '-SkipBrowser' }
+    & powershell.exe @deckArgs
+    if ($LASTEXITCODE -ne 0) { throw "deck-render runtime install failed" }
+    $env:PATH = @($env:PATH, [Environment]::GetEnvironmentVariable('Path', 'User'),
+        [Environment]::GetEnvironmentVariable('Path', 'Machine')) -join ';'
     Install-CamoufoxCli
     Install-WeixinPlugin
 

@@ -24,7 +24,7 @@ plan.json 结构（路径均相对 project_dir，也接受绝对路径）：
     "bgm": {"file": "...", "volume": 0.22, "fade_in": 0.8, "fade_out": 2.2},  # 可选
     "guards": {"min_gap": 0.15, "tail_margin": 0.1,
                "shot_tolerance": 0.0, "shot_overflow": "error"},              # 可选
-    "srt_style": {"font_name": "Noto Sans SC", "font_size": 17,
+    "srt_style": {"font_size": 17,     # 未指定 font_name 时按当前系统选择中文字体
                   "margin_v": 48, "outline": 1.2, "shadow": 0.5, "spacing": 0.5}  # 可选
   }
 
@@ -55,6 +55,8 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'deck-render' / 'scripts'))
+from font_policy import font_family
 
 DEFAULT_LEAD_IN = 0.25
 DEFAULT_MIN_GAP = 0.15
@@ -62,7 +64,7 @@ DEFAULT_TAIL_MARGIN = 0.1
 DEFAULT_SHOT_TOLERANCE = 0.0
 SRT_END_TRIM = 0.03          # cue 尾提前量，防字幕闪切（v4 已验证）
 DEFAULT_SRT_STYLE = {
-    "font_name": "Noto Sans SC",
+    "font_name": font_family(),
     "font_size": 17,
     "primary_colour": "&H00FFFFFF",
     "outline_colour": "&HA0000000",

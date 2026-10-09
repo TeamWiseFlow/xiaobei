@@ -5,7 +5,7 @@
 - 微信公众号文章写作、排版与推送
 - 小红书/小绿书图文创作与发布
 - 图文海报生成
-- 视频生成与多平台分发（支持视频号、抖音、小红书）
+- 视频生成与多平台分发（支持视频号、抖音、小红书、快手、tiktok）
 - Twitter/X、微博、知乎等平台发文
 - 微信朋友圈内容发布（通过企业微信接口）
 - 爆款视频追爆分析、仿写与再创作（支持抖音、B站和小红书视频链接）
@@ -14,7 +14,7 @@
 - 自媒体评论区获客
 - 7*24 小时智能客服（售前接待）
 - 通过社交媒体寻找潜在客户或市场调研
-- 信息搜集与情报：内置 Smart Search，覆盖小红书、抖音、微博、知乎、B站、Twitter、YouTube、视频号、LinkedIn、Reddit、新闻、政务、财经、学术、购物、GitHub 等 18 类信源——无需配置任何 key、纯免费
+- 信息搜集与情报：支持小红书、抖音、微博、知乎、快手、B站、Twitter、YouTube、视频号、LinkedIn、Reddit、新闻、政务、财经、学术、购物、GitHub 等 18 类信源——无需配置任何 key、纯免费
 - "四声分析"法战略研判与讨论
 - 产品deck、ppt制作，投资/IR 材料准备
 - 网站设计与制作、ICP 备案等材料辅助
@@ -32,15 +32,21 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 
 ---
 
-## 🚀 **V5.7.1~5.7.2 更新**
+## 🚀 **V5.7.3 更新**
 
-- 小红书、抖音、视频号 DNA系统升级到2.0架构，Let's do this like an expert！
-- content producer 升级为专家系统，现在除了AIGC大片外，还可以复刻众多短视频平台流行的“套路”，更易获得平台推荐流量：
-  > 效果展示，xiaobei的视频号：https://openclaw-for-business.com/xiaobei-wxchannel.jpg
-- xiaobei 可直接指挥content producer，用户可选择将brief出具、节点验收等委托xiaobei
-- 新增抖音平台图文音乐内容发布能力，支持多图上传、选择推荐配乐与发布链接回收。
-- AIGC 端点支持阿里云百炼 Agent Plan：现在无需去多个平台开通不同账号，最简只用初始安装时的百炼账号就可获得全部能力。
-- 修复一键安装脚本openclaw-weixin不会自动升级的问题
+- 新增带B-roll的口播视频制作能力，对比纯AIGC模式，单条成本由几十下降到几块，且更易获平台推荐：
+  - B-roll 支持 幻灯片生成\剪纸人动画\操作录屏，前两者基于hyperframes，后者基于xiaobei浏览器自动化能力，均无需调用aigc模型，用户有现成素材也可直接提供；
+  - 口播音频支持用户录制和TTS合成两种，TTS合成支持自定义音色，支持混入口音（降低ai味，避免被平台限流）；
+  - 支持屏幕小窗添加数字人同步画面，仅需提供一张照片（建议用真人）
+  - 上述流程均支持由xiaobei出方案并自主委托content-producer完成制作全流程，用户只需最终验收
+- 新增卡片内容生产能力：内置“群聊误发式单图”创意、“问答式连续讨论流三图”创意。均使用html代码生成，无需AIGC模型，无平台限流风险；
+
+**成品展示见xiaobei的微信视频号和小红书号**：https://openclaw-for-business.com/media
+
+- 新增抖音平台图文音乐内容发布能力，支持多图上传、选择推荐配乐与发布链接回收;
+- 大幅优化小红书平台支持性能，并新增蒲公英达人合作和千帆分销商资料查询能力；
+- 新增对快手和tiktok平台的支持，优化 x（twitter）和weibo平台的支持；
+- 音乐生成新增支持百炼平台
 
 详见 [CHANGELOG.md](CHANGELOG.md)
 
@@ -54,9 +60,9 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 
 > 💡 **套餐选择**：前期熟悉安装可选 **Lite 版 39 元/月**；正常使用建议 **Standard 版 139 元/月**。想继续使用火山CodePlan见下方 "模型费用说明"
 
-> 🎬 **想用视频生成能力？** 默认可直接复用百炼 `AWK_API_KEY` 调用 `happyhorse` 系列，也可通过配置 `MODELSTUDIO_API_KEY` 和 `WORKSPACE_ID`使用百炼平台的赠送额度和“节省计划“包。
+> 🎬 **想用视频生成能力？** 默认使用百炼Token Plan内的 HappyHorse1.1 额度；配置 `MODELSTUDIO_API_KEY` 和 `WORKSPACE_ID` 后，使用百炼业务空间的 Wan3.0（效果更佳）。
 
-> 除了阿里云的`happyhorse`系列，我们现在也支持 minimax 的H3！详见下方[视频生成模型配置](#-视频生成模型配置)
+> 视频生成还支持火山 Seedance 和 MiniMax H3，详见下方[视频生成模型配置](#-视频生成模型配置)。
 
 ### 推荐：一键脚本安装（预构建 tarball 路线）
 
@@ -174,11 +180,19 @@ irm https://raw.atomgit.com/wiseflow/xiaobei/raw/master/scripts/install-atomgit.
 > | 平台 | 环境变量 | 模型 |
 > |------|---------|------|
 > | 阿里云百炼 Agent Plan（默认） | `AWK_API_KEY` | `happyhorse-1.1-i2v` / `happyhorse-1.1-t2v` / `happyhorse-1.1-r2v` |
-> | 阿里云百炼业务空间（可选） | `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`（或 `DASHSCOPE_API_KEY`） | 同上 |
-> | 火山引擎方舟 | `AWK_GEN_KEY` | `doubao-seedance-2-0-fast-260128` / `doubao-seedance-2-0-260128` / `doubao-seedance-2-0-mini-260615` |
+> | 阿里云百炼业务空间（可选） | `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`（或 `DASHSCOPE_API_KEY`） | `wan3.0-video` → `wan3.0-video-prime`，统一处理文生、首帧/首尾帧及多模态参考 |
+> | 火山引擎方舟 | `VOLC_SEEDANCE_API_KEY` | `doubao-seedance-2-5-260628` → `doubao-seedance-2-0-fast-260128` |
 > | minimax海螺 | `MINIMAX_API_KEY` | `minimax-H3` |
 >
-> 只配置百炼 `AWK_API_KEY` 时自动走 Agent Plan；若已有其他视频凭据，自动选择顺序为 MiniMax → 火山 → 百炼业务空间 → 百炼 Agent Plan。均未配置时，小贝改用 pexels/pixabay 素材模式（仍需注册获取对应的免费 Key）。`AWK_GEN_KEY` 是火山视频生成凭据，与百炼 `AWK_API_KEY` 不可混用。需要调整配置时，可以让小贝调用内置 IT Engineer 协助。
+> 只配置百炼 `AWK_API_KEY` 时自动走 Agent Plan；若已有其他视频凭据，自动选择顺序为 MiniMax → 火山 → 百炼业务空间 → 百炼 Agent Plan。均未配置时，小贝改用 pexels/pixabay 素材模式（仍需注册获取对应的免费 Key）。火山 Seedance 使用独立的普通方舟 API 凭据 `VOLC_SEEDANCE_API_KEY`（非 Coding/Token Plan），与百炼 `AWK_API_KEY` 不可混用；原 `AWK_GEN_KEY` 需改为新名。需要调整配置时，可以让小贝调用内置 IT Engineer 协助。
+>
+> 百炼业务空间 Wan3.0 支持2–30秒或智能时长 `--duration -1`、480P/720P/1080P、参考音频与无声输出；Agent Plan 保留 HappyHorse 候选链。素材与组合限制见[Wan3.0 使用指南](https://help.aliyun.com/zh/model-studio/wan3-video-generation-guide)。
+
+> 音乐生成可用 `aigc-video-gen music --platform dashscope` 调用百炼业务空间 `fun-music-v1`，支持歌曲、纯音乐及 MP3/WAV；纯音乐加 `--instrumental`。需完整业务空间凭据及模型权限，不使用 Agent Plan。自动选路为 MiniMax → 百炼业务空间，详见[音乐生成技能说明](skills/aigc-video-gen/SKILL.md)。
+
+> **🖼️ 图像生成模型配置**
+>
+> `awk-img-gen` 使用阿里云百炼：默认优先业务空间，再使用 Agent Plan，两种模式均默认调用 `qwen-image-3.0-pro`。Agent Plan 的模型候选链为 `qwen-image-3.0-pro` → `wan2.7-image-pro` → `wan2.7-image`。可通过 `awk-img-gen --platform dashscope --prompt "..."` 固定业务空间（需 `WORKSPACE_ID` + `MODELSTUDIO_API_KEY` 或 `DASHSCOPE_API_KEY`），或 `awk-img-gen --platform plan --prompt "..."` 固定 Agent Plan（需 `AWK_API_KEY`）。显式选择时缺少对应凭据就报错，不自动切换模式。
 
 > **🧠 进阶：记忆增强与 dream（可选）**
 >
@@ -269,17 +283,15 @@ v5.6.0 中我们几乎重构了 OpenClaw 原版的浏览器自动化方案（详
 | `002-disable-web-search-env-var` | **留**：openclaw 内置 web search 大部分需要申请 api key 甚至海外网络，小贝自带完全免费、零部署的 Smart Search 解决方案 | `OPENCLAW_DISABLE_WEB_SEARCH=1` |
 | `007-prefer-camoufox-cli` | **留**（改名）：在 browser 工具描述中提示优先用 camoufox-cli 做浏览器自动化，原 browser 工具仅作兜底 | 无 |
 
-**基于这套浏览器栈，我们沉淀了一批浏览器自动化技能**——这些技能源自我们自 AI 首席情报官项目以来长期积累的浏览器自动化技术经验，覆盖登录、填报、发布、互动、抓取等完整工作流：
+**浏览器与平台技能覆盖登录、填报、发布、互动、采集等工作流**，按平台使用浏览器自动化或 HTTP API：
 
 | 技能 | 职责 |
 |------|------|
 | `browser-guide` | 浏览器操作最佳实践总纲——登录墙 / CAPTCHA / lazy-load / paywall / 有头无头场景规则 / eval 用法 |
 | `smart-search` | 智能搜索——绕开 openclaw 内置 web search 的 api key 依赖，零部署免费方案 |
-| `web-form-fill` | 网络表单填报——从信息搜集到浏览器填报的完整工作流，强制有头模式便于用户随时介入 |
-| `login-manager` | 平台登录态管理——5 平台统一有头手动登录、探活规则、中央 cookie+UA 存储约定 |
-| 各平台发布/互动 skill | `twitter-post` / `twitter-interact` / `weibo-publish` / `zhihu-publish` / `xhs-publish` / `xhs-content-ops` / `douyin-video-publish` / `wechat-channels-publish` / `xianyu-ops` / `wx-mp-hunter` / `wx-mp-engagement` 等平台专属浏览器自动化技能 |
+| `ui-demo` | 浏览器操作演习与录屏，为教程、产品演示及视频 B-roll 提供素材 |
 
-这些技能共享同一套 forked camoufox-cli + 持久化 session 机制，登录态在 session profile 里闭环，按场景分离有头/无头模式（登录+填报走有头，自动化操作走无头），靠 session 名字符串约定共享 profile 目录与登录态。
+浏览器技能使用 camoufox-cli 与持久化 session，按场景切换有头/无头模式。
 
 ## 目录结构
 
@@ -292,7 +304,7 @@ wiseflow/
 │   ├── it-engineer/       # [built-in] IT 工程师——幕后运维 + 排障 sub-agent
 │   ├── content-producer/  # 内容制作者——视频/视觉生产线
 │   └── sales-cs/          # 销售型客服——绑 awada，默认禁用，按需招募
-├── skills/                # 公共技能（≥2 crew 共用，smart-search / browser-guide / login-manager 等）
+├── skills/                # 公共技能（≥2 crew 共用，smart-search / browser-guide 等）
 ├── patches/               # wiseflow 基础补丁
 │   ├── *.patch            # git 补丁（按序号顺序应用到 openclaw/）
 │   └── overrides.sh       # pnpm 依赖覆盖（如替换 playwright → patchright）
@@ -333,17 +345,15 @@ wiseflow/
 - Feedparser（Parse feeds in Python） https://github.com/kurtmckee/feedparser
 - SearXNG（a free internet metasearch engine which aggregates results from various search services and databases） https://github.com/searxng/searxng
 - opencli（A CLI for social media & web platforms — smart-search skill 借鉴了其搜索 URL 模式与平台适配方案） https://github.com/jackwener/opencli
-- AiToEarn（多平台自媒体发布工具 — `published-track` 的 18 平台文本/媒体限制规则表与内容校验、twitter 互动操作模式借鉴自此） https://github.com/yikart/AiToEarn
 - 文颜(Markdown文章排版美化工具，支持微信公众号、今日头条、知乎等平台。) https://github.com/caol64/wenyan
-- Everything Claude Code（Claude Code 全局 skill / rule / agent 集合，wiseflow 的 complex-task 等编排 skill 借鉴了其 blueprint 和 gan-style-harness 的设计思路） https://github.com/affaan-m/everything-claude-code
 - awesome-design-md（A curated collection of design systems in markdown format — Designer 内置设计系统库参考了此项目的设计系统结构） https://github.com/VoltAgent/awesome-design-md
 - cheat-on-content（自媒体打分算法借鉴、取数方案借鉴） https://github.com/XBuilderLAB/cheat-on-content
 - AutoClip（AI 视频智能切片系统 — `talking-head-cut` 技能的高光剪辑算法与工作流借鉴自此；`video-producer` 的 Stage 13b motion-audit 镜头抽帧打分思路亦借鉴其高光判定） https://github.com/zhouxiaoka/autoclip
-- HyperFrames（HeyGen 开源的 AI 视频生成编排框架 — `video-producer` 的脚本→分镜→渲染链式工作流与两道闸门审批节奏借鉴自此） https://github.com/heygen-com/hyperframes
+- HyperFrames（HeyGen 开源的视频编排与渲染框架 — `deck-render` 和 `video-producer visual-render` 使用其本地渲染能力；视频流程的两道闸门也借鉴其编排方式） https://github.com/heygen-com/hyperframes
 - html-video（nexu-io 的 HTML 视频渲染方案 — `video-producer` 的 Stage 10 静帧→成片渲染思路与素材组装约定参考自此） https://github.com/nexu-io/html-video
 - ViMax（HKUDS 的视频生成框架 — `video-producer` 的机位一致性约束与素材 slot 规划借鉴其镜头规划策略） https://github.com/HKUDS/ViMax
 - OpenMontage（calesthio 的开源蒙太奇剪辑方案 — `video-producer` 的 Stage 12 拼接成片+转场工作流借鉴其片段组装与节奏控制思路） https://github.com/calesthio/OpenMontage
-- gbro-collage-broll（MIT — 半调纸拼贴 B-roll 三闸门方法论 — `expert-video` 的 Collage B-roll workflow 移植自此：隐喻设计法、语义色场表、visual-spec schema、静帧/视频 QA 标准照搬，闸门映射为 GATE A/B、渲染栈换成 awk-img-gen + aigc-video-gen i2v） https://github.com/pyang5166/gbro-collage-broll
+- gbro-collage-broll（MIT — 半调纸拼贴 B-roll 方法论 — `expert-video` 的 Collage B-roll workflow 借鉴其隐喻设计、语义色场与视觉 QA；现由 awk-img-gen 提供独立纸片素材，HyperFrames 负责确定性组装，特殊生成式动作才调用 aigc-video-gen） https://github.com/pyang5166/gbro-collage-broll
 - agent-skills-launch-pack_（起号方法论知识来源） https://github.com/chenjin-cmd/agent-skills-launch-pack_
 
 ## Citation

@@ -1,748 +1,859 @@
 #!/usr/bin/env python3
-"""douyin-video-publish - 抖音内容发布(纯浏览器模拟方案,形态仿 wechat-channels-publish)
-
-形态与 wechat-channels-publish 同构:纯浏览器操作,走 forked camoufox-cli 持久化 session
-`douyin` + upload 命令,在创作者中心页面填表 + 上传视频 + 发布。
-
-**与 login-manager 的边界**:
-- 探活 / 有头手动登录 / 导出 cookie+UA 落中央存储 → **全交 login-manager**(不在本 skill 内做)
-- 本 skill 只复用 login-manager 准备好的持久化 session `douyin` 做发布操作
-- 本 skill **不吃 cookie**,浏览器操作严禁 `cookies import`
-
-子命令:
-  upload --video <path>   上传视频(forked cli upload 命令,底层 setInputFiles 穿透 shadow DOM)
-  fill --title X --caption Y  填标题/描述/话题
-  publish                 点"发布"按钮
-  get-link                取已发布视频的公开链接
-  run                     一键跑全流程(upload + fill + publish + get-link)
-
-发布任务跑完即 close 持久化 session `douyin`--登录态在磁盘 profile,不留进程占内存,下次发布 `--session douyin --persistent` 重起无头即恢复;只在 session 卡死时由调用方手动 `camoufox-cli --session douyin --json close` teardown。本 skill 不提供 cleanup 子命令。
-
-依赖:
-- camoufox-cli(全局可用)
-- login-manager skill(探活/有头登录/导出 cookie+UA 落中央存储供 viral-chaser/published-track 消费)
-  --本 skill 不调用 login-manager,但前置假设它已把持久化 session `douyin` 登录态准备好
-
-参考:
-- 形态仿 crews/main/skills/wechat-channels-publish(视频号浏览器模拟,纯浏览器操作不导出 cookie)
-- 用户上下文:抖音开放平台发布能力被驳回(主体资质不满足)→ 走浏览器模拟绕过
-"""
+"""Persistent creator video publication with validated inputs and resumable SMS."""
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
-import secrets
-import subprocess
-import sys
-import time
 from pathlib import Path
+import re
+import stat
+import sys
+import tempfile
+import time
+import unicodedata
 from typing import Optional
+from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
-from publish_browser import publish_lock, Browser
+from publish_browser import Browser, MANAGE_URL, SESSION, UPLOAD_URL, publish_lock, video_publish_state_path
 
-# ── 常量 ─────────────────────────────────────────────────────────────────────
-
-UPLOAD_URL = "https://creator.douyin.com/creator-micro/content/upload?enter_from=dou_web"
-CAMOUFOX_BIN = os.environ.get("CAMOUFOX_CLI", "camoufox-cli")
-# 持久化 session 名 = 平台 key(一个且只有一个持久化 session)
-# 由 login-manager 负责探活/有头登录/导出 cookie+UA 落中央存储;本 skill 只复用此 session 做发布操作
-PERSISTENT_SESSION = "douyin"
-
-UPLOAD_TIMEOUT_S = 300       # 上传最多 5 分钟(大文件)
-TRANSCODE_POLL_S = 3
-TRANSCODE_MAX_WAIT_S = 600    # 转码最多 10 分钟
-POST_PUBLISH_POLL_S = 5
-POST_PUBLISH_MAX_WAIT_S = 60  # 发布后跳转最多 1 分钟
+PERSISTENT_SESSION = SESSION
+UPLOAD_TIMEOUT_S = 300
+TRANSCODE_MAX_WAIT_S = 600
+POST_PUBLISH_MAX_WAIT_S = 60
+TITLE_SELECTOR = 'input[placeholder*="填写作品标题"]'
+CAPTION_SELECTOR = '[contenteditable="true"][data-slate-editor="true"]'
+WORK_LIST_URL = ('https://creator.douyin.com/janus/douyin/creator/pc/work_list'
+                 '?status=0&count=20&max_cursor=0&scene=star_atlas&device_platform=android&aid=1128')
+PENDING_STATES = {'submitted', 'awaiting_verification', 'unconfirmed'}
+DRAFT_HINT = '保留当前页面；用 edit-draft 继续编辑并检查视频、标题与双封面；视频缺失时 upload --resume-draft --video 原成片路径'
+RESULT_HINT = '用 resume/get-link 核查本次作品，勿重跑 run 或重复点发布；未确认成功时可检查原草稿'
 
 
-# ── 平台工具 ────────────────────────────────────────────────────────────────
+class PublishError(RuntimeError):
+    def __init__(self, code, hint='', exit_code=1):
+        super().__init__(code)
+        self.code, self.hint, self.exit_code = code, hint, exit_code
 
 
-def session_name(purpose: str = "publish") -> str:
-    """生成 camoufox session 名(D18 + 4.5.5 并发约束:每任务一 session)。"""
-    return f"douyin-{purpose}-{secrets.token_hex(4)}"
+def browser(session):
+    if session != SESSION:
+        raise PublishError('SESSION_INVALID', '必须使用持久化 session douyin')
+    return Browser()
 
 
-def camoufox_open(session: str, url: str) -> None:
-    """启 persistent 会话 + 打开 URL(camoufox-cli 默认 headless)。"""
-    if session != PERSISTENT_SESSION:
-        raise ValueError('发布必须复用 session douyin')
-    Browser().command('open', url)
+def camoufox_eval(session, js, timeout=30):
+    result = browser(session).command('eval', js, timeout=timeout)
+    return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
 
 
-# 抖音登录态关键 cookie（与 _shared/check-session.ts Tier1 一致：sessionid+sid_tt+uid_tt 必须全在）。
-# httpOnly，document.cookie 读不到，必须走 cookies export。
-DOUYIN_LOGIN_COOKIES = ("sessionid", "sid_tt", "uid_tt")
+def evaluate(session, js):
+    result = browser(session).eval(js)
+    return result
 
 
-def _check_logged_in(session: str) -> None:
-    """已 mute 成 no-op（2026-08-04）。
-
-    原版用 URL 跳转 + cookies export 双信号判登录态，实测误判率高（cookie 预热机制、
-    临时 profile 等导致 SESSION_EXPIRED 假阳性）。改为由 agent 在 open 上传页后自行根据
-    页面元素（用户头像/用户名等是否存在）判定登录态，再决定是否走 run / 重登。
-    本函数保留签名以免破坏现有调用链，但不再做任何检查、不再 exit 2。
-    """
-    return None
+def state_path():
+    return video_publish_state_path()
 
 
-def _dismiss_draft_dialog(session: str) -> None:
-    """上传页可能弹「你还有上次未发布的视频，是否继续编辑？」草稿恢复框。
-
-    点「放弃」清掉旧草稿，给新发布一个干净的上传页。无弹窗则 no-op。
-    旧草稿在场时新视频上传/发布会被带偏（2026-07-17 xiaobei 事故根因之一：
-    上次失败发布留了草稿，新发布被旧草稿带偏，页面跳管理页但实际没发出去）。
-    """
-    has_dialog = camoufox_eval(
-        session,
-        "(document.body.innerText||'').indexOf('你还有上次未发布的视频')>=0?'yes':'no'",
-    ) == "yes"
-    if not has_dialog:
-        return
-    sys.stderr.write("[douyin-video-publish] 检测到上次未发布草稿，点「放弃」清掉后重新上传...\n")
-    if not camoufox_click_leaf_by_text(session, "放弃"):
-        sys.stderr.write("warn: 草稿弹窗「放弃」按钮未点到，继续上传（可能受弹窗干扰）\n")
-        return
-    time.sleep(2)  # 等弹窗关闭、上传页重渲染
-    # 放弃后可能弹二次确认（「确定放弃？」），有就点确定
-    if camoufox_eval(session, "(document.body.innerText||'').indexOf('确定放弃')>=0?'yes':'no'") == "yes":
-        camoufox_click_button_by_text(session, "确定")
-        time.sleep(1)
-
-
-def camoufox_eval(session: str, js: str, timeout: int = 30) -> Optional[str]:
-    """在 session 内 eval JS,返回 data 字段(None 表示失败)。
-
-    必须带 --persistent:ensureDaemon 按 session+mode 复用 daemon(不查 persistent-ness),
-    若 eval 不带 --persistent 又恰好是首个触发 daemon spawn 的调用,会起一个非持久 daemon
-    (临时 profile /tmp/playwright_firefoxdev_profile-XXX,无 auth cookie),后续
-    camoufox_open --persistent 进来也复用这个非持久 daemon → 全程临时 profile → 登录页 +
-    work_list sc=8(2026-07-18 xiaobei get-link 事故根因)。所有 camoufox-cli 调用必须
-    一致带 --persistent,保证 daemon 首次 spawn 即持久。
-    """
-    cmd = [CAMOUFOX_BIN, "--session", session, "--persistent", "--json", "eval", js]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
+def read_state():
+    path = state_path()
+    if not path.exists():
+        return {}
     try:
-        env = json.loads(result.stdout)
-        data = env.get("data")
-        if isinstance(data, dict):
-            # camoufox-cli eval 返回 {"data": {"result": "..."}}
-            return data.get("result")
-        return data if isinstance(data, str) else json.dumps(data)
-    except json.JSONDecodeError:
-        return result.stdout
+        state = json.loads(path.read_text('utf-8'))
+        if not isinstance(state, dict) or state.get('session') != SESSION:
+            raise ValueError('invalid state')
+        return state
+    except (OSError, ValueError) as exc:
+        raise PublishError('PUBLISH_STATE_INVALID', '保留原状态文件并人工核查本次任务') from exc
 
 
-def camoufox_click(session: str, selector: str) -> bool:
-    """click selector;返回是否成功。"""
-    js = f"""
-    (function() {{
-        var el = document.querySelector({json.dumps(selector)});
-        if (!el) return 'false';
-        el.click();
-        return 'true';
-    }})()
-    """
-    out = camoufox_eval(session, js)
-    return out == "true"
-
-
-def camoufox_type(session: str, selector: str, text: str) -> bool:
-    """在 input/textarea 填值;触发 input 事件。"""
-    js = f"""
-    (function() {{
-        var el = document.querySelector({json.dumps(selector)});
-        if (!el) return 'false';
-        var proto = Object.getPrototypeOf(el);
-        var setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-        setter.call(el, {json.dumps(text)});
-        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
-        return 'true';
-    }})()
-    """
-    out = camoufox_eval(session, js)
-    return out == "true"
-
-
-def camoufox_upload(session: str, selector: str, file_path: Path) -> bool:
-    """用 forked cli 的 upload 命令注入文件到 input[type=file]。
-
-    fork 加的 upload 命令底层走 Playwright locator.setInputFiles,穿透 shadow DOM,
-    无需 DataTransfer base64 hack(绕过 CDP setFileInput 在某些 DOM 下的限制)。
-    """
-    result = subprocess.run(
-        [CAMOUFOX_BIN, "--session", session, "--persistent", "--json", "upload", selector, str(file_path)],
-        capture_output=True, text=True, timeout=UPLOAD_TIMEOUT_S, check=False,
-    )
-    return result.returncode == 0
-
-
-def camoufox_wait_for_text(session: str, text: str, timeout: int = TRANSCODE_MAX_WAIT_S) -> bool:
-    """轮询页面,等待出现特定文本(转码完成 / 上传成功)。"""
-    js = f"document.body && document.body.innerText && document.body.innerText.indexOf({json.dumps(text)}) >= 0"
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        out = camoufox_eval(session, js)
-        if out == "true":
-            return True
-        time.sleep(TRANSCODE_POLL_S)
-    return False
-
-
-def camoufox_wait_for_selector(session: str, selector: str, timeout: int = TRANSCODE_MAX_WAIT_S) -> bool:
-    """轮询页面,等待 selector 命中(比文本匹配稳:抖音上传完成后表单 input 渲染出来才是真完成信号)。"""
-    js = f"document.querySelector({json.dumps(selector)}) ? 'true' : 'false'"
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        out = camoufox_eval(session, js)
-        if out == "true":
-            return True
-        time.sleep(TRANSCODE_POLL_S)
-    return False
-
-
-def camoufox_wait_for_url_contains(session: str, substr: str, timeout: int = POST_PUBLISH_MAX_WAIT_S) -> bool:
-    """轮询直到当前 URL 含 substr(发布成功后跳转到 /content/manage 是权威成功信号)。"""
-    js = f"window.location.href.indexOf({json.dumps(substr)}) >= 0 ? 'true' : 'false'"
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        out = camoufox_eval(session, js)
-        if out == "true":
-            return True
-        time.sleep(POST_PUBLISH_POLL_S)
-    return False
-
-
-def camoufox_type_contenteditable(session: str, selector: str, text: str) -> bool:
-    """往 contenteditable 富文本区填文本(抖音简介是 editor-kit contenteditable div,value setter 无效)。
-    先 focus + execCommand insertText(富文本编辑器标准路径),读回若为空则回退 textContent + input 事件。"""
-    js = f"""
-    (function() {{
-        var el = document.querySelector({json.dumps(selector)});
-        if (!el) return 'no-element';
-        el.focus();
-        try {{
-            var range = document.createRange();
-            range.selectNodeContents(el);
-            range.collapse(false);
-            var sel = window.getSelection();
-            sel.removeAllRanges(); sel.addRange(range);
-            document.execCommand('insertText', false, {json.dumps(text)});
-        }} catch (e) {{}}
-        if (!el.innerText || el.innerText.trim().length < 2) {{
-            el.innerText = {json.dumps(text)};
-            el.dispatchEvent(new InputEvent('input', {{bubbles: true, inputType: 'insertText', data: {json.dumps(text)}}}));
-        }}
-        return el.innerText.length > 0 ? 'true' : 'empty';
-    }})()
-    """
-    return camoufox_eval(session, js) == "true"
-
-
-def camoufox_click_button_by_text(session: str, text: str) -> bool:
-    """按 innerText 精确匹配点 button/[role=button](:has-text 不是 CSS,querySelector 用不了)。"""
-    js = f"""
-    (function() {{
-        var btns = Array.from(document.querySelectorAll('button,[role="button"]'));
-        for (var b of btns) {{ if ((b.innerText || '').trim() === {json.dumps(text)}) {{ b.click(); return 'true'; }} }}
-        return 'no-button';
-    }})()
-    """
-    return camoufox_eval(session, js) == "true"
-
-
-def camoufox_click_leaf_by_text(session: str, text: str) -> bool:
-    """按 innerText 精确匹配点叶子节点(下拉选项、自定义 select 项等无语义标签场景)。"""
-    js = f"""
-    (function() {{
-        var nodes = Array.from(document.querySelectorAll('div,span,li,option,a'));
-        for (var n of nodes) {{
-            if (n.children.length === 0 && (n.innerText || '').trim() === {json.dumps(text)}) {{ n.click(); return 'true'; }}
-        }}
-        return 'no-leaf';
-    }})()
-    """
-    return camoufox_eval(session, js) == "true"
-
-
-# ── 子命令实现 ──────────────────────────────────────────────────────────────
-
-
-def cmd_open_page(*, session: Optional[str] = None) -> None:
-    """open 上传页(无头 persistent session),供 agent 判定登录态后再走 run。
-
-    新流程(2026-08-04):agent 先调本命令 open 上传页,再用 camoufox-cli eval/snapshot
-    根据页面元素(用户头像/用户名是否存在、是否跳 /login)判定登录态。判定为已登录后
-    调 `douyin-video-publish run` 走发布;判定为未登录则走 login-manager 有头重登。
-
-    本命令只 open + 输出 session 名 + 当前 URL,不做任何登录态判定(原 _check_logged_in
-    已 mute,误判率高)。
-    """
-    if not session:
-        session = PERSISTENT_SESSION
-    camoufox_open(session, UPLOAD_URL)
-    # 给页面一点渲染时间,再读 URL 供 agent 参考
-    time.sleep(2)
-    cur_url = camoufox_eval(session, "window.location.href") or ""
-    sys.stdout.write(json.dumps(
-        {"ok": True, "session": session, "url": cur_url, "hint": "agent 用 camoufox-cli eval/snapshot 判定登录态"},
-        ensure_ascii=False,
-    ))
-    sys.stdout.write("\n")
-
-
-def cmd_upload(*, video: str, session: Optional[str] = None) -> None:
-    """上传视频到创作者中心。session 默认走持久化 `douyin`(登录态在持久化 session 里)。
-    同 session 已有命令在跑时,新命令 fail-first(同 session 已有命令在跑时新命令直接 fail)--agent 等当前操作完成再重试。"""
-    if not session:
-        session = PERSISTENT_SESSION
-    video_path = Path(video).resolve()
-    if video_path.suffix.lower() not in {".mp4", ".mov"}:
-        raise ValueError("--video 仅支持 mp4/mov")
-    if not video_path.is_file():
-        sys.stderr.write(f"error: video not found: {video_path}\n")
-        sys.exit(1)
-
-    camoufox_open(session, UPLOAD_URL)
-    # 登录态守卫：open 完立即验，未登录 exit 2，不往下走 fill/publish 误报成功。
-    _check_logged_in(session)
-    # 清掉上次失败发布留下的草稿弹窗，给新发布一个干净上传页。
-    _dismiss_draft_dialog(session)
-    # 抖音创作者中心上传 file input(2026-07-17 真机 spike 确认:accept 含 video/*,.mp4 等,唯一一个)
-    file_input_selector = 'input[type="file"][accept*="video"]'
-    if not camoufox_upload(session, file_input_selector, video_path):
-        sys.stderr.write("error: 上传 input 未找到或 upload 注入失败(DOM 改版?)\n")
-        sys.exit(1)
-
-    sys.stderr.write("[douyin-video-publish] 视频已注入,等待上传/转码...\n")
-    # 上传+转码完成的真实信号是表单渲染出来(标题 input 出现),而非页面文本"上传成功"--
-    # 抖音上传页根本没有"上传成功"这四个字,旧写法必超时。2026-07-17 真机 spike 确认。
-    if not camoufox_wait_for_selector(session, 'input[placeholder*="填写作品标题"]', TRANSCODE_MAX_WAIT_S):
-        sys.stderr.write("error: 视频上传/转码超时(标题表单未出现)\n")
-        sys.exit(1)
-    sys.stdout.write(json.dumps({"ok": True, "session": session, "video": str(video_path)}, ensure_ascii=False))
-    sys.stdout.write("\n")
-
-
-def cmd_fill(*, session: str, title: str = "", caption: str = "") -> None:
-    """填标题 / 简介 / 话题 + 自主声明(内容由AI生成)。选择器 2026-07-17 真机 spike 确认。"""
-    if title:
-        # 主标题 input(placeholder="填写作品标题,为作品获得更多流量")。收窄到"填写作品标题"
-        # 避免误中付费场景标题 input(placeholder="请输入付费场景下的视频标题")。
-        if not camoufox_type(session, 'input[placeholder*="填写作品标题"]', title):
-            sys.stderr.write("error: 标题 input 未找到\n")
-            sys.exit(1)
-    if caption:
-        # 简介是 editor-kit contenteditable div(data-placeholder="添加作品简介"),value setter 无效。
-        if not camoufox_type_contenteditable(session, 'div[contenteditable="true"][data-placeholder*="作品简介"]', caption):
-            sys.stderr.write("error: 简介 contenteditable 未找到或填入失败\n")
-            sys.exit(1)
-    # 自主声明:Semi-UI 自定义下拉,默认"请选择自主声明"。点开再选"内容由AI生成"。
-    if not _select_ai_declaration(session):
-        sys.stderr.write("error: 自主声明「内容由AI生成」选择失败\n")
-        sys.exit(1)
-    sys.stdout.write(json.dumps({"ok": True, "title": title, "caption": caption}, ensure_ascii=False))
-    sys.stdout.write("\n")
-
-
-def _select_ai_declaration(session: str) -> bool:
-    """点开自主声明下拉,选「内容由AI生成」。下拉不存在(页面改版去掉声明区)时返回 True 不当错误。"""
-    js_open = """
-    (function() {
-        var nodes = Array.from(document.querySelectorAll('div,span'));
-        for (var n of nodes) {
-            if ((n.innerText || '').trim() === '请选择自主声明') { n.click(); return 'clicked'; }
-        }
-        return 'no-select';
-    })()
-    """
-    if camoufox_eval(session, js_open) != "clicked":
-        # 没有自主声明区--不阻断（部分账号/页面无此选项）
-        return True
-    time.sleep(1)
-    # 选「内容由AI生成」
-    if not camoufox_click_leaf_by_text(session, "内容由AI生成"):
-        return False
-    time.sleep(1)
-    # 点「确定」按钮让声明生效（2026-07-17 真机确认：选完声明后需点确定）
-    return camoufox_click_button_by_text(session, "确定")
-
-
-def cmd_publish(*, session: str) -> None:
-    """点"发布"按钮(button[type=submit] 文本"发布",:has-text 非 CSS,按 innerText 点)。
-    发布前注入 fetch/XHR 拦截器捕获发布 API 响应中的 aweme_id,写入 localStorage(跨同源导航存活)。
-    aweme_id 捕获不到 → exit 3（发布可能未真正成功，不再误报 ok）。"""
-    # 拦截器：捕获所有 fetch/XHR 响应，深度搜索 aweme_id/item_id，全量记 debug 日志。
-    # 旧版只匹配 url 含 'publish' 的请求 + 固定提取路径，对不上抖音真实发布接口，
-    # aweme_id 一直 null（2026-07-17 xiaobei 事故）。现改为全量捕获 + 深度提取 + debug 落盘，
-    # 下次跑能把真实发布 API 的 URL/响应 shape 反馈回来精准收窄。
-    # aweme_id + debug 都写 localStorage：发布后页面跳管理页，window 变量随旧 document 销毁，
-    # localStorage 在 creator.douyin.com 同源下跨导航存活，管理页能读回。
-    js_intercept = """
-    (function() {
-        window.__capturedAwemeId = null;
-        window.__publishDebug = [];
-        try { localStorage.removeItem('douyin_last_aweme_id'); } catch(e) {}
-        try { localStorage.removeItem('douyin_publish_debug'); } catch(e) {}
-        function stash(id) {
-            if (!id) return;
-            id = String(id);
-            if (window.__capturedAwemeId) return;
-            window.__capturedAwemeId = id;
-            try { localStorage.setItem('douyin_last_aweme_id', id); } catch(e) {}
-        }
-        function extract(data) {
-            try {
-                var found = null;
-                (function walk(o, depth) {
-                    if (found || depth > 10 || !o || typeof o !== 'object') return;
-                    for (var k in o) {
-                        if (!Object.prototype.hasOwnProperty.call(o, k)) continue;
-                        var v = o[k];
-                        if ((k === 'aweme_id' || k === 'item_id' || k === 'awemeId' || k === 'itemId' || k === 'video_id')
-                            && v != null && v !== '' && typeof v !== 'object') { found = String(v); return; }
-                        if (typeof v === 'object') walk(v, depth + 1);
-                    }
-                })(data, 0);
-                return found;
-            } catch(e) { return null; }
-        }
-        function logReq(url, method, status, body) {
-            try {
-                window.__publishDebug.push({
-                    url: String(url).slice(0, 300), method: method || 'GET',
-                    status: status, body: body ? String(body).slice(0, 1000) : null
-                });
-                if (window.__publishDebug.length > 300) window.__publishDebug.shift();
-                try { localStorage.setItem('douyin_publish_debug', JSON.stringify(window.__publishDebug)); } catch(e) {}
-            } catch(e) {}
-        }
-        var origFetch = window.fetch;
-        window.fetch = function() {
-            var url = arguments[0];
-            var method = (arguments[1] && arguments[1].method) || 'GET';
-            return origFetch.apply(this, arguments).then(function(resp) {
-                try {
-                    resp.clone().text().then(function(txt) {
-                        logReq(url, method, resp.status, txt);
-                        var id = null; try { id = extract(JSON.parse(txt)); } catch(e) {}
-                        if (id) stash(id);
-                    }).catch(function(){});
-                } catch(e) {}
-                return resp;
-            });
-        };
-        var origOpen = XMLHttpRequest.prototype.open;
-        var origSend = XMLHttpRequest.prototype.send;
-        XMLHttpRequest.prototype.open = function(method, url) {
-            this.__url = url; this.__method = method;
-            return origOpen.apply(this, arguments);
-        };
-        XMLHttpRequest.prototype.send = function() {
-            var self = this;
-            this.addEventListener('load', function() {
-                try {
-                    logReq(self.__url, self.__method, self.status, self.responseText);
-                    var id = null; try { id = extract(JSON.parse(self.responseText)); } catch(e) {}
-                    if (id) stash(id);
-                } catch(e) {}
-            });
-            return origSend.apply(this, arguments);
-        };
-        return 'intercepted';
-    })()
-    """
-    camoufox_eval(session, js_intercept)
-    # 记发布前时间,用于 work_list 按 create_time 锁定本次作品(发布走 form/导航,
-    # 拦截器抓不到 aweme_id 时回退打 work_list API 取 create_time>=此时刻的最新作品)。
-    publish_start = int(time.time())
-    if not camoufox_click_button_by_text(session, "发布"):
-        sys.stderr.write("error: 发布按钮未找到(DOM 改版?)\n")
-        sys.exit(1)
-    sys.stderr.write("[douyin-video-publish] 已点发布,等待跳转...\n")
-    # 发布成功后页面跳转到作品管理页 /content/manage(中间会闪"正在发布"转圈 toast)。
-    # 没有"发布成功"文本,旧 wait_for_text 必超时。2026-07-17 真机 spike 确认。
-    if not camoufox_wait_for_url_contains(session, "/creator-micro/content/manage", POST_PUBLISH_MAX_WAIT_S):
-        sys.stderr.write("error: 发布后未跳转到管理页\n")
-        sys.exit(1)
-    # 跳到管理页后立刻读 localStorage——趁登录态还在、同源 document 还在,把 id 落到本进程。
-    aweme_id = _read_captured_aweme_id(session)
-    # 拦截器 miss(发布走 form/导航非 fetch)→ 直接打 work_list API 拿最新作品。
-    # 列表不按 create_time 排序,按 create_time>=publish_start-120 筛后取最新,锁定本次发布。
-    if not aweme_id:
-        aweme_id, title = _fetch_newest_aweme_id(session, since_ts=publish_start - 120)
-        if aweme_id:
-            sys.stderr.write(
-                f"[douyin-video-publish] work_list API 取到最新作品 aweme_id={aweme_id} title={title!r}\n"
-            )
-            # 落 localStorage 供 get-link 复用(跨导航存活)
-            camoufox_eval(
-                session,
-                f"try{{localStorage.setItem('douyin_last_aweme_id',{json.dumps(aweme_id)});}}catch(e){{}}",
-            )
-    # debug 日志落盘供排查（aweme_id 命中与否都写，方便 xiaobei 回传真实发布 API shape）
-    debug_path = f"/tmp/dy-publish-debug-{int(time.time())}.json"
-    debug_entries = _read_publish_debug(session)
+def save_state(state):
+    path = state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    state['session'] = SESSION
+    fd, temporary = tempfile.mkstemp(prefix='.douyin-video-', dir=path.parent)
     try:
-        Path(debug_path).write_text(json.dumps(debug_entries, ensure_ascii=False, indent=2), "utf-8")
-        sys.stderr.write(f"[douyin-video-publish] debug 日志已写 {debug_path}（{len(debug_entries)} 条请求，请回传给研发）\n")
-    except Exception as e:
-        sys.stderr.write(f"warn: debug 日志写盘失败: {e}\n")
-    # aweme_id 没捕获到 → 发布可能未真正成功（拦截器没命中真实发布 API，或发布被服务端拒了）。
-    # 不再误报 ok——宁可误判失败让人工核实管理页，不可误报成功。（2026-07-17 xiaobei 事故根因之二）
-    if not aweme_id:
-        sys.stderr.write(
-            "error: 发布流程走完但未捕获到 aweme_id——发布可能未真正成功（发布 API 未命中拦截器或被服务端拒绝）。\n"
-            f"       请人工到管理页核实是否真有新作品；debug 日志在 {debug_path}\n"
-        )
-        sys.exit(3)
-    sys.stdout.write(json.dumps({"ok": True, "session": session, "aweme_id": aweme_id}, ensure_ascii=False))
-    sys.stdout.write("\n")
-
-
-WORK_LIST_URL = (
-    "https://creator.douyin.com/janus/douyin/creator/pc/work_list"
-    "?status=0&count=20&max_cursor=0&scene=star_atlas&device_platform=android&aid=1128"
-)
-
-
-def _fetch_newest_aweme_id(session: str, since_ts: Optional[int] = None) -> tuple[Optional[str], Optional[str]]:
-    """直接打作品管理 list API 拿最新作品的 aweme_id。
-
-    发布走 form/导航(非 fetch/XHR),发布页拦截器抓不到 aweme_id(2026-07-17 xiaobei 事故)。
-    但发布成功后作品进管理页 list,同源 fetch work_list 带 cookie 即可拿到 aweme_list。
-    列表**不按 create_time 排序**,必须自己排序取最新。
-
-    Args:
-        since_ts: 若给定,只考虑 create_time >= since_ts 的作品(发布前记的时间 - buffer,
-                  用来锁定「本次发布」的作品,避免误中上一次的旧作品)。None 则不筛(取全局最新)。
-
-    Returns:
-        (aweme_id, title) 或 (None, None)。
-
-    headless session 登录态间歇性不稳(2026-07-17 xiaobei 事故:同 URL 同 session
-    有时 status_code=0 有时 =8,连发 15 次全 0 但偶发 8,无法稳定复现)。
-    status_code!=0 时纯重试(同页连发就稳,不需 reload),最多 3 次;
-    3 次全 sc!=0 → exit 2(SESSION_EXPIRED)让调用方走 login-manager 重登。
-    """
-    since = int(since_ts) if since_ts else 0
-    js = f"""
-    (async function() {{
-        try {{
-            var r = await fetch({json.dumps(WORK_LIST_URL)}, {{credentials: 'include'}});
-            var j = await r.json();
-            var sc = (typeof j.status_code === 'number') ? j.status_code : 0;
-            var list = j.aweme_list || [];
-            var items = list.map(function(it) {{
-                var id = it.aweme_id || it.item_id;
-                var ct = it.create_time || 0;
-                var title = '';
-                try {{ title = (it.aweme_desc && it.aweme_desc.text) || it.desc || it.title || ''; }} catch(e) {{}}
-                return {{id: String(id), ct: Number(ct), title: String(title).slice(0, 60)}};
-            }}).filter(function(x) {{ return x.id && x.id.length > 5; }});
-            if ({since} > 0) items = items.filter(function(x) {{ return x.ct >= {since}; }});
-            items.sort(function(a, b) {{ return b.ct - a.ct; }});
-            var top = items[0];
-            if (!top) return JSON.stringify({{sc: sc, id: null}});
-            return JSON.stringify({{sc: sc, id: top.id, ct: top.ct, title: top.title, count: items.length}});
-        }} catch(e) {{ return JSON.stringify({{sc: -1, id: null, err: String(e)}}); }}
-    }})()
-    """
-    last_sc = None
-    for attempt in range(3):
-        out = camoufox_eval(session, js, timeout=40)
-        data = None
-        if out and out != "null":
-            try:
-                data = json.loads(out)
-            except Exception:
-                data = None
-        if not data:
-            # eval 失败(页面没开 / daemon 挂)→ 开管理页重试
-            camoufox_open(session, "https://creator.douyin.com/creator-micro/content/manage")
-            time.sleep(5)
-            continue
-        sc = data.get("sc", 0)
-        aid = data.get("id")
-        if sc == 0 and aid:
-            return str(aid), data.get("title")
-        if sc == 0 and not aid:
-            # API 正常但没匹配作品(since_ts 筛掉所有)→ 不重试
-            return None, None
-        # sc != 0 → 鉴权间歇失败,短等重试
-        last_sc = sc
-        sys.stderr.write(
-            f"[douyin-video-publish] work_list status_code={sc}(attempt {attempt + 1}/3),间歇鉴权失败,重试...\n"
-        )
-        time.sleep(2)
-    # 3 次都 sc!=0 → session 失效,交调用方重登
-    sys.stderr.write(
-        f"error: work_list API 鉴权持续失败(3 次 status_code={last_sc})——登录态已失效,"
-        "请走 login-manager --platform douyin 有头重登后重试\n"
-    )
-    sys.exit(2)
-
-
-def _read_captured_aweme_id(session: str) -> Optional[str]:
-    """从 localStorage(跨导航存活)读发布时捕获的 aweme_id,读不到再退回 window 变量。"""
-    js = """
-    (function() {
-        try { var id = localStorage.getItem('douyin_last_aweme_id'); if (id) return id; } catch(e) {}
-        return window.__capturedAwemeId || null;
-    })()
-    """
-    out = camoufox_eval(session, js)
-    if out and out != "null":
-        return out
-    return None
-
-
-def _read_publish_debug(session: str) -> list:
-    """从 localStorage 读发布期间拦截器记录的所有 fetch/XHR 请求（跨导航存活）。"""
-    js = """
-    (function() {
-        try { var d = localStorage.getItem('douyin_publish_debug'); if (d) return d; } catch(e) {}
-        return JSON.stringify(window.__publishDebug || []);
-    })()
-    """
-    out = camoufox_eval(session, js)
-    if not out or out == "null":
-        return []
-    try:
-        return json.loads(out) if isinstance(json.loads(out), list) else []
-    except Exception:
-        return []
-
-
-def cmd_get_link(*, session: str) -> None:
-    """取已发布视频的公开链接。
-
-    策略1(首选):读 publish 时写入 localStorage 的 aweme_id——localStorage 在
-    creator.douyin.com 同源下跨发布→管理导航存活,无需重开页面,登录态还在。
-    策略2(兜底):管理页 DOM 找刚发布作品卡片(改版后 selector 可能失效,仅兜底)。
-    """
-    # 策略1: localStorage(跨导航存活)+ window 变量双保险
-    aweme_id = _read_captured_aweme_id(session)
-    if aweme_id:
-        url = "https://www.douyin.com/video/" + aweme_id
-        sys.stdout.write(json.dumps({"ok": True, "url": url, "aweme_id": aweme_id}, ensure_ascii=False))
-        sys.stdout.write("\n")
-        return
-    # 策略2: 直接打 work_list API 取最新作品(发布走 form/导航,拦截器抓不到 aweme_id 时靠这路)。
-    # 无 since_ts(不知发布时刻),取全局最新——run 流程下 get-link 紧跟 publish,localStorage 通常已命中,
-    # 走到这里说明 localStorage 被清,取最新作品兜底。
-    aweme_id, title = _fetch_newest_aweme_id(session)
-    if aweme_id:
-        url = "https://www.douyin.com/video/" + aweme_id
-        sys.stderr.write(f"[douyin-video-publish] get-link 走 work_list 兜底:aweme_id={aweme_id} title={title!r}\n")
-        sys.stdout.write(json.dumps({"ok": True, "url": url, "aweme_id": aweme_id}, ensure_ascii=False))
-        sys.stdout.write("\n")
-        return
-    # 策略3: 管理页 DOM(旧方案,可能因改版失效)。当前页可能已是 manage,先看 URL 再决定是否 open。
-    cur_url = camoufox_eval(session, "window.location.href")
-    if not cur_url or "/creator-micro/content/manage" not in (cur_url or ""):
-        camoufox_open(session, "https://creator.douyin.com/creator-micro/content/manage")
-        time.sleep(3)
-    js = """
-    (function() {
-        var a = document.querySelector('a[href*="/video/"]');
-        if (a) return a.href;
-        var el = document.querySelector('[data-aweme-id],[data-id],[data-e2e*="video"]');
-        if (el) { var id = el.getAttribute('data-aweme-id') || el.getAttribute('data-id'); if (id) return 'https://www.douyin.com/video/' + id; }
-        return null;
-    })()
-    """
-    out = camoufox_eval(session, js)
-    if out and out != "null":
-        sys.stdout.write(json.dumps({"ok": True, "url": out}, ensure_ascii=False))
-        sys.stdout.write("\n")
-        return
-    sys.stderr.write("warn: 视频链接提取失败(localStorage/work_list/DOM 均未命中),但发布已成功\n")
-    sys.stdout.write(json.dumps({"ok": True, "url": None, "note": "published but link extraction failed"}, ensure_ascii=False))
-    sys.stdout.write("\n")
-
-
-def cmd_run(*, video: str, title: str, caption: str = "") -> None:
-    """一键跑全流程:upload → fill → publish → get-link。
-
-    探活/登录/导出 cookie+UA 交 login-manager(不在本 skill 内做)--本函数假设持久化 session
-    `douyin` 已由 login-manager 登录态准备好,直接复用做发布操作。若 session 失效,camoufox-cli
-    open 创作者中心页面会跳登录页,下游 snapshot/snapshot 失败会显式报错(由调用方转 login-manager 重登)。
-    """
-    session = PERSISTENT_SESSION
-    try:
-        cmd_upload(video=video, session=session)
-        cmd_fill(session=session, title=title, caption=caption)
-        cmd_publish(session=session)
-        cmd_get_link(session=session)
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            json.dump(state, stream, ensure_ascii=False)
+        os.replace(temporary, path)
     finally:
-        # 用完即 close--登录态在磁盘 profile,不留进程占内存;下次发布按需重起无头 session
-        try:
-            subprocess.run([CAMOUFOX_BIN, "--session", session, "--json", "close"],
-                           capture_output=True, text=True, timeout=10, check=False)
-        except Exception:
-            pass
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
-# ── main ─────────────────────────────────────────────────────────────────────
+def check_no_pending():
+    if read_state().get('state') in PENDING_STATES:
+        raise PublishError('PUBLISH_PENDING', RESULT_HINT, 3)
 
-def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="douyin-video-publish",
-        description="抖音内容发布(纯浏览器模拟方案,形态仿 wechat-channels-publish。探活/有头登录/导出 cookie+UA 交 login-manager)",
-    )
-    sub = p.add_subparsers(dest="cmd", required=True)
 
-    p_open = sub.add_parser("open-page", help="open 上传页(无头 persistent session),供 agent 判定登录态后再走 run")
-    p_open.add_argument("--session", default=None)
-    p_open.set_defaults(func=lambda a: cmd_open_page(session=a.session))
+def _check_logged_in(session):
+    url = evaluate(session, 'window.location.href') or ''
+    if url.split('?', 1)[0].rstrip('/').endswith(('/login', '/creator-micro/login')):
+        raise PublishError('SESSION_EXPIRED', '执行 douyin-publish login；提交过的作品先核实，勿重发', 2)
 
-    p_upload = sub.add_parser("upload", help="上传视频")
-    p_upload.add_argument("--video", required=True)
-    p_upload.add_argument("--session", default=None)
-    p_upload.set_defaults(func=lambda a: cmd_upload(video=a.video, session=a.session))
 
-    p_fill = sub.add_parser("fill", help="填标题/描述")
-    p_fill.add_argument("--session", required=True)
-    p_fill.add_argument("--title", default="")
-    p_fill.add_argument("--caption", default="")
-    p_fill.set_defaults(func=lambda a: cmd_fill(session=a.session, title=a.title, caption=a.caption))
+# Keyboard and pointer operations use fresh, scoped Playwright refs.
+def control_ref(session, selector, *, button=False):
+    marker = 'data-xiaobei-publish-target'
+    setup = evaluate(session, f'''(() => {{
+      const visible = e => !!(e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden');
+      const nodes = Array.from(document.querySelectorAll({json.dumps(selector)})).filter(visible);
+      if (nodes.length !== 1 || nodes[0].disabled || nodes[0].readOnly || nodes[0].getAttribute('aria-disabled') === 'true') return false;
+      document.querySelectorAll('[{marker}]').forEach(e => e.removeAttribute('{marker}'));
+      const e = nodes[0]; e.setAttribute('{marker}', '1');
+      e.setAttribute('data-xiaobei-old-label', e.getAttribute('aria-label') || '');
+      e.setAttribute('aria-label', 'xiaobei publication target');
+      if ({json.dumps(button)} && !e.matches('button,[role="button"],a,input')) {{
+        e.setAttribute('data-xiaobei-old-role', e.getAttribute('role') || ''); e.setAttribute('role', 'button');
+      }} else if (!{json.dumps(button)} && e.isContentEditable && e.getAttribute('role')!=='textbox') {{
+        e.setAttribute('data-xiaobei-old-role', e.getAttribute('role') || ''); e.setAttribute('role', 'textbox');
+      }}
+      return true;
+    }})()''')
+    if setup is not True:
+        raise PublishError('CONTROL_NOT_UNIQUE_OR_EDITABLE', selector)
+    snapshot = browser(session).command('snapshot', '-s', f'[{marker}]')
+    refs = re.findall(r'\[ref=(e\d+)\]', snapshot.get('snapshot', ''))
+    if not refs:
+        raise PublishError('CONTROL_REF_MISSING', selector)
+    return refs[0]
 
-    p_pub = sub.add_parser("publish", help="点发布按钮")
-    p_pub.add_argument("--session", required=True)
-    p_pub.set_defaults(func=lambda a: cmd_publish(session=a.session))
 
-    p_link = sub.add_parser("get-link", help="取已发布视频链接")
-    p_link.add_argument("--session", required=True)
-    p_link.set_defaults(func=lambda a: cmd_get_link(session=a.session))
+def cleanup_control(session):
+    evaluate(session, '''(() => {
+      document.querySelectorAll('[data-xiaobei-old-role]').forEach(e => {
+        const role=e.getAttribute('data-xiaobei-old-role');
+        if (role) e.setAttribute('role',role); else e.removeAttribute('role');
+        e.removeAttribute('data-xiaobei-old-role');
+      });
+      document.querySelectorAll('[data-xiaobei-old-label]').forEach(e => {
+        const label=e.getAttribute('data-xiaobei-old-label');
+        if (label) e.setAttribute('aria-label',label); else e.removeAttribute('aria-label');
+        e.removeAttribute('data-xiaobei-old-label');
+      });
+      document.querySelectorAll('[data-xiaobei-publish-target]').forEach(e => e.removeAttribute('data-xiaobei-publish-target'));
+    })()''')
 
-    p_run = sub.add_parser("run", help="一键跑全流程")
-    p_run.add_argument("--video", required=True)
-    p_run.add_argument("--title", required=True)
-    p_run.add_argument("--caption", default="")
-    p_run.set_defaults(func=lambda a: cmd_run(video=a.video, title=a.title, caption=a.caption))
 
+def click_selector(session, selector):
+    try:
+        ref = control_ref(session, selector, button=True)
+        browser(session).command('click', ref)
+    finally:
+        cleanup_control(session)
+
+
+def click_text(session, text, *, scope='body', required=True):
+    selected = evaluate(session, f'''(() => {{
+      const root=document.querySelector({json.dumps(scope)}); if (!root) return false;
+      const visible=e=>!!(e.getClientRects().length && getComputedStyle(e).visibility!=='hidden');
+      const nodes=Array.from(root.querySelectorAll('button,[role="button"],div,span,li,option,a,label'))
+        .filter(e=>visible(e) && (e.innerText||'').trim()==={json.dumps(text)});
+      const buttons=nodes.filter(e=>e.matches('button,[role="button"]'));
+      const leaves=nodes.filter(e=>!nodes.some(child=>child!==e && e.contains(child)));
+      const targets=buttons.length ? buttons : leaves;
+      if (targets.length!==1) return false;
+      targets[0].setAttribute('data-xiaobei-text-target','1'); return true;
+    }})()''')
+    if not selected:
+        if required:
+            raise PublishError('CONTROL_NOT_FOUND', text)
+        return False
+    try:
+        click_selector(session, '[data-xiaobei-text-target]')
+    finally:
+        evaluate(session, "document.querySelectorAll('[data-xiaobei-text-target]').forEach(e=>e.removeAttribute('data-xiaobei-text-target'))")
+    return True
+
+
+def editor_text_matches(actual, expected):
+    # Slate topic nodes may add Unicode spaces/format characters. Compare the
+    # whole logical text: a matching prefix cannot prove the rest was written.
+    def normalized(text):
+        return ''.join(c for c in unicodedata.normalize('NFKC', text)
+                       if not c.isspace() and unicodedata.category(c) != 'Cf')
+    return normalized(actual) == normalized(expected)
+
+
+def camoufox_type(session, selector, text):
+    try:
+        ref = control_ref(session, selector)
+        b = browser(session)
+        b.command('click', ref)
+        b.command('press', 'ControlOrMeta+A')
+        b.command('press', 'Backspace')
+        if text:
+            b.command('type', ref, text)
+        b.command('press', 'Tab')
+        # Read after React renders, including controlled-value reversion. Inputs
+        # (titles and OTPs) must match exactly, including short or empty values.
+        result = evaluate(session, f'''(async () => {{
+          await new Promise(r=>setTimeout(r,150));
+          const e=document.querySelector({json.dumps(selector)});
+          if (!e) return null;
+          return 'value' in e ? {{value:e.value}} : {{editor:e.innerText||''}};
+        }})()''')
+        if not isinstance(result, dict):
+            return False
+        if 'value' in result:
+            return result['value'] == text
+        return editor_text_matches(result.get('editor', ''), text)
+    finally:
+        cleanup_control(session)
+
+
+def page_status(session):
+    _check_logged_in(session)
+    result = evaluate(session, r'''(() => {
+      const visible=e=>!!(e.getClientRects().length && getComputedStyle(e).visibility!=='hidden');
+      const text=document.body.innerText||'';
+      // The permanent "点击发布后…上传中…请勿关闭页面" footer is advice,
+      // not upload progress. It can span lines in the rendered page.
+      const busyText=text.replace(/点击发布后[\s\S]*?请勿关闭页面[^\n]*/g, '');
+      const busy=/上传中|正在上传|转码中|正在转码|视频处理中/.test(busyText);
+      const progress=Array.from(document.querySelectorAll('[role="progressbar"]')).some(e=>
+        visible(e) && Number(e.getAttribute('aria-valuenow')) < Number(e.getAttribute('aria-valuemax')||100));
+      const videos=Array.from(document.querySelectorAll('video'));
+      const video=videos.some(v=>
+        (v.currentSrc||v.getAttribute('src')) && v.readyState>=2 && Number.isFinite(v.duration) && v.duration>0);
+      const title=document.querySelector('input[placeholder*="填写作品标题"]');
+      const caption=document.querySelector('[contenteditable="true"][data-slate-editor="true"]');
+      const declarationDialog=Array.from(document.querySelectorAll('[role="dialog"]')).some(e=>
+        visible(e) && /对作品内容添加声明|内容由AI生成/.test(e.innerText||''));
+      const coverControls=Array.from(document.querySelectorAll('[class*="coverControl"]')).filter(visible);
+      const hasPreview=e=>Array.from(e.querySelectorAll('img')).some(i=>
+        i.complete && i.naturalWidth>=120 && i.naturalHeight>=120 && !!i.getAttribute('src')) ||
+        [e,...e.querySelectorAll('*')].some(n=>n.clientWidth>=60 && n.clientHeight>=60 && /^url\(/.test(getComputedStyle(n).backgroundImage));
+      // Prefer the two observed cover slots; fallback to separately labelled slots.
+      const labelledCover=label=>Array.from(document.querySelectorAll('div,section'))
+        .some(e=>visible(e) && (e.innerText||'').trim().length<100 &&
+          (e.innerText||'').includes(label) && hasPreview(e) &&
+          !/选择封面|设置横封面|设置竖封面/.test(e.innerText||''));
+      const covers=coverControls.length===2 ? coverControls.every(hasPreview) :
+        labelledCover('竖封面') && labelledCover('横封面');
+      const missing=/双封面缺失|横封面缺失|竖封面缺失/.test(text);
+      const quality=/封面存在文字展示不全|封面不佳/.test(text);
+      const sms=/接收短信验证码|请输入当前手机号收到的短信验证码/.test(text);
+      const rejected=(text.match(/(?:发布失败|上传失败|转码失败|验证码错误|验证码不正确|验证码已过期)[^\n]{0,80}/)||[])[0]||'';
+      return {url:location.href,video_ready:video && !busy && !progress,busy:busy||progress,
+        video_sources:videos.map(v=>v.currentSrc||v.getAttribute('src')).filter(Boolean),
+        video_duration:videos.find(v=>v.readyState>=2 && Number.isFinite(v.duration) && v.duration>0)?.duration||0,
+        caption:caption ? caption.innerText||'' : null,
+        title:title ? title.value : '',dual_cover_ready:covers && !missing,cover_missing:missing,
+        cover_quality_error:quality,sms_required:sms,rejected:rejected,
+        aigc:text.includes('内容由AI生成') && !text.includes('请选择自主声明') && !declarationDialog};
+    })()''')
+    if not isinstance(result, dict):
+        raise PublishError('PAGE_STATUS_UNAVAILABLE', DRAFT_HINT)
+    return result
+
+
+def wait_for(session, check, timeout, code, hint=DRAFT_HINT):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        status = page_status(session)
+        if status['rejected']:
+            raise PublishError('PLATFORM_REJECTED', status['rejected'])
+        if check(status):
+            return status
+        time.sleep(2)
+    raise PublishError(code, hint)
+
+
+def validate_media(video):
+    path = Path(video).expanduser().resolve()
+    if path.suffix.lower() not in {'.mp4', '.mov'} or not path.is_file() or path.stat().st_size == 0:
+        raise PublishError('VIDEO_INPUT_INVALID', '需要非空 mp4/mov 文件')
+    return path
+
+
+def validate_content(title, caption):
+    if not title.strip():
+        raise PublishError('TITLE_MISSING')
+    if len(title) > 30 or len(caption) > 1000:
+        raise PublishError('CONTENT_LENGTH_OUT_OF_RANGE')
+
+
+def validate_cover(path):
+    from PIL import Image
+    file = Path(path).expanduser().resolve()
+    try:
+        with Image.open(file) as im:
+            im.verify()
+    except (OSError, ValueError) as exc:
+        raise PublishError('COVER_INPUT_INVALID', str(file)) from exc
+    return file
+
+
+def prepare_cover(source, output, ratio):
+    """Fit the entire image into the required ratio, padding instead of cropping."""
+    from PIL import Image, ImageOps
+    with Image.open(source) as image:
+        image = ImageOps.exif_transpose(image).convert('RGB')
+        unit = math.ceil(max(image.width / ratio[0], image.height / ratio[1]))
+        size = (ratio[0] * unit, ratio[1] * unit)
+        # Cap large uploads without changing the ratio or cutting text.
+        if max(size) > 2048:
+            unit = 2048 // max(ratio)
+            size = (ratio[0] * unit, ratio[1] * unit)
+        fitted = ImageOps.contain(image, size, Image.Resampling.LANCZOS)
+        canvas = Image.new('RGB', size, (234, 234, 234))
+        canvas.paste(fitted, ((size[0]-fitted.width)//2, (size[1]-fitted.height)//2))
+        canvas.save(output, quality=95)
+
+
+def cmd_open_page(*, session=SESSION):
+    check_no_pending()
+    browser(session).command('open', UPLOAD_URL)
+    _check_logged_in(session)
+    return {'ok': True, 'session': session, 'url': evaluate(session, 'window.location.href')}
+
+
+def cmd_upload(*, video, session=SESSION, resume_draft=False):
+    path = validate_media(video)
+    check_no_pending()
+    save_state({'state': 'draft', 'video': str(path)})
+    if not resume_draft:
+        cmd_open_page(session=session)
+    else:
+        _check_logged_in(session)
+        if not is_draft_url(evaluate(session, 'window.location.href') or ''):
+            raise PublishError('DRAFT_PAGE_REQUIRED', '先打开上传页并续编目标草稿')
+    if evaluate(session, "document.body.innerText.includes('你还有上次未发布的视频')"):
+        if resume_draft:
+            click_text(session, '继续编辑')
+        else:
+            raise PublishError('DRAFT_PRESENT', '用 edit-draft 继续编辑已有草稿；核实后再决定是否放弃，不自动清除')
+    previous_sources = evaluate(session, "Array.from(document.querySelectorAll('video')).map(v=>v.currentSrc||v.getAttribute('src')).filter(Boolean)") or []
+    browser(session).command('upload', 'input[type="file"][accept*="video"]', str(path), timeout=UPLOAD_TIMEOUT_S)
+    sys.stderr.write('[douyin-video-publish] 等待视频可播放且上传/转码结束…\n')
+    # Require stable readiness; the title form can exist before any media is uploaded.
+    ready = 0
+    def stable(status):
+        nonlocal ready
+        changed = any(source not in previous_sources for source in status.get('video_sources', []))
+        ready = ready + 1 if status['video_ready'] and changed else 0
+        return ready >= 2
+    wait_for(session, stable, TRANSCODE_MAX_WAIT_S, 'VIDEO_NOT_UPLOADED')
+    return {'ok': True, 'state': 'video_ready', 'session': session, 'video': str(path)}
+
+
+def cmd_edit_draft(*, session=SESSION, confirm_unpublished=False):
+    state = read_state()
+    if state.get('state') in PENDING_STATES:
+        if not confirm_unpublished:
+            raise PublishError('PUBLISH_PENDING', '先 resume 核查；仅人工确认未发布后用 edit-draft --confirm-unpublished 续编', 3)
+        status = page_status(session)
+        if status['sms_required']:
+            raise PublishError('SMS_VERIFICATION_REQUIRED', '先完成当前短信验证，不清除验证任务', 4)
+        item = matching_work(state, work_items(session))
+        if item:
+            state.update(state='published', aweme_id=item['id'])
+            save_state(state)
+            return published_result(state)
+        state['state'] = 'draft'
+        for field in ('submitted_at', 'baseline_ids', 'sms_requested', 'aweme_id'):
+            state.pop(field, None)
+        save_state(state)
+        if '/content/manage' in status['url']:
+            cmd_open_page(session=session)
+    if evaluate(session, "document.body.innerText.includes('你还有上次未发布的视频')"):
+        click_text(session, '继续编辑')
+    status = page_status(session)
+    if '/content/manage' in status['url']:
+        raise PublishError('DRAFT_PAGE_REQUIRED', '先用 open-page 打开上传页')
+    state['state'] = 'draft'
+    save_state(state)
+    return {'ok': True, 'state': 'draft', 'page': status, 'hint': DRAFT_HINT}
+
+
+def _select_ai_declaration(session):
+    if page_status(session)['aigc']:
+        return True
+    dialog_open = evaluate(session, '''Array.from(document.querySelectorAll('[role="dialog"]')).some(e=>
+      e.getClientRects().length && /对作品内容添加声明|内容由AI生成/.test(e.innerText||''))''')
+    if not dialog_open and not click_text(session, '请选择自主声明', required=False):
+        return False
+    # Semi's parent label intercepts pointer clicks on its nested span. Click
+    # the unique label, then confirm its radio state before saving the dialog.
+    selected = evaluate(session, r'''(async () => {
+      const visible=e=>!!(e.getClientRects().length && getComputedStyle(e).visibility!=='hidden');
+      const labels=Array.from(document.querySelectorAll('[role="dialog"] label.semi-radio'))
+        .filter(e=>visible(e) && (e.innerText||'').trim()==='内容由AI生成');
+      if (labels.length!==1) return false;
+      labels[0].click();
+      await new Promise(r=>setTimeout(r,150));
+      const radio=labels[0].querySelector('input[type="radio"],[role="radio"]');
+      return !!(radio && (radio.checked || radio.getAttribute('aria-checked')==='true')) ||
+        labels[0].classList.contains('semi-radio-checked');
+    })()''')
+    if selected is not True:
+        return False
+    click_text(session, '确定')
+    return wait_for(session, lambda s: s['aigc'], 10, 'AIGC_DECLARATION_MISSING')['aigc']
+
+
+def cmd_fill(*, session, title='', caption=''):
+    validate_content(title, caption)
+    check_no_pending()
+    _check_logged_in(session)
+    if not camoufox_type(session, TITLE_SELECTOR, title):
+        raise PublishError('TITLE_WRITE_FAILED', '真实键盘输入后标题读回不一致；保留草稿检查')
+    if not camoufox_type(session, CAPTION_SELECTOR, caption):
+        raise PublishError('CAPTION_WRITE_FAILED', DRAFT_HINT)
+    if not _select_ai_declaration(session):
+        raise PublishError('AIGC_DECLARATION_MISSING')
+    if page_status(session)['title'] != title:
+        raise PublishError('TITLE_WRITE_FAILED')
+    state = read_state()
+    state.update(state='draft', title=title, caption=caption)
+    save_state(state)
+    return {'ok': True, 'state': 'filled', 'title': title, 'caption': caption}
+
+
+def cover_input(session, horizontal):
+    # Guard the observed layout before using nth; never inject an arbitrary file input.
+    inputs = evaluate(session, "Array.from(document.querySelectorAll('input[type=\"file\"]')).map(e=>e.accept)")
+    if (not isinstance(inputs, list) or len(inputs) != 4 or 'video' not in inputs[1]
+            or not all('image' in inputs[i] and 'video' not in inputs[i] for i in (0, 2, 3))):
+        raise PublishError('COVER_INPUT_LAYOUT_CHANGED', '检查当前封面弹窗；不猜测 file input 序号')
+    return f'input[type="file"] >> nth={3 if horizontal else 2}'
+
+
+def watch_cover_preview(session):
+    # Keep large data URLs inside this page. Reset per upload (never localStorage)
+    # and observe load events so re-uploading the same image is also supported.
+    started = evaluate(session, r'''(() => {
+      const visible=e=>!!(e.getClientRects().length && getComputedStyle(e).visibility!=='hidden');
+      const dialogs=Array.from(document.querySelectorAll('[role="dialog"]')).filter(visible);
+      if (dialogs.length!==1) return false;
+      const dialog=dialogs[0], previous=window.__xiaobeiCoverUpload;
+      if (previous) previous.dialog.removeEventListener('load',previous.onLoad,true);
+      const watch={dialog,before:new Map(Array.from(dialog.querySelectorAll('img')).map(i=>[i,i.getAttribute('src')])),loaded:new WeakSet()};
+      watch.onLoad=e=>{if(e.target.tagName==='IMG')watch.loaded.add(e.target)};
+      dialog.addEventListener('load',watch.onLoad,true);
+      window.__xiaobeiCoverUpload=watch;
+      return true;
+    })()''')
+    if started is not True:
+        raise PublishError('COVER_DIALOG_MISSING', DRAFT_HINT)
+
+
+def cover_preview_ready(session):
+    return evaluate(session, r'''(() => {
+      const watch=window.__xiaobeiCoverUpload;
+      if (!watch || !watch.dialog.isConnected) return false;
+      const visible=e=>!!(e.getClientRects().length && getComputedStyle(e).visibility!=='hidden');
+      return Array.from(watch.dialog.querySelectorAll('img')).some(i=> {
+        const src=i.getAttribute('src')||'';
+        return visible(i) && i.complete && i.naturalWidth>0 && i.naturalHeight>0 &&
+          /^(data:image|blob:)/.test(src) &&
+          (watch.loaded.has(i) || !watch.before.has(i) || watch.before.get(i)!==src);
+      }) && !/上传中|正在上传/.test(watch.dialog.innerText);
+    })()''') is True
+
+
+def clear_cover_watch(session):
+    evaluate(session, '''(() => {
+      const watch=window.__xiaobeiCoverUpload;
+      if (watch) watch.dialog.removeEventListener('load',watch.onLoad,true);
+      delete window.__xiaobeiCoverUpload;
+    })()''')
+
+
+def cmd_cover(*, session, cover_vertical, cover_horizontal):
+    vertical, horizontal = validate_cover(cover_vertical), validate_cover(cover_horizontal)
+    check_no_pending()
+    initial = page_status(session)
+    if not initial['video_ready']:
+        raise PublishError('VIDEO_NOT_UPLOADED', DRAFT_HINT)
+    browser(session).command('press', 'Escape')
+    # Slate topic suggestions can remain after Tab and intercept cover clicks.
+    evaluate(session, "Array.from(document.querySelectorAll('[class*=\"publish-mention-wrapper\"]')).forEach(w=>{w.style.display='none';w.style.visibility='hidden';})")
+    with tempfile.TemporaryDirectory(prefix='douyin-covers-') as temporary:
+        for is_horizontal, source, ratio in ((False, vertical, (3, 4)), (True, horizontal, (4, 3))):
+            output = Path(temporary) / ('horizontal.jpg' if is_horizontal else 'vertical.jpg')
+            prepare_cover(source, output, ratio)
+            if is_horizontal:
+                if not click_text(session, '设置横封面', required=False):
+                    evaluate(session, "(() => {const e=document.querySelectorAll('[class*=\"coverControl\"]')[1]; if(e) e.setAttribute('data-xiaobei-cover-entry','1')})()")
+                    try:
+                        click_selector(session, '[data-xiaobei-cover-entry]')
+                    finally:
+                        evaluate(session, "document.querySelectorAll('[data-xiaobei-cover-entry]').forEach(e=>e.removeAttribute('data-xiaobei-cover-entry'))")
+            else:
+                # The first observed coverControl is the vertical slot.
+                evaluate(session, "(() => {const e=document.querySelector('[class*=\"coverControl\"]'); if(e) e.setAttribute('data-xiaobei-cover-entry','1')})()")
+                try:
+                    click_selector(session, '[data-xiaobei-cover-entry]')
+                finally:
+                    evaluate(session, "document.querySelectorAll('[data-xiaobei-cover-entry]').forEach(e=>e.removeAttribute('data-xiaobei-cover-entry'))")
+            selector = cover_input(session, is_horizontal)
+            watch_cover_preview(session)
+            try:
+                browser(session).command('upload', selector, str(output), timeout=UPLOAD_TIMEOUT_S)
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline:
+                    if cover_preview_ready(session):
+                        break
+                    time.sleep(2)
+                else:
+                    raise PublishError('COVER_UPLOAD_TIMEOUT', DRAFT_HINT)
+            finally:
+                clear_cover_watch(session)
+            click_text(session, '完成', scope='[role="dialog"]')
+            time.sleep(1)
+    def covers_ready(status):
+        if status['cover_quality_error']:
+            raise PublishError('COVER_TEXT_UNSAFE', '检查两张封面的文字安全区后重新设置')
+        return status['dual_cover_ready']
+    status = wait_for(session, covers_ready,
+                      60, 'DUAL_COVER_MISSING', '核查两张封面保存结果及平台文字安全区检测；不要点发布')
+    state = read_state()
+    state.update(cover_vertical=str(vertical), cover_horizontal=str(horizontal))
+    state['cover_recovery'] = {'url': status['url'], 'title': initial['title'],
+                               'caption': initial.get('caption'),
+                               'duration': initial.get('video_duration', 0), 'attempted': False}
+    save_state(state)
+    status = restore_cover_video(session, status)
+    return {'ok': True, 'state': 'covers_ready', 'page': status}
+
+
+def is_draft_url(url):
+    parsed = urlparse(url)
+    return (parsed.scheme == 'https' and parsed.netloc == 'creator.douyin.com'
+            and parsed.path in {'/creator-micro/content/upload', '/creator-micro/content/post/video'})
+
+
+def restore_cover_video(session, status):
+    state = read_state()
+    recovery = state.get('cover_recovery', {})
+    # Only the observed cover-induced DOM removal warrants reopening a draft.
+    # Never reload an uploading video, an SMS challenge, or a submitted task.
+    if (status['video_ready'] or status.get('video_sources') or status['busy']
+            or status['sms_required'] or state.get('state') != 'draft' or not recovery
+            or recovery.get('attempted') or recovery.get('url') != status['url']
+            or not is_draft_url(status['url']) or not status['dual_cover_ready']
+            or status['cover_quality_error'] or status['rejected']):
+        return status
+    def same_form(current):
+        return (current['title'] == recovery['title'] and current['dual_cover_ready']
+                and current['aigc'] and not current['cover_quality_error']
+                and (recovery.get('caption') is None or
+                     (current.get('caption') is not None and
+                      editor_text_matches(current['caption'], recovery['caption']))))
+    if not same_form(status):
+        raise PublishError('DRAFT_CHANGED_AFTER_COVER', DRAFT_HINT)
+    recovery['attempted'] = True
+    save_state(state)
+    browser(session).command('open', status['url'])
+    if evaluate(session, "document.body.innerText.includes('你还有上次未发布的视频')"):
+        click_text(session, '继续编辑')
+    ready = 0
+    def restored(current):
+        nonlocal ready
+        ready = ready + 1 if current['video_ready'] else 0
+        return ready >= 2
+    current = wait_for(session, restored, 60, 'VIDEO_NOT_UPLOADED')
+    if (not same_form(current) or
+            (recovery.get('duration', 0) and
+             abs(current.get('video_duration', 0)-recovery['duration']) > 0.5)):
+        raise PublishError('DRAFT_CHANGED_AFTER_COVER', DRAFT_HINT)
+    return current
+
+
+def preflight(session):
+    status = restore_cover_video(session, page_status(session))
+    if not status['title'].strip():
+        raise PublishError('TITLE_MISSING', DRAFT_HINT)
+    validate_content(status['title'], read_state().get('caption', ''))
+    if not status['video_ready']:
+        raise PublishError('VIDEO_NOT_UPLOADED', DRAFT_HINT)
+    if not status['dual_cover_ready']:
+        raise PublishError('DUAL_COVER_MISSING', DRAFT_HINT)
+    if status['cover_quality_error']:
+        raise PublishError('COVER_TEXT_UNSAFE', '检查封面边缘文字，补底保留完整内容后重新设置')
+    if not status['aigc']:
+        raise PublishError('AIGC_DECLARATION_MISSING')
+    if status['rejected']:
+        raise PublishError('PLATFORM_REJECTED', status['rejected'])
+    expected = read_state().get('title')
+    if expected and expected != status['title']:
+        raise PublishError('TITLE_MISMATCH', '当前草稿标题与本次填入标题不同')
+    expected_caption = read_state().get('caption')
+    if (expected_caption is not None and
+            (status.get('caption') is None or not editor_text_matches(status['caption'], expected_caption))):
+        raise PublishError('CAPTION_WRITE_FAILED', '当前草稿简介与本次填入内容不一致；'+DRAFT_HINT)
+    return status
+
+
+def work_items(session):
+    # Quote integer IDs before parsing in JS, preserving all 19 digits.
+    js = f'''(async () => {{
+      const response=await fetch({json.dumps(WORK_LIST_URL)},{{credentials:'include'}});
+      if (!response.ok) return {{error:'WORK_LIST_HTTP_ERROR'}};
+      const raw=await response.text();
+      const data=JSON.parse(raw.replace(/("(?:aweme_id|item_id)"\\s*:\\s*)(\\d+)(?=\\s*[,}}])/g,'$1"$2"'));
+      if (data.status_code!==0) return {{error:data.status_code===8?'SESSION_EXPIRED':'WORK_LIST_REJECTED'}};
+      if (!Array.isArray(data.aweme_list)) return {{error:'WORK_LIST_INVALID'}};
+      return {{items:data.aweme_list.map(it=>({{
+        id:String(it.aweme_id||it.item_id||''),ct:Number(it.create_time||0),
+        title:String(it.title||it.aweme_title||(it.aweme_desc && (it.aweme_desc.title||it.aweme_desc.text))||it.desc||'')
+      }})).filter(it=>/^\\d{{15,22}}$/.test(it.id))}};
+    }})()'''
+    # Retain the bounded same-page retry for intermittent creator authentication responses.
+    for attempt in range(3):
+        result = evaluate(session, js)
+        if isinstance(result, dict) and result.get('error') == 'SESSION_EXPIRED' and attempt < 2:
+            time.sleep(2)
+            continue
+        break
+    if not isinstance(result, dict) or 'items' not in result:
+        code = result.get('error', 'WORK_LIST_INVALID') if isinstance(result, dict) else 'WORK_LIST_INVALID'
+        raise PublishError(code, RESULT_HINT, 2 if code == 'SESSION_EXPIRED' else 3)
+    return result['items']
+
+
+def matching_work(state, items):
+    old = set(state['baseline_ids'])
+    title = state['title']
+    accepted = {title}
+    if state.get('caption'):
+        accepted.update({title+'\n'+state['caption'], title+' '+state['caption']})
+    candidates = [it for it in items if it['id'] not in old and it['ct'] >= state['submitted_at']-5
+                  and it['title'] in accepted]
+    if len(candidates) > 1:
+        raise PublishError('PUBLISH_RESULT_AMBIGUOUS', RESULT_HINT, 3)
+    return candidates[0] if candidates else None
+
+
+def published_result(state):
+    return {'ok': True, 'state': 'published', 'session': SESSION, 'aweme_id': state['aweme_id'],
+            'url': 'https://www.douyin.com/video/' + state['aweme_id']}
+
+
+def cmd_resume(*, session=SESSION, timeout=POST_PUBLISH_MAX_WAIT_S):
+    state = read_state()
+    if state.get('state') == 'published':
+        return published_result(state)
+    if state.get('state') not in PENDING_STATES:
+        raise PublishError('NO_PENDING_PUBLICATION', '尚无本次提交记录；不能用最新旧作品代替', 3)
+    started = time.monotonic()
+    deadline = started + timeout
+    while time.monotonic() < deadline:
+        status = page_status(session)
+        if status['sms_required']:
+            state['state'] = 'awaiting_verification'
+            save_state(state)
+            raise PublishError('SMS_VERIFICATION_REQUIRED', '页面已保留；verify-send 获取验证码，再用 verify-code --code-file 私有文件续接；也可在窗口完成验证后 resume', 4)
+        if status['rejected']:
+            state['state'] = 'unconfirmed'
+            save_state(state)
+            raise PublishError('PLATFORM_REJECTED', status['rejected']+'；'+RESULT_HINT, 3)
+        if '/creator-micro/content/manage' in status['url']:
+            item = matching_work(state, work_items(session))
+            if item:
+                state.update(state='published', aweme_id=item['id'])
+                save_state(state)
+                return published_result(state)
+        # Surface validation blockers immediately instead of waiting for an unrelated navigation.
+        elif time.monotonic()-started >= 6 and (not status['video_ready'] or not status['title'].strip() or not status['dual_cover_ready'] or status['cover_quality_error']):
+            state['state'] = 'unconfirmed'
+            save_state(state)
+            raise PublishError('PUBLISH_BLOCKED', DRAFT_HINT+'；'+RESULT_HINT, 3)
+        time.sleep(2)
+    state['state'] = 'unconfirmed'
+    save_state(state)
+    raise PublishError('PUBLISH_UNCONFIRMED', RESULT_HINT+'；'+DRAFT_HINT, 3)
+
+
+def cmd_publish(*, session):
+    check_no_pending()
+    status = preflight(session)
+    baseline = work_items(session)
+    # Recheck after the read-only request; do not click if the form changed meanwhile.
+    current = preflight(session)
+    if current['title'] != status['title']:
+        raise PublishError('TITLE_MISMATCH')
+    state = read_state()
+    state.update(state='submitted', title=current['title'], submitted_at=int(time.time()),
+                 baseline_ids=[it['id'] for it in baseline])
+    state.pop('aweme_id', None)
+    state.pop('sms_requested', None)
+    save_state(state)  # Persist before clicking: a transport failure must never cause automatic resubmit.
+    click_text(session, '发布')
+    return cmd_resume(session=session)
+
+
+def cmd_get_link(*, session):
+    return cmd_resume(session=session)
+
+
+def verification_state(session):
+    state = read_state()
+    if state.get('state') not in PENDING_STATES or not page_status(session)['sms_required']:
+        raise PublishError('SMS_DIALOG_MISSING', '只续接已提交任务的当前短信验证弹窗')
+    return state
+
+
+def cmd_verify_send(*, session):
+    state = verification_state(session)
+    if state.get('sms_requested'):
+        raise PublishError('SMS_ALREADY_REQUESTED', '等待当前验证码；不自动重发')
+    state.update(state='awaiting_verification', sms_requested=True)
+    save_state(state)
+    # Persist the send intent before clicking, including ambiguous transport outcomes.
+    click_text(session, '获取验证码')
+    deadline = time.monotonic()+10
+    while time.monotonic()<deadline:
+        if evaluate(session, r"Array.from(document.querySelectorAll('[role=\"dialog\"]')).some(d=>/接收短信验证码|请输入当前手机号收到的短信验证码/.test(d.innerText) && /\d+\s*(?:s|秒)|重新获取/.test(d.innerText))"):
+            return {'ok': False, 'state': 'awaiting_verification', 'sms_requested': True, 'session': session}
+        time.sleep(1)
+    raise PublishError('SMS_SEND_UNCONFIRMED', '点击结果未确认；检查页面倒计时，不自动重复发送', 4)
+
+
+def read_code_file(file):
+    path = Path(file).expanduser()
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'r', encoding='utf-8') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
+                raise PublishError('CODE_FILE_UNSAFE', '使用当前用户拥有、权限 0600 的普通文件，不接受软链接')
+            code = stream.read(32).strip()
+    except OSError as exc:
+        raise PublishError('CODE_FILE_UNSAFE', '使用当前用户拥有、权限 0600 的普通文件，不接受软链接') from exc
+    if not re.fullmatch(r'[0-9]{4,8}', code):
+        raise PublishError('CODE_INVALID', '验证码文件仅含 4–8 位数字')
+    return code
+
+
+def cmd_verify_code(*, session, code_file):
+    code = read_code_file(code_file)
+    verification_state(session)
+    selector = '[role="dialog"] input:not([type="hidden"]):not([type="file"]):not([type="button"]):not([type="submit"]):not([readonly]):not([disabled])'
+    if not camoufox_type(session, selector, code):
+        raise PublishError('CODE_WRITE_FAILED', '验证码未写入当前弹窗；勿重发作品', 4)
+    click_text(session, '验证', scope='[role="dialog"]')
+    # Give the validation response a chance to dismiss the SMS dialog.
+    deadline = time.monotonic()+15
+    while time.monotonic()<deadline:
+        status = page_status(session)
+        if status['rejected']:
+            raise PublishError('SMS_CODE_REJECTED', status['rejected'], 4)
+        if not status['sms_required']:
+            break
+        time.sleep(1)
+    return cmd_resume(session=session)
+
+
+def cmd_status(*, session):
+    return {'ok': False, 'state': read_state().get('state', 'idle'), 'session': session,
+            'page': page_status(session), 'hint': RESULT_HINT if read_state().get('state') in PENDING_STATES else DRAFT_HINT}
+
+
+def cmd_run(*, video, title, caption='', cover_vertical, cover_horizontal):
+    validate_media(video)
+    validate_content(title, caption)
+    validate_cover(cover_vertical)
+    validate_cover(cover_horizontal)
+    check_no_pending()
+    try:
+        cmd_upload(video=video)
+        cmd_fill(session=SESSION, title=title, caption=caption)
+        cmd_cover(session=SESSION, cover_vertical=cover_vertical, cover_horizontal=cover_horizontal)
+        return cmd_publish(session=SESSION)
+    finally:
+        # Preserve an unfinished form or challenge for diagnosis and continuation.
+        if read_state().get('state') == 'published':
+            try:
+                Browser().close()
+            except Exception:
+                pass
+
+
+def build_parser():
+    p = argparse.ArgumentParser(prog='douyin-video-publish', description=__doc__)
+    sub = p.add_subparsers(dest='cmd', required=True)
+    for name, function in [('open-page', cmd_open_page),
+                           ('publish', cmd_publish), ('get-link', cmd_get_link), ('resume', cmd_resume),
+                           ('status', cmd_status), ('verify-send', cmd_verify_send)]:
+        command = sub.add_parser(name)
+        command.add_argument('--session', default=SESSION, choices=[SESSION])
+        command.set_defaults(func=lambda a, f=function: f(session=a.session))
+    draft = sub.add_parser('edit-draft')
+    draft.add_argument('--session', default=SESSION, choices=[SESSION])
+    draft.add_argument('--confirm-unpublished', action='store_true', help='仅人工确认原提交未发布后结案并续编草稿')
+    draft.set_defaults(func=lambda a: cmd_edit_draft(session=a.session, confirm_unpublished=a.confirm_unpublished))
+    upload = sub.add_parser('upload')
+    upload.add_argument('--video', required=True)
+    upload.add_argument('--session', default=SESSION, choices=[SESSION])
+    upload.add_argument('--resume-draft', action='store_true', help='保留当前草稿页面并补传视频')
+    upload.set_defaults(func=lambda a: cmd_upload(video=a.video, session=a.session, resume_draft=a.resume_draft))
+    fill = sub.add_parser('fill')
+    fill.add_argument('--session', default=SESSION, choices=[SESSION])
+    fill.add_argument('--title', required=True)
+    fill.add_argument('--caption', default='')
+    fill.set_defaults(func=lambda a: cmd_fill(session=a.session, title=a.title, caption=a.caption))
+    for name in ('cover', 'run'):
+        command = sub.add_parser(name)
+        command.add_argument('--cover-vertical', required=True)
+        command.add_argument('--cover-horizontal', required=True)
+        if name == 'cover':
+            command.add_argument('--session', default=SESSION, choices=[SESSION])
+            command.set_defaults(func=lambda a: cmd_cover(session=a.session, cover_vertical=a.cover_vertical, cover_horizontal=a.cover_horizontal))
+        else:
+            command.add_argument('--video', required=True)
+            command.add_argument('--title', required=True)
+            command.add_argument('--caption', default='')
+            command.set_defaults(func=lambda a: cmd_run(video=a.video, title=a.title, caption=a.caption, cover_vertical=a.cover_vertical, cover_horizontal=a.cover_horizontal))
+    verify = sub.add_parser('verify-code')
+    verify.add_argument('--session', default=SESSION, choices=[SESSION])
+    verify.add_argument('--code-file', required=True)
+    verify.set_defaults(func=lambda a: cmd_verify_code(session=a.session, code_file=a.code_file))
     return p
 
 
-def main(argv: Optional[list[str]] = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+def main(argv: Optional[list[str]] = None):
+    args = build_parser().parse_args(argv)
     try:
-        with publish_lock():
-            args.func(args)
-        return 0
-    except SystemExit as e:
-        return int(e.code) if e.code is not None else 0
-    except Exception as e:  # noqa: BLE001
-        sys.stderr.write(f"error: {e}\n")
-        return 1
+        with publish_lock(allow_pending_video=True):
+            result = args.func(args)
+            if result.get('state') == 'published' and args.cmd != 'run':
+                try:
+                    browser(SESSION).close()
+                except Exception:
+                    pass
+        print(json.dumps(result, ensure_ascii=False))
+        return 4 if result.get('state') == 'awaiting_verification' else 0
+    except PublishError as exc:
+        state = safe_error_state()
+        hint = exc.hint
+        if exc.code == 'SESSION_EXPIRED' and state.get('state') in PENDING_STATES:
+            hint = '本次提交结果未知；验证页面已丢失或登录失效时用 douyin-publish login --resume-video 恢复同一 profile，登录后 resume 核查原作品，勿重发'
+        print(json.dumps({'ok': False, 'error': exc.code, 'state': state.get('state', 'idle'),
+                          'publish_attempted': state.get('state') in PENDING_STATES | {'published'},
+                          'hint': hint, 'session': SESSION}, ensure_ascii=False))
+        return exc.exit_code
+    except Exception:
+        # Browser errors may contain code input or response data. Return only a safe error category.
+        state = safe_error_state()
+        pending = state.get('state') in PENDING_STATES
+        print(json.dumps({'ok': False, 'error': 'BROWSER_OPERATION_FAILED', 'state': state.get('state', 'idle'),
+                          'publish_attempted': pending, 'hint': RESULT_HINT if pending else DRAFT_HINT}, ensure_ascii=False))
+        return 3 if pending else 1
 
 
-if __name__ == "__main__":
+def safe_error_state():
+    try:
+        return read_state()
+    except PublishError:
+        return {'state': 'unconfirmed'}
+
+
+if __name__ == '__main__':
     sys.exit(main())

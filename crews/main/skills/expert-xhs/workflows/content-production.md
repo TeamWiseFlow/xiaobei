@@ -2,6 +2,8 @@
 
 从选题到发布的内容运营流程，覆盖**图文笔记**与**视频笔记**。用户说“帮我写一篇小红书笔记”“发个小红书”“这篇照着做一篇”“把这个草稿改成小红书风格”走这个。
 
+用户指定群聊误发式或问答式连续讨论流卡片时，切到 `native-ui-cards.md` 完成选题、出图、发布与记录；本流程处理其他图文和视频。
+
 **分工硬边界**：
 
 - 图文笔记、长文内容：main agent 直接生产（含标题、正文、图组、话题标签与发布）。
@@ -77,19 +79,19 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 | 主题 / 方向 | 用户指定时不得另起炉灶 |
 | 搜索意图 | 从 DNA 搜索意图地图取主关键词、相关词、用户可能提问；无结论时向用户确认 |
 | 素材 | 用户提供的图片、文案、截图、案例、视频片段优先 |
-| 目标读者 | 未指定时按业务知识与 DNA 定位推导 |
+| 目标读者 | 未指定时按 DNA 受众关系推导；涉及业务事实时再核对 `business_knowledge.md` |
 | 标题 | 硬限制 ≤ 20 字；覆盖主关键词或用户问题 |
 | 图组 | 硬限制 ≤ 18 张；用户提供优先 |
-| 行动引导 | 只放一个平台内动作 |
-| workflow | 视频全案已确定形态时写 CP `expert-video` 支持的 workflow（reversal-ad / narration-video / collage-broll）；未确定则省略（省略 = CP 按其通用制作流程做） |
+| 行动引导 | DNA 要求时只放一个平台内动作 |
+| workflow | 视频全案已确定形态时写 CP `expert-video` 支持的 workflow（reversal-ad / collage-broll / deck-talk）；未确定则省略（省略 = CP 按其通用制作流程做） |
 
 优先级：
 
 ```text
 用户明确交付要求 + 业务事实 / 红线
 > 用户提供的素材
-> business_knowledge.md
 > DNA template 的生产规则
+> business_knowledge.md 中的相关事实
 > Agent 的一般内容判断
 ```
 
@@ -97,7 +99,7 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 
 先建 `xhs/outputs/<note-name>/`，下设 `materials/`。
 
-1. 图文笔记链接 → `xhs-content-ops` 下载正文、图片、互动数据。
+1. 图文笔记链接 → `xhs-hunter fetch <完整链接> --output-dir xhs/outputs/<note-name>/references --download-media` 保存正文、有序图片与真实指标；本 workflow 回读正文、封面和逐图结构完成参考分析，不调用 viral-chaser。
 2. 视频笔记链接 → self-spawn subagent 走 `viral-chaser`。
 3. 本地图片 / 视频 / 音频 / 文档 → 复制或提取进 `materials/`。
 4. 建立素材清单：用户原话、事实、数据、案例、画面素材、授权信息、待确认项。
@@ -108,7 +110,7 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 ### 选题调研
 
 1. 从 DNA 搜索意图地图取主关键词、相关词、长尾句与用户可能提问。
-2. 用 `smart-search` 做平台侧调研，优先小红书 / 知乎 / 抖音等贴合平台。
+2. 用 `xhs-hunter search-notes` 对主关键词做一次有界站内搜索（`--count 20`，不连续翻页）；已有近期样本够用时直接复用。
 3. 提炼真实用户讨论、痛点、争议点、常见提问与高热内容形式。
 4. 有价值线索归档为参考素材，不直接替代用户事实。
 
@@ -118,7 +120,7 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 
 - 覆盖哪个主关键词 / 用户问题
 - 使用哪些用户素材
-- 服务哪个业务目标
+- 对应 DNA 的哪些内容目标；如涉及业务目标，说明对应关系
 - 符合 DNA 的哪些选题组合、内容形式与高数据创意
 - 产出形态建议：图文 / 视频 / 混合节奏中的哪一环
 
@@ -149,7 +151,7 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 3. 开头必须兑现标题与封面承诺，优先回答用户问题或给出核心结论。
 4. 用户必用素材优先进入正文，不得为了形式删除关键事实。
 5. 商业承诺、服务范围、价格和案例必须与 `business_knowledge.md` 一致。
-6. 业务植入按 DNA 的 `biz-implant` 决定位置、载体与衔接句；CTA 按 `interaction-cta` 只选择一个平台内动作：评论 / 收藏 / 关注 / 进店 / 咨询 / 搜索品牌词。
+6. DNA 要求业务植入时，按 `biz-implant` 决定位置、载体与衔接句；DNA 要求 CTA 时，按 `interaction-cta` 只选择一个平台内动作：评论 / 收藏 / 关注 / 进店 / 咨询 / 搜索品牌词。
 7. 风格转写只改表达与结构呈现，不改事实含义、数据、案例、引用和结论边界。
 8. 同主题改写可借鉴参考结构，文字必须用自己的素材与表达重写，禁止搬运。
 
@@ -162,7 +164,8 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 
 - 视频名 / slug：
 - platform：xhs
-- workflow：reversal-ad / narration-video / collage-broll（视频形态未确定时省略本字段；省略 = CP 按其通用制作流程做，叙事 / 动效 / 蒙太奇手法由 CP 据创意自定）
+- workflow：reversal-ad / collage-broll / deck-talk（视频形态未确定时省略本字段；省略 = CP 按其通用制作流程做，叙事 / 动效 / 蒙太奇手法由 CP 据创意自定）
+- deck-talk 专属（仅该类型填写）：在 Brief 中逐项写 `- presenter_source：footage/avatar/audio`（兼容 none）、`- visual_source：slides/broll/mixed`、`- audio_origin：recorded/cloned/designed/stock-tts`、`- presenter：绝对路径`（需小窗时）、`- audio：绝对路径`（avatar/audio 模式）。实拍先用 talking-head-cut 剪好再交 CP；数字人交肖像+音频或音色档案；纯音频模式交音频，CP 配 B-roll。记录授权。
 - 选题与观看理由：
 - 核心传达：
 - 内容创意：创意原型 + 展开逻辑 + 记忆点
@@ -239,7 +242,7 @@ Brief 硬性规则：
 ```bash
 # 1. 探活（批量发布只探活一次）
 xhs-publish check
-# exit 0 = 有效；exit 2 = SESSION_EXPIRED -> 按 xhs-publish 文档两步重登（www 重登 + creator SSO）再探活一次
+# exit 0 = 有效；exit 2 = 无会话或认证失效 -> xhs-publish login，发送返回的二维码图片，等用户确认后 xhs-publish login-confirm，再探活一次
 
 # 2. 图文发布
 xhs-publish --mode image --title "标题" --body "正文（含 #话题1 #话题2）" --images img1.jpg img2.jpg img3.jpg
@@ -249,7 +252,7 @@ xhs-publish --mode video --title "标题" --body "正文" --video video.mp4 --co
 ```
 
 - `--body` 必须传实际文字，不能传文件路径或 `$(cat file)`；从 `note.md` 读出后硬编码进命令。
-- AIGC 生成内容按平台规则标注；纯实拍素材不声明。
+- 笔记含 AI 合成内容时，在对应 `xhs-publish` 命令末尾加 `--ai-declaration`，发布时一并提交平台侧声明；纯实拍素材不加。
 - 返回 `{"ok": true, "note_id": ..., "url": ...}` 才算成功；`AUTH_EXPIRED` 重登后重试一次；`RATE_LIMIT` 等 30 分钟后重试。
 - 单账号每天 ≤ 1-3 篇；触发风控立即降级，30 分钟内不重试。
 - 发布失败伴随登录异常迹象时停止重试，记下来走重登流程，不批量撞风控。

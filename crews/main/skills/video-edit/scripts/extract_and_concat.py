@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract segments from MP4(s) and optionally concatenate them into one MP4.
+"""Extract/convert video segments and optionally concatenate them into one MP4.
 
 Output normalization (matches assemble.py defaults):
   - 30 fps, yuv420p
@@ -13,6 +13,7 @@ Usage — single segment:
   video-edit extract --input foo.mp4 --mode head --seconds 6 --output head6.mp4
   video-edit extract --input foo.mp4 --mode tail --seconds 4 --output tail4.mp4
   video-edit extract --input foo.mp4 --mode slice --start 2 --end 8 --output mid.mp4
+  video-edit extract --input demo.webm --mode full --keep-resolution --no-audio --output demo.mp4
 
 Usage — multi-segment + concat (preferred for "剪 A 前 6s + 剪 B 后 4s" 类需求):
 
@@ -190,6 +191,7 @@ class SegmentSpec:
     mode='head'  → keep first `seconds` (or [start, end] if start/end given).
     mode='tail'  → keep last  `seconds`.
     mode='slice' → keep [start, end] (seconds).
+    mode='full'  → keep the entire input; duration is read automatically.
     """
 
     __slots__ = ("input", "mode", "seconds", "start", "end")
@@ -206,11 +208,14 @@ class SegmentSpec:
         self._validate()
 
     def _validate(self) -> None:
-        if self.mode not in {"head", "tail", "slice"}:
-            die(f"invalid mode {self.mode!r} (expected head|tail|slice)")
+        if self.mode not in {"head", "tail", "slice", "full"}:
+            die(f"invalid mode {self.mode!r} (expected head|tail|slice|full)")
         if not self.input:
             die("segment is missing input=path")
-        if self.mode == "head":
+        if self.mode == "full":
+            if any(value is not None for value in (self.seconds, self.start, self.end)):
+                die(f"full segment does not accept seconds/start/end ({self.input})")
+        elif self.mode == "head":
             if self.start is None and self.end is None and self.seconds is None:
                 die(f"head segment needs seconds= or start=+end= ({self.input})")
         elif self.mode == "tail":
@@ -229,7 +234,9 @@ class SegmentSpec:
         duration = ffprobe_duration(self.input)
         if duration <= 0:
             die(f"cannot read duration of {self.input}")
-        if self.mode == "head":
+        if self.mode == "full":
+            start, end = 0.0, duration
+        elif self.mode == "head":
             end = self.end if self.end is not None else self.seconds
             start = self.start if self.start is not None else 0.0
         elif self.mode == "tail":
@@ -486,8 +493,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", "-o", required=True, help="Output MP4 path")
 
     # Single-segment mode (legacy / simple)
-    p.add_argument("--input", "-i", help="Input MP4 (single-segment mode)")
-    p.add_argument("--mode", choices=["head", "tail", "slice"],
+    p.add_argument("--input", "-i", help="Input video, e.g. MP4/WebM (single-segment mode)")
+    p.add_argument("--mode", choices=["head", "tail", "slice", "full"],
                    help="Extraction mode (single-segment mode)")
     p.add_argument("--seconds", type=lambda v: parse_seconds(v, what="seconds"),
                    help="Window size in seconds (head/tail). Accepts 6 / 6s / 1m30s.")
@@ -499,9 +506,9 @@ def build_parser() -> argparse.ArgumentParser:
     # Multi-segment mode
     p.add_argument("--segment", action="append", nargs="+", default=[],
                    metavar="KEY=VAL",
-                   help="Repeatable. Tokens: input=path mode=head|tail|slice "
+                   help="Repeatable. Tokens: input=path mode=head|tail|slice|full "
                         "seconds=N start=S end=E. "
-                        "Example: --segment input=a.mp4 mode=head seconds=6")
+                        "Example: --segment input=a.mp4 mode=head seconds=6; mode=full keeps the entire input")
 
     # Output normalization
     p.add_argument("--width", type=int, default=None,

@@ -184,6 +184,8 @@ def fill(b, title, caption, declaration='ai'):
             wait_for(b, lambda: click_text(b, '内容由AI生成'), 'AI 声明选项未找到')
             if not click_text(b, '确定', 'button'):
                 raise RuntimeError('AI 声明确认失败')
+        elif not b.eval("document.body.innerText.includes('内容由AI生成')"):
+            raise RuntimeError('AI 声明不可用，停止发布')
 
 
 def note_link_candidate(b, title, *, click=False):
@@ -309,7 +311,7 @@ def main(argv=None):
                 if a.cmd == 'open-page':
                     b.command('open', UPLOAD_URL)
                     result = {'ok':True,'session':SESSION,'url':b.eval('window.location.href'),
-                              'hint':'用页面元素判定登录态，未登录交 login-manager'}
+                              'hint':'用页面元素判定登录态，未登录交 douyin-publish login'}
                 else:
                     result = {'ok':True,'session':SESSION}
                     if a.cmd in ('upload','run'):

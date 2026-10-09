@@ -28,6 +28,9 @@ jobs:
     steps:
       - name: Checkout xiaobei
         uses: actions/checkout@v5
+        with:
+          # A dispatch may run after master has advanced beyond this release.
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Read pinned openclaw version
         id: pin
@@ -45,6 +48,16 @@ jobs:
       - uses: pnpm/action-setup@v6
         # 不指定 version，action-setup v6 自动读 package.json 的 packageManager
         # （显式 version 会与其冲突报 "Multiple versions of pnpm specified"）
+
+      - name: Setup Python and cache downloads
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            skills/**/requirements.txt
+            crews/**/requirements.txt
 
       - name: Clone openclaw at pinned commit
         # 用完整 clone 而非 --depth=1 浅 clone：apply-addons.sh 跑 git apply --3way
@@ -106,8 +119,10 @@ jobs:
             "$REPO/patches/camoufox-cli/" "$STAGE/camoufox-cli/"
 
           # 4. xiaobei 模板与脚本
-          cp -a "$REPO/crews" "$STAGE/crews"
-          cp -a "$REPO/skills" "$STAGE/skills"
+          # npm 包和 Playwright 浏览器在目标机器安装，不能从 CI 缓存带入 tarball。
+          rsync -a --exclude='node_modules' --exclude='package-lock.json' --exclude='.browsers' \
+            --exclude='.deck-render-browser' "$REPO/crews/" "$STAGE/crews/"
+          rsync -a --exclude='node_modules' "$REPO/skills/" "$STAGE/skills/"
           cp -a "$REPO/config-templates" "$STAGE/config-templates"
           cp -a "$REPO/scripts" "$STAGE/scripts"
           # awada 本地插件（TS，jiti 加载；ship 源码 + lockfile，排除 node_modules，
@@ -215,7 +230,7 @@ jobs:
           echo "asset_tag=$ASSET_TAG" >> "$GITHUB_OUTPUT"
           ls -lh "$RUNNER_TEMP/out/"
 
-      - name: Smoke test linux tarball (extract + install --skip-browser + openclaw --version)
+      - name: Smoke test linux tarball installation and upgrade
         run: |
           set -euo pipefail
           ASSET_TAG="${{ steps.buildtars.outputs.asset_tag }}"
@@ -233,6 +248,7 @@ jobs:
           [[ -f "$SMOKE/extract/scripts/install.sh" ]] || { echo "❌ tarball 缺 scripts/install.sh"; exit 1; }
           export XIAOBEI_HOME="$SMOKE/program"
           export OPENCLAW_HOME="$SMOKE/runtime"
+          export OPENCLAW_STATE_DIR="$SMOKE/runtime"
           export XIAOBEI_TARBALL="$TB"
           export XIAOBEI_TAG="$ASSET_TAG"
           export XIAOBEI_SOURCE=github
@@ -240,7 +256,38 @@ jobs:
           bash "$SMOKE/extract/scripts/install.sh" \
             --no-prompt --skip-bind --skip-browser --root "$XIAOBEI_HOME"
           "$XIAOBEI_HOME/bin/openclaw" --version
-          echo "✅ 冒烟自检通过：tarball 可解压 + 依赖可装 + 引擎可起"
+          "$XIAOBEI_HOME/bin/openclaw" daemon --help
+
+          # Re-running install.sh is the user upgrade path. Preserve a healthy
+          # config and representative workspace/login files across this run.
+          node --input-type=module -e '
+            import fs from "node:fs";
+            import path from "node:path";
+            const file = path.join(process.env.OPENCLAW_STATE_DIR, "openclaw.json");
+            const config = JSON.parse(fs.readFileSync(file, "utf8"));
+            config.agents.defaults.userTimezone = "Pacific/Auckland";
+            fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
+          '
+          cp "$OPENCLAW_STATE_DIR/openclaw.json" "$SMOKE/config-before-upgrade.json"
+          mkdir -p "$OPENCLAW_STATE_DIR/workspace-main" "$OPENCLAW_STATE_DIR/openclaw-weixin"
+          printf '%s\n' 'CI user workspace content' > "$OPENCLAW_STATE_DIR/workspace-main/ci-upgrade-preserve.txt"
+          printf '%s\n' 'CI login state sentinel' > "$OPENCLAW_STATE_DIR/openclaw-weixin/ci-upgrade-preserve.txt"
+          bash "$XIAOBEI_HOME/scripts/install.sh" \
+            --no-prompt --skip-bind --skip-browser --root "$XIAOBEI_HOME"
+          "$XIAOBEI_HOME/bin/openclaw" --version
+          "$XIAOBEI_HOME/bin/openclaw" daemon --help
+          node --input-type=module -e '
+            import assert from "node:assert/strict";
+            import fs from "node:fs";
+            import path from "node:path";
+            const state = process.env.OPENCLAW_STATE_DIR;
+            const readConfig = file => JSON.parse(fs.readFileSync(file, "utf8"));
+            assert.deepEqual(readConfig(path.join(state, "openclaw.json")), readConfig(process.argv[1]), "Upgrade changed user config");
+            assert.equal(fs.readFileSync(path.join(state, "workspace-main/ci-upgrade-preserve.txt"), "utf8"), "CI user workspace content\n", "Upgrade changed workspace data");
+            assert.equal(fs.readFileSync(path.join(state, "openclaw-weixin/ci-upgrade-preserve.txt"), "utf8"), "CI login state sentinel\n", "Upgrade changed login state");
+            assert.match(fs.readFileSync(path.join(state, ".env"), "utf8"), /^export AWK_API_KEY='\''smoke-test-key'\''$/m, "Upgrade lost API key");
+          ' "$SMOKE/config-before-upgrade.json"
+          echo "✅ 冒烟自检通过：首装、重跑升级、CLI 入口及用户数据保留"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

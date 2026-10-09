@@ -1,5 +1,7 @@
 # 避免本地 node_modules / 构建产物打进镜像（镜像内统一重新 install）
+# 仓根 build context 实际使用仓根 .dockerignore；此文件保留作 docker/ 内独立构建参考。
 **/node_modules
+crews/content-producer/skills/expert-video/tools/deck-render/package-lock.json
 **/dist
 **/.git
 !openclaw/.git
@@ -7,4 +9,6 @@
 **/.DS_Store
 awada/node_modules
 openclaw/node_modules
+**/.browsers
+**/.deck-render-browser
 *.log

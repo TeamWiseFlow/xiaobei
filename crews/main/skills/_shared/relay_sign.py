@@ -1,12 +1,9 @@
 """relay_sign.py — client 侧调用 relay sign 服务的统一入口（Python）
 
-平台规则：relay **只**算签名算法（xhs a_bogus / xsec_token / 抖音 _signature 等），
+平台规则：relay 只计算签名，
 实际平台调用（登录 / 抓取 / 互动 / 上传 / 发布）**必须 client 端完成**。本模块供
-xhs-publish 等 Python skill 共用。RELAY_BASE_URL + OFB_KEY 由 entrypoint 从 daemon.env 注入。
+其他平台的 Python skill 共用。RELAY_BASE_URL + OFB_KEY 由 entrypoint 从 daemon.env 注入。
 
-接口对应 relay 仓 services/sign/：
-  POST /api/v1/sign/xhs/headers  → 仅签名（返回完整 headers，client 自行 fetch 平台）
-  POST /api/v1/sign/douyin        → 算 a_bogus
 """
 
 import json
@@ -17,8 +14,17 @@ import requests
 
 # 默认指向官方中转 relay（VIP Club 会员默认走我们中转，零配置起手）。
 # 仅当用户自建 relay 时才需要在 daemon.env 覆盖 RELAY_BASE_URL。
-RELAY_BASE_URL = os.environ.get("RELAY_BASE_URL", "https://relay.openclaw-for-business.com")
+RELAY_BASE_URL = os.environ.get(
+    "RELAY_BASE_URL", "https://relay.openclaw-for-business.com"
+)
 _TIMEOUT = 30
+
+
+class RelaySignError(RuntimeError):
+    def __init__(self, code: str, status: int | None = None):
+        self.code = code
+        self.status = status
+        super().__init__(code)
 
 
 def _ofb_key() -> str:
@@ -38,45 +44,62 @@ def _post(path: str, body: dict) -> Any:
         json=body,
         timeout=_TIMEOUT,
     )
-    env = resp.json()
+    try:
+        env = resp.json()
+    except ValueError as exc:
+        raise RelaySignError("SIGN_UNAVAILABLE", resp.status_code) from exc
+    if not isinstance(env, dict):
+        raise RelaySignError("SIGN_UNAVAILABLE", resp.status_code)
     if not resp.ok or not env.get("success"):
-        raise RuntimeError(f"relay {path} 失败 ({resp.status_code}): {env.get('error')}")
+        code = env.get("error")
+        if not isinstance(code, str) or not code.isupper() or len(code) > 40:
+            code = "SIGN_UNAVAILABLE"
+        raise RelaySignError(code, resp.status_code)
+    if "data" not in env:
+        raise RelaySignError("INVALID_RELAY_RESPONSE", resp.status_code)
     return env["data"]
 
 
-def xhs_headers(
-    uri: str,
-    cookies: dict,
-    payload: dict | None = None,
-    params: dict | None = None,
-    method: str = "post",
-    sign_format: str = "xys",
-    x_rap: bool = False,
-) -> dict:
-    """仅签名，返回完整 headers（含 Cookie / UA / 签名头），client 自行发请求。
-
-    xhs 两套独立 x-s 算法（见 relay services/sign/xhs.js）：
-      - sign_format="xys"（默认，XYS_）→ note 创建 / feed / comment / search 等通用 endpoint
-      - sign_format="xyw"（XYW_）→ data-fetching API：user/me、user_posted、otherinfo
-        （这些 endpoint 自 ~2026-03 起对 xys 返回 HTTP 406，必须用 xyw）
-    """
-    return _post(
-        "/api/v1/sign/xhs/headers",
-        {
-            "uri": uri,
-            "method": method,
-            "payload": payload or {},
-            "params": params or {},
-            "cookies": cookies,
-            "sign_format": sign_format,
-            "x_rap": x_rap,
-        },
-    )["headers"]
+def douyin_v2(profile: str, operation: str, inputs: dict) -> dict:
+    """Request per-operation dynamic fields; platform traffic stays on the client."""
+    data = _post(
+        "/api/v1/sign/douyin/v2",
+        {"version": 2, "profile": profile, "operation": operation, "inputs": inputs},
+    )
+    if not isinstance(data, dict):
+        raise RuntimeError("relay douyin v2 returned invalid data")
+    return data
 
 
-def douyin_sign(query_string: str, post_data: str = "", ua: str | None = None) -> str:
-    """算 a_bogus（relay 子进程隔离 vendor），client 自行拼 URL 发请求"""
-    return _post(
-        "/api/v1/sign/douyin",
-        {"queryString": query_string, "postData": post_data, "ua": ua},
-    )["a_bogus"]
+def douyin_health() -> dict:
+    key = os.environ.get("OFB_KEY")
+    if not key:
+        raise RelaySignError("OFB_KEY_MISSING")
+    try:
+        response = requests.get(
+            f"{RELAY_BASE_URL}/api/v1/sign/douyin/v2/health",
+            headers={"X-OFB-Key": key},
+            timeout=_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise RelaySignError("SIGN_UNAVAILABLE") from exc
+    try:
+        envelope = response.json()
+    except ValueError as exc:
+        raise RelaySignError("SIGN_UNAVAILABLE", response.status_code) from exc
+    if not isinstance(envelope, dict):
+        raise RelaySignError("INVALID_RELAY_RESPONSE", response.status_code)
+    if not response.ok or not envelope.get("success"):
+        code = envelope.get("error")
+        raise RelaySignError(
+            code if isinstance(code, str) and code.isupper() else "SIGN_UNAVAILABLE",
+            response.status_code,
+        )
+    data = envelope.get("data")
+    if not isinstance(data, dict):
+        raise RelaySignError("INVALID_RELAY_RESPONSE")
+    return {
+        k: data[k]
+        for k in ("version", "ready", "materialsLoaded", "profiles", "operations")
+        if k in data
+    }

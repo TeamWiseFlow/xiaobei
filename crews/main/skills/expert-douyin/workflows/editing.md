@@ -52,7 +52,7 @@ main 自做组装 / 轻剪辑通过 `video-review` 后交付；CP 改制按其�
 ## Step 4 - 交付、发布与记录
 
 1. 保留修改后的作品和文案记录；可复用风格偏好按 `style-dna.md` 反馈回流，单次修改不默认改变 DNA。
-2. 用户只要求修改时，到交付结束。用户要求发布 / 重新发布时，进入 `content-production.md` Step 6–7：图文选 `douyin-note-publish`，视频选 `douyin-video-publish`，先执行对应工具引用的共用登录流程。
+2. 用户只要求修改时，到交付结束。用户要求发布 / 重新发布时，进入 `content-production.md` Step 6–7：视频走 `douyin-publish video`；图文走 `douyin-publish note`。先用 `douyin-publish check` 验证 Camoufox 持久化创作者会话；未登录使用 `douyin-publish login`。原声图文加 `--original-sound`，配乐按图文分步工具说明处理。
 3. 已发布作品改后重新上线会产生新作品链接；发布前确认用户要重新发布。原作品是否删除由用户决定，不自动删除。
 4. 成功取得新链接后用 `published-track record` 记录新发布日期、链接和账号；图文 `--content-type post`、视频 `--content-type video`。用新作品目录保存这次发布版本与 `dna-meta.json`，避免同目录同日 upsert 覆盖旧作品记录；修改未换 DNA 时沿用原绑定。
 5. 已点击发布后发生登录异常、超时或取链失败，先核实管理页 / 补取链接，不自动重发。

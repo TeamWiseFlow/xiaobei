@@ -205,6 +205,10 @@ CREATE TABLE IF NOT EXISTS pub_xhs (
   favorites INTEGER DEFAULT 0,
   comments INTEGER DEFAULT 0,
   shares INTEGER DEFAULT 0,
+  deep_metrics TEXT,
+  deep_captured_at TEXT,
+  deep_source TEXT,
+  fan_portrait TEXT,
   top_comment TEXT,
   notes TEXT,
   dna_id TEXT,
@@ -574,6 +578,28 @@ CREATE TABLE IF NOT EXISTS pub_wx_channel (
   updated_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now','localtime'))
 );
 
+-- 微博
+CREATE TABLE IF NOT EXISTS pub_weibo (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  content_type TEXT NOT NULL CHECK(content_type IN ('article','video','post')),
+  source_folder TEXT NOT NULL,
+  publish_url TEXT,
+  publish_date TEXT NOT NULL,
+  distribute_status INTEGER NOT NULL DEFAULT 0,
+  views INTEGER DEFAULT 0,
+  likes INTEGER DEFAULT 0,
+  comments INTEGER DEFAULT 0,
+  shares INTEGER DEFAULT 0,
+  favorites INTEGER DEFAULT 0,
+  notes TEXT,
+  dna_id TEXT,
+  account TEXT,
+  perf_evaluated INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now','localtime')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now','localtime'))
+);
+
 SQL
 
 # ── 迁移：为已有表补 cal_bias_signals / cal_bump_evaluated 列 ──────────────
@@ -602,14 +628,21 @@ for table in $(sqlite3 "$DB" "SELECT name FROM sqlite_master WHERE type='table' 
   fi
 done
 
-# ── 迁移：douyin 创作侧深指标列（deep_metrics / deep_captured_at / deep_source）──
+# ── 迁移：创作侧深指标列（deep_metrics / deep_captured_at / deep_source）──
 # 只存最新值，不留历史快照（用户 2026-09-18 定调：不需要增长史）。
-# 其余平台接 deep 数据源（如 xhs-engagement）时按同款三列扩展。
-if [ "$(sqlite3 "$DB" "SELECT count(*) FROM pragma_table_info('pub_douyin') WHERE name='deep_metrics';")" = "0" ] \
-   && [ "$(sqlite3 "$DB" "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='pub_douyin';")" = "1" ]; then
-  sqlite3 "$DB" "ALTER TABLE pub_douyin ADD COLUMN deep_metrics TEXT;"
-  sqlite3 "$DB" "ALTER TABLE pub_douyin ADD COLUMN deep_captured_at TEXT;"
-  sqlite3 "$DB" "ALTER TABLE pub_douyin ADD COLUMN deep_source TEXT;"
+for table in pub_douyin pub_xhs; do
+  if [ "$(sqlite3 "$DB" "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='$table';")" = "1" ]; then
+    for column in deep_metrics deep_captured_at deep_source; do
+      if [ "$(sqlite3 "$DB" "SELECT count(*) FROM pragma_table_info('$table') WHERE name='$column';")" = "0" ]; then
+        sqlite3 "$DB" "ALTER TABLE $table ADD COLUMN $column TEXT;"
+      fi
+    done
+  fi
+done
+
+# 单篇作品受众画像：完整保留 Creator 响应 data 的 JSON，只在有数据时更新。
+if [ "$(sqlite3 "$DB" "SELECT count(*) FROM pragma_table_info('pub_xhs') WHERE name='fan_portrait';")" = "0" ]; then
+  sqlite3 "$DB" "ALTER TABLE pub_xhs ADD COLUMN fan_portrait TEXT;"
 fi
 
-echo '{"ok":true,"message":"published_track.db initialized (v4: douyin deep_metrics)"}'
+echo '{"ok":true,"message":"published_track.db initialized (v6: xhs fan_portrait)"}'

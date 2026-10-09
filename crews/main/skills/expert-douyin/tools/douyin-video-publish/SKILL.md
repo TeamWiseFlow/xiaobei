@@ -1,135 +1,56 @@
 ---
 name: douyin-video-publish
-description: 通过浏览器自动化发布视频到抖音创作者中心。纯浏览器操作方案。
+description: 通过 Camoufox 持久化 session douyin 上传视频、真实键盘填表、设置横竖双封面、标注 AIGC、发布与短信验证续接，并核查本次作品链接。
 ---
 
-# douyin-video-publish — 工具说明
+# 抖音视频发布
 
-> 本文是 `expert-douyin` 专家包内的工具说明书，不独立出现在技能列表中。由相关 Workflow 指引调用。
+前置执行 `douyin-publish check`，未登录用 `douyin-publish login` 完成登录。登录态只留在 Camoufox profile，不使用 login-manager 或 hunter 的 API 会话。
 
-通过 **camoufox-cli** 持久化 session `douyin`（一个且只有一个持久化 session，fail-first 队列：同 session 已有命令在跑时新命令直接 fail）在抖音创作者中心发布视频。
-
-**输入**：本地视频文件（mp4 / mov，时长 ≤ 15 分钟，建议 < 100MB）、标题（≤ 30 字）、描述文案（含话题标签）。
-**输出**：发布结果 + 作品链接（`https://www.douyin.com/video/<aweme_id>`）。
-
-> 纯浏览器操作方案：登录态 + 指纹冻结在持久化 session 的磁盘 profile 里。**严禁** `cookies import` 造登录会话，会触发平台风控。
-
----
-
-## 发布前置与登录异常（必做）
-
-先读并执行[共用登录流程](../_shared/publish-login.md)：`douyin-video-publish open-page` → agent 检查创作者页面登录态 → 已登录才执行 `run`。首次登录、登录弹窗、运行中 exit 2，均按该流程有头登录并交 login-manager 导出验证。
-
-`open-page` 成功不代表已登录；脚本的 `_check_logged_in` 不做自动判断。已点击发布后的任何异常先核实管理页，不因重登直接重发。
-
----
-
-## 使用方式
-
-### 一键全流程
+完整流程优先使用统一入口预览，已有发布授权时加 `--confirm`：
 
 ```bash
-douyin-video-publish run \
-  --video /path/to/video.mp4 \
-  --title "视频标题" \
-  --caption "视频描述 #话题1 #话题2"
+douyin-publish video --video /绝对路径/video.mp4 --title "标题" --caption "简介 #话题" --cover-vertical /绝对路径/cover-vertical.jpg --cover-horizontal /绝对路径/cover-horizontal.jpg
 ```
 
-`run` 内部串：upload → fill → publish → get-link。
+必须提供竖封面和横封面。按 **3:4 竖封面 + 4:3 横封面**制作，两张都要核对；关键文字避开四周 15% 边缘区。比例不符时脚本等比缩放、补浅灰底，保留完整内容；不要居中裁切导致边缘文字缺失。补底不能代替平台的文字安全区检测，出现 `COVER_TEXT_UNSAFE` 时修改封面后再设置。
 
-### 分步调用（agent 按需）
+上传必须等视频可播放且上传/转码状态结束，不能把标题框出现当作上传完成。脚本通过真实键盘输入并读回标题和简介；提交前检查视频、标题、双封面与 AIGC 声明，任一缺失停止。
 
-```bash
-# 1. 上传视频（返回 session 名，后续步骤用）
-douyin-video-publish upload --video video.mp4
+简介按完整正文校验，忽略 Slate 话题节点引入的 Unicode 空白和不可见格式字符；短标题、空简介和短信验证码同样支持。设置封面后若视频元素消失，脚本只在已确认的当前草稿页重开一次，等待视频恢复，再核对视频时长、标题、简介、双封面及 AIGC 声明。返回 `DRAFT_CHANGED_AFTER_COVER` 时保留页面核查，不重传或提交。
 
-# 2. 填标题/描述 + 自主声明
-#    fill 命令内部自动完成：填标题 -> 填简介 -> 选自主声明"内容由AI生成" -> 点"确定"按钮
-#    自主声明下拉不存在时不阻断（部分账号/页面无此选项）
-douyin-video-publish fill --session <s> --title "标题" --caption "描述"
+需要页面诊断或分步处理时，用对应 wrapper 子命令。各步骤的中间态由脚本保存，不自行拼 JS、file input 序号或发布结果：
 
-# 3. 点发布（返回发布起始时刻，供 get-link 锁定本次作品）
-douyin-video-publish publish --session <s>
+| 操作 | 命令 |
+|---|---|
+| 打开上传页 | `douyin-video-publish open-page` |
+| 上传视频并等待就绪 | `douyin-video-publish upload --video /绝对路径/video.mp4` |
+| 续编未提交草稿 | `douyin-video-publish edit-draft` |
+| 在当前草稿补传缺失视频 | `douyin-video-publish upload --resume-draft --video /绝对路径/video.mp4` |
+| 填表和声明 | `douyin-video-publish fill --title "标题" --caption "简介 #话题"` |
+| 上传并保存双封面 | `douyin-video-publish cover --cover-vertical /绝对路径/vertical.jpg --cover-horizontal /绝对路径/horizontal.jpg` |
+| 检查当前页面与任务 | `douyin-video-publish status` |
+| 校验后实际提交 | `douyin-video-publish publish` |
+| 核查本次提交结果 | `douyin-video-publish resume` 或 `douyin-video-publish get-link` |
 
-# 4. 取视频链接
-douyin-video-publish get-link --session <s>
-```
+`publish` 和 `run` 会实际发布，先核对账号、成片、双封面及文案并取得授权。共享持久化 session `douyin`，不改 session 名，不并行发布或取数。AIGC 声明失败即停，不删除声明绕过。发现旧草稿返回 `DRAFT_PRESENT`，不自动放弃；续编前核对草稿与本次成片。
 
-### 行为说明
+补传视频可能重建表单，清空标题、简介、封面和 AIGC 声明；`upload --resume-draft` 后重新执行 `fill` 和 `cover`，再 `publish`。封面上传超时时直接续编当前页面；脚本为每次上传重新观察预览，不使用上次运行的 localStorage 图像列表。
 
-- `run` 在 close session 之前就拿到作品链接；`get-link` 锁定本次发布的作品（按发布时间窗口筛最新），链接不可得时按 exit 3 处理。
-- `upload` 会自动清掉「上次未发布的视频」草稿恢复框，给新发布一个干净上传页；旧草稿在场时新视频上传/发布会被带偏。
-- `fill` 内置自主声明"内容由AI生成"选择与确认步骤；声明下拉不存在时不阻断。
-- **aweme_id 未捕获即 `exit 3`，不再误报发布成功。** 排查材料在 `/tmp/dy-publish-debug-<ts>.json`。
+## 短信验证与结果核查
 
----
+返回 exit 4 / `SMS_VERIFICATION_REQUIRED` 表示本次提交等待用户验证，**没有确认发布成功**。脚本保留浏览器页面和提交上下文，不重跑 upload/run，不重复点发布，不调用 `douyin-publish check/login` 关闭或重开验证页。
 
-## 创作者中心 URL
+- 用 `douyin-video-publish verify-send` 真实点击「获取验证码」，核对页面倒计时；工具不会自动重复发送。
+- 请用户提供验证码，将其写入当前用户拥有、权限 `0600` 的普通文件；用 `douyin-video-publish verify-code --code-file /绝对路径/私有验证码文件` 真实键盘输入并点击「验证」。验证码不放命令参数、报告、记忆或 Git，使用后删除临时文件。
+- 用户也可在当前窗口完成验证，再执行 `douyin-video-publish resume`。续接只验证与核查原提交，不重新发布。
 
-上传页：`https://creator.douyin.com/creator-micro/content/upload?enter_from=dou_web`
+exit 2 表示需要恢复登录；exit 3 / `unconfirmed` 表示结果未确认，先用 `resume/get-link` 核查原任务，再检查管理页和草稿，禁止自动重发。提交过的任务未结案时会阻止新的上传、填表和发布。
 
-视频管理页：`https://creator.douyin.com/creator-micro/content/manage`（取链接用）
+未结案任务也会阻止普通登录、取数和图文操作关闭共用浏览器。仅验证页面已丢失或登录失效时，用 `douyin-publish login --resume-video` 恢复原账号，再 `resume` 核查原提交。提交记录会保留，当前短信弹窗仍在时恢复入口拒绝关闭它。
 
----
+仅人工核实管理页没有本次作品、确认原提交未发布后，使用 `edit-draft --confirm-unpublished` 结案并续编。工具会先查询本次作品，若已经发布则返回确认的链接；短信验证仍在时不清除任务。不要把超时当作“确认未发布”。
 
-## 必做约束
+`get-link` 只核查保存的本次提交：按提交前作品 ID、提交时间与完整标题筛选；没有提交记录、无匹配或有多个候选都不返回旧作品作为成功。仅 `state: published` 且有完整 ID 和 `/video/` URL 时记录成功。运行状态保存在 `~/.camoufox-cli/publications/douyin-video.json`，仅含任务资料，不保存登录凭据；不要手工删除未结案状态以重发。
 
-- **用完即 close 持久化 session `douyin`**——登录态 + 指纹冻结在磁盘 profile，不留进程占内存；下次发布 `--session douyin --persistent` 重起无头即恢复。只在 session 卡死时 `camoufox-cli --session douyin --json close` teardown。
-- 同 session 已有命令在跑时，新命令 fail-first（返回 `session douyin 正忙,请等待当前操作完成后再试`）——读到这条文本就等当前操作完成再重试，不要盲试。
-- **严禁 `cookies import`**：不开临时 session 再 import cookie，会触发平台风控。执行过程中任何时候发现登录态已失效，走 `login-manager` 有头重登流。
-- 限频：单抖音号每 24h ≤ 5 条发布；触发风控立即降级，30 分钟内不重试。
-
-### Exit codes
-
-| code | 含义 | 调用方动作 |
-|------|------|-----------|
-| `0` | 发布成功，aweme_id 已捕获 | 继续发布后的记录流程 |
-| `1` | 参数错 / crash / DOM 改版（按钮/input 未找到）/ 上传转码超时 | 排查后重试 |
-| `2` | 未登录或登录态失效 | 走 `login-manager --platform douyin` 有头重登后重试 |
-| `3` | 发布流程走完但未捕获到 aweme_id——发布可能未真正成功 | **人工到管理页核实是否真有新作品**；把 `/tmp/dy-publish-debug-*.json` 回传给研发定位真实发布 API |
-
----
-
-## Pitfalls
-
-### pitfall: douyin_login_required_on_creator_center
-
-- **触发**：访问 `creator.douyin.com` 未登录态
-- **症状**：页面跳到 `creator.douyin.com/login` 或出现登录弹窗
-- **workaround**：agent 根据页面或 exit 2 判断后，按共用登录流程处理；不要依赖脚本自动识别登录弹窗。
-
-### pitfall: real_name_auth_required
-
-- **触发**：未实名认证的账号
-- **症状**：创作者中心提示"请先完成实名认证"才能发布
-- **workaround**：用户自己走实名认证流程（脚本帮不上）
-
-### pitfall: video_too_long_or_wrong_format
-
-- **触发**：上传非 mp4 / mov 格式，或视频时长超限
-- **症状**：上传后转码失败 / 客户端拒收
-- **workaround**：转 mp4 + 检查时长（抖音支持最长 15 分钟）
-
-### pitfall: dom_changes_creator_center
-
-- **触发**：抖音创作者中心前端改版
-- **症状**：selector 找不到（input / button 位置变化）
-- **workaround**：部署后真机验证更新 selector
-
-### pitfall: upload_transcode_timeout
-
-- **触发**：视频上传后转码超时（大文件 / 网络波动）
-- **症状**：轮询标题表单超时，脚本报 `视频上传/转码超时（标题表单未出现）`
-- **workaround**：检查视频大小（建议 < 100MB）；超时后截图排查是 DOM 改版还是转码慢；确认 DOM 已渲染后可用分步命令（`fill` / `publish`）手动继续
-
-### pitfall: ai_declaration_confirm
-
-- **触发**：选完自主声明"内容由AI生成"后未点"确定"按钮
-- **症状**：声明弹窗卡住，发布按钮被遮挡，无法点发布
-- **workaround**：`fill` 命令已内置点"确定"步骤；分步手动操作时选完声明后必须点"确定"
-
-### pitfall: rate_limit_after_burst_publish
-
-- **触发**：短时间内连续发布多条
-- **症状**：平台风控 / 上传被拒 / 提示"操作过于频繁"
-- **workaround**：每天 ≤ 5 条；触发后 30 分钟内不重试
+正常完整发布后关闭浏览器、保留 profile；准备失败、等待验证或结果未知时保留当前页面。

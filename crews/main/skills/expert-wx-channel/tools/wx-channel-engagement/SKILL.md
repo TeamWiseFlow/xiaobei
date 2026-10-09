@@ -145,7 +145,7 @@ wx-channel-engagement fetch-all                # 批量刷新（心跳用）：�
 
 行内 metrics 经 published-track 的纯写库流程写入 `pub_wx_channel`（`platform=wx_channel`、`id=<row_id>`），工具内部已完成，调用方无需另行写库。
 
-> 注意：published-track 的 `fetch-metrics` 批量取数链路**不处理** `wx_channel`（收到直接 exit 1 指路本工具）——wx_channel 的互动数据一律由本工具承担，不要走错链路。
+> 微信视频号互动数据由本工具读取并写库。
 
 ---
 

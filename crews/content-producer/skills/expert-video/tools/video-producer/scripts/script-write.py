@@ -9,11 +9,10 @@ Usage:
 
 变体（脚手架读 Brief 的 workflow 字段与口播交付自动选择）：
 - 未指定 workflow            → 通用分场剧本（可拍化描述 + enhancement_cues 六型 + delivery_cues）
-- narration-video + 口播稿   → 口播稿原样落稿锁定（不重写，只做声画实现）
-- narration-video + 真人录音 → 录音排布计划（时间戳来自 Stage 11 场景 D ASR）
-- narration-video + 旁白     → 旁白稿（由我写，GATE A 交审）
+- 未指定 workflow + 口播稿/真人录音 → 通用流程，原稿/录音锁定
 - reversal-ad                → 三段结构反转剧本（解说旁白由我写）
 - collage-broll              → 隐喻清单（本类型的 script）
+- deck-talk                  → script/deck-script.md 逐页幻灯脚本，口播原稿锁定
 
 Brief 创意不足以直接写剧本 → 先走 story-develop intake workflow 与甲方收敛 Brief。
 """
@@ -62,22 +61,7 @@ GENERIC_STUB = """# 分场剧本（Stage 1 · 通用）
 （agent 同上填）
 """
 
-NARRATION_STUB = """# 旁白稿（Stage 1 · narration-video · TTS 旁白形态）
-
-> 旁白（TTS 配音解说）文稿由我据 Brief 创意写，GATE A 交审——口播稿才由甲方出，本形态无口播交付。
-> 声音规范：音色按 Brief（未指定选与内容气质匹配的，备选+理由记 decisions.json）；语速默认 6–8 字/秒。
-
-## 旁白全文（agent 填，逐句可独立配画面）
-
-（句 1）
-（句 2）
-…
-
-### delivery_cues（旁白指令，后续 awk-tts / 内置 TTS 用）
-- 语气 / 语速 / 重音 / 情感控制（agent 填）
-"""
-
-RECORDING_STUB = """# 口播录音合成计划（Stage 1 · narration-video · 真人录音形态）
+RECORDING_STUB = """# 口播录音合成计划（Stage 1 · 通用流程 · 真人录音形态）
 
 > 甲方口播录音已定稿（口播稿落稿锁定，不重写）；Stage 11 场景 D 跑 narration-align
 > 拿 utterance 级真实时间戳，按时间戳排画面——不重配旁白、不改录音内容。
@@ -110,13 +94,50 @@ REVERSAL_STUB = """# 反转植入剧本（Stage 1 · reversal-ad）
 COLLAGE_STUB = """# 隐喻清单（Stage 1 · collage-broll——本类型的 script）
 
 > 把每条文稿压成一个 sharp visual idea：一条文稿只做一个隐喻，3–6 个关键物件；
-> 不要把文稿逐字放进画面。色彩按语义色场表选（Phase 2）。逐条格式：
+> 不要把文稿逐字放进画面。色彩按语义色场表选。逐条格式：
 
 1. 核心意思：（观众最终要看懂什么）
    视觉隐喻：（一句话视觉命题）
    关键物件：（3–6 个）
    色彩：（底色 + 点色，按语意）
    组装顺序：（元素滑入次序）
+
+自检通过后继续 Stage 3–5：按条填写分镜、首尾视觉状态、需要跨镜一致的人物/纸片登记；GATE A 在 Stage 5 后。
+"""
+
+
+DECK_STUB = """# 幻灯脚本（Stage 1 · deck-talk）
+
+模式：待按 Brief 填 footage / avatar / audio（兼容 none）。
+底画面：slides / broll / mixed；音频讲解模式可只用 B-roll。
+音频来源：待填 recorded / cloned / designed / stock-tts 与路径；footage 沿用 main 已剪视频原声，avatar 使用 LivePortrait 的原驱动音频，audio 保留用户/main 提供音频。
+
+## 第 1 页
+- 单一命题：
+- 版式 / 图表类型：
+- 数据 / 单位 / 日期范围 / 来源：
+- 图片槽 / 绝对路径 / 授权：
+- 对应口播原文或录音段落（锁定稿不改写）：
+- 预计时长（3–30 秒，GATE A 后按句边界时间戳回填）：
+- 小窗避让 / 字幕安全区：
+- 元素入场 / 图表演进及局部时刻：
+
+按页重复。纯旁白由 CP 写并提交 GATE A；口播稿由甲方提供，不重写。
+自检后继续 Stage 3–5 完成逐页分镜、画面状态与人物登记，再过 GATE A。
+"""
+
+DECK_BROLL_STUB = """# B-roll 讲解脚本（Stage 1 · deck-talk）
+
+## 第 1 段
+- 对应口播原文或录音段落（锁定稿不改写）：
+- 画面命题与素材来源 / 绝对路径 / 授权：
+- 画面动作、入出点与对应句边界：
+- 图表数据 / 单位 / 日期范围 / 来源（如有）：
+- 预计时长（GATE A 后按真实音频时间戳回填）：
+- 字幕安全区与小窗避让（如有）：
+
+按句边界分段重复。纯旁白由 CP 写并提交 GATE A；用户/main 提供的口播原声保持不变。
+自检后继续 Stage 3–5 完成逐段分镜、画面状态与人物登记，再过 GATE A。
 """
 
 
@@ -134,36 +155,45 @@ def main() -> None:
     workflow = _brief.parse_workflow(brief_text)
     vo_mode, vo_path = _brief.detect_voiceover(project, brief_text)
 
-    script_path = project / "script" / "script.md"
+    script_path = project / "script" / ("deck-script.md" if workflow == "deck-talk" else "script.md")
     script_path.parent.mkdir(parents=True, exist_ok=True)
 
     # checkpoint
     if script_path.is_file():
-        print(f"[checkpoint] script.md 已存在，沿用：{script_path}")
+        print(f"[checkpoint] {script_path.name} 已存在，沿用：{script_path}")
         print("[hint] 要改就手改或删掉重跑本命令（产物文件存在性即 checkpoint）")
         return
 
-    if workflow == "narration-video" and vo_mode == "voiceover":
+    if workflow == "deck-talk":
+        fields = _brief.deck_fields(brief_text)
+        content = DECK_BROLL_STUB if fields.get('visual_source') == 'broll' else DECK_STUB
+        locked = '\n'.join(f'- {key}: {fields[key]}' for key in
+                           ('presenter_source', 'visual_source', 'audio_origin', 'presenter', 'audio') if fields.get(key))
+        if locked:
+            content = content.replace('\n## 第 1 ', '\n## Brief 锁定输入\n' + locked + '\n\n## 第 1 ', 1)
+        if vo_mode == "voiceover":
+            content += "\n## 甲方口播原稿（落稿锁定）\n\n" + vo_path.read_text(encoding="utf-8")
+        elif vo_mode == "recording":
+            content += f"\n同源录音：{vo_path}\n"
+        script_path.write_text(content, encoding="utf-8")
+        print(f"[done] deck-talk 逐页脚本模板：{script_path}")
+        print("[next] 填逐页/段设计与原文对应 → script-self-eval → Stage 3–5 → GATE A")
+        return
+
+    if workflow is None and vo_mode == "voiceover":
         # 口播稿原样落稿锁定：不重写、不优化、不增删卖点
         content = vo_path.read_text(encoding="utf-8")
         script_path.write_text(content, encoding="utf-8")
-        print(f"[mode] narration-video · 口播稿（甲方交付 {vo_path.name}）——原样落稿锁定")
+        print(f"[mode] 通用流程 · 口播稿（甲方交付 {vo_path.name}）——原样落稿锁定")
         print(f"[done] 口播稿已原样拷入：{script_path}（不重写、不顺手优化、不增删卖点）")
-        print("[next] 跑 script-self-eval（Stage 2）——落稿锁定模式只检查不改写，问题报甲方；GATE A 呈交后进 Stage 3")
+        print("[next] 跑 script-self-eval（Stage 2）——落稿锁定模式只检查不改写；再完成 Stage 3–5，GATE A 在 Stage 5 后")
         return
 
-    if workflow == "narration-video" and vo_mode == "recording":
-        print("[mode] narration-video · 真人录音——口播稿落稿锁定（录音即定稿），本文件只记排布计划")
+    if workflow is None and vo_mode == "recording":
+        print("[mode] 通用流程 · 真人录音——录音即定稿，本文件只记排布计划")
         script_path.write_text(RECORDING_STUB, encoding="utf-8")
         print(f"[done] 录音排布计划模板已落：{script_path}")
         print("[next] agent 填时间轴（时间戳待 Stage 11 场景 D ASR）→ 跑 script-self-eval（Stage 2）")
-        return
-
-    if workflow == "narration-video":
-        print("[mode] narration-video · TTS 旁白——旁白稿由我写（口播稿才归甲方），GATE A 交审")
-        script_path.write_text(NARRATION_STUB, encoding="utf-8")
-        print(f"[done] 旁白稿模板已落：{script_path}")
-        print("[next] agent 填旁白全文 + delivery_cues → 跑 script-self-eval（Stage 2）")
         return
 
     if workflow == "reversal-ad":
@@ -174,11 +204,10 @@ def main() -> None:
         return
 
     if workflow == "collage-broll":
-        print("[mode] collage-broll——script 即隐喻清单（见 workflows/collage-broll.md Phase 1）")
+        print("[mode] collage-broll——script 即隐喻清单（见 workflows/collage-broll.md）")
         script_path.write_text(COLLAGE_STUB, encoding="utf-8")
         print(f"[done] 隐喻清单模板已落：{script_path}")
-        print("[next] agent 填隐喻清单 → 跑 script-self-eval（Stage 2，隐喻自检）→ GATE A 呈交 →")
-        print("       批准后进 Phase 2 静帧生成（Stage 3–9 由其替代，不走 storyboard-build）")
+        print("[next] agent 填隐喻清单 → script-self-eval（Stage 2）→ Stage 3–5 → GATE A")
         return
 
     print("[mode] 未指定 workflow——通用分场剧本；叙事 / 动效 / 蒙太奇手法由我据创意自定")

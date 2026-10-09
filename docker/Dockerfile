@@ -31,7 +31,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/root \
     OPENCLAW_HOME=/root/.openclaw \
     OPENCLAW_STATE_DIR=/root/.openclaw \
-    NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+    NPM_CONFIG_REGISTRY=${NPM_REGISTRY} \
+    CONTAINER=true
 # APT 源走阿里云（debian 源不论海内外都快），npm registry 由 ARG 控制
 
 # 阿里云 APT 源加速（与裸机 install.sh 同源）
@@ -51,7 +52,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libasound2 libdbus-1-3 libgtk-3-0 libxt6 libxkbcommon-x11-0 \
         libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
         libgbm1 libpango-1.0-0 libcairo2 libatspi2.0-0 \
-        fonts-liberation fonts-noto-cjk fonts-wqy-microhei \
+        libxcomposite1 libxdamage1 libxrandr2 libxshmfence1 libpangocairo-1.0-0 \
+        fontconfig fonts-liberation fonts-noto-cjk fonts-wqy-microhei \
         # 微信容器配合（wx-mp-hunter posts-list 用 docker exec 读消息库）
         docker.io \
         # 视频处理（video-edit / talking-head-cut / aigc-video-gen / video-review /
@@ -120,7 +122,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     WISEFLOW_DOCKER=1 \
     DISPLAY=:99 \
     LANG=C.UTF-8 \
-    NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+    NPM_CONFIG_REGISTRY=${NPM_REGISTRY} \
+    CONTAINER=true
 # APT 源走阿里云（debian 源不论海内外都快），npm registry 由 ARG 控制
 
 # 阿里云 APT 源加速（与裸机 install.sh 同源）
@@ -135,7 +138,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libasound2 libdbus-1-3 libgtk-3-0 libxt6 libxkbcommon-x11-0 \
         libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
         libgbm1 libpango-1.0-0 libcairo2 libatspi2.0-0 \
-        fonts-liberation fonts-noto-cjk fonts-wqy-microhei \
+        libxcomposite1 libxdamage1 libxrandr2 libxshmfence1 libpangocairo-1.0-0 \
+        fontconfig fonts-liberation fonts-noto-cjk fonts-wqy-microhei \
         docker.io \
         ffmpeg \
         sqlite3 \

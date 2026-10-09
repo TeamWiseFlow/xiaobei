@@ -8,4 +8,8 @@ SELF="${BASH_SOURCE[0]}"
 # Resolve symlink (wrapper is ln -sfn'd into ~/.openclaw/bin) so SCRIPT_DIR points at the real skill dir.
 while [ -L "$SELF" ]; do SELF="$(readlink -f "$SELF")"; done
 SCRIPT_DIR="$(cd "$(dirname "$SELF")" && pwd)"
+case "${1:-}" in
+  voice-design|voice-clone|voice-status|voice-list)
+    exec python3 "$SCRIPT_DIR/scripts/voice_customization.py" "$@" ;;
+esac
 exec python3 "$SCRIPT_DIR/scripts/tts.py" "$@"

@@ -4,7 +4,7 @@
 
 与 Intel Gathering 的分工：Intel Gathering 以**信源**为中心（账号 / 网页采什么信息）；Competitor Watch 以**对象**为中心——一个对象可能横跨多个信源（社媒账号、官网、博客、招聘页），采集后多一步动向识别与分级。纯信源监控走 Intel Gathering，对象级动向监控走本 workflow。
 
-**依赖**：`smart-search`（构造搜索 URL / 发现信源）、`browser-guide`（浏览器操作）、`rss-reader`（网页 RSS 监控）、`wx-mp-hunter`(微信公众号内容获取)、`info-record`（采集记录与去重）。
+**依赖**：一级 `douyin-hunter` / `xhs-hunter` / `wx-mp-hunter`（对应平台搜索与内容获取）、`smart-search`（其支持的平台及网页信源发现）、`browser-guide`（其他网页浏览）、`rss-reader`（网页 RSS 监控）、`info-record`（采集记录与去重）。公开直播调研使用本包 `douyin-live` / `xhs-live`，编排见 [Live Research](live-research.md)。
 
 ---
 
@@ -13,7 +13,7 @@
 执行前需确认以下信息（一次性任务与用户对话确认；定时任务从 HEARTBEAT.md 配置读取）：
 
 - 对象列表，每个对象标注类型：`竞品` / `客户` / 其他
-- 对象已知信源（平台账号、官网、博客等）；未提供的信源首次执行时由 `smart-search` 发现并补录
+- 对象已知信源（平台账号、官网、博客、公开直播间等）；未提供的信源首次执行时由对应 hunter 或 smart-search 发现并补录
 - 动向提取标准：什么算动向（如新品 / 定价调整 / 融资 / 招聘扩张 / 营销活动 / 内容策略变化 / 采购或选型信号）
 - 交付形式：重大动向即时告警 + 定期简报（或仅简报 / 仅监控表格）
 
@@ -23,15 +23,17 @@
 
 ### Step 1: 准备工作
 
-1. 确保浏览器可用（遵循 `browser-guide`）
+1. 按信源检查对应 hunter/live 工具；需要访问其他网页时检查浏览器（遵循 `browser-guide`）
 2. 初始化 info-record 数据库（幂等）：`info-record init-db`
-3. 对缺少已知信源的对象，用 `smart-search` 发现其活跃信源（官方账号、官网、博客），整理为对象-信源对照表交用户确认后使用
+3. 对缺少已知信源的对象，用对应 hunter 或 smart-search 发现其活跃信源（官方账号、官网、博客），整理为对象-信源对照表交用户确认后使用。已有目标授权无需重复确认。
 
 ### Step 2: 逐对象逐信源采集
 
 采集机制与 Intel Gathering 相同（去重、记录走 `info-record`），差异只在组织方式——按对象遍历其信源：
 
 #### 社媒账号信源
+
+抖音、小红书与微信公众号按对应 hunter 采集；下述浏览器导航仅用于其他支持的平台。
 
 1. 导航到该账号的内容列表页（主页/作品页）
 2. 收集最新内容（仅上次执行后新发布的；无法精确筛选日期则取前 10 条）
@@ -59,6 +61,10 @@
 1. RSS 支持的网站用 `rss-reader <feed_url> --limit 10`（feed URL 未知时按 `rss-reader` 说明中的发现方法先找到 feed）
 2. 不支持 RSS 的网站：browser 导航 → 收集最新内容列表
 3. 对每条内容：去重检查 → 打开详情页 → 记录到 info-record（同样标注对象）
+
+#### 公开直播信源
+
+按 [Live Research](live-research.md) 观察指定对象的公开直播间，比较商品与促销、销售话术、观众问题和互动表现。记录对象、房间、观察窗口与实际证据；只做调研，不主动发言、点赞或私信。将发现与该对象的其他信源合并进入 Step 3；用户要求参与讨论时转 [Live Interaction](live-interaction.md)。
 
 ### Step 3: 动向识别（agent 推理）
 
@@ -102,3 +108,7 @@
 - 微信公众号内容使用 `wx-mp-hunter` 技能，不要使用浏览器
 - 与 Intel Gathering 共用 `info-record` 库，靠 `--content` 中的对象标注区分；日常查询用 `info-record query-today`。
 - 定时执行时遵守定时任务约束（凌晨不扫码登录等），见 `scheduling.md`。
+
+平台路由：抖音、小红书、微信公众号的搜索与内容获取分别使用一级 `douyin-hunter`、`xhs-hunter`、`wx-mp-hunter`，不调用 smart-search 构造这些平台的站内 URL；微信视频号目前没有内容获取方案。
+
+TikTok、快手、X、微博的搜索、账号、作品、评论和下载分别使用一级 tiktok-hunter、kuaishou-hunter、x-hunter、weibo-hunter。触达与直播使用 expert-bd 能力表中的工具；快手没有普通互动写接口，X 私信不能发送，微博评论写入尚不支持，不尝试浏览器补造能力。

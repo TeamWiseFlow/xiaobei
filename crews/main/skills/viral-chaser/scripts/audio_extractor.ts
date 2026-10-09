@@ -6,7 +6,7 @@
 import { execFile } from "child_process"
 import { promisify } from "util"
 import { existsSync } from "fs"
-import { join } from "path"
+import { join, resolve } from "path"
 
 const execFileAsync = promisify(execFile)
 
@@ -26,13 +26,16 @@ export async function extractAudio(
     throw new Error(`视频文件不存在: ${videoPath}`)
   }
 
-  const audioPath = join(outputDir, "audio.wav")
+  const defaultAudio = join(outputDir, "analysis-audio.wav")
+  const audioPath = resolve(videoPath) === resolve(defaultAudio)
+    ? join(outputDir, "analysis-audio-processed.wav") : defaultAudio
 
   // First probe duration
   let durationSeconds = 0
   try {
     const { stdout } = await execFileAsync("ffprobe", [
       "-v", "quiet",
+      "-protocol_whitelist", "file,pipe",
       "-print_format", "json",
       "-show_format",
       videoPath,
@@ -44,7 +47,9 @@ export async function extractAudio(
   }
 
   const args = [
+    "-hide_banner", "-loglevel", "error",
     "-y",                        // overwrite output
+    "-protocol_whitelist", "file,pipe",
     "-i", videoPath,
     "-vn",                       // no video
     "-ar", "16000",              // 16kHz sample rate (ASR requirement)
@@ -59,7 +64,7 @@ export async function extractAudio(
 
   args.push(audioPath)
 
-  await execFileAsync("ffmpeg", args, { maxBuffer: 10 * 1024 * 1024 })
+  await execFileAsync("ffmpeg", args, { timeout: 120_000, maxBuffer: 10 * 1024 * 1024 })
 
   return {
     audioPath,

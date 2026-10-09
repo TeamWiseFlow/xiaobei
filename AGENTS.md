@@ -4,6 +4,16 @@
 - 移动测试时同步更新导入路径、测试入口与运行说明；确认已无用途的测试可以删除。
 - 用于修改上游测试的补丁材料仍放在对应 `patches/` 补丁包内。
 
+## 平台能力归属
+
+- `expert-douyin` / `expert-xhs` / `expert-tiktok` / `expert-kuaishou` / `expert-twitter` 仅保留创作、发布、本人已发布作品数据获取和创作者服务；私信、评论发布/回复、点赞、收藏、关注等写操作及直播互动统一放在 `expert-bd`。
+- 内容搜索、账号与作品获取、评论读取、评论/@提醒、点赞收藏提醒、新增关注通知和媒体下载使用一级技能 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter`，不要收纳进平台专家包。缺少已实现接口的互动写能力保留为不支持，待后续有可复用方案再补齐。
+- `viral-chaser` 只编排视频分析：先调用对应 hunter 获取资料与下载，再运行本地 analyzer 做转写和关键帧提取。analyzer 不集成探活、登录、链接解析或下载；快手、TikTok、X 和微博同样通过各自 hunter 执行；不支持 B 站链接。图文下载调用 hunter，分析由对应平台专家 workflow 完成。
+- 公共 `smart-search` 不支持抖音、小红书、TikTok、快手、X、微博、微信公众号、微信视频号；前七者直接路由到对应 hunter，视频号目前没有搜索与取内容方案。
+- `published-track` 只管理发布记录、查询和指标入库，不负责平台取数；具体取数全部放在对应专家包的 engagement tool，工具采集后调用 `published-track update-metrics`。
+- 后续能力移植和新增平台均按此划分。抖音发布使用 Camoufox 持久化 session `douyin`；本人取数走 HTTP 接口，仅临时从同一 profile 读取 cookie/UA，不另存登录态、不走 login-manager。hunter 和 expert-bd 互动使用独立 API 登录态。
+- TikTok、快手、X、微博共用 `platform-runtime` 内部运行库；登录与会话管理归运行库，由各自 hunter 暴露登录命令，不另设 `login-manager` 技能。安装时按固定四平台配置裁剪其他平台及专属依赖，不改保留平台的业务或签名代码；上游版本、包校验值、注册结构变化必须复核后再升级。
+
 ## Docker 部署规范
 
 - 用户态镜像、Compose service 和持久卷统一使用 **xiaobei** 命名；不得新增 `wiseflow-*` 镜像或卷名。
@@ -86,12 +96,4 @@ SKILL.md 是写给**执行时的智能体**看的操作手册，不是开发日�
 
 **不要**把 skill 的 Node 依赖写进仓根 `package.json`——`apply-addons.sh` 的 per-skill 扫描不读仓根 `package.json` 的 deps，写进去也不会被装。仓根 `package.json` 只管 `packageManager` 字段。
 
-**判断 skill 是否需要 `package.json`**：扫 skill 下所有 `.ts`/`.js`/`.mjs` 的 `import ... from "X"`，过滤掉 `node:` 内置和相对路径，若还有残留（如 `cheerio`、`rss-parser`），就需要。现状（2026-07-12 扫描）：
-
-| skill | 外部 npm 依赖 | 有 package.json |
-|-------|--------------|----------------|
-| `crews/main/skills/wx-mp-hunter` | `cheerio` | ✅ |
-| `crews/main/skills/rss-reader` | `rss-parser` | ✅ |
-| `crews/main/skills/ui-demo` | `camoufox-js`、`playwright-core` | ✅ |
-
-其余 skill 的脚本只用 Node 内置模块或相对 import，不需要 `package.json`。
+**判断 skill 是否需要 `package.json`**：扫 skill 下所有 `.ts`/`.js`/`.mjs` 的 `import ... from "X"`，过滤掉 `node:` 内置和相对路径，若还有残留（如 `cheerio`、`rss-parser`），就需要。只用 Node 内置模块或相对 import，不需要 `package.json`。

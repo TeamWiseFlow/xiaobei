@@ -1,0 +1,16 @@
+# Build context is the repository root (`docker build -f docker/Dockerfile .`).
+**/node_modules
+crews/content-producer/skills/expert-video/tools/deck-render/package-lock.json
+**/dist
+**/.git
+!openclaw/.git
+!openclaw/.git/**
+**/.browsers
+**/.deck-render-browser
+**/.DS_Store
+**/__pycache__
+.venv
+tmp
+*.log
+docs/
+test/

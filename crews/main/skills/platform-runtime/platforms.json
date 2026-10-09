@@ -1,0 +1,57 @@
+{
+  "x": {
+    "workspace": "twitter",
+    "session": "twitter",
+    "login_url": "https://x.com/i/flow/login",
+    "origin": "https://x.com",
+    "cookie_domain": "x.com",
+    "required_cookies": [["auth_token"], ["ct0"]],
+    "hunter": ["user get", "user search", "user items", "item get", "item search", "item media", "comment list", "feed list"],
+    "interact": ["item like", "item unlike", "item collect", "item uncollect", "item repost", "item unrepost", "user follow", "user unfollow", "comment add", "comment delete", "comment like", "comment unlike"],
+    "im": ["msg list", "msg history"],
+    "live": [],
+    "publish": ["item publish", "article publish"],
+    "metrics": {"views": "views", "likes": "likes", "comments": "replies", "collects": "bookmarks", "shares": "retweets"}
+  },
+  "tiktok": {
+    "workspace": "tiktok",
+    "session": "tiktok",
+    "login_url": "https://www.tiktok.com/login",
+    "origin": "https://www.tiktok.com",
+    "cookie_domain": "tiktok.com",
+    "required_cookies": [["sessionid", "sid_tt", "multi_sids"]],
+    "write_fields": ["ticket_guard_private_key", "ticket_guard_encrypt_ticket", "ticket_guard_ts_sign"],
+    "hunter": ["user get", "user items", "user collects", "user reposts", "user followers", "user following", "item get", "item search", "item related", "item media", "product get", "comment list", "comment replies", "feed list", "keyword suggest", "notice list", "notice count", "folder list", "folder items", "series list", "poi search"],
+    "interact": ["item like", "item unlike", "item collect", "item uncollect", "user follow", "user unfollow", "comment add", "folder create", "folder update", "folder add"],
+    "im": ["msg list", "msg history", "msg send", "msg listen"],
+    "live": ["live get", "live list", "live search", "live categories", "live listen", "live history", "live send", "live like", "live rank", "live gifts", "live media"],
+    "publish": ["item publish"],
+    "metrics": {"views": "plays", "likes": "likes", "comments": "comments", "collects": "favorites", "shares": "shares"}
+  },
+  "kuaishou": {
+    "workspace": "kuaishou",
+    "origin": "https://www.kuaishou.com",
+    "hunter": ["user get", "user search", "user items", "user likes", "user collects", "user followers", "user following", "item get", "item search", "item related", "item media", "comment list", "comment replies", "feed list", "notice count"],
+    "interact": [],
+    "im": [],
+    "live": ["live get", "live list", "live categories", "live listen", "live gifts", "live replays"],
+    "publish": ["item publish"],
+    "metrics": {"views": "plays", "likes": "likes", "comments": "comments", "shares": "shares"},
+    "video_publish": {"empty_caption": true, "visibility": "private", "immediate_only": true, "live_verified": true}
+  },
+  "weibo": {
+    "workspace": "weibo",
+    "publication_resolution": {"attempts": 7, "interval_ms": 5000, "limit": 20},
+    "video_transport": {"upload_timeout_seconds": 300, "min_upload_timeout_seconds": 30, "max_upload_timeout_seconds": 900, "process_extra_seconds": 420},
+    "session": "weibo",
+    "login_url": "https://weibo.com/login.php",
+    "origin": "https://weibo.com",
+    "cookie_domain": "weibo.com",
+    "required_cookies": [["SUB"]],
+    "hunter": ["user get", "user items", "item get", "item search", "comment list"],
+    "interact": [],
+    "im": [],
+    "live": [],
+    "publish": ["item publish"]
+  }
+}

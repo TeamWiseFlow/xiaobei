@@ -1,6 +1,6 @@
 ---
 name: expert-douyin
-description: 抖音账号运营专家。承接定位起号、内容 DNA（视频 / 图文两套框架）、选题与包装、图文生产、已有素材轻加工、视频全案 Brief 与口播文案、发布与数据复盘；全片制作委托 content-producer。
+description: 抖音账号运营专家。承接定位起号、内容 DNA、内容生产、发布与数据复盘，及创作者服务；全片制作委托 content-producer。
 metadata:
   openclaw:
     emoji: 🎵
@@ -16,6 +16,7 @@ metadata:
 |------|----------|-------------|
 | 内容 DNA 管理 | Style DNA | 建 / 更新内容 DNA（样本、偏好、局部借鉴、对标融合）：先判作品类型，再决定样本落到哪个 DNA |
 | 内容生产 | Content Production | 做一条 / 做几条抖音内容；main 直接做已有素材轻加工，视频全案只产出Brief并委托content-producer |
+| 原生界面卡片 | Native UI Cards | 群聊误发式单图、问答式连续讨论流三图的制作与抖音图文发布 |
 | 起号与定位 | Account Setup | 新号起号、定位梳理、内容支柱搭建、老号接手与诊断 |
 | 账号对标 | Account Benchmark | 对标账号 / 对标视频分析，并与默认或指定 DNA 逐项比较 |
 | 改片与调整 | Editing | 改文案、重剪、换封面、调结构、换风格 |
@@ -38,11 +39,14 @@ metadata:
 | 工具 | 用途 | 命令 |
 |------|------|------|
 | `douyin-style-profiler` | 生成单篇作品（视频 / 图文，`--kind`）的 DNA report，并聚合 DNA 文档与 template（视频 = Brief + 口播文案模板；图文 = 写作模板） | `douyin-style-profiler` |
-| `douyin-comments` | 抓取抖音视频评论（对标分析 / 标签反推用，纯 HTTP 不起浏览器） | `douyin-comments` |
-| `douyin-note-publish` | 图组、文案与可选配乐 → 图文发布 | `douyin-note-publish` |
-| `douyin-video-publish` | 成片 → 抖音创作者中心发布（浏览器自动化） | `douyin-video-publish` |
+| `douyin-engagement` | 通过 Camoufox 读取本人已发作品基础与深度指标并更新发布记录 | `douyin-engagement` |
+| `douyin-publish` | Camoufox 持久化会话内的视频/图文发布与取链 | `douyin-publish` |
 
-跨领域通用技能：`viral-chaser`（抖音 / B站 / 小红书视频下载拆解，DNA 采样与仿写参考的取数主力）、`smart-search`（跨平台搜索，选题调研优先走社交平台，不用通用搜索引擎）、`content-calibrator`（DNA 表现评估）、`published-track`（发布记录与指标库）、`login-manager`（抖音登录态维护）。
+跨领域通用技能：`douyin-hunter`（搜索、作品、详情和评论采集）、`viral-chaser`（本地视频转写、关键帧与 DNA 采样）、`smart-search`（跨平台搜索）、`content-calibrator`（DNA 评估）、`published-track`（发布记录与指标库）。内容搜索、详情、评论采集和媒体下载统一调用一级技能 `douyin-hunter`。视频先由 hunter 下载，再按 `viral-chaser` 流程运行本地 analyzer；图文分析在本包 workflow 内完成。发布走 Camoufox 持久化 session `douyin`；本人取数走 HTTP 接口，仅临时复用该 profile 的 cookie/UA，登录用 `douyin-publish login`；hunter 与 expert-bd 互动独立使用 `douyin-login` API 会话。
+
+按业务选择工具时查阅同包 `references/api-capabilities.md`。作品互动、私信、竞争对手直播调研与直播间互动统一转 `expert-bd`，本包只保留创作、发布、本人已发作品数据与创作者服务。
+
+原生界面卡片出图使用 main crew 共享技能 `native-ui-card`，具体选题、审核、发布与记录按 `workflows/native-ui-cards.md`。
 
 素材加工相关技能：`video-edit`（素材加工拼接）、`talking-head-cut`（口播轻剪辑）、`ui-demo`（产品操作录屏）、`video-review`（成片质检闸门，仅用于 main 自做轻加工成品的自检；CP 成片质检在 CP 流程内完成）、`awk-img-gen`（封面图）、`pexels-footage` / `pixabay-footage`（免版权素材）。
 
@@ -65,8 +69,8 @@ DNA 是**从一批作品样本提取并聚合出的内容生产规则集**：视
 ## 平台速查与硬性红线
 
 - **发布限频**：单抖音号每 24h ≤ 5 条；触发风控立即降级，30 分钟内不重试。
-- **串行发布**：`douyin-video-publish` 与 `douyin-note-publish` 共用 `douyin` session 和发布锁，同一时间只能有一个发布任务在跑（浏览器 session 竞态）。
-- **AIGC 标注**：AI 生成的内容按平台规则标注，`douyin-video-publish fill` 已内置自主声明"内容由AI生成"。
+- **串行发布**：`douyin-publish` 的视频和图文共用账号发布锁，同一时间只跑一个发布任务。
+- **AIGC 标注**：AI 生成的内容按平台规则标注，视频工具在创作者页面选择 AIGC 声明，图文默认声明 AI；声明不可用时停止并报告，不绕过标注。
 - **简介引流**：视频简介可提及产品与业务，但不放明显引流信息；禁止二维码、联系方式；可引导主动搜索或看主页。
-- **登录态**：浏览器操作一律走 `login-manager` 真实登录后的持久化 session，严禁 `cookies import` 造会话。
+- **登录态**：发布使用 Camoufox 持久化 session `douyin`；取数通过 HTTP 接口完成，仅临时读取同一 profile 的 cookie/UA。未登录执行 `douyin-publish login`，登录态仅留在 profile，不走 login-manager。
 - **数据诚实**：互动数据只来自平台接口、`viral-chaser` 返回或用户提供的线索，不编造；估算值必须标注估算方法，不可得的数据写明"数据不可得"。

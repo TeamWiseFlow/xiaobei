@@ -39,6 +39,7 @@ Usage:
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -51,14 +52,56 @@ def main() -> None:
     args = parser.parse_args()
 
     project = Path(args.project_dir).resolve()
-    if _brief.collage_guard(project, "Stage 11 mix-audio"):
-        return
-    script_path = project / "script" / "script.md"
+    brief_text = _brief.read_brief(project)
+    workflow = _brief.parse_workflow(brief_text)
+    script_path = project / "script" / ("deck-script.md" if workflow == "deck-talk" else "script.md")
     if not script_path.is_file():
-        die(f"前置缺失: script.md 不存在")
+        die(f"前置缺失: {script_path.name} 不存在")
 
     audio_dir = project / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
+
+    if workflow == "collage-broll":
+        plan_path = audio_dir / "collage-audio-plan.json"
+        if plan_path.is_file():
+            print(f"[checkpoint] Stage 11 collage-broll 音频计划已存在：{plan_path}")
+            return
+        plan = {
+            "stage": 11, "workflow": "collage-broll", "script": str(script_path),
+            "sound_policy": "silent|user-voice|approved-tts", "source_audio": None,
+            "alignment": None, "subtitles": None,
+            "instruction": (
+                "按 Brief 确认每条纸拼贴 B-roll 是否无声。默认无声：记录 no-audio 的决定，"
+                "Stage 12 不添静音轨；需要声音时登记来源、授权和对齐证据，"
+                "用户/main 的锁定原声不得重做。此模板不代表音频已核定。"
+            ),
+        }
+        plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"[done] Stage 11 collage-broll 音频核定计划：{plan_path}")
+        return
+
+    if workflow == "deck-talk":
+        plan_path = audio_dir / "deck-audio-plan.json"
+        if plan_path.is_file():
+            print(f"[checkpoint] Stage 11 deck-talk 音频计划已存在：{plan_path}")
+            return
+        fields = _brief.deck_fields(brief_text)
+        plan = {
+            "stage": 11, "workflow": "deck-talk", "script": str(script_path),
+            "presenter_source": fields.get("presenter_source"),
+            "audio_origin": fields.get("audio_origin"),
+            "audio_source": fields.get("audio") or fields.get("presenter"),
+            "dry_audio": None, "segments": None, "subtitles": None,
+            "duration_matches_base": None, "voice_matches_presenter": None,
+            "instruction": (
+                "核定唯一干声：footage 从 main 已剪视频取原音轨；avatar/audio 使用已锁定音频。"
+                "按需调用 narration-align 得真实时间戳并生成字幕，核对底画面等长与口型同源；"
+                "本计划不是音频已生成或对齐通过的证明。BGM 留到 Stage 12 合成后处理。"
+            ),
+        }
+        plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"[done] Stage 11 deck-talk 音频核定计划：{plan_path}")
+        return
 
     # srt 占位模板
     srt = audio_dir / "subtitles.srt"

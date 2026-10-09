@@ -1,6 +1,6 @@
 # Workflow：Story Develop（Brief intake · 创意澄清）
 
-**这是 intake 类 workflow，不是 type 类 workflow。** type workflow（`narration-video` / `collage-broll` / `reversal-ad`）指导从 Brief 生产 script（含自检），是 `Brief.workflow` 的取值；本 workflow 解决"甲方还没把创意讲清楚时，怎么和他对话把 Brief 收敛出来"，**不是 `Brief.workflow` 的取值**，也不与 type workflow 互斥。它在 **Stage 0（Brief intake）** 阶段触发，与任何 type workflow 正交可组合——收敛出 Brief 后，仍按通用制作流程 + 对应 type workflow 执行。
+**这是 intake 类 workflow，不是 type 类 workflow。** type workflow（`deck-talk` / `collage-broll` / `reversal-ad`）指导从 Brief 生产 script（含自检），是 `Brief.workflow` 的取值；本 workflow 解决"甲方还没把创意讲清楚时，怎么和他对话把 Brief 收敛出来"，**不是 `Brief.workflow` 的取值**，也不与 type workflow 互斥。它在 **Stage 0（Brief intake）** 阶段触发，与任何 type workflow 正交可组合——收敛出 Brief 后，仍按通用制作流程 + 对应 type workflow 执行。
 
 ## 何时触发
 
@@ -35,5 +35,5 @@
 ## 边界
 
 - 甲方已交付口播文案 / 录音时，叙事以口播稿为准，本 workflow 只需确认口播稿到位，不另起创意。
-- 不做视频下载 / 转写 / 抽帧（那是 main 的 `viral-chaser`）；甲方给了参考拆解报告才用可选工具 `reference-concepts`。
+- 不做参考视频下载 / 转写 / 抽帧（这些应由main agent完成并提供）；甲方给了参考拆解报告才用可选工具 `reference-concepts`。
 - 不替甲方做需求决策；缺信息就问，不脑补品牌事实与授权。

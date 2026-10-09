@@ -8,7 +8,7 @@
 
 流程：
   1. ffmpeg 抽 16kHz mono WAV
-  2. 调公共 ASR 路由（_shared/asr.py：火山极速版 → 百炼业务空间 → 百炼 agent plan）
+  2. 调公共 ASR 路由（skills/_shared/asr.py：火山极速版 → 百炼业务空间 → 百炼 agent plan）
      拿 utterance + word 级时间戳
      （凭据：VOLC_ASR_* 或 WORKSPACE_ID+MODELSTUDIO_API_KEY/DASHSCOPE_API_KEY 或 AWK_API_KEY）
   3. 多层检测（按 --mode 决定保留策略）：
@@ -39,17 +39,18 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import os
 import subprocess
 import sys
 import tempfile
-import uuid
 from pathlib import Path
 
-# 注入 _shared 到 sys.path，复用公共 ASR 路由（与 xhs-publish/scripts/publish_xhs.py 同范式）
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "_shared"))
+# 优先按仓库 realpath 导入；拷贝部署时使用 managed skills 下的公共共享库。
+shared_dir = Path(__file__).resolve().parents[5] / "skills" / "_shared"
+if not (shared_dir / "asr.py").is_file():
+    shared_dir = Path(os.environ.get("OPENCLAW_STATE_DIR", "~/.openclaw")).expanduser() / "skills" / "_shared"
+sys.path.insert(0, str(shared_dir))
 from asr import asr  # noqa: E402
 
 # 语气词清单

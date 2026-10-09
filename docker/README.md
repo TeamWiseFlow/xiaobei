@@ -1,7 +1,7 @@
 # xiaobei Docker 部署（v5.6.3+）
 
 > **开箱即用**：镜像内已装好 openclaw 引擎 + 全部 skills/crews + camoufox-cli + Firefox +
-> openclaw-weixin 插件 + Xvfb/fluxbox/x11vnc/websockify/noVNC 显示栈。
+> openclaw-weixin 插件 + deck-render 的 HyperFrames/Playwright Chromium/Noto Sans CJK SC + Xvfb/fluxbox/x11vnc/websockify/noVNC 显示栈。
 > 用户本地 build 镜像后只需填 `AWK_API_KEY`，`docker compose up -d` 即可启动。
 
 ## 快速开始
@@ -59,6 +59,7 @@ IMAGE=my-xiaobei:v1 docker compose up -d
 | skills | 公共 skills（`skills/`）+ crew 专属 skills（`crews/*/skills/`）+ python deps |
 | crews workspace | main / content-producer / it-engineer / sales-cs 四套 crew 预初始化 |
 | camoufox-cli | wiseflow fork（反指纹浏览器 CLI）+ Firefox 二进制（~557MB） |
+| deck-render | 锁定 HyperFrames/GSAP/Playwright 包 + Chromium headless shell + Noto Sans CJK SC；构建时安装，运行层直接使用 |
 | openclaw-weixin | 预装微信 channel 插件（首启扫码绑定） |
 | 显示栈 | Xvfb（虚拟显示）+ fluxbox（窗口管理）+ x11vnc + websockify + noVNC |
 

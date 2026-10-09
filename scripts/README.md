@@ -19,7 +19,7 @@
 
 **一键首装 / 升级**（预构建 tarball 路线）。新用户首装和老用户升级都跑这一个脚本，重跑即升级、保留运行数据。
 
-按网络环境选一条命令即可：能正常访问 GitHub 走 GitHub 线路（`install.sh` / `install.ps1`）；国内网络走 atomgit 线路（`install-atomgit.sh` / `install-atomgit.ps1`，全程不经 GitHub）。两条线路安装产物完全一致，只是下载源不同。
+按网络环境选一条命令即可：能正常访问 GitHub 走 GitHub 线路（`install.sh` / `install.ps1`）；国内网络走 atomgit 线路（`install-atomgit.sh` / `install-atomgit.ps1`，安装脚本与主 tarball 从 atomgit 下载）。两条线路安装产物完全一致，只是主程序下载源不同。第三方依赖仍按各自的包源下载；Windows 中文画面使用系统微软雅黑，不下载 Noto 字体。
 
 ```bash
 # macOS / Linux（GitHub 线路）
@@ -47,7 +47,7 @@ irm https://raw.atomgit.com/wiseflow/xiaobei/raw/master/scripts/install-atomgit.
 |------|------|------|
 | `--force` | `XIAOBEI_FORCE=1` | 强覆盖已有运行数据（`~/.openclaw`）；默认已装机器重跑只更新 program，不碰运行数据 |
 | `--skip-bind` | `XIAOBEI_SKIP_BIND=1` | 跳过末尾微信扫码绑定（CI / 自动化） |
-| `--skip-browser` | `XIAOBEI_SKIP_BROWSER=1` | 跳过 camoufox-cli 浏览器二进制安装（冒烟 / CI，省 ~557MB Firefox 下载） |
+| `--skip-browser` | `XIAOBEI_SKIP_BROWSER=1` | 跳过 Camoufox Firefox 与 deck-render Chromium 下载（冒烟 / CI） |
 | `--no-prompt` | `XIAOBEI_NO_PROMPT=1` | 关闭交互提示（CI / 自动化，隐含 `--skip-bind`） |
 | `--root <dir>` | `XIAOBEI_HOME=<dir>` | 程序目录覆盖（默认 `~/xiaobei`） |
 | — | `XIAOBEI_TAG=<tag>` | 指定版本 tag（默认拉最新 release；sh 也认 `XIAOBEI_TAG` env） |
@@ -64,19 +64,26 @@ irm https://raw.atomgit.com/wiseflow/xiaobei/raw/master/scripts/install-atomgit.
 4. `pnpm install --prod --frozen-lockfile`（用自带的 portable Node + pnpm，在 `openclaw/` 下）
 5. `pip install --user`（skills 的 Python 依赖）
 6. awada 本地插件 deps（`awada/` 下 `npm install --omit=dev` 装 ws+zod）
-7. `camoufox-cli install`（下 Firefox 反指纹浏览器，约 557MB，仅首装）
-8. `openclaw plugins install @tencent-weixin/openclaw-weixin@<pin> --pin`（微信插件，走 npmmirror）
-9. 首装：放 `config-templates/openclaw.json` → `~/.openclaw/` + 预填微信 binding + `setup-crew.sh` + 交互收 `AWK_API_KEY` + `openclaw daemon install` + restart
-10. 首装末尾：自动出微信绑定二维码（已绑过则跳过），手机扫码确认即用
-11. 升级：只刷 `daemon.env` 路径 + restart gateway，不碰运行数据
+7. `install-deck-render.sh`（Windows 为 `.ps1`）：安装或校验 FFmpeg/FFprobe、锁定 HyperFrames/GSAP/Playwright、Chromium headless shell 与中文字体（Linux/macOS 为 Noto Sans CJK SC，Windows 为系统微软雅黑）；重跑会复用已有依赖
+8. `camoufox-cli install`（下 Firefox 反指纹浏览器，约 557MB，仅首装）
+9. `openclaw plugins install @tencent-weixin/openclaw-weixin@<pin> --pin`（微信插件，走 npmmirror）
+10. 首装：放 `config-templates/openclaw.json` → `~/.openclaw/` + 预填微信 binding + `setup-crew.sh` + 交互收 `AWK_API_KEY` + `openclaw daemon install` + restart
+11. 首装末尾：自动出微信绑定二维码（已绑过则跳过），手机扫码确认即用
+12. 升级：只刷 `daemon.env` 路径 + restart gateway，不碰运行数据
 
 > 目录职责：`~/xiaobei/` = 程序（引擎 + 模板 + 脚本 + 工具 + wrapper）；`~/.openclaw/` = 运行数据（openclaw.json + daemon.env + workspaces + logs）。升级只换 `~/xiaobei/`，用户数据不动。
+
+GitHub PR CI 检查 Linux/macOS 的补丁应用、依赖安装、引擎构建、CLI 入口与技能依赖重复安装。发布 workflow 在上传 tarball 前对 Linux 包执行首装和重跑升级，检查用户配置、工作区文件、登录态文件和 API key 保留；冒烟跳过浏览器下载与微信扫码，服务托管及真实平台登录仍需实际环境验证。
 
 ---
 
 ## update.sh
 
-**已 `git clone` 仓做开发的用户的升级路线**。fetch + rebuild，不重装依赖、不卸 daemon、不碰运行数据。普通用户用 `install.sh` 即可，不需要这个脚本。
+**已 `git clone` 仓做开发的用户的升级路线**。fetch + rebuild，校验并补齐变化的依赖，不卸 daemon、不碰运行数据。普通用户用 `install.sh` 即可，不需要这个脚本。
+
+更新脚本在 `apply-addons.sh` 后调用同一个 deck-render 安装脚本，校验 npm 包、浏览器与字体。tarball 安装脚本的 `--skip-browser`（PowerShell 为 `XIAOBEI_SKIP_BROWSER=1`）会跳过 Chromium 下载与 Camoufox Firefox 下载，供 CI 冒烟使用；正常安装与更新会预装。
+
+Windows 缺少 FFmpeg/FFprobe 时安装器通过 winget 安装 `Gyan.FFmpeg`。Windows 版 deck-render 检查系统微软雅黑的 Light、Regular、Bold 字体文件，不联网下载 Noto；若系统缺少微软雅黑，应先启用 Windows 简体中文字体功能。
 
 ```bash
 ./scripts/update.sh              # fetch + apply addons + build + restart

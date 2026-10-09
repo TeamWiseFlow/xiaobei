@@ -84,6 +84,15 @@ if ! "$PROJECT_ROOT/scripts/apply-addons.sh" --force --no-restart; then
 fi
 log "STEP 3 done: addons applied + openclaw built"
 
+# ─── deck-render: pinned npm packages, Chromium shell and CJK font ───
+# The browser is stored under /opt/xiaobei, so the runtime stage COPY includes it.
+log "STEP 3.5: installing deck-render runtime..."
+if ! "$PROJECT_ROOT/scripts/install-deck-render.sh"; then
+  log "❌ deck-render runtime install failed"
+  exit 1
+fi
+log "STEP 3.5 done: deck-render ready"
+
 # ─── camoufox-cli install：拉 Firefox 二进制（非致命，首启可补）────
 # 幂等：已装且版本一致时打印 "already up to date" 并返回
 #

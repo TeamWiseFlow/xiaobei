@@ -6,12 +6,12 @@
   - GET  /api/v3/contents/generations/tasks/{task_id} → 轮询 status
   - 成功时 content.video_url 即成片下载地址。
 
-模型：doubao-seedance-2-0 系列（fast / normal / mini，均多模态 t2v/i2v/r2v）。
-鉴权：HTTP header `Authorization: Bearer ${AWK_GEN_KEY}`。
+模型：仅 Seedance 2.5 → Seedance 2.0 fast；按参数能力筛选候选链。
+鉴权：HTTP header `Authorization: Bearer ${VOLC_SEEDANCE_API_KEY}`。
 
-⚠️ 火山视频生成只认 AWK_GEN_KEY，不回退 ARK_API_KEY：ARK_API_KEY 是火山主模型
+⚠️ 火山视频生成只认 VOLC_SEEDANCE_API_KEY，不回退 ARK_API_KEY：ARK_API_KEY 是火山主模型
 （doubao 对话）的 key，用户可能只想用火山主模型而不用火山生成视频；若回退会
-误触发火山视频生成。想用火山生成视频必须单独配 AWK_GEN_KEY。
+误触发火山视频生成。想用火山生成视频必须单独配 VOLC_SEEDANCE_API_KEY。
 """
 
 from __future__ import annotations
@@ -45,12 +45,10 @@ VOLC_BASE = "https://ark.cn-beijing.volces.com/api/v3"
 VOLC_CREATE = f"{VOLC_BASE}/contents/generations/tasks"
 VOLC_QUERY = f"{VOLC_BASE}/contents/generations/tasks/{{task_id}}"
 
-# Seedance 2.0 series. Fast preferred → normal → mini. All three are multimodal
-# (t2v / i2v / r2v share the same model id).
+# 只支持这两个模型；不能通过 --model 绕过范围限制。
 VOLC_MODELS = {
+    "2.5": "doubao-seedance-2-5-260628",
     "fast": "doubao-seedance-2-0-fast-260128",
-    "normal": "doubao-seedance-2-0-260128",
-    "mini": "doubao-seedance-2-0-mini-260615",
 }
 
 VOLC_POLL_INTERVAL = 15
@@ -59,41 +57,81 @@ VOLC_TIMEOUT = 900
 
 # ---- 火山视频生成 -------------------------------------------------------------
 
+def references(value) -> list[str]:
+    return [value] if isinstance(value, str) else (value or [])
+
+
+def volc_image(value: str) -> str:
+    if value.startswith(("data:image/", "asset://")):
+        return value
+    return resolve_image(value)
+
+
 def volc_build_content(args: argparse.Namespace) -> list[dict]:
-    items: list[dict] = [{"type": "text", "text": args.prompt}]
-    if args.image:
-        items.append(
-            {"type": "image_url", "image_url": {"url": resolve_image(args.image)}, "role": "first_frame"}
-        )
-    if args.last_frame:
-        items.append(
-            {"type": "image_url", "image_url": {"url": resolve_image(args.last_frame)}, "role": "last_frame"}
-        )
-    if args.ref_image:
-        items.append(
-            {"type": "image_url", "image_url": {"url": resolve_image(args.ref_image)}, "role": "reference_image"}
-        )
-    if args.ref_video:
-        items.append(
-            {"type": "video_url", "video_url": {"url": resolve_media_url(args.ref_video, "ref-video")}}
-        )
+    items = [{"type": "text", "text": args.prompt}] if args.prompt else []
+    for value, role in ((args.image, "first_frame"), (args.last_frame, "last_frame")):
+        if value:
+            items.append({"type": "image_url", "image_url": {"url": volc_image(value)}, "role": role})
+    for value in references(args.ref_image):
+        items.append({"type": "image_url", "image_url": {"url": volc_image(value)}, "role": "reference_image"})
+    for kind in ("video", "audio"):
+        for value in references(getattr(args, f"ref_{kind}")):
+            url = value if value.startswith("asset://") else resolve_media_url(value, f"ref-{kind}")
+            items.append({"type": f"{kind}_url", f"{kind}_url": {"url": url}, "role": f"reference_{kind}"})
     return items
 
 
+def model_constraint(model: str, args: argparse.Namespace) -> str | None:
+    if model not in VOLC_MODELS.values():
+        return "仅支持 Seedance 2.5 和 Seedance 2.0 fast"
+    is_25 = model == VOLC_MODELS["2.5"]
+    maximum = 30 if is_25 else 15
+    if args.duration != -1 and not 4 <= args.duration <= maximum:
+        return f"时长须为 4–{maximum} 秒或 -1（自动）"
+    if args.resolution.upper() not in ("480P", "720P"):
+        return "当前火山线路支持 480P / 720P"
+    limits = (30, 10, 10) if is_25 else (9, 3, 3)
+    for kind, limit in zip(("image", "video", "audio"), limits):
+        if len(references(getattr(args, f"ref_{kind}"))) > limit:
+            return f"参考 {kind} 数量上限为 {limit}"
+    if not is_25 and args.ref_audio and not (args.ref_image or args.ref_video):
+        return "2.0 fast 不支持仅音频参考"
+    return None
+
+
+def validate_inputs(args: argparse.Namespace) -> None:
+    frames = args.image or args.last_frame or args.prev_segment
+    refs = args.ref_image or args.ref_video or args.ref_audio
+    if frames and refs:
+        die("首帧/首尾帧与全模态参考不可混用")
+    if args.last_frame and not (args.image or args.prev_segment):
+        die("--last-frame 需要 --image 或 --prev-segment")
+    if not (args.prompt or frames or refs):
+        die("必须提供提示词或参考素材")
+    if args.ref_audio and not args.audio:
+        die("参考音频不能与 --no-audio 同时使用")
+
+
+def volc_build_payload(model: str, args: argparse.Namespace) -> dict:
+    validate_inputs(args)
+    reason = model_constraint(model, args)
+    if reason:
+        die(f"{model}: {reason}")
+    ratio = args.ratio
+    if model == VOLC_MODELS["2.5"] and args.image:
+        if ratio != "adaptive":
+            log("Seedance 2.5 首帧/首尾帧锁定输入比例，ratio 使用 adaptive")
+        ratio = "adaptive"
+    return {
+        "model": model, "content": volc_build_content(args), "ratio": ratio,
+        "duration": args.duration, "resolution": args.resolution.lower(),
+        "generate_audio": args.audio, "watermark": False,
+    }
+
+
 def volc_submit(model: str, args: argparse.Namespace, api_key: str) -> str:
-    payload: dict = {
-        "model": model,
-        "content": volc_build_content(args),
-        "ratio": args.ratio,
-        "duration": args.duration,
-        "resolution": args.resolution.lower(),
-        "generate_audio": args.audio,
-        "watermark": False,
-    }
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    payload = volc_build_payload(model, args)
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     resp = post_json(VOLC_CREATE, payload, headers, timeout=60)
     task_id = resp.get("id") or resp.get("task_id")
     if not task_id:
@@ -124,11 +162,19 @@ def volc_poll(task_id: str, api_key: str) -> str:
 
 
 def volc_candidates(args: argparse.Namespace) -> list[str]:
-    chain = [VOLC_MODELS["fast"], VOLC_MODELS["normal"], VOLC_MODELS["mini"]]
-    # fast only supports 720p; skip it for 1080p
-    if args.resolution.lower() == "1080p":
-        chain = [m for m in chain if m != VOLC_MODELS["fast"]]
-    return chain
+    chain = [args.model] if args.model else list(VOLC_MODELS.values())
+    candidates = []
+    for model in chain:
+        reason = model_constraint(model, args)
+        if reason:
+            if args.model:
+                die(f"{model}: {reason}")
+            log(f"跳过 {model}: {reason}")
+        else:
+            candidates.append(model)
+    if not candidates:
+        die("Seedance 2.5 / 2.0 fast 均不支持当前参数")
+    return candidates
 
 
 # ---- 调度 --------------------------------------------------------------------
@@ -137,26 +183,27 @@ def run_one(platform: str, model: str, args: argparse.Namespace, api_key: str) -
     """Submit + poll for a single Volcengine model. Returns video URL or raises."""
     task_id = volc_submit(model, args, api_key)
     log(f"volcengine task submitted: {task_id} (model={model})")
-    return volc_poll(task_id, api_key)
+    video_url = volc_poll(task_id, api_key)
+    args.used_model = model
+    args.effective_ratio = "adaptive" if model == VOLC_MODELS["2.5"] and args.image else args.ratio
+    return video_url
 
 
 def cmd_video(args: argparse.Namespace) -> None:
-    if args.duration < 2 or args.duration > 15:
-        die("--duration 必须在 2–15 秒之间")
+    validate_inputs(args)
+    candidates = volc_candidates(args)
 
     # --prev-segment: 抽取上一段末帧作为本段首帧（人物故事首尾帧对齐）
     resolve_prev_segment(args)
 
-    api_key = (os.environ.get("AWK_GEN_KEY") or "").strip()
+    api_key = (os.environ.get("VOLC_SEEDANCE_API_KEY") or "").strip()
     if not api_key:
-        die("AWK_GEN_KEY 未设置（火山视频生成专用 key，不可与 ARK_API_KEY 混用）")
-
-    candidates = [args.model] if args.model else volc_candidates(args)
+        die("VOLC_SEEDANCE_API_KEY 未设置（火山 Seedance 视频生成专用的普通方舟 API key，非 Coding/Token Plan，不可与 ARK_API_KEY 混用）")
 
     output_path = ensure_safe_output(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    has_ref = bool(args.ref_image or args.ref_video)
+    has_ref = bool(args.ref_image or args.ref_video or args.ref_audio)
     has_i2v = bool(args.image or args.last_frame)
     mode = "r2v" if has_ref else ("i2v" if has_i2v else "t2v")
     log(
@@ -173,8 +220,10 @@ def cmd_video(args: argparse.Namespace) -> None:
                 "platform": "volcengine",
                 "mode": mode,
                 "model_candidates": candidates,
+                "model": args.used_model,
                 "duration": args.duration,
-                "ratio": args.ratio,
+                "ratio": args.effective_ratio,
+                "requested_ratio": args.ratio,
                 "resolution": args.resolution,
                 "audio": args.audio,
                 "video_url": video_url,
@@ -197,18 +246,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ── 默认子命令：video ──
     p_video = sub.add_parser("video", help="视频生成(默认,可省略 video 子命令)")
-    p_video.add_argument("--prompt", required=True, help="画面+音频描述（声画同出）")
+    p_video.add_argument("--prompt", default=None, help="画面+音频描述（声画同出）")
     p_video.add_argument("--image", default=None, help="首帧图片：URL 或本地路径（→ i2v）")
     p_video.add_argument("--prev-segment", default=None, dest="prev_segment",
                          help="上一段视频本地路径：脚本自动抽取其末帧作为本段首帧（人物故事首尾帧对齐）。与 --image 互斥")
     p_video.add_argument("--last-frame", default=None, dest="last_frame", help="尾帧图片：URL 或本地路径（i2v 首尾帧）")
-    p_video.add_argument("--ref-image", default=None, dest="ref_image", help="参考图片：URL 或本地路径（→ r2v）")
-    p_video.add_argument("--ref-video", default=None, dest="ref_video", help="参考视频 URL（→ r2v，需公网 URL）")
-    p_video.add_argument("--duration", type=int, default=8, help="时长（秒），默认 8，火山范围 2–15")
-    p_video.add_argument("--ratio", default="9:16", help="宽高比，默认 9:16")
-    p_video.add_argument("--resolution", default="720P", choices=["720P", "1080P"], help="分辨率，默认 720P（Fast 仅 720P）")
+    p_video.add_argument("--ref-image", action="append", default=None, dest="ref_image", help="参考图片：URL 或本地路径（→ r2v）")
+    p_video.add_argument("--ref-video", action="append", default=None, dest="ref_video", help="参考视频 URL（→ r2v，需公网 URL）")
+    p_video.add_argument("--ref-audio", action="append", default=None, help="参考音频公网 URL，可重复；仅音频输入只支持 2.5")
+    p_video.add_argument("--duration", type=int, default=8, help="时长（秒），默认 8，2.5 为 4–30，fast 为 4–15；-1 自动")
+    p_video.add_argument("--ratio", default="9:16", choices=["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "adaptive"], help="宽高比，默认 9:16；2.5 首帧自动 adaptive")
+    p_video.add_argument("--resolution", default="720P", type=str.upper, choices=["480P", "720P"], help="分辨率，默认 720P")
     p_video.add_argument("--no-audio", action="store_false", dest="audio", help="关闭声画同出（默认开启）")
-    p_video.add_argument("--model", default=None, help="指定模型 id（关闭候选链 fallback）")
+    p_video.add_argument("--model", default=None, choices=list(VOLC_MODELS.values()), help="指定 2.5 / 2.0 fast Model ID，关闭候选链 fallback")
     p_video.add_argument("--output", required=True, help="输出 MP4 路径（相对工作区，须在 output_videos/tmp/fragments/artifacts 或 <platform>/outputs/ 下）")
 
     return parser

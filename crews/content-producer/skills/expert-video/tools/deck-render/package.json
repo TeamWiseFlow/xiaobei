@@ -1,0 +1,10 @@
+{
+  "name": "xiaobei-deck-render",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "hyperframes": "0.8.50",
+    "gsap": "3.14.2",
+    "playwright-core": "1.61.1"
+  }
+}

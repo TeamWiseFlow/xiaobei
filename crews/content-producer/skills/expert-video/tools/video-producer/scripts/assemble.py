@@ -414,8 +414,7 @@ def main() -> None:
     args = parser.parse_args()
 
     project = Path(args.project_dir).resolve()
-    if _brief.collage_guard(project, "Stage 12 assemble"):
-        return
+    workflow = _brief.parse_workflow(_brief.read_brief(project))
     source_dir = project / args.source_dir if args.source_dir else project / "render"
     preset, crf = encode_opts(args.low_memory)
     audio_sr, audio_ch = parse_audio_format(args.audio_format)
@@ -460,6 +459,35 @@ def main() -> None:
         plan_path = Path(args.expect_durations)
         plan_path = plan_path if plan_path.is_absolute() else project / plan_path
         check_expect_durations(segments, load_duration_plan(plan_path), args.duration_tolerance)
+
+    if workflow == "collage-broll":
+        if not args.manifest or len(segments) != 1 or args.transition != "hard":
+            die("collage-broll Stage 12 每次用 --manifest 指定恰好一条独立成片，转场须为 hard")
+        audio_plan = project / "audio" / "collage-audio-plan.json"
+        if not audio_plan.is_file():
+            die("collage-broll Stage 11 前置缺失: audio/collage-audio-plan.json")
+        policy = json.loads(audio_plan.read_text(encoding="utf-8")).get("sound_policy")
+        if policy not in {"silent", "user-voice", "approved-tts"}:
+            die("collage-broll Stage 11 sound_policy 尚未核定")
+        source = segments[0][1]
+        if policy == "silent" and has_audio(source):
+            die(f"collage-broll 无声交付承诺与源片音轨冲突: {source}")
+        if policy != "silent" and not has_audio(source):
+            die(f"collage-broll 有声交付缺少源片音轨: {source}")
+        target = project / args.output
+        if source.resolve() == target.resolve():
+            die("Stage 12 输出不能覆盖输入")
+        if args.width is not None or args.fps is not None or args.audio_duration is not None:
+            die("collage-broll 单段直交不做规格/音轨转换；先在 Stage 10/11 处理")
+        if args.verify_fps is not None:
+            verify_output_fps(source, args.verify_fps)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.is_file():
+            print(f"[checkpoint] Stage 12 collage-broll 成片已存在：{target}")
+            return
+        shutil.copy2(source, target)
+        print(f"[done] Stage 12 collage-broll 单段成片：{target}")
+        return
 
     video_out = project / args.output
     if video_out.is_file():

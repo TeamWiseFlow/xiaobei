@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 14a — make-cover：封面（awk-img-gen，必含封面主文案）。
+"""Stage 14 — make-cover：封面（awk-img-gen，必含封面主文案）。
 
 Usage:
   python3 scripts/make-cover.py <project_dir> --title "..."
@@ -23,7 +23,7 @@ def die(msg: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Stage 14a make-cover")
+    parser = argparse.ArgumentParser(description="Stage 14 make-cover")
     parser.add_argument("project_dir", help="项目目录（CP 自建工作区 output_videos/<topic-en-slug>/）")
     parser.add_argument("--title", default=None, help="封面主文案，不传则从 brief.md 抽")
     args = parser.parse_args()

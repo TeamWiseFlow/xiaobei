@@ -1,6 +1,6 @@
 ---
 name: viral-chaser
-description: 用户转发/分享抖音、B站、小红书视频链接(v.douyin.com / b23.tv / xhslink.com / xhslink.cn),要求拆解分析时使用（俗称「追爆」）：下载视频、ASR 转写、全片关键帧抽取、结构化拆解，产出拆解分析报告（含视频 meta、逐帧画面分析、结构占比、内容形态与制作指向）。也是各平台 DNA 采样的取数主力：可按 DNA 样本格式归档转录稿。抖音图集（图文作品）只下载图片与文本，不做转写。仅产出报告，视频生产需另外委托 content-producer。
+description: 视频追爆与 DNA 样本分析。产出结构、声画风格与制作指向的拆解报告。也可分析用户提供的本地视频。只处理视频，制作另交 content-producer。
 metadata:
   openclaw:
     emoji: 🎯
@@ -8,58 +8,33 @@ metadata:
       bins:
       - node
       - ffmpeg
+      - ffprobe
+      - python3
 ---
 
 ## 🔑 前置：ASR 凭据（仅首次）
 
-本技能的语音转写走公共 ASR 路由（`crews/main/skills/_shared/asr.py`），凭据在哪家走哪家：
+本技能的语音转写走公共 ASR 路由（`skills/_shared/asr.py`），凭据在哪家走哪家：
 
-1. **火山录音文件极速版**（`VOLC_ASR_*`，优先）——需单独开通语音模型，见下
-2. **百炼业务空间**（`WORKSPACE_ID` + `MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`）
-3. **百炼 agent plan**（`AWK_API_KEY`）
+1. **火山录音文件极速版**（`VOLC_ASR_*`，优先）
+2. **百炼业务空间**（`WORKSPACE_ID` + `MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`）：`qwen-audio-3.1-asr-flash` → `qwen-audio-3.0-asr-flash`
+3. **百炼 agent plan**（`AWK_API_KEY`）：`qwen-audio-3.0-asr-flash`
+
+按序尝试已配置的供应商；业务空间内先尝试两个候选模型，均失败才继续 Agent Plan。设置 `BAILIAN_ASR_MODEL` 后百炼每个端点仅调用该模型。百炼 Flash 单次音频不超过5分钟；较长视频使用火山后端。
 
 三组任一组在环境里即可运行；都缺失时分析器退出码 2 并提示配置。
-
-### 火山开通指引（选火山路线时）
-
-火山引擎豆包语音 · 录音文件极速版（资源 ID `volc.bigasr.auc_turbo`）。即便账号已订购火山 Code Plan，语音模型仍需**单独开通**，否则调用会返回鉴权/权限错误。
-
-**判断是否已开通**：直接跑 Step 3 分析器，若 ASR 报错含 `status=45xxxxx` 或权限相关码，说明未开通，按下面流程开通一次即可。
-
-**开通流程**（未开通时，根据下面提示并引导用户在火山引擎控制台操作一次）：
-
-1. 登录火山引擎控制台，左侧控制面板进入 **「开通管理」**
-2. 选择 **「语音模型」** 选项卡
-3. 找到 **「Doubao-录音文件识别2.0」** 这一项，点击它的 **「立即使用」**
-4. 在跳转页面的「服务详情」里，选择 **「极速版」** 标签卡（对应实例名称 `Speech_Recognition_Seed_AUC2000000854311547266`，资源 ID `volc.bigasr.auc_turbo`），点击 **「试用」**（赠送 20 小时，可先用，后续再点开通付费）
-5. 在该极速版页面可同时获得三项凭据：**APP ID**（数字）、**Access Token**、**Secret Key**。把 **APP ID + Access Token** 提供给小贝（旧控制台双头鉴权，对应 `VOLC_ASR_APP_ID` + `VOLC_ASR_ACCESS_KEY`）；**Secret Key 不需要给**（旧控制台账号用不上，填进 `X-Api-App-Key` 反而会报 `45000010 appid mismatch`）。由小贝写入实例环境变量。
-
-**环境变量**（开通后由小贝配置，用户无需手动设置）：
-
-| 变量 | 说明 |
-|------|------|
-| `VOLC_ASR_APP_ID` | 旧控制台**数字 APP ID**（如 `1216386473`），用于 `X-Api-App-Key`。旧控制台双头鉴权必需 |
-| `VOLC_ASR_ACCESS_KEY` | 旧控制台 Access Token，用于 `X-Api-Access-Key`。与 `VOLC_ASR_APP_ID` 成对使用 |
-| `VOLC_ASR_APP_KEY` | 新控制台 APP Key，用于 `X-Api-Key` 单头鉴权。仅新控制台账号需要；旧控制台账号不要把 Secret Key 填到这里（会报 `45000010 appid mismatch`） |
-| `VOLC_ASR_RESOURCE_ID` | 资源 ID，默认 `volc.bigasr.auc_turbo`，一般无需改 |
-
-> 鉴权二选一（脚本优先旧控制台双头）：同时给出 `VOLC_ASR_APP_ID`+`VOLC_ASR_ACCESS_KEY` → 旧控制台双头；否则用 `VOLC_ASR_APP_KEY` → 新控制台单头。**旧控制台 `X-Api-App-Key` 要的是数字 APP ID，不是 Secret Key。**
-
-> **写入流程**：用户把 `VOLC_ASR_APP_ID` / `VOLC_ASR_ACCESS_KEY`（或新控制台的 `VOLC_ASR_APP_KEY`）交给小贝后，**小贝应 spawn 一个 `IT engineer` 作为 subagent** 去把这两个变量添加到实例环境变量中——IT engineer 掌握如何在本机环境变量 / 服务配置里安全添加此类密钥的规范。小贝本人不要直接写环境变量文件。
-
-> **关于接口选型**：火山 ASR 分录音文件标准版 2.0（`volc.seedasr.auc`，单价最低，但只接受音频公网 URL，需自备 TOS 对象存储）、极速版（本技能采用，支持本地文件 base64 直传、一次返回）、闲时版（24h 内返回，不适合交互流程）、流式（实时上屏用）。viral-chaser 输入是本地 audio.wav，极速版免托管、原生返回时间戳，综合最合适。若后续为降本要切标准版 2.0，需额外引入 TOS 上传环节。
 
 # Viral Chaser（追爆分析 — 报告产出）
 
 Use this skill when:
-- 用户提供抖音 / B 站 / 小红书视频链接，希望分析并制作同类视频
+- 用户提供抖音 / 小红书 / 快手 / TikTok / X / 微博视频链接，或本地视频，希望拆解分析
 - 需要分析爆款视频的结构和公式
 
 **本技能仅产出追爆报告**，不生成脚本，不制作视频。如需据此生成视频，需另行委托 `content-producer` （spawn subagent）执行。
 
-**Supported platforms:** 抖音（Douyin — 视频作品 + 图集图文作品）、B 站（Bilibili）、小红书（XHS — 仅视频笔记, 如果是图文的话则转向执行 `xhs-content-ops` 技能。）
+**采集路由：** 抖音、小红书、快手、TikTok、X、微博分别用 `douyin-hunter`、`xhs-hunter`、`kuaishou-hunter`、`tiktok-hunter`、`x-hunter`、`weibo-hunter`。其他平台暂不支持，需要使用用户已提供的本地视频，不在本技能恢复下载逻辑。analyzer 不依赖来源平台，只接受本地视频与可选独立音轨。
 
-**Not supported:** 微信视频号、TikTok
+**视频限定：** 图文内容的分析不在本技能范围内。
 
 ---
 
@@ -75,33 +50,49 @@ Use this skill when:
 
 ### Step 1 — Create workspace
 
-Before anything else, create the working directory for this video under the source platform's 平台运营文件夹 `<platform>/ref/`（`<platform>` 取视频来源平台代号：douyin / bilibili / xhs）:
+将工作目录建在来源平台的运营文件夹 `<platform>/ref/`（平台代号 douyin / xhs / kuaishou / tiktok / twitter / weibo）下：
 
 ```bash
-PLATFORM="douyin"  # 视频来源平台代号：douyin / bilibili / xhs
-VIDEO_SLUG="<platform>-<contentId>"  # e.g. douyin-7389abc or bilibili-BV1xx
-mkdir -p "${PLATFORM}/ref/${VIDEO_SLUG}/references"
+mkdir -p "<platform>/ref/<slug>/references"
 ```
 
 若调用方 workflow 指定了产出落点（如把参考素材收进在制作品目录 `<platform>/outputs/<work>/references/`），则按指定位置建工作目录，内部结构不变。
 
-All downloaded files, analysis results, and generated reports will be saved under this directory. The `references/` subdirectory holds the raw assets (video, audio, key frames) downloaded by the analyzer script.
+来源链接、hunter 返回的作品资料、下载的视频和音轨、分析产物保存在同一工作目录；`references/` 存放素材与 analyzer 产生的音频、关键帧。本地输入按调用方指定的工作目录归档，不猜测来源平台。
 
-### Step 2 — Run the analyzer（内置探活 + 下载 + 转写 + 关键帧）
+### Step 2 — 调用对应 hunter 获取资料与下载视频
 
-一条命令闭环：先探活、再下载、再 ASR、再抽帧。**探活已合并进脚本**，无需单独跑 check-login。
+先读取来源平台 hunter 的 SKILL.md，按其流程完成登录检查、链接解析、作品资料获取和视频下载。探活、会话失效、签名与平台风控均在 hunter 阶段处理；失败时停止本次采样，analyzer 不处理这些错误或恢复登录。
+
+| 来源 | 采集技能 | 交给分析阶段的产物 |
+|---|---|---|
+| 抖音 | `douyin-hunter` | 本地视频、作品资料与完整来源链接 |
+| 小红书 | `xhs-hunter` | 本地视频、作品资料与含 xsec_token 的真实链接 |
+| 快手 | `kuaishou-hunter` | 本地视频与作品资料 |
+| TikTok | `tiktok-hunter` | 本地视频与作品资料 |
+| X/Twitter | `x-hunter` | 本地视频与推文资料 |
+| 微博 | `weibo-hunter` | 本地视频与微博资料 |
+
+抖音和小红书的独立采集命令示例：
 
 ```bash
-viral-chaser <url> [--no-frames]
+douyin-hunter fetch --url '<视频链接>' --video-only --download-media --output-dir '<工作目录>/references'
+xhs-hunter fetch '<视频链接>' --video-only --download-media --output-dir '<工作目录>/references'
 ```
 
-- `<url>`: Full or short-link URL of the video（支持短链，如 `xhslink.com/o/xxx`、`v.douyin.com/xxx`、`b23.tv/xxx`，脚本内部跟随重定向解析）
-- `--no-frames`: Skip key frame extraction (faster, audio-only analysis)
-- `OUTPUT_DIR`（环境变量）：落盘目录，必须指向 Step 1 建的 `references/` 子目录
+这些 hunter 将视频保存为 `video.mp4`、资料保存为 `note.json`。以各自实际输出为准；保留原始资料，不让 agent 重写为 analyzer 的输入 schema。新增平台使用 `<hunter> fetch <视频链接> --video-only --download-media --output-dir <目录>`，视频文件名与扩展名以 media_paths 返回为准。
 
-> **⚠️ exec allowlist 注意**：`OUTPUT_DIR=... viral-chaser ...` 内联 env 前缀会触发 allowlist miss。通过 exec 工具调用时，把 `OUTPUT_DIR` 放到 exec 的 **`env` 字段**里传，不要写成内联前缀；同理避免 `mkdir ... ; echo` 这类分号复合命令。脚本本身已正确读取 `OUTPUT_DIR` 落盘，问题只在调用规范。
+只分析本地视频时跳过 hunter 采集。图文不进入 analyzer。
 
-**内置探活**（`_shared/check-session.ts`）：douyin 抓取前先做两层探活（Tier1 cookie 关键字段 + Tier2 平台 pong，pong 带 TTL 缓存）；bilibili 公开视频免登录，跳过探活。**xhs 走无 cookie HTML 路线（见下），不依赖签名/cookie，跳过探活**——探活 user/me 通过也不代表 feed 签名路径被接受，HTML 路线根本不走签名，无需探活。
+### Step 3 — 运行 analyzer（转写与关键帧）
+
+用 `viral-chaser` wrapper 调用 `scripts/analyzer.ts`。脚本只读本地媒体，内部完成音频提取、公共 ASR 转写与抽帧，不接收平台 URL、不读取平台登录态、不调用 hunter 或下载器。
+
+```bash
+viral-chaser --video '<工作目录>/references/video.mp4' --output-dir '<工作目录>/references'
+```
+
+若 hunter 提供独立音轨（与视频同步的独立音轨），用 `--audio '<本地音轨路径>'` 指定同一视频的同步音轨；不下载音轨 URL。`--no-frames` 跳过抽帧，只用于用户明确只需转写时。`--output-dir` 优先于已有 `OUTPUT_DIR` 环境变量，未指定则写入视频所在目录。
 
 The script outputs a **JSON object to stdout**. Read it and proceed with analysis.
 
@@ -109,53 +100,44 @@ The script outputs a **JSON object to stdout**. Read it and proceed with analysi
 ```json
 {
   "ok": true,
-  "platform": "douyin",
   "kind": "video",
   "metadata": {
-    "contentId": "...",
-    "title": "...",
-    "desc": "...",
-    "author": "...",
-    "authorSignature": "账号简介（对标账号样本的 account-bio 维度用）",
-    "authorUid": "...",
     "durationSeconds": 36,
     "width": 1080,
     "height": 1920,
     "orientation": "vertical",
-    "ratio": "vertical",
-    "publishTime": "2026-09-04T10:12:00.000Z",
-    "hashtags": ["话题1", "话题2"],
-    "coverUrl": "...",
-    "stats": { "playCount": 0, "likeCount": 12, "commentCount": 0, "shareCount": 0, "collectCount": 0 }
+    "hasAudio": true
   },
   "transcript": {
     "text": "全文转录...",
     "segments": [{ "start": 0.0, "end": 5.2, "text": "开场文案" }],
-    "estimated": false
+    "estimated": false,
+    "durationSeconds": 36,
+    "truncated": false
   },
   "frames": ["<platform>/ref/<slug>/references/frames/frame_00_0s.jpg", "..."],
   "localPaths": {
     "video": "<platform>/ref/<slug>/references/video.mp4",
-    "audio": "<platform>/ref/<slug>/references/audio.wav",
+    "audio": "<platform>/ref/<slug>/references/analysis-audio.wav",
     "tmpDir": "<platform>/ref/<slug>/references"
-  }
+  },
+  "warnings": []
 }
 ```
 
-- `kind`: `video`（正常视频作品）或 `note`（抖音图集图文作品）。`note` 时 `transcript` 为 `null`、`frames` 为空，另给 `images: [".../image_00.jpg", ...]`（最多 20 张）与 `metadata.imageCount`；图文样本的视觉证据就是这些图片。
-- `metadata.orientation`: 由 width/height 推出的 `vertical` / `horizontal` / `square`；平台拿不到宽高时为空串，必须自己 `ffprobe` 本地成片补齐，不得猜。
-- 各字段平台支持度不同：抖音给全套；小红书 HTML 路线给 `hashtags` 与互动计数（无播放数、无发布时间）；B 站给时长与三项互动。缺失一律在报告里写「接口未返回」，不编造。
+- `kind`: 仅 `video`；图文不下载、不分析，转对应平台专家 workflow。
+- `metadata` 由本地 ffprobe 得到，只含时长、宽高、画幅和视频是否自带音轨。来源平台、作品 ID、标题、作者/简介、发布时间、话题和互动计数从 Step 2 的 hunter 资料读取；缺失写「接口未返回」，本地输入无资料时写「未提供」，不编造。小红书 PC 笔记资料不提供播放数。
 - `frames`: 最多 12 张，覆盖开场（0s / 3s）、各口播段中点与全片比例点（25% / 50% / 63% / 75% / 90%）——**反转植入类作品的反转点通常在 55%-76%，只抽前几秒会完全错过**。
-
-- `transcript.estimated`: `false` 表示 `segments` 是火山 ASR 返回的**真实时间戳**（utterance 级，毫秒精度转秒）；`true` 仅在接口异常未返回 utterances 时出现，此时按句切分全文并按字数比例在音频时长上估算分段，时间区间为近似值。正常情况下始终为 `false`。
+- `transcript.estimated=false` 表示使用公共 ASR 返回的真实时间戳；`true` 表示接口没有返回分段时按音频时长估算。报告据实际结果注明，不能将估算时间写为精确时间。
+- 音频提取最多前 10 分钟；`transcript.truncated=true` / `TRANSCRIPT_PARTIAL` 表示转写未覆盖全片，必须写清转写范围。关键帧仍按完整视频时长采样，不能把未转写区间当作没有口播。
+- `KEY_FRAMES_PARTIAL` 表示部分抽帧失败；报告记录视觉样本缺口，不能用旧帧或文字推测补齐。
 
 **Exit codes:**
 - `0` = Success
-- `1` = Error（URL invalid / download failed），或 `SIGN_UNAVAILABLE`（签名缺 OFB_KEY，重登救不了，交 IT engineer 配凭证）
-- `3` = `SECURITY_BLOCK`（小红书软风控）— 脚本已做一次冷却重试；停止本轮该平台采样，不立即重跑、不换 cookie、不重登
-- `2` = `SESSION_EXPIRED`（cookie 失效）— 走 login-manager 重登（`login-manager --platform <p>` 导出+验证），重试一次
+- `1` = 本地媒体、音轨、ASR 请求或分析错误，按 `error` / `message` 排查
+- `2` = `ASR_NOT_CONFIGURED`，配置公共 ASR 凭据；与平台登录态无关
 
-### Step 3 — Read key frames (if available)
+### Step 4 — Read key frames (if available)
 
 For each path in `frames`, use the `Read` tool to load the image and analyze it visually.
 
@@ -169,20 +151,20 @@ Read: <platform>/ref/<slug>/references/frames/frame_01_3s.jpg
 
 ## Analysis Framework
 
-读完 JSON 与全部关键帧后，产出**追爆报告**，保存到 `<platform>/ref/<slug>/raw_article.md`。报告既要能给人看，也要能直接喂 DNA 采样（见最后一节）。
+读完 hunter 资料、analyzer JSON 与全部关键帧后，产出**追爆报告**，保存到工作目录的 `raw_article.md`。报告既要能给人看，也要能直接喂 DNA 采样（见最后一节）。
 
 ### 1. 作品 meta 信息
 
 | 项 | 内容 |
 |----|------|
-| 作品类型 | 视频 / 图文（`kind`） |
+| 作品类型 | 视频（`kind: video`） |
 | 时长 | xx s（`durationSeconds`） |
 | 画幅 | 竖屏 9:16 / 横屏 16:9（`orientation` + `width`×`height`） |
-| 发布时间 | `publishTime`（接口未返回时写「未返回」） |
-| 作者与简介 | `author` + `authorSignature`（对标账号样本必记） |
-| 话题标签 | `hashtags` |
-| 互动数据 | 播放 / 点赞 / 评论 / 分享 / 收藏（逐项写；接口未返回的项注明） |
-| 来源 | 原视频 URL + 内容 ID + 抓取日期 |
+| 发布时间 | hunter 的实际发布时间字段（接口未返回时注明） |
+| 作者与简介 | hunter 的作者资料与简介（对标账号样本必记，缺失注明） |
+| 话题标签 | hunter 返回的话题信息 |
+| 互动数据 | hunter 的播放 / 点赞 / 评论 / 分享 / 收藏（逐项写；接口未返回的项注明） |
+| 来源 | 原视频 URL + 完整内容 ID + 采集日期；本地输入则标注用户提供 |
 
 ### 2. 内容摘要
 
@@ -241,13 +223,13 @@ Read: <platform>/ref/<slug>/references/frames/frame_01_3s.jpg
 | 观测到的形态 | 制作指向 |
 |-------------|----------|
 | 影视解说 / 剧情解说 + 反转植入（「万万没想到」式） | Content Producer `expert-video` → Reversal Ad workflow |
-| 口播类（真人口播出镜，或旁白 + 画面） | Content Producer `expert-video` → Narration Video workflow |
+| PPT / 幻灯或 B-roll 大画面 + 实拍/数字人口播小窗，或用户音频+B-roll | Content Producer `expert-video` → Deck Talk workflow |
+| 人物全屏口播或其他自由镜头声画制作 | Content Producer `expert-video` → 不指定类型 workflow，走通用制作流程 |
 | 一句文稿转视觉隐喻的纸拼贴动画 | Content Producer `expert-video` → Collage B-roll workflow |
 | 纯 AIGC 动画 / 剧情短片 / 蒙太奇（需从零出脚本分镜） | Content Producer `expert-video` → **不指定类型 workflow**（CP 按其通用制作流程做，据创意自定叙事 / 动效 / 蒙太奇手法） |
 | 已有素材简单拼接、加旁白、烧字幕 | main `video-edit` |
 | 已有真人口播素材去口气词、剪高光 | main `talking-head-cut` |
 | 产品操作录屏 | main `ui-demo` |
-| 图文笔记 | main 直接生产（图文不走 CP） |
 
 判定要写依据：口播占比、素材来源、画面是否连续叙事、有无产品段。
 
@@ -290,7 +272,7 @@ Read: <platform>/ref/<slug>/references/frames/frame_01_3s.jpg
 > 原视频 URL：<url>（内容 ID <id>）
 > 时长：xxs ｜ 画幅：竖屏 9:16 ｜ 点赞 x ｜ 评论 x ｜ 播放量：<数值或「接口未返回」>
 > 发布时间：<publishTime 或「未返回」> ｜ 抓取日期：YYYY-MM-DD ｜ 拆解报告：<platform>/ref/<slug>/raw_article.md
-> ASR 说明：火山引擎极速版，真实时间戳（estimated=false）
+> ASR 说明：公共 ASR 路由；时间戳为<真实/估算>（estimated=<实际值>），转写覆盖<实际范围>
 > ⚠️ ASR 谐音校正：<逐条列出，注明依据的画面字幕帧；无则写「无」>
 > 转录约定：逐字引语为原话引用（含时间戳）；标注 [剧情概括] 的段为报告中段转述，非逐字。
 
@@ -307,15 +289,11 @@ Read: <platform>/ref/<slug>/references/frames/frame_01_3s.jpg
 - 25.7–35.3s（≈26.5%）：<植入段>
 ```
 
-- 图文作品（`kind: "note"`）没有口播全文：把正文原样抄进「## 正文全文」，图片路径列在「## 图组」下，其余元信息与结构标注照写。
 - 逐字引语与转述必须分开标注，不得把概括写成原话。
 - 拿不到的字段写「接口未返回」或「未观测」，不编造。
 
 ## Notes
 
-- **Workspace files** are stored in `<platform>/ref/<slug>/` — all downloaded assets and analysis reports are kept together. The `references/` subdirectory contains raw assets from the analyzer.
-- **Bilibili DASH format**: if `mediaFormat` is `DASH`, the video and audio streams are separate. The downloaded `video.mp4` contains the video stream only; audio is in `audio.wav` after extraction. This is transparent to the analysis workflow.
-- **XHS video notes only**: 小红书图文笔记（image-only）不含视频，viral-chaser 会报错并提示。只有视频笔记（type=video）才能下载和分析。
-- **XHS 取数走 SSR HTML 路线（无 cookie 优先）**：`platforms/xhs.ts` 直接 GET `www.xiaohongshu.com/explore/{note_id}?xsec_token=...` 笔记详情页 HTML，解析 og:meta + `window.__INITIAL_STATE__` 拿标题/封面/视频地址/时长/互动计数（`_shared/xhs-html-note.ts`）。**不走 feed API**（`/api/sns/web/v1/feed` 需 xRap relay 签名，极易 406/500/滑块，且探活 user/me 通过不代表 feed 签名路径被接受，会出现「探活绿、feed 红」假绿）。输入必须是带 `xsec_token` 的分享链接（`xhslink.com/...` 或 `www.xiaohongshu.com/explore/...?xsec_token=...`），脚本从短链展开后的 URL 抽 token。无 cookie 抓不到（滑块/空页）时，若本机有 `xhs-browse` cookie 则用同指纹 UA + cookie 回退重试一次。
-- **ASR segments**: 语音转写使用火山引擎豆包语音·录音文件极速版（`volc.bigasr.auc_turbo`），原生返回 utterance 级真实时间戳（`start_time`/`end_time`，毫秒），脚本转成秒后填入 `transcript.segments`，`estimated=false`。仅在接口异常未返回 utterances 时，才按句切分全文并按字数比例在音频时长上估算分段（`estimated=true`）作为兜底。开通/鉴权见文首「前置：开通火山语音模型」。
-- **Exit code 2 — cookie expired:** Execute the login flow described in the login-manager skill（原则 3：douyin / xhs-browse 有头手动登录；bilibili 有头登录），导出 cookie + UA 后重试一次。Do not retry more than once.
+- 原始平台资料由 hunter 保存；analyzer 仅生成本地媒体分析数据，不增加新平台适配器。
+- 快手/TikTok/X/微博沿用“hunter 采集 → 本地 analyzer → 拆解报告”的流程，登录检查、短链解析与下载限制以各 hunter 文档为准。
+- 只有转写与抽帧完成并核对结果后才写分析结论；hunter 失败不运行 analyzer，本地分析失败不重新采集或恢复平台登录。

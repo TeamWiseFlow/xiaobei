@@ -1,3 +1,73 @@
+# v5.7.3(2026-10-09)
+
+- `aigc-video-gen music` 增加百炼业务空间 `fun-music-v1`：支持提示词/歌词、纯音乐、演唱性别及 MP3/WAV，同步生成后下载音频并保存 metadata；新增音乐专用选路，自动优先 MiniMax 再完整百炼业务空间，支持显式 `--platform dashscope`，火山/Agent Plan 视频凭据不触发音乐生成。
+- deck-render、通用视觉片段、片尾和字幕按系统选择默认中文字体：Windows 使用自带微软雅黑且安装器不再下载 Noto；Linux/macOS 保留 Noto Sans CJK SC。旧 Python 动效兼容入口也可读取 Windows 字体文件。
+- `expert-video` 的新视觉片段统一走 `video-producer visual-render`（HyperFrames/GSAP）；片尾改用该渲染器，拼贴 B-roll 改为独立纸片与可控时间轴，并把可选 i2v 批调收进 `video-producer`，删除独立 `collage-broll` 工具。旧 JSON 动效项目暂保留兼容入口。
+- 安装/更新与 Docker 构建预装 deck-render 的 FFmpeg、锁定 HyperFrames/Playwright Chromium 和 Noto Sans CJK SC；运行时从包内浏览器路径启动渲染。
+- awk-tts 新增声音复刻/音色设计、音色状态查询与绑定档案；默认沿火山 → 百炼业务空间 → Agent Plan 选路，火山支持新版单 key 和旧版双头鉴权。
+- 百炼业务空间 TTS 候选链增加 `qwen-audio-3.1-tts-flash`，排序在 3.0 Flash 前，并适配模型专属默认音色和自定义音色档案；公共 ASR 与 TTS 自检按 `qwen-audio-3.1-asr-flash` → `qwen-audio-3.0-asr-flash` 尝试，显式模型关闭模型回退，Agent Plan 保留原模型候选。
+- ASR 路由及火山/百炼后端统一放入公共 `skills/_shared`；视频转写、口播剪辑、CP 旁白对齐、TTS 自检及 Awada 语音消息共用一套实现，TTS 自检也按火山 → 百炼业务空间 → Agent Plan 回退，全部失败仅警告。
+- 火山视频仅支持 Seedance 2.5 → 2.0 fast，按时长和参考素材数量筛选候选链，补齐参考音频、首尾帧互斥与 2.5 adaptive 比例适配；专用凭据改名为 `VOLC_SEEDANCE_API_KEY`（原 `AWK_GEN_KEY`）。
+- `aigc-video-gen` 的百炼业务空间改用 `wan3.0-video` → `wan3.0-video-prime`，统一适配文生、首帧/首尾帧与多模态参考，支持2–30秒/智能时长、480P、参考音频和无声输出；Agent Plan 保留 HappyHorse/Wan2.7 候选链，显式模型也执行参数与素材校验。
+- `awk-img-gen` 仅保留百炼业务空间与 Agent Plan，移除火山生图；新增 `--platform dashscope|plan` 固定端点、凭据和候选链，默认优先业务空间再 Agent Plan。Agent Plan 默认调用 `qwen-image-3.0-pro`，不可用时回退 `wan2.7-image-pro` → `wan2.7-image`。
+
+### 平台职责与视频分析
+
+- `expert-douyin` / `expert-xhs` / `expert-tiktok` / `expert-kuaishou` / `expert-twitter` 聚焦创作、发布、本人作品数据与创作者服务；私信及其他互动写操作、竞争对手直播调研与直播间互动统一收进 `expert-bd`，直播 workflow 按调研与互动拆分。内容搜索、账号/作品/评论读取、互动提醒与媒体下载由对应平台的一级 hunter 提供，以各平台已实现接口为准。
+- `viral-chaser` 改为编排 hunter 取资料与下载，再用本地 analyzer 提取音频、公共 ASR 转写和全片关键帧；删除 analyzer 内的登录、探活、链接解析与下载链路。支持抖音、小红书、TikTok、快手、X、微博视频，不再支持 B 站链接；图文由 hunter 下载、对应平台专家 workflow 分析。
+- 公共 `smart-search` 将抖音、小红书、TikTok、快手、X、微博和微信公众号路由到对应 hunter；微信视频号暂未提供搜索与取内容方案。`published-track` 只管理发布记录、查询与指标入库，各平台 engagement 工具负责取数后回填。
+
+### TikTok、快手、X 与微博能力扩展
+
+- 新增 `expert-tiktok` / `expert-kuaishou`，扩充 `expert-twitter`：提供起号、账号对标、定性风格 DNA、内容生产、改片与复盘 workflow，配套发布、本人作品取数及风格分析工具；取数匹配完整作品 ID 与账号后回填 `published-track`。
+- 新增 `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter`，按平台接口提供搜索、账号与作品查询、评论读取、媒体下载，支持 `viral-chaser` 获取本地视频素材；微博沿用独立 `weibo-publish`，升级图文/视频发布及发布记录，不新增专家包。
+- `expert-bd` 增加 TikTok 互动、私信与直播工具，接入快手直播读取/监听；X 互动从专家包移入 BD，并新增私信会话读取。快手普通互动写/私信、X Chat 消息发送与加密正文、微博互动写等缺少可复用接口的能力保持不支持。
+- 登录与会话管理并入内部 `platform-runtime`，移除独立 `login-manager` 技能。X、TikTok、微博由各自 hunter 发起 Camoufox 登录，导出 cookie 与真实 UA，在隔离状态验证身份后保存 API 会话；快手使用 hunter 二维码/短信登录。TikTok 写入材料需同次浏览器会话取得，缺少 ticket-guard 材料时保持只读。
+- X、TikTok、微博 hunter 明确专属登录窗口归属；login 核验窗口与持久 profile 并返回 session、窗口状态及当前 URL，新增 `login-status` 检查窗口。导出失败提示检查专属会话，窗口故障与 Cookie 缺失分别报告，不依据 profile 中历史 Cookie 判断登录有效。
+- 发布先本地预览，确认提交后保存收据；结果未知时阻止重复发布，发布成功但入库失败时仅补记录。下载使用作品详情返回的媒体地址，平台 cookie 不发送给媒体 CDN。
+- X 发布预览增加正文与帖串逐条权重、普通/长推模式和 Premium 权限提醒；未订阅或权限未确认时，每条保持280权重内，超限先精简。创作、发布及回复指引说明中文通常按2权重计数，登录校验不验证订阅权限，Blue 权限错误不触发重登。
+- 发布失败保留脱敏后的上游消息、平台 result、HTTP 状态及请求阶段，写入收据并返回诊断，继续阻止 unknown 结果重发。快手视频当前仅覆盖空简介、私密、立即发布的分支；公开、带标题/正文/话题或定时的视频在上传前拒绝，交用户在原平台完成。
+- 微博视频上传超时由默认30秒调整为独立300秒，可配置30–900秒，进程预算同步延长；最终视频提交补上与本次实际 Cookie 匹配的 CSRF 头，缺 Token 时停止。诊断区分上传、转码与最终提交，仅记录超时和头存在状态，保持未知结果禁止重发；修复位于适配层，保留依赖模块不变。
+- 快手私密视频与微博短视频已获本机发布成功反馈；修复“缺公开链接/作品 ID 延迟返回”误报。快手区分创作者作品 ID 与上传 fileId，私密作品无 URL 也可入库和匹配本人指标；微博补完整 ID/短码解析，提交成功后以本次媒体 ID 精确查询本人视频。新增 accepted 收据保存平台确认，后续只查结果或补入库，保持 unknown 防重发；不拼造快手公开链接，不修改保留依赖模块。
+
+### 抖音发布、采集与本人取数
+
+- 抖音视频/图文恢复 Camoufox 持久化 session `douyin` 的浏览器发布链，统一入口提供本地预览与确认发布；本人作品取数通过 HTTP 临时读取同一 profile 的 cookie/UA，不另存登录态、不走 login-manager。创作者 `item/list` 优先提供播放量与深指标，公开详情仅补缺失互动计数。
+- 视频发布支持显式传入 3:4 竖封面和 4:3 横封面，一键与分步流程都上传并保存双封面；比例不符时等比补浅灰底，保留完整内容，Brief 与交付规则同步要求双封面和文字安全区。
+- 上传完成以视频可播放、真实上传/转码状态结束且连续就绪为准，排除常驻提示中的“上传中”文案；标题与简介改为真实键盘输入后读回，兼容 Slate 话题节点、Unicode 空白、短标题与空简介，简介校验完整正文。AIGC 声明确认单选框选中后才保存，缺视频、标题、封面或声明时停止提交。
+- 封面预览在当前页面内按每次上传重新观察，避免大图列表超过命令行长度、上次运行残留与旧预览误判；设置封面后视频元素消失时，仅重开同一草稿一次，恢复后复核视频时长、标题、简介、双封面与 AIGC 声明。补传视频后重新填表与设置封面。
+- 新增草稿续编、状态检查与短信验证续接，验证码通过私有文件读取、真实键盘输入；等待验证或结果未知时保留页面和提交记录，阻止重复提交及共用浏览器的关闭操作。取链按本次提交前作品 ID、提交时间和完整标题核查，不将最新旧作品误记为成功。
+- `douyin-hunter` 媒体下载支持 `douyinpic.com`；用户、作品和评论 ID 按字符串完整传递，账号作品查询使用完整 `sec_uid` 并核对返回作者，禁止使用终端摘要中的缩略 ID。
+
+### 录屏交付与安装可靠性
+
+- `ui-demo` 有头演习的后续命令统一保持 `--headed`，避免 daemon 切换模式导致窗口与页面丢失；录屏按实际时长、关键帧与分辨率检查，经 IM 交付前转为 MP4。无声原始录屏按素材检查，整理成片画布并合成音轨后再走成片闸门。
+- `video-edit extract` 新增 `--mode full`，自动读取时长并转换完整 MP4/WebM 等视频；支持保持原始分辨率、无音轨以及 H.264 / yuv420p / faststart 输出。
+- 源码/Docker 与四个 tarball 安装器共用 `install-skill-deps.mjs`，扫描公共、crew 与嵌套工具的技能依赖；支持 per-skill 自定义依赖安装器，安装脚本与配置纳入哈希。哈希命中后仍检查依赖存在性及自定义完整性，缺失或损坏时补装，安装失败或结果不完整时不写成功哈希。`ui-demo` 缺依赖时返回明确的修复指引。
+- 依赖安装跳过没有生产依赖且未声明自定义安装器的技能，修复 `proactive-send` 在干净 CI/安装环境中因不生成 `node_modules` 被误报失败；自定义安装器继续按自身产物校验，真实依赖缺失仍触发补装。
+- OpenClaw 构建优先保留已生成且包含完整 daemon 导出的公开 CLI 入口，避免兼容脚本因内部 chunk 别名变化误报构建失败；入口缺失或不完整时继续执行原兼容生成与校验。
+- CI 在 Linux/macOS 构建后校验 daemon/CLI 入口和技能依赖重复安装；发布包冒烟覆盖首装、重跑升级与用户配置/工作区/登录态文件保留，手动构建检出指定 release tag，并缓存 Python 下载。
+
+### 小红书能力升级
+
+- 新增一级技能 `xhs-hunter`：使用独立的 PC 扫码登录态，支持笔记和用户搜索、主页与推荐流查询、笔记正文及评论采集、图片和视频下载、批量采集与表格导出；供小红书运营和 BD 共用，并为 `viral-chaser` 提供视频资料与下载。
+- `xhs-publish` 与 `xhs-engagement` 改用持久化的 Creator 本地 HTTP 会话，扫码二维码可保存为图片供用户确认；支持图文和视频发布、发布时声明 AI 合成内容，以及已发作品的互动数据抓取。每日取数只扫描最近三页并直接更新 `published-track`。
+- 创作者数据分析写入 `pub_xhs.deep_metrics`；可用时将单篇作品观众画像完整保存到 `pub_xhs.fan_portrait`。取数缺字段或接口无数据时保留已有记录，不写入猜测值。
+- 新增 `xhs-live`、`xhs-im`、`xhs-pugongying`、`xhs-qianfan`：直播间读取与监听、私信会话归 `expert-bd`；达人合作查询与邀约、分销商资料查询及蒲公英/千帆合作 workflow 归 `expert-xhs`。涉及发送的操作需确认具体内容。
+- PC 与 Creator 共用的 HTTP、会话和 Relay 客户端收敛到 `_shared/xhs_utils`；小红书请求所需计算值由 OFB Relay 提供。`login-manager` 不再管理小红书，移除旧的 `xhs-content-ops`、`xhs-interact` 和小红书浏览器取数链路；`expert-xhs` 的内容调研改走有界的 `xhs-hunter` 请求。
+
+### Content Producer 新增 Deck Talk workflow
+
+- 新增 `deck-talk` 幻灯讲解 workflow：支持实拍口播、LivePortrait 数字人和仅音频+B-roll 三模式；按 Brief 写逐页/逐段脚本并自检，使用同源音频翻页，验收 HTML 动效与成片。CP 与 main 三平台 Brief/爆款拆解路由接入，通用阶段脚本识别并避免误走分镜/幻灯风险闸门。
+- 新增 expert-video 内部 `liveportrait` 与 `deck-compose`，支持同源音轨、任务续查及哈希校验。
+- 新增 `deck-render` 本地渲染 wrapper，锁定 HyperFrames 0.8.50 / GSAP 3.14.2，支持中文脚手架、检查、静帧联系表、MP4 与规格校验；复用安装器的嵌套工具依赖与 wrapper 扫描。
+- 新增 `video-producer pip-compose`，支持四角小窗、圆角描边、字幕安全区、唯一音轨、无小窗旁白、干跑和时长守卫；数字人生成由 expert-video 内部 LivePortrait 工具提供。
+
+### 小红书与抖音新增原生界面卡片
+
+- 新增 `native-ui-card` 内容生产形态：群聊误发式单图、问答式连续讨论流三图。技能将已定稿内容渲染为 3:4 图片和作品文件，检查头像加载与版面溢出；示例和默认身份不限定选题或品牌。
+- 小红书、抖音专家包分别接入选题、卡片编排、出图审核、图文发布与记录流程。选题和表达由对应图文 DNA 决定，反差或反常识角度仅在 DNA 适合时采用；业务知识用于核实涉及的事实与边界。
+
 # v5.7.2 (2026-09-20)
 
 ### 视频制作流程与交接

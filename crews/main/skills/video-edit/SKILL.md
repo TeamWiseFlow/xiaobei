@@ -75,11 +75,14 @@ metadata:
 
 ## 能力一：抽段与拼接（extract）
 
-从 MP4 抽片段（head/tail/slice）并可选多段拼接为一片。补片头片尾也走这里（片头/正片/片尾按序作为多段拼接）。
+从视频（MP4/WebM 等）抽片段（head/tail/slice）、全片转 MP4（full）并可选多段拼接为一片。补片头片尾也走这里（片头/正片/片尾按序作为多段拼接）。
 
 ```bash
 # 单段抽取：取开头 6 秒
 video-edit extract -i input.mp4 --mode head --seconds 6 -o out.mp4
+
+# 完整 WebM 转 MP4：保留分辨率、输出无声 H.264/yuv420p/faststart 素材
+video-edit extract -i demo.webm --mode full --keep-resolution --no-audio -o demo.mp4
 
 # 多段拼接：a 的开头 6s + b 的 10-20s + 完整片尾
 video-edit extract \
@@ -91,7 +94,7 @@ video-edit extract \
 
 要点：
 
-- `--mode`：`head` 开头 / `tail` 结尾 / `slice` 中段（`start`/`end`）
+- `--mode`：`head` 开头 / `tail` 结尾 / `slice` 中段（`start`/`end`）/ `full` 全片（不传时长或起止点，脚本自动读取）
 - 默认统一到 720x1280@30fps；`--keep-resolution` 保持首段分辨率
 - `--audio speech.mp3` 可在拼接时替换音轨；`--no-audio` 出无声片
 - 时间量支持 `6` / `6s` / `1m30s` 写法

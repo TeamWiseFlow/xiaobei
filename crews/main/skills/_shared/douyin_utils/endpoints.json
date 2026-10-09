@@ -1,0 +1,792 @@
+{
+  "detail": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/aweme/detail/",
+    "required": [
+      "aweme_id"
+    ],
+    "defaults": {
+      "request_source": "600",
+      "origin_type": "video_page"
+    },
+    "version": [
+      "190500",
+      "19.5.0"
+    ]
+  },
+  "user_posts": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/aweme/post/",
+    "required": [
+      "sec_user_id"
+    ],
+    "defaults": {
+      "max_cursor": "0",
+      "locate_query": "false",
+      "show_live_replay_strategy": "1",
+      "need_time_list": "1",
+      "time_list_query": "0",
+      "whale_cut_token": "",
+      "cut_version": "1",
+      "count": "18",
+      "publish_video_strategy_type": "2",
+      "from_user_page": "1"
+    },
+    "version": [
+      "290100",
+      "29.1.0"
+    ],
+    "list": "aweme_list",
+    "cursor": "max_cursor"
+  },
+  "comments": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/comment/list/",
+    "required": [
+      "aweme_id"
+    ],
+    "defaults": {
+      "cursor": "0",
+      "count": "5",
+      "item_type": "0",
+      "whale_cut_token": "",
+      "cut_version": "1",
+      "rcFT": ""
+    },
+    "list": "comments",
+    "cursor": "cursor"
+  },
+  "replies": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/comment/list/reply/",
+    "required": [
+      "item_id",
+      "comment_id"
+    ],
+    "defaults": {
+      "cursor": "0",
+      "count": "3",
+      "item_type": "0",
+      "cut_version": "1"
+    },
+    "list": "comments",
+    "cursor": "cursor"
+  },
+  "user_profile": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/user/profile/other/",
+    "required": [
+      "sec_user_id"
+    ],
+    "defaults": {
+      "publish_video_strategy_type": "2",
+      "source": "channel_pc_web",
+      "personal_center_strategy": "1",
+      "profile_other_record_enable": "1",
+      "land_to": "1"
+    }
+  },
+  "self": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/query/user/",
+    "required": [],
+    "defaults": {
+      "publish_video_strategy_type": "2"
+    }
+  },
+  "search_general": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/general/search/single/",
+    "required": [
+      "keyword"
+    ],
+    "defaults": {
+      "search_channel": "aweme_general",
+      "keyword": "",
+      "search_source": "normal_search",
+      "query_correct_type": "1",
+      "is_filter_search": "0",
+      "from_group_id": "",
+      "disable_rs": "0",
+      "offset": "0",
+      "count": "15",
+      "need_filter_settings": "1",
+      "list_type": "single",
+      "pc_search_top_1_params": "{\"enable_ai_search_top_1\":1}",
+      "search_id": "",
+      "enable_history": "1"
+    },
+    "list": "data",
+    "cursor": "cursor",
+    "version": [
+      "190600",
+      "19.6.0"
+    ]
+  },
+  "search_video": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/search/item/",
+    "required": [
+      "keyword"
+    ],
+    "defaults": {
+      "search_channel": "aweme_video_web",
+      "keyword": "",
+      "search_source": "normal_search",
+      "query_correct_type": "1",
+      "is_filter_search": "1",
+      "from_group_id": "",
+      "disable_rs": "0",
+      "offset": "0",
+      "count": "15",
+      "need_filter_settings": "1",
+      "list_type": "single",
+      "pc_search_top_1_params": "",
+      "search_id": "",
+      "enable_history": "1",
+      "sort_type": "0",
+      "publish_time": "0",
+      "filter_duration": "",
+      "search_range": "0"
+    },
+    "list": "data",
+    "cursor": "cursor",
+    "version": [
+      "190600",
+      "19.6.0"
+    ]
+  },
+  "search_users": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/discover/search/",
+    "required": [
+      "keyword"
+    ],
+    "defaults": {
+      "search_channel": "aweme_user_web",
+      "keyword": "",
+      "search_source": "normal_search",
+      "query_correct_type": "1",
+      "is_filter_search": "0",
+      "from_group_id": "",
+      "disable_rs": "0",
+      "offset": "0",
+      "count": "15",
+      "need_filter_settings": "1",
+      "list_type": "single",
+      "pc_search_top_1_params": "{\"enable_ai_search_top_1\":1}",
+      "search_id": ""
+    },
+    "list": "user_list",
+    "cursor": "cursor",
+    "version": [
+      "170400",
+      "17.4.0"
+    ]
+  },
+  "search_live": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/live/search/",
+    "required": [
+      "keyword"
+    ],
+    "defaults": {
+      "search_channel": "aweme_live",
+      "keyword": "",
+      "search_source": "normal_search",
+      "query_correct_type": "1",
+      "is_filter_search": "0",
+      "from_group_id": "",
+      "disable_rs": "0",
+      "offset": "0",
+      "count": "15",
+      "need_filter_settings": "1",
+      "list_type": "single",
+      "pc_search_top_1_params": "{\"enable_ai_search_top_1\":1}",
+      "search_id": ""
+    },
+    "list": "data",
+    "cursor": "cursor",
+    "version": [
+      "170400",
+      "17.4.0"
+    ]
+  },
+  "favorites": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/aweme/favorite/",
+    "required": [
+      "sec_user_id"
+    ],
+    "defaults": {
+      "max_cursor": "0",
+      "min_cursor": "0",
+      "count": "18",
+      "whale_cut_token": "",
+      "cut_version": "1",
+      "publish_video_strategy_type": "2"
+    },
+    "list": "aweme_list",
+    "cursor": "max_cursor"
+  },
+  "collections": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/collects/list/",
+    "required": [],
+    "defaults": {
+      "cursor": "0",
+      "count": "20"
+    },
+    "list": "collects_list",
+    "cursor": "cursor"
+  },
+  "followers": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/user/follower/list/",
+    "required": [
+      "user_id",
+      "sec_user_id"
+    ],
+    "defaults": {
+      "offset": "0",
+      "min_time": "0",
+      "max_time": "0",
+      "count": "20",
+      "source_type": "2",
+      "gps_access": "0",
+      "address_book_access": "0"
+    },
+    "list": "followers",
+    "cursor": "max_time",
+    "response_cursor": "min_time"
+  },
+  "following": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/user/following/list/",
+    "required": [
+      "user_id",
+      "sec_user_id"
+    ],
+    "defaults": {
+      "offset": "0",
+      "min_time": "0",
+      "max_time": "0",
+      "count": "20",
+      "source_type": "2",
+      "gps_access": "0",
+      "address_book_access": "0",
+      "is_top": "1",
+      "webcast_sdk_version": "170400",
+      "webcast_version_code": "170400"
+    },
+    "list": "followings",
+    "cursor": "max_time",
+    "response_cursor": "min_time"
+  },
+  "notices": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/notice/",
+    "required": [],
+    "defaults": {
+      "is_new_notice": "1",
+      "is_mark_read": "0",
+      "notice_group": "960",
+      "count": "10",
+      "min_time": "0",
+      "max_time": "0"
+    },
+    "list": "notice_list",
+    "cursor": "max_time"
+  },
+  "feed": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/module/feed/",
+    "required": [],
+    "defaults": {
+      "module_id": "3003101",
+      "count": "20",
+      "filterGids": "",
+      "presented_ids": "",
+      "refresh_index": "2",
+      "refer_id": "",
+      "refer_type": "10",
+      "awemePcRecRawData": "{\"is_client\":false}",
+      "Seo-Flag": "0"
+    },
+    "list": "aweme_list",
+    "cursor": "refresh_index"
+  },
+  "like": {
+    "profile": "web",
+    "method": "POST",
+    "path": "/aweme/v1/web/commit/item/digg/",
+    "required": [
+      "aweme_id"
+    ],
+    "defaults": {
+      "item_type": "0",
+      "type": "1"
+    },
+    "write": true,
+    "form": true,
+    "body_fields": true
+  },
+  "favorite": {
+    "profile": "web",
+    "method": "POST",
+    "path": "/aweme/v1/web/aweme/collect/",
+    "required": [
+      "aweme_id"
+    ],
+    "defaults": {
+      "action": "1",
+      "aweme_type": "0"
+    },
+    "write": true,
+    "form": true,
+    "body_fields": true
+  },
+  "comment": {
+    "profile": "web",
+    "method": "POST",
+    "path": "/aweme/v1/web/comment/publish",
+    "required": [
+      "aweme_id",
+      "text"
+    ],
+    "defaults": {
+      "comment_send_celltime": "0",
+      "comment_video_celltime": "0",
+      "one_level_comment_rank": "-1",
+      "paste_edit_method": "non_paste",
+      "text_extra": "[]"
+    },
+    "write": true,
+    "form": true,
+    "body_fields": true
+  },
+  "collection_move": {
+    "profile": "web",
+    "method": "POST",
+    "path": "/aweme/v1/web/collects/video/move/",
+    "required": [
+      "item_ids",
+      "to_collects_id"
+    ],
+    "defaults": {
+      "item_type": "2",
+      "update_collects_sort": "true"
+    },
+    "write": true,
+    "form": true,
+    "body_fields": false
+  },
+  "collection_remove": {
+    "profile": "web",
+    "method": "POST",
+    "path": "/aweme/v1/web/collects/video/move/",
+    "required": [
+      "item_ids",
+      "from_collects_id"
+    ],
+    "defaults": {
+      "item_type": "2"
+    },
+    "write": true,
+    "form": true,
+    "body_fields": false
+  },
+  "room": {
+    "profile": "live",
+    "method": "GET",
+    "path": "/webcast/room/web/enter/",
+    "required": [
+      "web_rid"
+    ],
+    "defaults": {
+      "live_id": "1",
+      "device_platform": "web",
+      "app_name": "douyin_web",
+      "aid": "6383",
+      "enter_from": "web_live",
+      "insert_room_id_str": "",
+      "room_id_str": "",
+      "enter_source": "",
+      "is_need_double_stream": "false"
+    },
+    "host": "live.douyin.com",
+    "write": false,
+    "query_write": false,
+    "form": false
+  },
+  "linkmic": {
+    "profile": "live",
+    "method": "GET",
+    "path": "/webcast/linkmic/list/",
+    "required": [
+      "room_id",
+      "channel_id",
+      "anchor_id"
+    ],
+    "defaults": {
+      "offset": "0",
+      "count": "50",
+      "link_status": "4",
+      "scene": "1",
+      "request_source": "audience_enter_room"
+    },
+    "host": "live.douyin.com",
+    "write": false,
+    "query_write": false,
+    "form": false
+  },
+  "pk_rank": {
+    "profile": "live",
+    "method": "GET",
+    "path": "/webcast/linkmic/battle/ranklist_armies/",
+    "required": [
+      "channel_id",
+      "anchor_id"
+    ],
+    "defaults": {},
+    "host": "live.douyin.com",
+    "write": false,
+    "query_write": false,
+    "form": false
+  },
+  "contribution_rank": {
+    "profile": "live",
+    "method": "GET",
+    "path": "/webcast/ranklist/audience/",
+    "required": [
+      "room_id",
+      "anchor_id",
+      "sec_anchor_id"
+    ],
+    "defaults": {
+      "rank_type": "30",
+      "ignoreToast": "true",
+      "webcast_sdk_version": "2450"
+    },
+    "host": "live.douyin.com",
+    "write": false,
+    "query_write": false,
+    "form": false
+  },
+  "ticket_rank": {
+    "profile": "live",
+    "method": "GET",
+    "path": "/webcast/ranklist/paygrade_seats/",
+    "required": [
+      "room_id"
+    ],
+    "defaults": {
+      "seats_type": "2",
+      "webcast_sdk_version": "2450"
+    },
+    "host": "live.douyin.com",
+    "write": false,
+    "query_write": false,
+    "form": false
+  },
+  "products": {
+    "profile": "live",
+    "method": "GET",
+    "path": "/live/promotions/pop/v3/",
+    "required": [
+      "room_id",
+      "author_id"
+    ],
+    "defaults": {
+      "live_scene_id": "0",
+      "offset": "0",
+      "ecom_scene_id": "1001"
+    },
+    "host": "live.douyin.com",
+    "write": false,
+    "query_write": false,
+    "form": false,
+    "empty_result": {
+      "promotions": []
+    }
+  },
+  "product_detail": {
+    "profile": "live",
+    "method": "POST",
+    "path": "/aweme/v2/shop/promotion/pack/detail/",
+    "required": [
+      "promotion_id"
+    ],
+    "defaults": {
+      "is_h5": "1",
+      "bff_type": "2",
+      "origin_type": "638303"
+    },
+    "host": "live.douyin.com",
+    "write": false,
+    "query_write": false,
+    "form": true
+  },
+  "product_reviews": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/ecom/product/comments/",
+    "required": [
+      "product_id",
+      "shop_id"
+    ],
+    "defaults": {
+      "cursor": "0",
+      "count": "10",
+      "stat_id": "",
+      "tag_id": "",
+      "sort_type": "0"
+    },
+    "host": "www.douyin.com",
+    "write": false,
+    "query_write": false,
+    "form": false
+  },
+  "product_review_counts": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/ecom/product/comment/counter/",
+    "required": [
+      "product_id",
+      "shop_id"
+    ],
+    "defaults": {
+      "stat_id": ""
+    },
+    "host": "www.douyin.com",
+    "write": false,
+    "query_write": false,
+    "form": false
+  },
+  "live_chat": {
+    "profile": "live",
+    "method": "GET",
+    "path": "/webcast/room/chat/",
+    "required": [
+      "room_id",
+      "content"
+    ],
+    "defaults": {
+      "aid": "6383",
+      "app_name": "douyin_web",
+      "live_id": "1",
+      "device_platform": "web",
+      "enter_from": "link_share",
+      "type": "0"
+    },
+    "host": "live.douyin.com",
+    "write": true,
+    "query_write": true,
+    "form": false
+  },
+  "live_like": {
+    "profile": "live",
+    "method": "POST",
+    "path": "/webcast/room/like/",
+    "required": [
+      "room_id"
+    ],
+    "defaults": {
+      "aid": "6383",
+      "app_name": "douyin_web",
+      "live_id": "1",
+      "device_platform": "web",
+      "enter_from": "web_live",
+      "count": "1"
+    },
+    "host": "live.douyin.com",
+    "write": true,
+    "query_write": true,
+    "form": true
+  },
+  "upload_auth": {
+    "profile": "creator",
+    "method": "GET",
+    "path": "/web/api/media/upload/auth/v5/",
+    "required": [],
+    "defaults": {},
+    "host": "creator.douyin.com",
+    "write": false
+  },
+  "preview_videos": {
+    "profile": "creator",
+    "method": "GET",
+    "path": "/janus/douyin/creator/pc/work_list",
+    "required": [],
+    "defaults": {
+      "scene": "star_atlas",
+      "device_platform": "android",
+      "status": "4",
+      "count": "18",
+      "max_cursor": "0"
+    },
+    "host": "creator.douyin.com",
+    "write": false
+  },
+  "cover_references": {
+    "profile": "creator",
+    "method": "GET",
+    "path": "/aweme/v1/cover/gen/ref/",
+    "required": [
+      "creation_id"
+    ],
+    "defaults": {},
+    "host": "creator.douyin.com",
+    "write": false
+  },
+  "declaration": {
+    "profile": "creator",
+    "method": "GET",
+    "path": "/aweme/v3/user_declaration/suggestion/",
+    "required": [
+      "creation_id"
+    ],
+    "defaults": {
+      "scene": "new_self_media_before_publish",
+      "libra_token": "douyin_pc",
+      "user_decl_judge_feats": "{\"has_ai_metadata\":false,\"is_xing_tu_submit\":false,\"has_marketing_poi\":false,\"item_type\":\"video\"}"
+    },
+    "host": "creator.douyin.com",
+    "write": false
+  },
+  "video_enable": {
+    "profile": "creator",
+    "method": "GET",
+    "path": "/web/api/media/video/enable/",
+    "required": [
+      "video_id"
+    ],
+    "defaults": {},
+    "host": "creator.douyin.com",
+    "write": false
+  },
+  "video_transend": {
+    "profile": "creator",
+    "method": "GET",
+    "path": "/web/api/media/video/transend/",
+    "required": [
+      "video_id"
+    ],
+    "defaults": {},
+    "host": "creator.douyin.com",
+    "write": false
+  },
+  "fast_detect": {
+    "profile": "creator",
+    "method": "POST",
+    "path": "/aweme/v1/post_assistant/fast_detect/poll",
+    "required": [],
+    "defaults": {},
+    "host": "creator.douyin.com",
+    "write": true
+  },
+  "media_url": {
+    "profile": "creator",
+    "method": "GET",
+    "path": "/aweme/v1/creator/get/url/",
+    "required": [
+      "uri"
+    ],
+    "defaults": {},
+    "host": "creator.douyin.com",
+    "write": false
+  },
+  "cover_generate": {
+    "profile": "creator",
+    "method": "POST",
+    "path": "/aweme/v1/cover/gen/post/",
+    "required": [],
+    "defaults": {
+      "noToast": "true"
+    },
+    "host": "creator.douyin.com",
+    "write": true,
+    "content_type": "application/x-www-form-urlencoded;charset=UTF-8"
+  },
+  "cover_result": {
+    "profile": "creator",
+    "method": "GET",
+    "path": "/aweme/v1/cover/gen/get/",
+    "required": [
+      "task_id"
+    ],
+    "defaults": {
+      "noToast": "true"
+    },
+    "host": "creator.douyin.com",
+    "write": false
+  },
+  "create": {
+    "profile": "creator",
+    "method": "POST",
+    "path": "/web/api/media/aweme/create_v2/",
+    "required": [],
+    "defaults": {},
+    "host": "creator.douyin.com",
+    "write": true
+  },
+  "im_upload_config": {
+    "profile": "web",
+    "method": "GET",
+    "path": "/aweme/v1/web/im/upload/config/v2",
+    "required": [],
+    "defaults": {},
+    "sensitive": true
+  },
+  "creator_profile": {
+    "profile": "creator",
+    "method": "GET",
+    "path": "/web/api/media/user/info/",
+    "required": [],
+    "defaults": {},
+    "host": "creator.douyin.com"
+  },
+  "live_fetch": {
+    "profile": "live",
+    "method": "GET",
+    "path": "/webcast/im/fetch/",
+    "required": [
+      "room_id",
+      "user_unique_id"
+    ],
+    "defaults": {
+      "resp_content_type": "protobuf",
+      "did_rule": "3",
+      "device_id": "",
+      "endpoint": "live_pc",
+      "support_wrds": "1",
+      "identity": "audience",
+      "need_persist_msg_count": "15",
+      "insert_task_id": "",
+      "live_reason": "",
+      "version_code": "180800",
+      "last_rtt": "0",
+      "fetch_rule": "1",
+      "cursor": "",
+      "internal_ext": ""
+    },
+    "host": "live.douyin.com",
+    "binary": true
+  }
+}

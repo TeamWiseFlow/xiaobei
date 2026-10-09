@@ -104,7 +104,8 @@ DNA template = **Brief.md 正文模板 + 口播文案模板（可选）**，固�
 | DNA 观测到的内容形态 | 制作指向（只能写真实存在的资源名） | Brief `workflow` 字段值 |
 |---------------------|-----------------------------------|------------------------|
 | 影视解说 / 剧情解说 + 反转植入（「万万没想到」式） | Content Producer `expert-video` → **Reversal Ad** workflow | `reversal-ad` |
-| 口播 / 旁白类（真人口播或数字人出镜；或旁白 + 画面） | Content Producer `expert-video` → **Narration Video** workflow | `narration-video` |
+| 讲解口播：实拍/数字人小窗 + 幻灯或 B-roll；或用户音频 + B-roll/幻灯 | Content Producer `expert-video` → **Deck Talk** workflow | `deck-talk` |
+| 人物全屏口播或其他自由镜头声画制作 | Content Producer `expert-video` → **不指定类型 workflow**，按通用制作流程 | 省略 |
 | 一句文稿转视觉隐喻的纸拼贴动画 | Content Producer `expert-video` → **Collage B-roll** workflow | `collage-broll` |
 | 纯 AIGC 动画 / 剧情短片 / 蒙太奇拼接（需从零出脚本分镜） | Content Producer `expert-video` → **不指定类型 workflow**：CP 按其通用制作流程做，据创意自定叙事 / 动效 / 蒙太奇手法 | 省略 |
 | 已有素材简单拼接、加旁白、烧字幕 | main `video-edit`（不委托 CP） | — |

@@ -1,12 +1,13 @@
 ---
 name: awk-tts
-description: 多供应商旁白 TTS——火山豆包语音合成 2.0（seed-tts-2.0）+ 阿里云百炼（qwen-audio-3.0-tts），凭据在哪家走哪家（火山 → 百炼业务空间 → 百炼 agent plan）。生成 MP3/PCM/WAV/OPUS 旁白，可选字级时间戳，合成后自动 ASR 自检。
+description: 声音复刻、音色设计和多供应商配音，支持绑定音色档案，多供应商旁白 TTS。生成 MP3/PCM/WAV/OPUS 旁白，可选字级时间戳，合成后自动 ASR 自检。
 metadata:
   openclaw:
     emoji: 🔊
     requires:
       bins:
         - python3
+        - ffmpeg
         - ffprobe
     primaryEnv: VOLC_TTS_ACCESS_KEY
     homepage: https://www.volcengine.com/docs/6561/1598757
@@ -21,11 +22,11 @@ metadata:
 | 优先级 | 供应商 | 触发凭据 | 模型/资源 |
 |--------|--------|---------|-----------|
 | 1 | 火山豆包语音合成 2.0 | `VOLC_TTS_APP_ID`+`VOLC_TTS_ACCESS_KEY`（旧双头）或 `VOLC_TTS_APP_KEY`（新单头） | `seed-tts-2.0`（克隆音色 `S_xxx` 自动路由 `seed-icl-2.0`） |
-| 2 | 百炼业务空间 | `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY` | `qwen-audio-3.0-tts-plus` → `qwen-audio-3.0-tts-flash` 候选链 |
-| 3 | 百炼 agent plan | `AWK_API_KEY`（token-plan 端点） | 仅 `qwen-audio-3.0-tts-plus` |
+| 2 | 百炼业务空间 | `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY` | `qwen-audio-3.0-tts-plus` → `qwen-audio-3.1-tts-flash` → `qwen-audio-3.0-tts-flash` |
+| 3 | 百炼 agent plan | `AWK_API_KEY`（token-plan 端点） | `qwen-audio-3.0-tts-plus` → `qwen-audio-3.0-tts-flash`，以账号模型权限为准 |
 
-- 百炼候选链自动 fallback（模型未开通/未找到切下一个）；`--model` 显式指定关闭 fallback（仅百炼生效）。
-- 百炼默认音色 `longanhuan_v3.6`；传了火山系音色 ID 会警告并换默认音色。
+- 百炼候选链在 HTTP 403/404 时切下一个模型；`--model` 显式指定关闭模型回退。供应商按凭据选定后，合成失败不自动切换供应商。
+- 百炼默认音色：3.0 模型用 `longanhuan_v3.6`，3.1 Flash 用 `longanhuan_v3.1`。未指定音色时随候选模型切换；显式音色和音色档案保持用户指定值。传了火山系音色 ID 会警告并换当前模型的默认音色。
 - 格式映射：火山 `ogg_opus` 在百炼自动转 `opus`；百炼不支持 32000 采样率。
 - 语速 `--speech-rate [-50,100]` 在百炼线性映射为 rate [0.5,2.0]；响度 `--loudness` 映射为 volume [0,100]。
 - 三组凭据都缺 → exit 1 并列出配置方式。应该 spawn IT engineer subagent 写入实例环境变量，**不要自己写环境变量文件**。
@@ -56,6 +57,8 @@ awk-tts \
 # 字级时间戳（旁白对齐用）：火山走流式原生返回，百炼走 SSE + word_timestamp_enabled
 awk-tts --text "..." --enable-subtitle --output ./assets/audio/narration.mp3
 ```
+
+合成后脚本会测真峰值。超过 -2.5 dBTP 时自动衰减并复测，给后续数字人驱动和转码留余量；元数据 `peak_guard` 记录前后峰值。若原始 TTS 已有可闻削波，降低音量不能恢复波形，应重新合成并试听。生成文件用于驱动数字人后不要再换音轨；换音轨须重新生成数字人并核对 job 哈希。
 
 ## Parameters
 
@@ -96,9 +99,22 @@ awk-tts --text "..." --enable-subtitle --output ./assets/audio/narration.mp3
 
 > 克隆音色（`S_xxx` 开头）走 `seed-icl-2.0` 资源 ID，脚本自动路由，需 `model_type=4`（脚本自动加）。仅火山模式有效。
 
-百炼 qwen-audio-3.0-tts 系统音色（路由到百炼时可用）。**音色与模型绑定**：音色不在当前 `--model` 支持列表中会返回 `InvalidParameter`，需按下表对齐模型。
+百炼 Qwen-Audio-TTS 系统音色（路由到百炼时可用）。**音色与模型绑定**：显式指定音色时同时指定匹配的 `--model`，不要跨模型混用音色。
 
-`qwen-audio-3.0-tts-plus` 系统音色（agent plan 仅支持此模型）：
+`qwen-audio-3.1-tts-flash` 系统音色（百炼业务空间）：
+
+| voice 参数 | 名称 | 性别 |
+|-----------|------|------|
+| `longanhuan_v3.1` | 龙安欢_v3.1（3.1 默认） | 女 |
+| `longanlingxin_v3.1` | 龙安灵心_v3.1 | 女 |
+| `longanfengyue_v3.1` | 龙安风悦_v3.1 | 女 |
+| `xunanchuan_v3.1` | 许南川 | 男 |
+
+```bash
+awk-tts --platform workspace --model qwen-audio-3.1-tts-flash --text "大家好，今天我们讲清楚一个问题。"
+```
+
+`qwen-audio-3.0-tts-plus` 系统音色：
 
 | voice 参数 | 名称 | 特质（性别/年龄） | 场景 |
 |-----------|------|-----------------|------|
@@ -123,7 +139,7 @@ awk-tts --text "..." --enable-subtitle --output ./assets/audio/narration.mp3
 | `loongjohn` | loongJohn | 沉稳亲切美音（男/28） | 精品英文（仅英文） |
 
 > 语言范围：除 `loong*` 三款纯英文外均为中文（普通话）+英文；`text` 超出音色语言范围会发音错误或语音不自然。
-> 默认音色 `longanhuan_v3.6` 虽列在 flash 表，plus 上实测可用（2026-09-17 冒烟）；若指定其他 flash 系音色遇 `InvalidParameter`，改传 `--model qwen-audio-3.0-tts-flash`（agent plan 不支持 flash）或换 plus 系音色。
+> 3.0 默认音色为 `longanhuan_v3.6`；其他音色须按模型对齐。遇到 `InvalidParameter` 时核对 `--voice` 与 `--model`，不要将音色错误当成模型未开通。
 > 两模型另各有 500+ 声音复刻基础音色，命名 `qwen-audio-3.0-tts-{plus|flash}-{后缀}`，`--voice` 直传即可，完整列表见[官方音色列表页](https://docs.bailian.console.aliyun.com/zh/model-studio/qwen-audio-tts-voice-list) Excel；也可用声音复刻免费定制专属音色。
 
 ## Output
@@ -141,12 +157,12 @@ Fragment 工作流模式下，脚本读 `tts_requirement.md`、抽 `## 配音文
 
 合成后自动跑 ASR 自检（除非 `--no-asr-check`）：
 
-1. 后端优先级：火山录音文件极速版（`VOLC_ASR_*` 在即启用）→ 百炼 `qwen-audio-3.0-asr-flash`（业务空间/agent plan 凭据）
+1. 复用公共 `skills/_shared/asr.py`：火山录音文件极速版（`VOLC_ASR_*` 在即启用）→ 百炼业务空间 → Agent Plan，某家失败继续尝试下一家。业务空间模型按 `qwen-audio-3.1-asr-flash` → `qwen-audio-3.0-asr-flash` 尝试，Plan 保留 `qwen-audio-3.0-asr-flash`。`BAILIAN_ASR_MODEL` 显式指定后关闭百炼模型回退。
 2. 清洗标点空白后做序敏感相似度比对（中英文统一）
 3. 阈值 **0.5**——实测 0.5 已够实用质量；过高阈值会假阴性
 4. 结果打印 `PASS` / `WARN`，不 abort
 
-ASR 凭据全部未配置时静默跳过自检。
+ASR 凭据全部未配置时跳过自检；全部后端失败时打印警告，不影响已生成音频。
 
 ## Environment Variables
 
@@ -160,4 +176,39 @@ ASR 凭据全部未配置时静默跳过自检。
 | `AWK_API_KEY` | 百炼 agent plan（token-plan 端点；业务空间凭据也缺失时启用） |
 | `VOLC_ASR_APP_ID` + `VOLC_ASR_ACCESS_KEY` / `VOLC_ASR_APP_KEY` | ASR 自检火山凭据 |
 | `VOLC_ASR_RESOURCE_ID` | Optional ASR 资源 ID override，默认 `volc.bigasr.auc_turbo` |
-| `BAILIAN_ASR_MODEL` | Optional 百炼 ASR 自检模型 override，默认 `qwen-audio-3.0-asr-flash` |
+| `BAILIAN_ASR_MODEL` | Optional 百炼 ASR 模型 override；设置后关闭模型回退。业务空间默认 3.1 Flash → 3.0 Flash，Plan 默认 3.0 Flash |
+
+## 声音复刻与音色设计
+
+使用同一默认凭据顺序：**火山 → 百炼业务空间 → 百炼 Agent Plan**。可用 `--platform volc|workspace|agent-plan` 指定；凭据选路后不因错误静默跨供应商创建另一个音色。Agent Plan 的 customization 权限由套餐决定，返回不支持时使用已开通的业务空间，不宣称所有套餐都支持创建音色。
+
+音色必须保存为 `voice.json` 并在后续 TTS 传 `--voice-profile`：档案绑定供应商、业务空间/APP、模型和音色，不再按环境重选供应商，也不沿通用模型链切换。常规 TTS 不传档案时仍保持原候选链。
+
+### 创建与试听
+
+```bash
+# 默认按凭据选路；火山必须指定已购的空闲 S_ 槽位
+awk-tts voice-design --speaker-id S_EXAMPLE --description "成年男性，中音温暖自然，普通话清晰，适合知识讲解" --preview-text "大家好，今天我们用三张图，讲清楚一个复杂的问题。" --out-dir /absolute/voices/design
+awk-tts voice-clone --speaker-id S_EXAMPLE --audio /absolute/authorized-sample.wav --out-dir /absolute/voices/clone
+
+# 显式在百炼业务空间创建；无需火山槽位
+awk-tts voice-design --platform workspace --name narrator --description "温暖自然的成年男性，语速适中，日常聊天感" --preview-text "大家好，今天我们用三张图，讲清楚一个复杂的问题。" --out-dir /absolute/voices/bailian-design
+awk-tts voice-clone --platform workspace --name narrator --audio /absolute/authorized-sample.wav --out-dir /absolute/voices/bailian-clone
+
+# 查询已创建音色；失败/超时后先查，不盲目重复创建
+awk-tts voice-status --profile /absolute/voices/clone/voice.json --wait 60
+awk-tts voice-list --platform workspace --prefix narrator
+
+# 用绑定音色合成，自动保持供应商和模型一致
+awk-tts --voice-profile /absolute/voices/clone/voice.json --text-file /absolute/voiceover.md --output /absolute/narration.wav --format wav --enable-subtitle
+```
+
+- 火山复刻/设计使用现有 `VOLC_TTS_APP_ID` + `VOLC_TTS_ACCESS_KEY` 或 `VOLC_TTS_APP_KEY`，不是 `VOLC_SEEDANCE_API_KEY`。旧鉴权在音色接口用 `X-Api-App-Key`，在合成接口用 `X-Api-App-Id`。`--speaker-id` 也可由 `VOLC_TTS_SPEAKER_ID` 配置。使用确认可覆盖的音色槽位；工具不购买槽位、不自动启用后付费自定义 ID。
+- 火山文本设计描述最多200字，试听文本最多300字；当前 CLI 提供文本设计。设计/复刻通过后用 `seed-icl-2.0` 合成，新版训练返回的 model_type=5 会保存在档案并在合成时使用。
+- 百炼使用 `voice-enrollment`，默认绑定 `qwen-audio-3.0-tts-plus`；业务空间也可用 `--target-model qwen-audio-3.1-tts-flash` 或 `qwen-audio-3.0-tts-flash`。`--name` 1–10位英文字母/数字；描述1–500字符，试听文本15–200字符。
+- 复刻 CLI 接收10–20秒、<10MB的 WAV/MP3/M4A 清晰单人音频，样本使用本人或有授权的声音；提供文件或 HTTP(S) URL 均可。火山直接传 Base64；百炼使用模型绑定的临时上传。URL 会先下载校验，确保上传的是已核验样本。
+- `voice-design` 保存试听文件，`voice-clone` 保存音色档案；火山返回试听 URL 时立即下载。只有远端状态可用才将档案标为 OK；创建状态不确定时保留记录，先查询，勿自动重复消耗创建/训练次数。
+- 试听确认清晰度、音色、语气后再用于全稿。复刻声与设计声均是合成声音，不能承诺等同真人原录音或保证通过平台检测。deck-talk 已有用户原录音时优先原声，不主动替换。
+- 输出文件已存在即停止，换目录创建新音色；不会覆盖现有档案。程序不修改 `~/.openclaw/.env`。
+
+接口：[百炼设计](https://help.aliyun.com/zh/model-studio/voice-design-api-references)、[百炼复刻](https://help.aliyun.com/zh/model-studio/voice-clone-design-http-api)、[火山设计](https://docs.volcengine.com/docs/DoubaoVoice/SoundDesignAPI?lang=zh)、[火山复刻](https://docs.volcengine.com/docs/DoubaoVoice/tone-training-http?lang=zh)。

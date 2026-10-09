@@ -21,7 +21,8 @@ import json
 import sys
 from pathlib import Path
 
-import _brief
+from _collage_stages import run_if_collage
+from _deck_stages import run_if_deck
 
 
 def die(msg: str) -> None:
@@ -35,7 +36,9 @@ def main() -> None:
     args = parser.parse_args()
 
     project = Path(args.project_dir).resolve()
-    if _brief.collage_guard(project, "Stage 3 storyboard-build"):
+    if run_if_collage(project, 3):
+        return
+    if run_if_deck(project, 3):
         return
     script_path = project / "script" / "script.md"
     if not script_path.is_file():

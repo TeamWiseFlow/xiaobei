@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""motion-graphics — 程序化逐帧动态图形渲染（Stage 10 第二条渲染路径，与 render-shot 并列）。
+"""motion-graphics — 旧 JSON/Pillow 逐帧动态图形兼容入口。
+
+新项目使用 `video-producer visual-render scaffold/check/preview/render` 的
+HTML/GSAP + HyperFrames 路径；这里的 JSON spec 只用于已制作的旧项目。
 
 声明式 JSON spec 驱动 PIL 逐帧绘制 + ffmpeg 低载编码，只产出**单个**动态图形片段
 clip.mp4（默认 1920x1080@25fps，帧级 checkpoint + 时长/帧率校验）。
@@ -14,7 +17,7 @@ spec.json 结构（路径相对 spec 文件或绝对；颜色可写调色板名 
   {
     "duration": 5.2,                    // 必填（或 CLI --duration 覆盖）
     "fps": 25, "width": 1920, "height": 1080,
-    "font_dir": null,                   // 可选：Noto Sans SC 字体目录覆盖
+    "font_dir": null,                   // 可选：中文字体目录覆盖；Windows 可用系统微软雅黑
     "background": {"type": "dark_grid"}                       // 暗色科技底（默认）
                   | {"type": "gradient", "top": [r,g,b], "bottom": [r,g,b], "grid": false}
                   | {"type": "image", "path": "...", "fit": "fill"|"contain", "dim": 0.42, "blur": 3}
@@ -53,13 +56,20 @@ checkpoint：<out>/frames/ 帧已存在即跳过重画（断点续渲）；clip.
 
 from __future__ import annotations
 
+import os
+import sys
+from pathlib import Path
+
+# New visual work uses the shared HyperFrames renderer. Keep the historical
+# JSON/Pillow path callable for already authored projects until they migrate.
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] in {"scaffold", "check", "preview", "render"}:
+    os.execv(sys.executable, [sys.executable, str(Path(__file__).with_name("visual-render.py")), *sys.argv[1:]])
+
 import argparse
 import importlib.util
 import json
 import shutil
 import subprocess
-import sys
-from pathlib import Path
 
 import _mg_lib as L
 import _mg_templates as T

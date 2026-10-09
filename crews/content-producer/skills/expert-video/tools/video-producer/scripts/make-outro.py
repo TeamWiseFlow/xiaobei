@@ -1,160 +1,116 @@
 #!/usr/bin/env python3
-"""make-outro — 片尾制作一步出片。
+"""Make an image-and-slogan outro with the shared HyperFrames visual renderer."""
 
-原子工具，不写死 Workflow。agent 按 SKILL.md 场景化组合调用。
-
-片尾制作涉及：AIGC 生成形象视频 + 补黑边到标准比例 + 烧录字幕（指定颜色/字体/淡入）。
-本子命令封装"形象图 → 标准比例片尾"全流程。
-
-Usage:
-  python3 scripts/make-outro.py <project_dir> --image <形象图路径> --slogan <slogan 文本>
-    [--color color.json] [--duration 5] [--width 1080] [--fps 30] [--output outro.mp4]
-
-参数说明：
-  --image     形象图路径（PNG/JPG，相对 project_dir 或绝对）
-  --slogan    slogan 文本（烧录到画面中央）
-  --color     颜色配置 JSON 路径（默认黑色背景白色文字）
-              JSON 结构：{"bg": "#000000", "text": "#ffffff", "font": "Noto Sans CJK SC", "size": 48, "fadein": 0.5}
-  --duration  片尾时长（秒，默认 5）
-  --width     输出宽度（默认 1080，高度按 16:9 算）
-  --fps       输出帧率（默认 30）
-  --output    输出文件名（相对 project_dir，默认 render/outro/outro.mp4）
-
-实现：
-  1. 形象图 scale 到目标宽度 + pad 16:9（黑边补到标准比例）
-  2. 烧录 slogan 字幕（drawtext，颜色/字体/字号按 color.json，淡入动画）
-  3. 加静音音轨（anullsrc，与片尾时长对齐）
-  4. 输出到 render/outro/outro.mp4，assemble 自动收段纳入
-"""
+from __future__ import annotations
 
 import argparse
+import html
 import json
+import math
+from pathlib import Path
+import re
+import shutil
 import subprocess
 import sys
-from pathlib import Path
+import tempfile
+
+SCRIPTS = Path(__file__).resolve().parent
+DECK_TOOL = SCRIPTS.parents[1] / 'deck-render'
+sys.path.insert(0, str(DECK_TOOL / 'scripts'))
+from font_policy import font_family
 
 
-def die(msg: str) -> None:
-    print(f"[error] {msg}", file=sys.stderr)
-    sys.exit(1)
+def run(command):
+    result = subprocess.run([str(part) for part in command], check=False)
+    if result.returncode:
+        raise RuntimeError(f'{command[0]} 失败，退出码 {result.returncode}')
 
 
-def run(cmd: list[str]) -> subprocess.CompletedProcess:
-    print(f"[cmd] {cmd[0]} ... ({len(cmd)} args)")
-    p = subprocess.run(cmd, capture_output=True, text=True)
-    if p.returncode != 0:
-        die(f"命令失败 (rc={p.returncode}): {p.stderr[:500] or p.stdout[:500]}")
-    return p
-
-
-def load_color_config(color_path: Path | None) -> dict:
-    """加载颜色配置 JSON。默认黑底白字、Noto Sans CJK SC、48px、0.5s 淡入。"""
-    default = {
-        "bg": "#000000",
-        "text": "#ffffff",
-        "font": "Noto Sans CJK SC",
-        "size": 48,
-        "fadein": 0.5,
-    }
-    if color_path is None or not color_path.is_file():
-        return default
-    try:
-        cfg = json.loads(color_path.read_text(encoding="utf-8"))
-        default.update(cfg)
-        return default
-    except (json.JSONDecodeError, OSError) as e:
-        print(f"[warn] 颜色配置解析失败 ({e})，用默认")
-        return default
-
-
-def hex_to_ffmpeg_color(hex_color: str) -> str:
-    """#RRGGBB → 0xRRGGBB（ffmpeg drawtext color 格式）。"""
-    h = hex_color.lstrip("#")
-    if len(h) == 6:
-        return f"0x{h}"
-    return "0xFFFFFF"
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="make-outro 片尾制作")
-    parser.add_argument("project_dir", help="项目目录（CP 自建工作区 output_videos/<topic-en-slug>/）")
-    parser.add_argument("--image", required=True, help="形象图路径（PNG/JPG）")
-    parser.add_argument("--slogan", required=True, help="slogan 文本（烧录到画面中央）")
-    parser.add_argument("--color", default=None, help="颜色配置 JSON 路径")
-    parser.add_argument("--duration", type=float, default=5.0, help="片尾时长（秒，默认 5）")
-    parser.add_argument("--width", type=int, default=1080, help="输出宽度（默认 1080）")
-    parser.add_argument("--fps", type=int, default=30, help="输出帧率（默认 30）")
-    parser.add_argument("--output", default="render/outro/outro.mp4",
-                        help="输出文件名（相对 project_dir，默认 render/outro/outro.mp4）")
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('project_dir', type=Path)
+    parser.add_argument('--image', required=True)
+    parser.add_argument('--slogan', required=True)
+    parser.add_argument('--color', type=Path)
+    parser.add_argument('--duration', type=float, default=5)
+    parser.add_argument('--width', type=int, default=1080)
+    parser.add_argument('--fps', type=int, default=30)
+    parser.add_argument('--output', default='render/outro/outro.mp4')
+    parser.add_argument('--force', action='store_true')
     args = parser.parse_args()
 
-    project = Path(args.project_dir).resolve()
-    img_path = Path(args.image)
-    if not img_path.is_absolute():
-        img_path = project / args.image
-    if not img_path.is_file():
-        die(f"形象图不存在: {img_path}")
+    project = args.project_dir.resolve()
+    source = Path(args.image)
+    source = (source if source.is_absolute() else project / source).resolve()
+    if not source.is_file() or source.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp'}:
+        raise ValueError('需要存在的 PNG/JPEG/WebP 形象图')
+    if not args.slogan.strip() or not math.isfinite(args.duration) or args.duration <= 0 or args.width < 360 or args.width % 2 or not 1 <= args.fps <= 60:
+        raise ValueError('slogan 非空；时长 >0；宽度至少 360 且为偶数；fps 1–60')
+    output = (project / args.output).resolve()
+    if output.suffix.lower() != '.mp4' or output == source:
+        raise ValueError('输出必须是独立的 .mp4 文件')
+    if output.is_file() and not args.force:
+        print(f'[checkpoint] 片尾已存在：{output}；修改后用 --force')
+        return
 
-    out_path = project / args.output
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    color_cfg = load_color_config(
-        Path(args.color) if args.color else None
-    )
-
+    config = {'bg': '#000000', 'text': '#ffffff', 'font': font_family(), 'size': 48, 'fadein': .5}
+    if args.color:
+        color_file = args.color if args.color.is_absolute() else project / args.color
+        config.update(json.loads(color_file.read_text(encoding='utf-8')))
+    for key in ('bg', 'text'):
+        if not re.fullmatch(r'#[0-9A-Fa-f]{6}', str(config[key])):
+            raise ValueError(f'color.{key} 须为 #RRGGBB')
+    font_size, fade = int(config['size']), float(config['fadein'])
+    if font_size < 1 or not math.isfinite(fade) or fade < 0 or fade > args.duration:
+        raise ValueError('color.size 须为正数；fadein 须在片尾时长内')
     height = round(args.width * 9 / 16)
-    bg_color = hex_to_ffmpeg_color(color_cfg["bg"])
-    text_color = hex_to_ffmpeg_color(color_cfg["text"])
-    font_name = color_cfg["font"]
-    font_size = int(color_cfg["size"])
-    fadein_dur = float(color_cfg["fadein"])
+    if height % 2:
+        height += 1
 
-    # 1. 形象图 scale + pad 16:9
-    # 2. 烧录 slogan（drawtext，居中，淡入）
-    # 3. 加静音音轨（anullsrc + 视频合流）
-    # 全部一条 ffmpeg 命令完成
+    composition = output.parent / f'{output.stem}.composition'
+    assets = composition / 'assets'
+    assets.mkdir(parents=True, exist_ok=True)
+    gsap = DECK_TOOL / 'node_modules/gsap/dist/gsap.min.js'
+    if not gsap.is_file():
+        raise EnvironmentError('缺少锁定 GSAP 包，先运行 scripts/install-deck-render.sh')
+    shutil.copy2(gsap, assets / 'gsap.min.js')
+    asset_name = 'portrait' + source.suffix.lower()
+    if source != (assets / asset_name).resolve():
+        shutil.copy2(source, assets / asset_name)
+    (composition / 'hyperframes.json').write_text(json.dumps({'paths': {'assets': 'assets'}, 'media': {'autoProxy': False}}, indent=2) + '\n')
+    font_css = json.dumps(str(config['font']))
+    (composition / 'index.html').write_text(f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<script src="assets/gsap.min.js"></script><style>
+@font-face {{ font-family:{font_css}; src:local({font_css}); }}
+* {{ box-sizing:border-box; }} html,body {{ margin:0; width:{args.width}px; height:{height}px; overflow:hidden; background:{config['bg']}; }}
+#stage {{ position:relative; width:{args.width}px; height:{height}px; background:{config['bg']}; }}
+img {{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }}
+#slogan {{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font:{font_size}px {font_css}, sans-serif; color:{config['text']}; text-align:center; padding:40px; }}
+</style></head><body><div id="stage" data-composition-id="main" data-start="0"
+data-duration="{args.duration}" data-width="{args.width}" data-height="{height}" data-fps="{args.fps}">
+<img src="assets/{asset_name}" alt="portrait"><div id="slogan">{html.escape(args.slogan)}</div></div>
+<script>const tl=gsap.timeline({{paused:true}});
+tl.fromTo('#slogan',{{opacity:0}},{{opacity:1,duration:{max(.05, fade)}}},0);
+window.__timelines=window.__timelines||{{}};window.__timelines.main=tl;</script></body></html>''', encoding='utf-8')
 
-    # drawtext：slogan 文本居中，淡入动画用 alphaexpr
-    # 文本需转义（空格/冒号/单引号）
-    slogan_escaped = args.slogan.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-    drawtext = (
-        f"drawtext=text='{slogan_escaped}':"
-        f"font='{font_name}':fontsize={font_size}:"
-        f"fontcolor={text_color}:"
-        f"x=(w-text_w)/2:y=(h-text_h)/2:"
-        f"alpha='if(lt(t,{fadein_dur}),t/{fadein_dur},1)'"
-    )
-
-    # 视频滤镜：scale + pad + drawtext
-    vf = (
-        f"scale={args.width}:{height}:force_original_aspect_ratio=decrease,"
-        f"pad={args.width}:{height}:(ow-iw)/2:(oh-ih)/2:color={bg_color},"
-        f"setsar=1,fps={args.fps},format=yuv420p,"
-        f"{drawtext}"
-    )
-
-    # 静音音轨：anullsrc 生成，与视频合流
-    cmd = [
-        "ffmpeg", "-y",
-        "-loop", "1", "-i", str(img_path),
-        "-f", "lavfi", "-t", f"{args.duration:.3f}",
-        "-i", "anullsrc=channel_layout=mono:sample_rate=24000",
-        "-vf", vf,
-        "-t", str(args.duration),
-        "-map", "0:v:0", "-map", "1:a:0",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-        "-c:a", "aac", "-b:a", "128k",
-        "-shortest",
-        str(out_path),
-    ]
-    print(f"[outro] 形象图 {img_path.name} → 标准比例片尾")
-    print(f"  - 尺寸 {args.width}x{height}@{args.fps}fps，时长 {args.duration}s")
-    print(f"  - slogan「{args.slogan}」烧录居中，{fadein_dur}s 淡入")
-    run(cmd)
-
-    print(f"[done] 片尾已落：{out_path}")
-    print(f"  - assemble 自动收段纳入（render/outro/ 命名子目录）")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.outro-', dir=output.parent) as temp:
+        silent_video = Path(temp) / 'video.mp4'
+        candidate = Path(temp) / 'with-audio.mp4'
+        run([sys.executable, SCRIPTS / 'visual-render.py', 'render', composition,
+             '--output', silent_video, '--workers', 1, '--quality', 'looks'])
+        run([sys.executable, SCRIPTS / 'add-silent-audio.py', '--input', silent_video,
+             '--output', candidate, '--duration', args.duration])
+        candidate.replace(output)
+    print(json.dumps({'output': str(output), 'composition': str(composition),
+                      'width': args.width, 'height': height, 'fps': args.fps,
+                      'duration': args.duration, 'font': config['font']}, ensure_ascii=False))
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, OSError, RuntimeError, EnvironmentError, subprocess.TimeoutExpired) as exc:
+        print(f'[error] {exc}', file=sys.stderr)
+        raise SystemExit(1)

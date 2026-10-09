@@ -1,6 +1,6 @@
 # Workflow：Collage B-roll（纸拼贴组装动画）
 
-Brief 里写 `workflow: collage-broll`，或甲方要"把这句口播做成拼贴 B-roll""纸拼贴动画""半调拼贴"时使用。本文指导**从 Brief 生产纸拼贴 B-roll 的 script**（隐喻清单）及这一步之后的自检（隐喻自检，GATE A 质检标准），并附该类型的制作约定（方法论移植自 gbro-collage-broll：半调纸拼贴 + assemble-from-empty）；闸门收敛为 GATE A / GATE B 两道——**GATE A 检隐喻清单（即本类型的 script），GATE B 检静帧 contact sheet（即素材）**。不替代通用流程；原子能力、护栏、工作区与交付约定照 `expert-video` 的 SKILL.md 执行；本文与通用流程冲突处以本文为准，但闸门与护栏不让步。
+Brief 里写 `workflow: collage-broll`，或甲方要"把这句口播做成拼贴 B-roll""纸拼贴动画""半调拼贴"时使用。本文指导 Stage 1–2 的隐喻清单、自检与 GATE A 质检，并附半调纸拼贴 + assemble-from-empty 的制作与验收约定。与已验证的 `reversal-ad` 一样，通用 Stage 0→15 全程适用；GATE A 在 Stage 5 后，GATE B 在 Stage 9 后。类型指导只改变各阶段的具体产物，不能裁掉阶段或闸门。
 
 ## 类型定义
 
@@ -21,27 +21,32 @@ Brief 里写 `workflow: collage-broll`，或甲方要"把这句口播做成拼�
 | gates | GATE A / GATE B 批准人；代理批准时写明批准范围 |
 | acceptance | 验收标准（未指定按「交付」节默认） |
 
-## 阶段裁剪表（相对通用制作流程）
+## 基线阶段的纸拼贴产物
 
-| Stage | 处置 | 本文对应 |
-|-------|------|---------|
-| 0 Brief intake | 照走 | 核对文稿逐条可拆、规格齐；缺字段向 Brief owner 澄清 |
-| 1 script-write | **重定义** | Phase 1 隐喻设计——产物落 `script/script.md`（隐喻清单），就是本类型的"分场剧本" |
-| 2 script-self-eval | **重定义** | 隐喻自检（见 Phase 1），任一条不过必返工 |
-| 3–5 storyboard / shot-decompose / character-register | **裁剪** | 单镜固定机位、无人物角色，不建 storyboard / shot_decompose / characters |
-| GATE A | 照走 | 呈交隐喻清单 |
-| 6–9 slot-plan → delivery-promise-lock | **由静帧生成替代** | Phase 2：visual-spec + Seedream 静帧 + 静帧 QA；AIGC 素材的来源记录 = prompt + 模型 + 生成时间 |
-| GATE B | 照走 | 呈交静帧 contact sheet |
-| 10 render-shot | **重定义** | Phase 3：i2v 首尾帧组装（`collage-broll render` 批量调度） |
-| 11 mix-audio | **裁剪** | 默认无声交付；甲方要 aigc 原声时交付带声版 |
-| 12 assemble | **裁剪** | 逐条独立成片，不拼接 |
-| 13a video-review | 照走（强制） | 无声版 `audio_absent` warning 是预期，放行；带声版出 `audio_absent` 是 critical |
-| 13b motion-audit | 照走 | 抽查组装过程逐件进入而非整体淡入 |
-| 13c normalize | 无声片豁免 | 带声版必跑 |
-| 14a make-cover | 按需 | B-roll 垫片通常无封面，Brief 要求才做 |
-| 15 交付 | 照走 | 回报产物绝对路径 |
+Stage 3–10 调 `video-producer` 同名阶段命令，生成并填写纸拼贴专用脚手架；空模板不算阶段完成。固定机位、无真人时也要把该事实登记为阶段产物，不虚构机位或角色三视图。
 
-## Phase 1 隐喻设计（Stage 1 重定义）
+| Stage | 本类型动作与产物 |
+|---|---|
+| 0 | 核对文稿逐条可拆、规格和授权；缺字段向 Brief owner 澄清 |
+| 1–2 | `script-write` 生成 `script/script.md` 隐喻清单；`script-self-eval` 按隐喻、纸片数、色彩与可转译性自检，低分返工 |
+| 3 | `storyboard-build` 按每条隐喻写镜头表，记录固定构图、视觉命题、原句、逐件进入顺序与时长；落 `storyboard/storyboard.json` |
+| 4 | `shot-decompose` 写空色场首帧、组装完成末帧及每层入场动作；落 `storyboard/shot_decompose.json` |
+| 5 | `character-register` 登记跨镜一致的人物/物件纸片、参考图、授权；无人物时明确登记空角色清单；落 `characters/registry.json` |
+| GATE A | 呈交隐喻清单、分镜、首尾画面、人物/纸片一致性方案；停下等批准 |
+| 6 | `slot-plan` 为每镜 3–6 个独立纸片规划素材槽、色场和层级；落 `slots/slot-plan.json` |
+| 7 | `asset-resolve` 逐层落实图像、形状、纸纹，记录来源、授权或生成 prompt/模型/时间；落 `slots/asset-resolve.json` |
+| 8 | `slideshow-risk` 审核隐喻可读性、层独立性、真实入场、来源及水印/假字；做 HTML 静帧预览与人工检查，落 `slots/slideshow-risk.json`；fail 返工 |
+| 9 | `delivery-promise-lock` 逐条锁定时长、规格、声轨、纸片动作、封面和证据，落 `slots/delivery-promise.json` |
+| GATE B | 呈交每条素材来源、预览 contact sheet、最终定格帧与 Stage 8/9 审核；停下等批准 |
+| 10 | `render-shot` 建 `render/collage-render-plan.json`，按批准预览用 `visual-render` 实际渲染；特殊变形才用 `batch-i2v`。计划不等于已出片 |
+| 11 | `mix-audio` 建 `audio/collage-audio-plan.json`；默认逐条确认无声，有声音时登记来源、授权和对齐，不重做甲方口播 |
+| 12 | `assemble --manifest` 逐条核验并交接单段成片，输出项目成片路径；无声片保持无音轨，不附加静音轨 |
+| 13a | 公共 `video-review` 必跑；无声版的 `audio_absent` warning 是预期，有声版缺音轨则失败 |
+| 13b | `motion-audit` 逐层核验 Stage 9 的组装承诺，单条默认落 `review/collage-motion-audit.json`，批量条目各自指定审核路径；整体淡入不能通过 |
+| 13c | `normalize` 必调用：有声片归一至 -14 LUFS；明确无声时传 `--silent-ok`，核验无音轨并记录不适用 |
+| 14–15 | 按 Brief 制作含主文案的封面；交成片、封面、`final-deliver.md` 的绝对路径 |
+
+## 隐喻清单（Stage 1–2）
 
 先把每条文稿压成一个视觉命题，提取：
 
@@ -67,234 +72,91 @@ Brief 里写 `workflow: collage-broll`，或甲方要"把这句口播做成拼�
 1. 一句话只表达一个清晰隐喻？
 2. 关键物件 3–6 个，不是满屏碎片？
 3. 文稿没有逐字进画面（无字幕、无口播全文）？
-4. 底色与点色按语义色场表选，有理由（见 Phase 2 色彩规则）？
+4. 底色与点色按下方色彩规则选，有理由？
 5. 批量时前后叙事成立，或每条独立成立？
 
-## GATE A：呈交隐喻清单
+## GATE A：呈交脚本与分镜
 
 文本闸门——**停，结束本轮回复**，发 Brief owner 审：
 
-- 呈交：条数、每条一句话视觉命题、色彩方案、组装顺序概览
-- 甲方只确认部分编号时，只让通过的条目进 Phase 2；未通过条目改隐喻重审
+- 呈交：条数、每条一句话视觉命题、色彩方案、组装顺序、Stage 3–5 分镜与主体登记
+- 甲方只确认部分编号时，只让通过的条目进 Stage 6；未通过条目改隐喻重审
 - 甲方已在 Brief 代理批准时，把批准范围落 `gates/gate-a.md` 后继续
 
-## Phase 2 生成静帧（GATE A 批准后）
+## 纸片素材与可控组装（Stage 6–9，GATE A 批准后）
 
-先写自包含的 `script/visual-spec.json`，再写 imagegen prompt。
+每条隐喻准备 3–6 个**独立的本地素材层**，用一张纯色 CSS 背景承载。素材可以是黑白半调人物/物件图片、彩色卡纸块、纸纹或连接件；不要求透明 PNG，规则矩形剪贴和 CSS `clip-path` 就能形成纸片。需要图像时调公共 `awk-img-gen` 分别生成，不生成一张无法拆开的完整尾帧。记录每个素材的 prompt、模型、时间和授权来源。文字、logo、水印、UI 不得混进素材。
 
-### visual-spec.json
+底色按隐喻语义选择，同一批保持相近纸张质感和点色层级：焦橙/红用于时间与劳动，芥末黄用于警示与流失，墨绿用于认知与重置，深紫用于规范与沉淀，青绿用于协作与执行。主体以黑白半调为主，彩色卡纸只标出信息重点。
+
+`script/visual-spec.json` 逐条记下 `script_meaning`、`visual_metaphor`、`style_signature`、`color_field.background_hex`、`elements`（各含 `what`、`role`、`asset`、`placement`、`enter_at`）、`composition.final_frame` 和 `motion_plan`。素材提示词写进 `script/imagegen-prompts.md`；对每个物件分别请求一致的半调纸拼贴质感和干净剪贴边缘，并禁文字、数字、logo、水印和 UI。
+
+先用 `video-producer visual-render scaffold` 建每条独立 composition：
+
+```bash
+video-producer visual-render scaffold <project>/render/<item>/composition \
+  --width 720 --height 1280 --fps 25 --duration 5 --background '#D95B36'
+```
+
+把素材复制到 composition 的 `assets/`，在 `index.html` 的 `#stage` 内放置纸片 DOM 层。每层有固定尺寸、坐标、层级和纸张边缘/阴影；用本地 GSAP 的 paused timeline 按“基础结构 → 主体/卡片 → 连接件 → 结果”依次入场。动画应有数帧卡位感，最后至少留 0.7 秒定格。所有动作只由时间轴决定，不用 `Date.now()`、随机数、外部 CDN 或自动播放。例：
+
+```js
+// scaffold 已创建 const tl = gsap.timeline({paused:true});
+tl.fromTo('#paper-1', {x:-720, rotation:-8},
+  {x:0, rotation:0, duration:0.55, ease:'steps(4)'}, 0.25);
+tl.fromTo('#paper-2', {y:1280, rotation:6},
+  {y:0, rotation:0, duration:0.55, ease:'steps(4)'}, 1.1);
+tl.fromTo('#paper-3', {x:720},
+  {x:0, duration:0.55, ease:'steps(4)'}, 2.0);
+```
+
+以 `composition/index.html` 为真实可渲染画面。不要用一张完整海报做全屏淡入或 zoom 冒充逐件组装。
+
+检查和静帧 QA：
+
+```bash
+video-producer visual-render check <project>/render/<item>/composition
+video-producer visual-render preview <project>/render/<item>/composition \
+  --output <project>/render/<item>/preview-v1 --at 0,0.8,1.6,2.8,4.8
+```
+
+`preview-v1/contact-sheet.jpg` 与 4.8 秒最终帧一起检查：隐喻是否一眼看懂、3–6 个大组是否清晰、黑白半调和点色是否形成层级、每层是否确实独立进入、无假字/水印/裁切越界。改版输出 `preview-v2` 等新目录，保留旧版比对。
+
+## GATE B：呈交素材与预览
+
+呈交每条隐喻的素材来源、联系表、最终定格帧和静帧 QA 结论。只让批准的条目进入最终渲染；修改素材或构图后重出预览并重新确认。代理批准的范围写入 `gates/gate-b.md`。
+
+## 确定性渲染（Stage 10）
+
+```bash
+video-producer visual-render render <project>/render/<item>/composition \
+  --output <project>/render/<item>/final.mp4 --workers 1 --quality delivery
+```
+
+默认交付 9:16、5 秒、720×1280、**无声** MP4。甲方要声音时先按 Brief 明确声音来源，再用 `video-producer audio-mix` / `deck-compose` 走公共音轨链；旁白必须保留用户或 main agent 提供的真人声音，不让拼贴视觉流程另造口播。抽看 0、1、2、3、4.8 秒与实际播放：从空色场逐件组装、固定机位、末帧稳定、无漂移。
+
+若 Brief 明确要生成式物体变形、光影或无法用独立纸片实现的动作，可选用 `video-producer batch-i2v --batch <gen-jobs.json>` 调公共 `aigc-video-gen`。每个 job 写 `prompt`、`first_frame`、`last_frame`、`output`、`duration`，默认无声交付时另写 `"mute": true`，脚本在生成后无损去掉音轨；记录视频模型、费用与首尾帧。这是特殊镜头的备选路径，不为普通纸片组装默认调用视频生成 API。批量脚本属于 `video-producer`，不再使用独立 `collage-broll` 工具。
+
+## 声音、成片与交付（Stage 11–15）
+
+Stage 11 填实 `audio/collage-audio-plan.json` 的 `sound_policy`，默认写 `silent`；需要声音时写 `user-voice` 或 `approved-tts` 并落实最终音轨。Stage 12 每条使用只含一个片段的 manifest，调用 `video-producer assemble` 将 Stage 10 片段原样交接到项目成片路径，例如：
 
 ```json
-{
-  "script_meaning": "",
-  "visual_metaphor": "",
-  "style_signature": "flat bold color field, mixed black-and-white halftone cut-outs and colored cardstock accents, crisp cut edges, cream keylines, soft paper shadows, editorial paper collage",
-  "aspect_ratio": "9:16",
-  "color_field": {
-    "background_hex": "",
-    "accent_colors": [],
-    "paper_grain": "fine uncoated-paper fiber"
-  },
-  "elements": [{ "what": "", "role": "", "motion": "", "placement": "" }],
-  "composition": { "layout": "", "negative_space": "", "final_frame": "" },
-  "motion_plan": "structure first, subject or cards second, action and result last",
-  "avoid": "typography, readable letters, numerals, logos, watermark, UI, subtitles, glossy 3D, photoreal environment"
-}
+[{"name":"item-01","path":"render/item-01/final.mp4"}]
 ```
-
-### 色彩规则
-
-不要把 cobalt blue 当唯一默认值。按语意挑强色场，一批作品保持"同设计语言、不同底色"：
-
-| 色场 | 语意 |
-|------|------|
-| 焦橙 / 红 | 时间消耗、劳动、紧迫 |
-| 芥末黄 | 工具、警示、经验漏失 |
-| 墨绿 | 认知、审美、系统重置 |
-| 深紫 | 规范、沉淀、长期记忆 |
-| 青绿 | 判断、协作、自动执行 |
-
-主体以黑白半调为主，局部彩色纸张必须服务信息层级，不为彩色而彩色。
-
-### imagegen prompt（awk-img-gen / 百炼）
 
 ```bash
-awk-img-gen --prompt "<下面整段>" --image-size 1536x2688 --out-dir <project>/render/<item-slug>/frames/
+video-producer assemble <project> --manifest render/item-01/segments.json \
+  --output video-item-01.mp4 --verify-fps 25
+video-review <project>/video-item-01.mp4
+video-producer motion-audit <project> --video video-item-01.mp4 \
+  --audit-output review/item-01-motion-audit.json
+video-producer normalize <project>/video-item-01.mp4 \
+  --output <project>/video-item-01_normalized.mp4 --silent-ok
 ```
 
-> 尺寸注意：百炼上限总像素 2048×2048，旧火山 9:16 预设 `1600x2848` 超限会被脚本拒绝；9:16 一律用 `1536x2688`。
-
-Prompt 语言：下面模板是英文可照用；qwen-image / wan2.7 中文同样好，**要渲染的文字必须原句完整写入**（见 awk-img-gen 封面最佳实践）。整段落 `script/imagegen-prompts.md` 留档：
-
-```text
-Use case: ads-marketing
-Asset type: final still frame for a 9:16 image-to-video B-roll clip
-Primary request: Create a finished editorial paper-collage image expressing [一句话视觉命题].
-Scene/backdrop: perfectly flat [颜色] paper field [hex] with subtle uncoated paper fiber.
-Style/medium: premium editorial stop-motion paper collage; black-and-white halftone photographic cut-outs mixed with selective [点色] colored cardstock.
-Composition/framing: vertical 9:16 locked poster frame; central subject within the middle 70 percent; generous clean color-field negative space; 3–6 large separable paper groups for later assemble-from-empty animation.
-Materials/textures: visible printed halftone dots, crisp machine-cut edges, thin warm-cream paper keylines, soft low-opacity physical drop shadows.
-Constraints: [本条隐喻必须一眼看懂的关系].
-Avoid: no typography, no readable letters, no numerals, no logos, no watermark, no UI, no subtitles, no glossy 3D, no photoreal environment, no clutter.
-```
-
-同设计语言：优先用 awk-img-gen 参考图编辑（`--image` 传同批已过 QA 的静帧，1–3 张）锁风格；不用参考图时靠同一批复用同一 `style_signature` 字串 + 同一 `color_field` 范围。
-
-### 静帧 QA
-
-检查：隐喻是否一眼看懂 / 主体是否集中 / 是否有假字、logo、水印、UI / 是否保留足够纯色场便于从空场组装 / 是否 3–6 个清晰大组而非满屏碎片 / 同批是否统一质感但有色彩变化。
-
-通过的原图复制到 `render/<item-slug>/frames/still.png`，拼带编号的 contact sheet。要求重生部分静帧时，新版 contact sheet 递增命名（`still-contact-sheet-v2.jpg`），保留旧版便于对比。QA 结论写 `review/still-qa.md`。
-
-```bash
-ffmpeg -y -pattern_type glob -i "<project>/render/*/frames/still.png" \
-  -vf "scale=270:480,tile=5x1" -frames:v 1 <project>/review/still-contact-sheet.jpg
-```
-
-段数 > 5 时分多行（`tile=5x2`、`5x3`…）。
-
-## GATE B：呈交静帧 contact sheet
-
-素材闸门——**停，结束本轮回复**，发 Brief owner 看：
-
-- 呈交：静帧 contact sheet（带编号）、静帧 QA 结论、每条色彩与隐喻的对应关系
-- 部分通过：只让通过的条目进 Phase 3；要改的静帧重生并重新确认
-- 授权与来源记录一并呈交（AIGC 素材 = prompt + 模型 + 生成时间，留档见工作区）
-- 甲方已在 Brief 代理批准时，把批准范围落 `gates/gate-b.md` 后继续
-
-## Phase 3 i2v 组装视频（Stage 10 重定义）
-
-### 1. 准备首尾帧
-
-```bash
-# 尾帧：确认静帧统一裁到 720x1280
-ffmpeg -y -i render/<item>/frames/still.png \
-  -vf "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280" \
-  render/<item>/frames/last-frame.png
-
-# 首帧：与尾帧同底色的纯色空纸面（assemble-from-empty 的核心）
-ffmpeg -y -f lavfi -i color=c=0x<HEX>:s=720x1280 -frames:v 1 render/<item>/frames/first-frame.png
-```
-
-甲方明确要求不从完全空白开始时，首帧才保留一个基础物件。
-
-### 2. 写动画 prompt（中文，声画同出）
-
-动作顺序默认：`基础结构 → 人物或关键卡片 → 连接件 → 动作 → 最终结果`。
-
-```text
-画面从纯色空场开始，依次滑入 [基础结构] → [人物/卡片] → [连接件] → [动作]，最终定格在已确认的完成构图。固定机位，无切镜、无 zoom、无变形。画面无文字、无 logo、无水印、无 UI。音频：纸片滑入的嗒嗒声 + 卡位时的咔嗒声 + 最终定格的短促 BGM 收尾。
-```
-
-每条 prompt 明确首帧是空首帧、尾帧是确认过的完成帧；最终构图必须贴近 last-frame，不让模型自由改造尾帧。
-
-### 3. 批量生成
-
-写 `render/gen-jobs.json`（每条含 `prompt` / `first_frame` / `last_frame` / `output` / `ratio` / `resolution` / `duration`），然后：
-
-```bash
-collage-broll render --batch <project-dir>/render/gen-jobs.json
-collage-broll render --batch <project-dir>/render/gen-jobs.json --dry-run   # 先看调度计划
-```
-
-内部串行逐条调公共 `aigc-video-gen` i2v（视频生成是异步轮询任务，并行会撞平台并发限），候选链 fallback 与 decisions.log 由 `aigc-video-gen` 自带。退出码 2 = 部分 job 失败：只重跑失败条目，已通过的不重跑。
-
-开工前先跑 `collage-broll check-setup` 自检 ffmpeg / ffprobe / AWK_API_KEY / 视频平台 key / Python 版本。
-
-> `aigc-video-gen` 要求输出相对路径落在 `output_videos/` 下，**调用时 workdir 必须是 Content Producer workspace 根**；i2v 报错先查首尾帧是否真存在、是否 720x1280。
-
-### 4. 强制无声交付
-
-```bash
-ffmpeg -y -i render/<item>/gen-runs/run-v01/final-5s.mp4 -map 0:v:0 -c:v copy -an \
-  render/<item>/gen-runs/run-v01/final-5s-noaudio.mp4
-```
-
-默认交付 `final-5s-noaudio.mp4`，保留 `final-5s.mp4` 作中间产物（aigc 声画同出的原声版；甲方明确要带声时直接交付它）。
-
-## 视频 QA（Stage 13）
-
-不要只看尾帧，必须检查组装过程与最终落位。
-
-```bash
-ffmpeg -y -i render/<item>/gen-runs/run-v01/final-5s-noaudio.mp4 \
-  -vf "fps=1,scale=270:480,tile=5x1" -frames:v 1 render/<item>/gen-runs/run-v01/contact-sheet.jpg
-```
-
-通过标准：
-
-- 首帧接近纯色空场（边缘轻微提前露出纸片可接受）
-- 中段能看到结构、人物或卡片逐步进入，而不是整体淡入
-- 没有切镜、zoom、3D 化或写实场景漂移
-- 没有假字、logo、水印或 UI
-- 最终帧与确认静帧一致；轻微姿态或细节漂移只要不影响隐喻语义即判通过，不为此重跑
-- 成片为 720×1280、5 秒
-
-另抽视频末帧与确认静帧并排生成 `end-frame-comparison.jpg`；批量项目再合三张总览图落 `review/`（`video-contact-sheet-all.jpg` / `video-first-frame-all.jpg` / `end-frame-comparison-all.jpg`）。逐条 QA 结论（含带瑕疵通过的判定理由）写 `review/collage-video-qa.md`。
-
-### 技术自检（强制）
-
-视觉 QA 后必须再跑公共 `video-review`，verdict=pass 才交付：
-
-```bash
-video-review render/<item>/gen-runs/run-v01/final-5s-noaudio.mp4
-```
-
-视觉 QA 评美与语义，`video-review` 评技术合规（ffprobe 全字段 / 抽帧黑帧扫 / 音频电平 / 时长分辨率一致性），互补不重叠。fail 按 critical 项修或重生对应 job；warn 向甲方复述由其决定。
-
-> 默认无声交付时 `audio_absent` warning 是预期，可放行；带声版出 `audio_absent` 是 critical（声画同出该出声没出声），退回重生成。
-
-### 常见问题
-
-| 症状 | 处理 |
-|------|------|
-| 首帧边缘提前露出 | 轻微可接受；严格空场需求改用更坚定的 first-frame（纯色 + 边缘 padding） |
-| 组装感弱 | 缩短元素数量，prompt 改为明确的逐件"滑入 / 卡位"顺序 |
-| 尾帧漂移 | 强化 prompt 里"最终定格在已确认的完成构图"（i2v 的 last-frame 权重高） |
-| 出现假字 | 回到静帧重生，不要用视频 prompt 修补 |
-| 个别视频失败 | 只重跑对应 job |
-| i2v 报错 | 查首尾帧是否 720x1280、是否真存在、workdir 是否 workspace 根 |
-
-## 工作区
-
-自建工作区 `output_videos/<topic-en-slug>/`（甲方不指定、不代建），在通用流程标准树上裁剪：
-
-```text
-<project-dir>/
-├── brief.md / voiceover.md        # 甲方交付（Brief + 落稿锁定文稿）
-├── script/
-│   ├── script.md                  # Phase 1 隐喻清单（本类型的"分场剧本"）
-│   ├── visual-spec.json           # Phase 2 视觉规格
-│   ├── imagegen-prompts.md        # imagegen prompt 留档
-│   └── decisions.json             # 决策审计链
-├── gates/
-│   ├── gate-a.md / gate-b.md      # 闸门批准记录（含批准人与批准范围）
-├── render/
-│   ├── gen-jobs.json              # Phase 3 批量 i2v 调用清单
-│   └── <item-slug>/
-│       ├── frames/                # still.png（确认原图）/ last-frame.png / first-frame.png
-│       └── gen-runs/run-v01/      # final-5s.mp4 / final-5s-noaudio.mp4 / contact-sheet.jpg /
-│                                  # video-last-frame.jpg / end-frame-comparison.jpg
-└── review/
-    ├── still-qa.md                # GATE B 静帧 QA 结论
-    ├── still-contact-sheet.jpg    # GATE B 呈交物（重生递增 v2/v3…）
-    ├── collage-video-qa.md        # Phase 3 逐条视频 QA 结论
-    └── video-contact-sheet-all.jpg / video-first-frame-all.jpg / end-frame-comparison-all.jpg
-```
+有声片即使传 `--silent-ok` 也照常归一；无声片经 ffprobe 确认没有音轨后，归一化命令原样输出并写 `.normalization.json` 记录不适用。Stage 13b 的审核须逐层填证据并给出 verdict；Stage 14 按 Brief 制封面。批量条目分别执行 Stage 12–15，审核文件与交付说明要按条目对应，不能用一条结果代替全批。
 
 ## 交付
 
-- 每条 `render/<item-slug>/gen-runs/run-v01/final-5s-noaudio.mp4`（甲方要带声则 `final-5s.mp4`）
-- 每条 contact sheet、批量总 contact sheet、末帧对照图
-- `review/still-qa.md` + `review/collage-video-qa.md` + `video-review` 结论
-- 一句说明每条文稿如何转成视觉隐喻
-- 回报产物**绝对路径**
-
-成片问题来自 i2v 生成限制（组装感弱 / 尾帧漂移）时直接说明；只有需要精确图层控制时才建议换方案，并向甲方报清代价。
-
-## 不适用
-
-- 需要精确控制图层、遮挡、镜头穿越或可编辑时间线 → 改用分层动画方案，并向甲方说明本 workflow 做不到
-- 只要视频提示词、不要成片 → 直接写 prompt 交付，不走本流程
-- 需要真实人物产品广告或口播演员 → 走 Narration Video，或按通用制作流程做
-- 甲方明确要可逐层修改的透明素材 → 本 workflow 默认不拆透明图层
+交付每条归一化成片、封面、`final-deliver.md` 的绝对路径；说明列出每条隐喻对应原句、素材来源、预览联系表、GATE A/B 记录与视频 QA 结果。`composition/` 保留，便于只改入场顺序或纸片位置后确定性重渲。

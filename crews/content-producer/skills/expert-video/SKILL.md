@@ -56,7 +56,7 @@ metadata:
 | 层 | 是什么 | 怎么用 |
 |----|--------|--------|
 | **通用制作流程**（本文下方） | 我做**任何**视频制作工作都必须遵循的准则：Stage 0→15 阶段链、GATE A / GATE B 两闸门、返工与耗时上限、决策审计链、工作区与交付约定 | 永远适用，不因视频类型而跳过或替换 |
-| **workflow**（`workflows/*.md`） | 两类——**intake 类**（`story-develop`：没有 Brief 或 Brief 不清晰时与甲方探讨收敛 Brief，**不是 `Brief.workflow` 取值**）；**type 类**（`narration-video` / `collage-broll` / `reversal-ad`：**指导从 Brief 生产该类型的 script，含这一步之后的自检与 GATE A 质检标准**；并附该类型的制作与验收约定，GATE A 批准后按通用流程执行时适用） | type 类：Brief 指定 `workflow` 时必读必用，按它生产 script、按它自检；intake 类：Brief 缺失或创意不足以直接写剧本时触发 |
+| **workflow**（`workflows/*.md`） | 两类——**intake 类**（`story-develop`：没有 Brief 或 Brief 不清晰时与甲方探讨收敛 Brief，**不是 `Brief.workflow` 取值**）；**type 类**（`collage-broll` / `reversal-ad` / `deck-talk`：**指导从 Brief 生产该类型的 script，含这一步之后的自检与 GATE A 质检标准**；并附该类型的制作与验收约定，GATE A 批准后按通用流程执行时适用） | type 类：Brief 指定 `workflow` 时必读必用，按它生产 script、按它自检；intake 类：Brief 缺失或创意不足以直接写剧本时触发 |
 | **工具说明**（`tools/<工具>/SKILL.md`） | 每个子命令的入参、产物路径、退出码与旁路条件 | 调用前查；本文不重复参数细节 |
 
 > 通用制作流程**不是**与类型 workflow 并列的一条路，也**不是**"Brief 没指定类型时的 fallback"。它是我做任何视频都必走的全程流程；类型 workflow 只负责其中 **Stage 1–2（Brief→script→自检）** 这一段的类型化指导，并附该类型的制作约定——不接管、不裁掉流程本身。
@@ -68,12 +68,12 @@ metadata:
 | 视频类型 / 入口信号 | workflow | Brief `workflow` 值 | 它指导什么 |
 |--------------------|----------|---------------------|--------------|
 | 影视解说 / 剧情解说 + 突然反转插入品宣（"万万没想到"式） | Reversal Ad | `reversal-ad` | 三段结构占比、反转点落在 55%–76%、四种反转手法、反转幅度与接入丝滑度两轴（含二次反转 CTA）、素材三模式 sourcing（Blender 片库 / 用户直供三查 / AIGC）、意象桥与钩连句、植入段约束 |
-| 口播 / 旁白类（口播：真人出镜、数字人、真人录音；旁白：TTS 配音解说） | Narration Video | `narration-video` | 口播稿落稿锁定不重写、旁白稿由我写 GATE A 交审、按字级时间戳配画面、声音规范与验收清单 |
-| "把这句口播做成拼贴 B-roll""纸拼贴动画""半调拼贴" | Collage B-roll | `collage-broll` | 隐喻清单即 script（GATE A 检）→ 静帧即素材（GATE B 检 contact sheet）→ Stage 10 `collage-broll render` 批量 i2v 组装；阶段裁剪表见 workflow |
+| PPT / 幻灯大画面 + 口播小窗，或用户音频+B-roll 讲解 | Deck Talk | `deck-talk` | 逐页或逐段脚本、音频同源翻页、HTML 动画/B-roll 与小窗合成；footage/avatar/audio 三模式，数字人用包内 LivePortrait；阶段产物与动效验收见 workflow |
+| "把这句口播做成拼贴 B-roll""纸拼贴动画""半调拼贴" | Collage B-roll | `collage-broll` | 隐喻清单即 script；按通用阶段链完成分镜、纸片素材、GATE A/B、HyperFrames 渲染与逐层验收，具体产物见 workflow |
 
-- Brief 指定了 `workflow`：**先读对应文档，按它生产 script 并按它自检**（GATE A 质检标准同此），不得替换成自创流程；其制作与验收约定（阶段裁剪、素材 sourcing 等）在该类型视频上生效。
+- Brief 指定了 `workflow`：**先读对应文档，按它生产 script 并按它自检**（GATE A 质检标准同此），不得替换成自创流程；其制作与验收约定（阶段产物、素材 sourcing 等）在该类型视频上生效，不能跳过基线阶段。
 - Brief 未指定 `workflow`：仍走通用制作流程，叙事 / 动效 / 蒙太奇的处理手法由我据创意自定并记 `decisions.json`；Brief 创意不足以直接写剧本时，先走 `story-develop` intake workflow 与甲方收敛 Brief，再进 Stage 1 `script-write`。
-- 已有素材只要剪辑、修整、拼接、配音、烧字幕：仍走通用制作流程，中间阶段按实际裁剪，重心落在 Stage 12 工具箱（只做几何级修整；语义级高光剪辑归甲方 main）。
+- 已有素材只要剪辑、修整、拼接、配音、烧字幕：仍走通用制作流程，各阶段记录与任务相符的处理结果，重心落在 Stage 12 工具箱（只做几何级修整；语义级高光剪辑归甲方 main）。
 
 > `story-develop` 是 **intake 类 workflow**（Stage 0 创意澄清，**不是 `Brief.workflow` 取值**），与上表 type 类 workflow 正交：甲方没给 Brief 或 Brief 创意不足以直接写剧本时走它收敛出 Brief，再按通用制作流程 + 对应 type workflow 执行。详见 `workflows/story-develop.md`。
 
@@ -81,8 +81,8 @@ metadata:
 
 - 平面设计 / 网页 / APP 界面 / 品牌视觉 → `expert-design`
 - 语义级高光剪辑（去口气词、智能剪重点）→ main 的 `talking-head-cut` / `video-edit`
-- 视频下载、爆款拆解、转录抽帧 → main 的 `viral-chaser`（我不自己下载转写）
-- 平台发布与运营 → main 的各平台专家包
+- 参考视频获取与拆解 → 由 main agent(xiaobei)先调用对应技能下载，再用 `viral-chaser` 转写与抽帧；我接收甲方提供的报告和素材。
+- 平台发布与运营 → main agent的各平台专家包
 
 ## 工作区
 
@@ -104,7 +104,7 @@ output_videos/<topic-en-slug>/      # <project-dir>
 ├── artifacts/                  # (12) 按镜顺序的最终段 01_*.mp4 … NN_*.mp4
 ├── video.mp4                   # (12) 成片
 ├── review/                     # verdict.json(13a) / frames/ / motion-audit.json(13b)
-├── cover.jpg                   # (14a)
+├── cover.jpg                   # (14)
 └── final-deliver.md            # (15)
 ```
 
@@ -131,8 +131,8 @@ Stage 8  slideshow-risk     六维幻灯风险打分（pre-compose 闸门，≥4
 Stage 9  delivery-promise-lock 交付承诺八类锁定 + motion_ratio 预估
    ────── GATE B：素材闸门（素材齐+计划过审，停，发甲方看 contact sheet）──────
 Stage 10 render-shot        按 slot 渲染（AIGC 走 aigc-video-gen i2v 首尾帧插值；静图走 awk-img-gen）
-         motion-graphics    Stage 10 第二条渲染路径：程序化逐帧动态图形（声明式 spec，产品段动效/标题动画/
-                            录屏圈选；确定性渲染不走 AIGC，与 render-shot 并列按镜头性质二选一）
+         visual-render      Stage 10 HTML/GSAP + HyperFrames 确定性视觉渲染（产品段、标题动画、纸拼贴、录屏圈选）
+         motion-graphics    旧 JSON/Pillow spec 兼容入口；新项目使用 visual-render
 Stage 11 mix-audio          配音配乐四场景分流（A 人物对话声画同出 / B 旁白一次性 TTS 带字级时间戳 + 对齐 /
                             C BGM 成片后统一生成（优先 bgm-library 免版税曲库，pexels/pixabay 并列；定制风格用
                             aigc-video-gen music）/ D 甲方口播录音 → ASR 时间戳 → 按时间戳补素材）
@@ -142,12 +142,12 @@ Stage 12 assemble           按序拼接成片（原子工具箱，见下节，�
 Stage 13a video-review      公共 video-review 技术自检（强制闸门，verdict=pass 才继续）
 Stage 13b motion-audit      motion_led 抽查（兑付 delivery-promise）
 Stage 13c normalize         响度归一化到 -14 LUFS（**必跑**：`video-producer normalize`）
-Stage 14a make-cover        封面（awk-img-gen，必含封面主文案）
+Stage 14 make-cover        封面（awk-img-gen，必含封面主文案）
 Stage 15 交付              回报成片 + 封面 + final-deliver.md 的绝对路径与关键参数
 ```
 
 - **产物文件存在性即 checkpoint**：子命令先查产物文件是否存在，存在则 load 不重生成（允许手改 JSON 后续跑）；要改哪段就重跑对应子命令，未改的不会重生成。
-- 类型 workflow 附带的制作约定（阶段裁剪、素材 sourcing、验收清单）在该类型视频上生效；**闸门位置与"停下发甲方"的纪律不变**。甲方已在 Brief 中代理批准某道闸门时，把批准范围落 `gates/` 后继续。
+- 类型 workflow 附带的制作约定（阶段产物、素材 sourcing、验收清单）在该类型视频上生效；**不能裁掉基线阶段，闸门位置与"停下发甲方"的纪律不变**。甲方已在 Brief 中代理批准某道闸门时，把批准范围落 `gates/` 后继续。
 - 可选工具 `reference-concepts`：甲方给了参考视频拆解报告时，据报告出 2–3 个差异化概念落 `reference/concepts.md`。
 
 ## 闸门与护栏
@@ -192,7 +192,7 @@ Stage 15 交付              回报成片 + 封面 + final-deliver.md 的绝对�
 - **无旁白直拼**：段就绪、无需切素材与混音 → `assemble <project_dir> --transition fade` 一把过。
 - **有旁白走时间轴（整段模式）**：旁白一次性 TTS + `narration-align` 拿字级时间戳 → 据各段 start/end 定素材入点出点写 `timeline.json` → `timeline-compose`（内部调 clip-trim 切段 + audio-mix 叠旁白）；全片 BGM 走 `timeline.json` 的 `audio_globals` 混入。
 - **逐句旁白守卫排布（逐句模式，解说/反转植入类常用）**：逐句 TTS 出独立 mp3 → 写 `narration_plan.json`（shots 有序清单 + 逐句 file/text/shot_id + BGM + 守卫参数）→ `narration-layout` 出 `abs_starts.json` + SRT + 可选 mix → `assemble --manifest segments.json --verify-fps 25 --expect-durations slots/shotdur.json` 拼接并断言（**不传 --transition，hard 直拼**：fade/xfade 吃重叠会平移时间轴使排布失效）→ `burn-srt --force-style`（样式串直接取 abs_starts.json 的 force_style）→ `normalize`。**守卫断言失败改计划（镜头时长/文案），不放宽容差硬过。**
-- **产品段/标题动态图形**：写 `mg-*.json` spec（四模板或基础元素组合）→ `motion-graphics` 出单段 clip → 段进 manifest 一起 `assemble`。超出模板的特制动画走 spec 的 `custom` 插件逃生舱（plugin 只画帧，编码/checkpoint/时长校验仍在子命令），**不整段手写渲染脚本**。
+- **产品段/标题动态图形**：`video-producer visual-render scaffold` 建 HTML 项目 → 在本地 GSAP 时间轴编辑画面 → `check` / `preview` 审片 → `render` 出单段 clip → 段进 manifest 一起 `assemble`。旧 `mg-*.json` 仅兼容已制作项目，新创作统一用 HTML/HyperFrames。
 - **分段先合再合**：长片或某些段需独立预合 → 写 `scene-01.json`（clips + narration + dialogue）→ `scene-compose` 出 `scene-01.mp4`，同法出 `scene-02.mp4` → 两个 scene 当段素材 `assemble --source-dir scenes --transition fade`。
 - **素材尺寸不一**（AIGC 720x1280 / 录屏 1080x2384 / 片尾 784x1176 混拼）：`assemble --width 1080 --fps 30` 归一化后再 concat。
 - **精确调速某段**：`clip-trim --speed 2 --sync-audio`，快放段当段素材再拼。
@@ -205,11 +205,14 @@ Stage 15 交付              回报成片 + 封面 + final-deliver.md 的绝对�
 | 工具 | 用途 | 命令 |
 |------|------|------|
 | `video-producer` | 阶段链全部原子能力（剧本 / 分镜、素材 slot 与解析、渲染、混音对齐、拼接合成、动效审计、封面）+ 后期处理（`normalize` **必跑**、`burn-srt` / `duck` / `denoise` / `interp` 可选，全部干湿分离不覆盖输入） | `video-producer <子命令>`；`video-producer help` 列全量 |
-| `collage-broll` | 纸拼贴 B-roll 的环境自检与 Stage 10 批量 i2v 调度（0 全通 / 1 参数错 / 2 部分失败，只重跑失败条目） | `collage-broll check-setup` / `collage-broll render --batch <render/gen-jobs.json> [--dry-run]` |
+| `video-producer visual-render` | 通用 HTML/GSAP 片段的 scaffold、检查、预览与 HyperFrames 渲染；纸拼贴与产品动效共用 | `video-producer visual-render scaffold / check / preview / render` |
+| `deck-render` | Stage 10 第三条渲染路径：中文 HTML 幻灯、逐页动画、静帧联系表、确定性 MP4；随后用 video-producer pip-compose 合小窗/旁白 | `deck-render check-setup / scaffold / check / preview / render`；参数见工具说明 |
 
-跨领域公共技能：`aigc-video-gen`（视频片段生成 / i2v 首尾帧插值，Stage 7/10；输出路径须落在 `output_videos/` 下，调用时 workdir 是 Content Producer workspace 根）、`awk-img-gen`（静帧、角色三视图、封面，Stage 5/10/14a）、`awk-tts`（旁白 TTS，带字级时间戳，Stage 11B；多供应商路由 火山→百炼，`--enable-subtitle` 两家都出字级时间戳）、`bgm-library`（ccMixter 免版税 + 自动 TASL 署名，商用安全，Stage 11C 优先）、`pexels-footage` / `pixabay-footage`（免版税素材与 BGM 搜索）、`video-review`（成片技术自检闸门，Stage 13a）、`video-edit subtitles`（main crew 暴露的烧字幕原子；不可用时向 Brief owner 报工具缺口，不手写 ffmpeg）。
+HTML 视觉片段与 deck-talk 共用 Node ≥22、Playwright Chromium headless shell、系统适配的中文字体（Windows 微软雅黑；Linux/macOS Noto Sans CJK SC）和锁定 HyperFrames/GSAP/Playwright；安装和更新脚本预装。`visual-render`、`deck-render` 与 `deck-compose` 本地执行不需 API Key；LivePortrait 需要百炼业务空间凭据，TTS/ASR 仍使用下列凭据。数字人调用包内 `liveportrait` 工具。
 
-env 依赖：`AWK_API_KEY`（agent plan 生图/视频/TTS/ASR 兜底）、`WORKSPACE_ID`+`MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`（百炼业务空间，优先）、`VOLC_ASR_*`（`narration-align` 回退路径与甲方口播录音转写的火山优先路由；旧控制台双头 `VOLC_ASR_APP_ID` + `VOLC_ASR_ACCESS_KEY`，或新控制台单头 `VOLC_ASR_APP_KEY`）。ASR/TTS 凭据任一组在即可路由；全缺时子命令 exit 2，补齐属 IT engineer 职责，不要静默降级。Python 依赖 `requests`、`Pillow`（`motion-graphics` 逐帧绘制）在仓根 `requirements.txt`。系统依赖：`motion-graphics` 需要 Noto Sans SC/CJK 字体（探测 `/usr/share/fonts/opentype/noto-sc` 等候选目录，缺失 exit 2；可用 spec `font_dir` 或 env `MG_FONT_DIR` 覆盖）。机器资源约束（线程数、分辨率上限、低载编码）读本 workspace `MEMORY.md` 或 Brief 的环境约束，不写死在技能包里（`motion-graphics` 默认即低载：nice19/veryfast/crf18/threads2）。
+跨领域公共技能：`aigc-video-gen`（视频片段生成 / i2v 首尾帧插值，Stage 7/10；输出路径须落在 `output_videos/` 下，调用时 workdir 是 Content Producer workspace 根）、`awk-img-gen`（静帧、角色三视图、封面，Stage 5/10/14）、`awk-tts`（旁白 TTS，带字级时间戳，Stage 11B；多供应商路由 火山→百炼，`--enable-subtitle` 两家都出字级时间戳）、`bgm-library`（ccMixter 免版税 + 自动 TASL 署名，商用安全，Stage 11C 优先）、`pexels-footage` / `pixabay-footage`（免版税素材与 BGM 搜索）、`video-review`（成片技术自检闸门，Stage 13a）、`video-edit subtitles`（main crew 暴露的烧字幕原子；不可用时向 Brief owner 报工具缺口，不手写 ffmpeg）。
+
+env 依赖：`AWK_API_KEY`（agent plan 生图/视频/TTS/ASR 兜底）、`WORKSPACE_ID`+`MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`（百炼业务空间，优先）、`VOLC_ASR_*`（`narration-align` 回退路径与甲方口播录音转写的火山优先路由；旧控制台双头 `VOLC_ASR_APP_ID` + `VOLC_ASR_ACCESS_KEY`，或新控制台单头 `VOLC_ASR_APP_KEY`）。ASR/TTS 凭据任一组在即可路由；全缺时子命令 exit 2，补齐属 IT engineer 职责，不要静默降级。Python 依赖 `requests`、`Pillow` 仍由仓根 `requirements.txt` 统一安装（Pillow 还用于小窗遮罩、联系表和旧 JSON 动效）；新 HTML 片段不新增 pip 包。机器资源约束读本 workspace `MEMORY.md` 或 Brief；HyperFrames 渲染可用 `--workers 1` 控制低内存机器负载。
 
 ## 禁止事项（强制）
 
@@ -218,7 +221,11 @@ env 依赖：`AWK_API_KEY`（agent plan 生图/视频/TTS/ASR 兜底）、`WORKS
 - **禁止声称没做过的事**：没有 tool result 或产物文件证明，不许声称已渲染 / 已生成 / 已改动。
 - **禁止替甲方做需求决策**：选题方向、品牌事实、卖点承诺、业务植入与 CTA 口径、发布文案不由我定；Brief 没写就问。
 - **禁止让甲方建工作区**：工作区自建；也不要把中间产物写进甲方（main / 用户）的目录。
-- **禁止直接写 ffmpeg 命令**：所有 ffmpeg 调用走 `video-producer` / `collage-broll` 子命令或公共技能子命令；唯一例外是 workflow 文档里给出的既定 ffmpeg 模板（如 Collage B-roll 的首尾帧处理与 contact sheet 拼图），照抄执行不自创。
-- **禁止自己做视频下载 / 转写 / 抽帧**：那是 main 的 `viral-chaser` 的活。
+- **禁止直接写 ffmpeg 命令**：所有 ffmpeg 调用走 `video-producer` 或公共技能子命令；视觉片段走 `visual-render`，不要自行拼渲染命令。
+- **禁止自己做参考视频下载 / 转写 / 抽帧**：由 main 通过对应 hunter 下载，再用 `viral-chaser` analyzer 分析。
 - **禁止引入 CLIP / torch 系本地模型**：素材匹配走 Fast path 人核缩略图。
 - **禁止批量生成撞运气**：逐条精做。
+
+### 数字人与 deck-talk 三模式
+
+`deck-talk` 支持 main 已剪的实拍口播、肖像+声音的数字人、仅音频+B-roll 三种模式；声音来源必须如实登记。数字人调用本包 `tools/liveportrait/SKILL.md`，最终合成用 `video-producer deck-compose`；不要寻找公共 avatar-gen 技能。声音复刻/设计使用公共 awk-tts 保存的音色档案。

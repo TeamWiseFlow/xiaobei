@@ -1,5 +1,7 @@
 # 专家包（Expert Pack）+ DNA 架构规划
 
+> 2026-09-23 注：本文件中的 `collage-broll` 独立工具结构已由 `expert-video/workflows/collage-broll.md` 和 `video-producer` 通用视觉工具取代；下方保留当时的架构记录。
+
 > 日期：2026-08-14；2026-08-18 更新 DNA 生产模式与跨平台 profiler 规范；2026-08-20 明确跨平台 DNA 维度边界与 template 通用开头；2026-08-20 废除 rubric、数据直连 DNA（见第 11 节）；2026-08-29 新增平台运营文件夹规范（见 4.2 节）；2026-08-29 `dna/` 与 `calibration/` 由集中目录下沉进各平台运营文件夹（见 4.2 节）；2026-09-08 抖音 / 视频号 / 小红书 DNA 维度重做（v1，已废止）；2026-09-10 三平台 DNA 回到「单篇作品提取 → 批次聚合」范式并按作品类型分框架（v2，见 4.7 节）；2026-09-10 明确 main / Content Producer 的 Brief 交接契约（见 4.7 节）；2026-09-10 content-producer 引入专家包 expert-video / expert-design（见 4.9 节）
 > 首个改造对象：`crews/main`（小贝 / main agent）
 
@@ -145,7 +147,7 @@ crews/main/
 
 命名约定：
 
-- 专家包统一加 `expert-` 前缀，与「操作型技能」（如 `douyin-video-publish`）区分。
+- 专家包统一加 `expert-` 前缀，与「操作型技能」（如 `douyin-publish`）区分。
 - 专家包内不使用 `AGENTS.md` 作为文件名（避免与 workspace bootstrap 文件混淆，也避免被误解为会被自动注入）。
 - 专家包内不保存可变 DNA。运行期生成的 DNA report、DNA 文档和 DNA template 一律写入 Workspace 的 `<platform>/dna/<dna-id>/`；专家包只保留方法论、框架和工具。
 - 非内容平台专家包（`expert-bd` / `expert-ir`，2026-08-27 落地）没有 DNA 与数据复盘概念：不配 style-profiler，也不要求 4.7 的 6 类 workflow 基线集；workflow 按业务场景组织（如 Lead Hunting / Investor Pipeline），运行期数据只有 Workspace `db/` 下的 SQLite 库。其余分层原则同样适用：薄根 `SKILL.md`（入口 + 路由）+ `workflows/*.md`（场景编排）+ `tools/`（原子技能收纳，SKILL.md 瘦身为工具说明书）+ 顶层 `<tool>.sh` wrapper 暴露到 PATH（`skill-wrappers.sh` 的 `*/tools/*/` 扫描层）。
@@ -413,7 +415,7 @@ crews/<crew>/skills/expert-<platform>/tools/<platform>-style-profiler/
 3. **子模块不是独立 DNA**：口播文案子模块（`narration-script`，参考微信的起承转合）只在口播类作品启用，用于指导 main 写同类型视频的口播文案；账号运营子模块（`account-bio`、`content-mix-cadence`）只在样本来自对标账号批量提取时填写，**只写进 DNA 文档、不进 template**。
 4. **视频 DNA 不含创作细节**：不写脚本结构、逐句台词、镜头表、转场与编码参数。视频类 template = **Brief.md 正文模板 + 口播文案模板（可选）**；图文类 template = 图文写作模板。
 
-`video-form`（视频内容形态：口播 / 实拍拼接 / 影视解说+反转植入 / 纯 AIGC 动画 / 创意转场 / 录屏 / 图文卡片）必须聚合成明确的**制作指向**，且只能写真实存在的资源名：Content Producer `expert-video` 的某个 workflow（Reversal Ad / Narration Video / Collage B-roll；不属这三类就写「不指定类型 workflow」，由 CP 按通用制作流程据创意自定手法），或 main 的素材加工技能（`video-edit` / `talking-head-cut` / `ui-demo`）。Brief 的 `workflow` 字段据此填写。
+`video-form`（视频内容形态：口播 / 实拍拼接 / 影视解说+反转植入 / 纯 AIGC 动画 / 创意转场 / 录屏 / 图文卡片）必须聚合成明确的**制作指向**，且只能写真实存在的资源名：Content Producer `expert-video` 的某个 workflow（Reversal Ad / Deck Talk / Collage B-roll；不属这三类就写「不指定类型 workflow」，由 CP 按通用制作流程据创意自定手法），或 main 的素材加工技能（`video-edit` / `talking-head-cut` / `ui-demo`）。Brief 的 `workflow` 字段据此填写。
 
 采样侧配套：`viral-chaser` 的输出必须够喂这套框架——视频 meta（时长、宽高与横竖屏、发布时间、作者与简介、话题标签、互动数据）、覆盖全片的关键帧（含 25%/50%/63%/75%/90% 比例点，反转点通常在 55%-76%）、按时间占比的结构拆解与反转点位置、内容形态判定与制作指向，以及可直接喂 profiler 的 DNA 样本文字稿格式。
 
@@ -462,7 +464,7 @@ crews/content-producer/
                            # + 通用制作流程（阶段链 Stage 0→14，两闸门）+ 护栏 + 禁止事项
       workflows/           # workflow = 通用制作流程在某一类型视频上的细化（不替代基准）
         reversal-ad.md         「万万没想到」式：影视 / 剧情解说 + 突然反转植入品宣
-        narration-video.md     口播类：甲方交付口播文案或真人录音，做声画实现
+        deck-talk.md           口播讲解：实拍/数字人小窗或纯音频 + 幻灯/B-roll
         collage-broll.md       纸拼贴 B-roll：隐喻 → 静帧 → i2v 三道闸门
       tools/
         video-producer/    # 原子能力（29 个子命令，含 5 个后期处理）+ wrapper，PATH 名不变
@@ -659,7 +661,7 @@ expert-wx-mp 改造的最后一块：把 `content-calibrator` × `published-trac
 → mark-evaluated → 用户逐条确认 → style-dna update 回写 DNA
 ```
 
-脚本入口走 PATH wrapper（D21 分发器 wrapper）：`content-calibrator eval`（`--check` / 聚合 / `--force` / `--mark-evaluated`）、`published-track record|update-metrics|fetch-metrics|...`，agent 零路径拼接。旧 rubric 脚本（score-only / commit-prediction / cal-toggle / detect-bump-signals / validate-rubric 等）与 seed 文件（rubric_notes.md / rubric-memo.md / .cheat-state.json）已删除；`cal_*` DB 列保留做历史兼容，停写。
+脚本入口走 PATH wrapper（D21 分发器 wrapper）：`content-calibrator eval`（`--check` / 聚合 / `--force` / `--mark-evaluated`）、`published-track record|update-metrics|query|...`，平台取数由各专家包内的 engagement 工具执行，agent 零路径拼接。旧 rubric 脚本（score-only / commit-prediction / cal-toggle / detect-bump-signals / validate-rubric 等）与 seed 文件（rubric_notes.md / rubric-memo.md / .cheat-state.json）已删除；`cal_*` DB 列保留做历史兼容，停写。
 
 ### 10.4 review 与引擎的落位（2026-08-21 补充）
 

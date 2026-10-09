@@ -1,5 +1,9 @@
 # 浏览器栈整体替换 spec（v5.6.0 重磅）
 
+> 抖音现行操作以 `expert-douyin` / `douyin-hunter` 为准，全部使用独立 API 会话；本文中的旧抖音浏览器发布、登录与集中取数设计仅为历史记录。
+
+> 历史设计文档。当前小红书登录由 `xhs-hunter`（PC）和 `xhs-publish`（Creator）分别管理，`login-manager` 不处理小红书；以下涉及小红书的旧登录步骤不再适用。
+
 > 2026-07-11 落盘，2026-07-11 按 research §12 转向修订。本 spec 供新开对话执行。
 > 执行顺序：**先做 §1 fork camoufox-cli**，再按 §11 落地顺序施工。
 > 调研结论见 [`browser-extension-replacement-research.md`](./browser-extension-replacement-research.md) §12（架构转向，优先级最高）；可复用调研方法论见 [`browser-investigation-methodology.md`](./browser-investigation-methodology.md)。

@@ -18,7 +18,7 @@ Usage:
   2. 公共 ASR 路由回退（narration.subtitle.json 缺失时，base64 直传 narration.mp3，
      拿 utterance/word 级真实时间戳）
 
-ASR 供应商路由（_shared/asr.py）：火山极速版 → 百炼业务空间 → 百炼 agent plan。
+ASR 供应商路由（公共 skills/_shared/asr.py）：火山极速版 → 百炼业务空间 → 百炼 agent plan。
 凭据：VOLC_ASR_*（火山）或 WORKSPACE_ID+MODELSTUDIO_API_KEY/DASHSCOPE_API_KEY
 （百炼业务空间）或 AWK_API_KEY（百炼 agent plan），任一组即可。
 
@@ -31,28 +31,17 @@ import os
 import sys
 from pathlib import Path
 
-# 注入 main 侧 _shared 到 sys.path，复用公共 ASR 路由（与 talking-head-cut/scripts/cut_plan.py 同范式）
-# 跨 crew 引用：content-producer → main/_shared，供应商路由 火山→百炼业务空间→百炼 agent plan，凭据同池无新增配置
-sys.path.insert(0, str(Path(__file__).resolve().parents[6] / "main" / "skills" / "_shared"))
-from asr import asr  # noqa: E402
+# 优先按仓库 realpath 导入；拷贝部署时使用 managed skills 下的公共共享库。
+shared_dir = Path(__file__).resolve().parents[7] / "skills" / "_shared"
+if not (shared_dir / "asr.py").is_file():
+    shared_dir = Path(os.environ.get("OPENCLAW_STATE_DIR", "~/.openclaw")).expanduser() / "skills" / "_shared"
+sys.path.insert(0, str(shared_dir))
+from asr import asr, load_env_file  # noqa: E402
 
 
 def die(msg: str) -> None:
     print(f"[error] {msg}", file=sys.stderr)
     sys.exit(1)
-
-
-def load_env_file() -> None:
-    """从 ~/.openclaw/.env 加载凭据（若尚未在环境里）。openclaw runtime 下是 no-op。"""
-    env_path = os.path.expanduser("~/.openclaw/.env")
-    if not os.path.isfile(env_path):
-        return
-    for line in open(env_path, encoding="utf-8"):
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip())
 
 
 def try_tts_native(narration: Path, subtitle_arg: str | None, out_path: Path) -> bool:
@@ -119,7 +108,7 @@ def try_tts_native(narration: Path, subtitle_arg: str | None, out_path: Path) ->
 def fallback_asr(narration: Path, out_path: Path) -> None:
     """回退路径：调公共 ASR 路由（火山 → 百炼），拿 word 级真实时间戳。
 
-    统一走 _shared/asr.py，与 talking-head-cut / viral-chaser 共一份逻辑。
+    统一走公共 skills/_shared/asr.py，与 talking-head-cut / viral-chaser / awk-tts 共一份逻辑。
     原先本函数只拿 utterance 级，现统一拿 word 级（更精细对齐）。
     """
     print(f"[info] {narration.stem}.subtitle.json 缺失，调公共 ASR 路由转写 {narration.name} ...")

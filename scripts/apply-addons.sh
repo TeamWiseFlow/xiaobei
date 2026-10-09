@@ -315,8 +315,15 @@ GLOBAL_SKILL_COUNT=0
 if [ -d "$PROJECT_ROOT/skills" ]; then
   mkdir -p "$OPENCLAW_HOME/skills"
   for skill_dir in "$PROJECT_ROOT"/skills/*/; do
+    [ -d "$skill_dir" ] || continue
+    skill_name="$(basename "$skill_dir")"
+    # 公共共享库随技能一起部署，不作为可调用 skill 加入 allowlist。
+    if [ "$skill_name" = "_shared" ]; then
+      rm -rf "$OPENCLAW_HOME/skills/$skill_name"
+      ln -s "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
+      continue
+    fi
     if [ -f "${skill_dir}SKILL.md" ]; then
-      skill_name="$(basename "$skill_dir")"
       rm -rf "$OPENCLAW_HOME/skills/$skill_name"
       ln -s "${skill_dir%/}" "$OPENCLAW_HOME/skills/$skill_name"
       GLOBAL_SKILL_COUNT=$((GLOBAL_SKILL_COUNT + 1))
@@ -341,61 +348,9 @@ ensure_openclaw_bin_in_path
 # 命中 skill 自己的 node_modules。故对每个含 package.json 的 skill 单独
 # npm install --omit=dev，node_modules 落在仓内 skill 目录（.gitignore 已覆盖
 # node_modules/ 与 package-lock.json），不污染 ~/.openclaw。
-# 内容哈希守卫：仅当任一 skill 的 package.json 发生变化时才重装。
-SKILL_PKG_HASH_FILE="$OPENCLAW_HOME/.skill-pkg-hash"
-
-# 收集所有含 package.json + SKILL.md 的 skill 目录（skills/ + crews/*/skills/）
-skill_pkg_dirs=()
-while IFS= read -r line; do
-  [ -n "$line" ] && skill_pkg_dirs+=("$line")
-done < <(node -e "
-  const fs = require('fs');
-  const path = require('path');
-  const roots = ['$PROJECT_ROOT/skills', '$CREWS_DIR'];
-  const out = [];
-  function scan(dir) {
-    if (!fs.existsSync(dir)) return;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === 'node_modules' || entry.name === '.git') continue;
-      if (!entry.isDirectory()) continue;
-      const full = path.join(dir, entry.name);
-      if (fs.existsSync(path.join(full, 'SKILL.md')) && fs.existsSync(path.join(full, 'package.json'))) {
-        out.push(full);
-      }
-      scan(full);
-    }
-  }
-  for (const r of roots) scan(r);
-  console.log(out.join('\n'));
-" 2>/dev/null)
-
-# 哈希所有 skill package.json 内容，作为重装判据
-current_pkg_hash=""
-for d in "${skill_pkg_dirs[@]}"; do
-  current_pkg_hash="$current_pkg_hash$(_md5 < "$d/package.json")"
-done
-current_pkg_hash="$(printf '%s' "$current_pkg_hash" | _md5)"
-stored_pkg_hash="$(cat "$SKILL_PKG_HASH_FILE" 2>/dev/null || echo '')"
-
-if [ "$current_pkg_hash" != "$stored_pkg_hash" ]; then
-  if [ ${#skill_pkg_dirs[@]} -gt 0 ]; then
-    SKILL_PKG_TOTAL=${#skill_pkg_dirs[@]}
-    echo "📦 Installing per-skill Node.js dependencies (${SKILL_PKG_TOTAL} skills)..."
-    SKILL_PKG_IDX=0
-    for d in "${skill_pkg_dirs[@]}"; do
-      SKILL_PKG_IDX=$((SKILL_PKG_IDX + 1))
-      printf "  [%d/%d] %s\n" "$SKILL_PKG_IDX" "$SKILL_PKG_TOTAL" "${d#$PROJECT_ROOT/}"
-      (cd "$d" && npm install --omit=dev --no-audit --no-fund --loglevel=warn --registry=https://registry.npmmirror.com) \
-        || echo "  ⚠️  npm install failed in $d" >&2
-    done
-    echo "$current_pkg_hash" > "$SKILL_PKG_HASH_FILE"
-    echo "✅ Skill dependencies installed (hash: ${current_pkg_hash:0:8})"
-  else
-    echo "✅ No skill package.json found"
-  fi
-else
-  echo "✅ Skill dependencies up to date (hash: ${current_pkg_hash:0:8})"
-fi
+# 内容哈希 + 本地依赖存在性检查；任何安装失败都不写成功哈希。
+node "$PROJECT_ROOT/scripts/install-skill-deps.mjs" \
+  --root "$PROJECT_ROOT" --state-dir "$OPENCLAW_HOME"
 
 # ─── 安装全仓统一 Python 依赖（pip --user）──────────────────────
 # 扫描 skills/、addons/、crews/ 下所有 requirements.txt，合并去重。

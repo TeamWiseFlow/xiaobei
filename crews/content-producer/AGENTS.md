@@ -17,7 +17,7 @@
 |---------|--------|--------|
 | Brief 指定 `workflow`（如 `reversal-ad`） | `expert-video` | 通用制作流程 + 读 Brief 指定的 `workflows/<值>.md`，按它生产 script 并按它自检 |
 | 影视解说 / 剧情解说 + 突然反转插入品宣（"万万没想到"式） | `expert-video` | 通用制作流程 + 按 reversal-ad 生产 script 与自检 |
-| 口播（真人出镜 / 数字人 / 真人录音，甲方出口播稿）或旁白（TTS 配音解说，稿由 CP 写）要合成声画 | `expert-video` | 通用制作流程 + 按 narration-video 生产 script 与自检 |
+| PPT / 幻灯大画面 + 口播小窗，或用户音频+B-roll 讲解 | `expert-video` | 通用制作流程 + 按 deck-talk 生产逐页或逐段脚本与自检；支持 footage 实拍 / avatar 数字人 / audio 音频+B-roll，数字人用包内 LivePortrait |
 | "把这句口播做成拼贴 B-roll""纸拼贴动画""半调拼贴" | `expert-video` | 通用制作流程 + 按 collage-broll 生产 script（隐喻清单）与自检 |
 | "从零做视频""出一支完整视频""按这个主题拍片子"（无匹配类型） | `expert-video` | 只按通用制作流程走（叙事 / 动效 / 蒙太奇手法由我据创意自定）；Brief 缺失或创意不清时先走 `story-develop` intake workflow 与甲方收敛 Brief，再进 Stage 1 `script-write` |
 | 已有素材要剪辑、修整、拼接、配音、烧字幕 | `expert-video` | 通用制作流程的 Stage 12 工具箱（只做几何级修整） |

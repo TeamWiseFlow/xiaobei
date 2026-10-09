@@ -1,26 +1,5 @@
 #!/usr/bin/env python3
-"""阿里云百炼图像生成/编辑（awk-img-gen）— stdlib only.
-
-Provider 收敛（2026-09 拍板）：SiliconFlow（skill 旧名残留）→ 火山 Seedream（Phase 5）→ 阿里云百炼（现在）。
-
-双模式（resolve_mode）：
-  - 业务空间：WORKSPACE_ID 配置时优先 → https://{wsid}.cn-beijing.maas.aliyuncs.com/api/v1
-    key = MODELSTUDIO_API_KEY / DASHSCOPE_API_KEY
-    模型候选链：qwen-image-3.0-pro → qwen-image-3.0 → qwen-image-2.0-pro-2026-06-22
-  - agent plan：否则 → https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1
-    key = AWK_API_KEY
-    模型候选链：wan2.7-image-pro → wan2.7-image
-
-同步接口：POST {base}/services/aigc/multimodal-generation/generation
-请求体（DashScope messages 风格，单轮，input_audio 家族同款端点）：
-  {model, input:{messages:[{role:"user",
-     content:[{image:<url|data-uri>}×1-3（编辑模式）, {text:<prompt>}]}]},
-   parameters:{size?, seed?, watermark, prompt_extend}}
-响应：output.choices[0].message.content[*].image 为图片 URL（24h 有效），下载落盘。
-
-参考：docs.bailian.console.aliyun.com「千问-图像生成与编辑 3.0 / qwen-image 2.0」
-与 modelstudioai/cli packages/core/src/client/image-routes.ts（sync-multimodal 家族）。
-"""
+"""百炼图像生成与编辑；支持业务空间和 Agent Plan，模型不可用时在当前模式内回退。"""
 import argparse
 import base64
 import json
@@ -41,8 +20,8 @@ GEN_PATH = "/services/aigc/multimodal-generation/generation"
 
 # 业务空间模型候选链（主力 → fallback，用户 --model 显式指定时关闭 fallback）
 WS_MODEL_CHAIN = ["qwen-image-3.0-pro", "qwen-image-3.0", "qwen-image-2.0-pro-2026-06-22"]
-# agent plan 模型候选链
-PLAN_MODEL_CHAIN = ["wan2.7-image-pro", "wan2.7-image"]
+# Agent Plan 默认 Qwen Image 3.0 Pro，模型不可用时回退万相
+PLAN_MODEL_CHAIN = ["qwen-image-3.0-pro", "wan2.7-image-pro", "wan2.7-image"]
 
 # 触发候选链 fallback 的 HTTP 状态码（模型未开通 / 未找到 / 无权限）
 MODEL_UNAVAILABLE_CODES = {403, 404}
@@ -76,27 +55,28 @@ IMAGE_MIME_BY_EXT = {
 
 # ── 模式解析 ─────────────────────────────────────────────────────────────────
 
-def resolve_mode() -> tuple[str, str, list[str], str]:
-    """解析百炼端点模式。返回 (base, api_key, model_chain, mode)。
-
-    优先业务空间（WORKSPACE_ID + MODELSTUDIO_API_KEY/DASHSCOPE_API_KEY）；
-    WORKSPACE_ID 配了但 key 缺失时打 warning 落到 agent plan；
-    否则 agent plan（AWK_API_KEY）。都不可用时报错退出。
-    """
-    wsid = (os.environ.get("WORKSPACE_ID") or "").strip()
-    if wsid:
+def resolve_mode(platform: str = "auto") -> tuple[str, str, list[str], str]:
+    """返回 (base, key, chain, mode)。auto 优先业务空间；显式模式只读对应凭据。"""
+    if platform in ("auto", "dashscope"):
+        wsid = (os.environ.get("WORKSPACE_ID") or "").strip()
         key = (
-            os.environ.get("MODELSTUDIO_API_KEY")
-            or os.environ.get("DASHSCOPE_API_KEY")
-            or ""
-        ).strip()
-        if key:
+            (os.environ.get("MODELSTUDIO_API_KEY") or "").strip()
+            or (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
+        )
+        if wsid and key:
             return WS_BASE_TEMPLATE.format(wsid=wsid), key, WS_MODEL_CHAIN, "workspace"
-        print("[warn] WORKSPACE_ID 已配置但 MODELSTUDIO_API_KEY/DASHSCOPE_API_KEY 缺失，尝试 agent plan", file=sys.stderr)
+        if platform == "dashscope":
+            print("[error] --platform dashscope 需要 WORKSPACE_ID + MODELSTUDIO_API_KEY（或 DASHSCOPE_API_KEY），不会切换到 Agent Plan", file=sys.stderr)
+            sys.exit(1)
+        if wsid:
+            print("[warn] WORKSPACE_ID 已配置但 MODELSTUDIO_API_KEY/DASHSCOPE_API_KEY 缺失，尝试 agent plan", file=sys.stderr)
     key = (os.environ.get("AWK_API_KEY") or "").strip()
     if key:
         return AGENT_PLAN_BASE, key, PLAN_MODEL_CHAIN, "agent-plan"
-    print("[error] 百炼生图凭据未配置：", file=sys.stderr)
+    if platform == "plan":
+        print("[error] --platform plan 需要 AWK_API_KEY（百炼 Agent Plan key），不会切换到业务空间", file=sys.stderr)
+        sys.exit(1)
+    print("[error] 百炼生图凭据未配置：需要以下任一组凭据", file=sys.stderr)
     print("  - 业务空间：WORKSPACE_ID + MODELSTUDIO_API_KEY（或 DASHSCOPE_API_KEY）", file=sys.stderr)
     print("  - agent plan：AWK_API_KEY（token-plan 端点）", file=sys.stderr)
     sys.exit(1)
@@ -145,7 +125,7 @@ def _print_size_error(size_str: str, reason: str) -> None:
 # ── 图像引用解析 ──────────────────────────────────────────────────────────────
 
 def resolve_image_ref(value: str) -> str:
-    """把 --image 入参解析为百炼可接受的引用：URL / data URI 原样，本地文件转 data URI。"""
+    """把 --image 入参解析为生成接口可接受的引用：URL / data URI 原样，本地文件转 data URI。"""
     if value.startswith(("http://", "https://", "data:")):
         return value
     path = Path(value)
@@ -197,7 +177,7 @@ def build_payload(args: argparse.Namespace, model: str) -> dict:
 # ── API 调用 ────────────────────────────────────────────────────────────────
 
 class ImgGenHTTPError(Exception):
-    """百炼端 HTTP 错误（携带状态码与响应体，供 main 做候选链 fallback 决策）。"""
+    """生成接口 HTTP 错误（携带状态码与响应体，供 main 做候选链 fallback 决策）。"""
 
     def __init__(self, code: int, body: str) -> None:
         super().__init__(f"HTTP {code}: {body}")
@@ -220,7 +200,7 @@ def is_model_unavailable(exc: ImgGenHTTPError) -> bool:
 
 
 def api_request(url: str, payload: dict, api_key: str) -> dict:
-    """调百炼 multimodal-generation；返回解析后的 JSON。失败抛 ImgGenHTTPError。"""
+    """调用生成接口；返回解析后的 JSON。失败抛 ImgGenHTTPError。"""
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -261,7 +241,8 @@ def download_image(url: str, dest_path: Path) -> None:
     """下载图片到本地。链接 24h 内有效（按百炼文档）。"""
     req = urllib.request.Request(url, headers={"User-Agent": "wiseflow-awk-img-gen/3.0"})
     with urllib.request.urlopen(req, timeout=120) as resp:
-        dest_path.write_bytes(resp.read())
+        data = resp.read()
+    dest_path.write_bytes(data)
 
 
 def _print_enable_guide(mode: str, failed_model: str) -> None:
@@ -284,8 +265,9 @@ def _print_enable_guide(mode: str, failed_model: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="阿里云百炼图像生成/编辑（业务空间 qwen-image / agent plan wan2.7-image）"
+        description="百炼图像生成与编辑（DashScope 业务空间 / Agent Plan）"
     )
+    parser.add_argument("--platform", choices=["auto", "dashscope", "plan"], default="auto", help="auto 优先百炼业务空间，再 Agent Plan；dashscope / plan 固定使用对应端点和凭据")
     parser.add_argument("--prompt", required=True, help="图像描述（要渲染的文字直接写完整句子）")
     parser.add_argument(
         "--model", default=None,
@@ -293,7 +275,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--image-size", default=None, dest="image_size",
-        help="尺寸：'WxH'（如 2048x2048，总像素 512²~2048²）或 'auto'；缺省 2048x2048",
+        help="尺寸 WxH 或 auto，文生图默认 2048x2048；编辑模式缺省跟随输入图",
     )
     parser.add_argument("--seed", type=int, default=None, help="随机种子 [0, 2147483647]")
     parser.add_argument(
@@ -311,7 +293,9 @@ def main() -> None:
     parser.add_argument("--out-dir", default=None, dest="out_dir", help="输出目录")
     args = parser.parse_args()
 
-    base, api_key, chain, mode = resolve_mode()
+    if (args.image2 or args.image3) and not args.image:
+        parser.error("--image2 / --image3 必须与 --image 一起使用")
+    base, api_key, chain, mode = resolve_mode(args.platform)
 
     # watermark 字段百炼期望 bool（JSON），从字符串转
     args.watermark = args.watermark == "true"
@@ -325,11 +309,11 @@ def main() -> None:
     is_edit_mode = bool(args.image)
     gen_mode = "image-edit" if is_edit_mode else "text-to-image"
 
-    url = f"{base}{GEN_PATH}"
+    url = base + GEN_PATH
     result: dict | None = None
     for idx, cand_model in enumerate(candidates):
         payload = build_payload(args, cand_model)
-        size = (payload.get("parameters") or {}).get("size", "-")
+        size = payload["parameters"].get("size", "-")
         print(f"[info] Mode={gen_mode} provider={mode} model={cand_model} size={size}", file=sys.stderr)
         try:
             result = api_request(url, payload, api_key)
@@ -361,7 +345,7 @@ def main() -> None:
         download_image(image_url, dest)
         prompts_map[str(i)] = {
             "prompt": args.prompt,
-            "model": result.get("model", candidates[0] if not args.model else args.model),
+            "model": result.get("model") or cand_model,
             "provider_mode": mode,
             "url": image_url,
             "file": str(dest),

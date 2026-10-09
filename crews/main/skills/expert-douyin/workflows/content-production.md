@@ -2,6 +2,8 @@
 
 从选题到发布的完整内容生产。用户说"帮我做条抖音视频""发个抖音""这条照着做一条""这个选题我们也做一条"走这个。
 
+用户指定群聊误发式或问答式连续讨论流卡片时，切到 `native-ui-cards.md` 完成抖音图文制作、发布与记录；本流程处理其他图文和视频。
+
 **视频作品分工硬边界**：main agent 负责选题策划、按 DNA 出 **Brief**、拟定标题与简介、准备素材（用户素材预处理 / `ui-demo` 录屏 / 从 `campaign_assets/` 挑选，绝对路径写进 Brief）、监督并推动作为 subagent 的 `content-producer`、成片后的发布与运营；也直接做图文内容与**已有视频素材的简单加工**（`video-edit` / `talking-head-cut`）。视频全案的成片制作一律委托 `content-producer`。本 workflow 的价值在于：用 DNA 锁定选题、包装、内容创意、视频形态与制作规格，编排输入分支与确认节点，衔接制作并把关发布记录。
 
 ## Step 0 - 入口判断
@@ -62,16 +64,16 @@ DNA template 是 main agent 的生产输入模板：
 - **视频 DNA 的 template = Brief 正文模板 +（可选）口播文案模板**，覆盖选题与观看理由、标题与封面、内容创意、业务植入与 CTA、视频形态与制作指向、制作规格、口播文案（如果是口播类视频创作），它不规定创作细节：逐句台词、镜头表、转场或编码参数，这些归 Content Producer决定；
 - **图文 DNA 的 template = 图文写作模板**。
 
-### 2. 读取业务知识
+### 2. 核实业务事实与边界
 
-内容必须为 Workspace 根的 `business_knowledge.md` 服务。做前提取：
+读取 Workspace 根的 `business_knowledge.md`，按本次内容需要核实：
 
 - 产品 / 服务概括和核心差异
 - 目标观众与具体痛点
 - 转化目标或下一步动作
 - 红线、合规限制和品牌语气
 
-内容选题、案例、承诺、互动引导和商业表述必须与这些信息一致。关键信息缺失时先问用户，不虚构。
+选题与内容方向按对应 DNA template 确定。涉及产品、服务、案例、承诺或商业表述时，用业务知识核实事实与边界；关键信息缺失时先问用户，不虚构。
 
 ### 3. 采集生产要求
 
@@ -80,13 +82,13 @@ DNA template 是 main agent 的生产输入模板：
 | 项目 | 规则 |
 | --- | --- |
 | 作品形态与制作路线 | 图文或视频（直接组装 / 轻剪辑、委托 CP），判断依据见 Step 0 |
-| workflow | 视频全案已确定形态时写 CP `expert-video` 支持的 workflow（reversal-ad / narration-video / collage-broll）；未确定则省略（省略 = CP 按其通用制作流程做） |
+| workflow | 视频全案已确定形态时写 CP `expert-video` 支持的 workflow（reversal-ad / collage-broll / deck-talk）；未确定则省略（省略 = CP 按其通用制作流程做） |
 | 主题 / 方向 | 用户给了明确主题时不得另起炉灶，仅按 DNA template 细化选题和钩子 |
 | 素材 | 用户提供的视频片段、图片、录音、文案必须优先使用 |
-| 目标观众 | 未指定时按 `business_knowledge.md` 和 DNA 受众关系推导 |
+| 目标观众 | 未指定时按 DNA 受众关系推导；涉及业务事实时再核对 `business_knowledge.md` |
 | 视频时长 | 仅视频：未指定时按 DNA template 的时长带；再无要求默认 30-90 秒 |
 | 图文图组 | 仅图文：确定图片数量、图序、逐页信息与首图要求，按图文 template 制作 |
-| 封面 | 默认生成；用户自带封面时优先使用 |
+| 封面 | 视频交付 3:4 竖封面和 4:3 横封面，用户自带封面优先；关键文字避开边缘 15%。比例不符允许等比补底，禁止居中裁切裁掉文字。发布传 `--cover-vertical` / `--cover-horizontal`。图文封面按首图要求制作 |
 | 简介与话题标签 | 用户指定时逐字使用；未指定时按 DNA template 标题与文案维度推导 |
 
 优先级固定为：
@@ -94,8 +96,8 @@ DNA template 是 main agent 的生产输入模板：
 ```text
 用户明确交付要求 + 业务事实 / 红线
 > 用户提供的素材
-> business_knowledge.md
 > DNA template 的风格规则
+> business_knowledge.md 中的相关事实
 > Agent 的一般内容判断
 ```
 
@@ -106,6 +108,7 @@ DNA 约束的是选题与观看理由、标题与封面写法、内容创意原�
 先建立作品目录 `douyin/outputs/<work-name>/`（work-name 用主题的短 slug；选题尚未确定时可先用暂代名，选题确定后随之定名），下设 `materials/` 子目录，获取到的素材统一放入 `materials/`。
 
 1. 按类型获取输入：
+   - 抖音参考图文链接 -> `douyin-hunter fetch --url <链接> --output-dir douyin/outputs/<work-name>/references --download-media` 保存正文、有序图片与真实指标；本 workflow 回读正文、封面和逐图结构完成参考分析，不调用 viral-chaser。
    - 抖音参考视频链接 -> self-spawn subagent 走 `viral-chaser` 拆解，转录、关键帧、时长、互动线索落入 `douyin/outputs/<work-name>/references/`（仿照制作时它就是参考素材）。
    - 本地视频 / 图片 / 音频素材 -> 复制进 `materials/`。
    - 用户文字输入（想法、脚本、要点）-> 保存为 `.md` 放入 `materials/`。
@@ -139,7 +142,7 @@ DNA 约束的是选题与观看理由、标题与封面写法、内容创意原�
 结合用户想法、选题调研结论与 DNA template 的选题维度，给出 **3 个选题方向**，分别阐述理由，让用户挑一个。推荐理由必须同时覆盖：
 
 1. 使用了哪些用户素材。
-2. 服务哪个业务目标。
+2. 对应 DNA 的哪些内容目标；如涉及业务目标，说明对应关系。
 3. 符合 DNA template 的哪些选题、钩子与受众特征。
 4. 选题调研发现：相关主题在所选平台的讨论热度或用户痛点。
 
@@ -151,7 +154,7 @@ DNA 约束的是选题与观看理由、标题与封面写法、内容创意原�
 - **不相符** -> 明确指出差异，跟用户确认：综合调整以贴合 DNA，还是就用参考的选题。
 - 用户明确换了主题（"照着这条的结构，主题换成 XX"）-> 用用户给的新主题，参考视频只提供结构与钩子参考。
 
-选题必须优先消耗用户素材，并服务于 `business_knowledge.md` 中的产品服务或转化目标。
+选题范围与角度以对应 DNA template 为准，优先使用相关的用户素材；业务知识仅核实选题涉及的事实、承诺与边界。
 
 ## 【确认】选题
 
@@ -167,9 +170,9 @@ DNA 约束的是选题与观看理由、标题与封面写法、内容创意原�
 - 有参考视频或用户文案时，必须参考其标题内容（如有），但不得照抄。
 - 用户已指定标题时，候选必须在该约束内生成，不得偷换方向。
 - 标题限制：视频 ≤30 字；图文 ≤20 字、描述（含话题）≤1000 字。
-- 简介提及产品或业务，但不放明显引流信息；禁止二维码、联系方式；可引导用户主动搜索或点头像看主页。
+- 简介按 DNA 撰写；涉及产品或业务时核实事实，不放明显引流信息；禁止二维码、联系方式。
 - 话题标签按 DNA template 的策略组织：主标签 + 场景词 + 痛点词，不堆砌。
-- 业务植入与 CTA 按 DNA 的 `biz-implant` / `interaction-cta` 落位：植入位置、载体与衔接句写清楚，一条只放一个主行动，不堆叠 CTA。
+- DNA 要求业务植入或 CTA 时，按 `biz-implant` / `interaction-cta` 落位：植入位置、载体与衔接句写清楚，一条只放一个主行动，不堆叠 CTA。
 
 ## 【确认】标题与文案
 
@@ -181,7 +184,7 @@ DNA 约束的是选题与观看理由、标题与封面写法、内容创意原�
 
 ### Step 5A - 图文制作
 
-按图文 DNA template 编排封面、逐页内容、阅读顺序、正文与 CTA。已有跨平台图组优先复用，检查事实、裁切、平台文案与授权；缺图用 `awk-img-gen`，复杂设计交 content-producer。交付有序图片清单（1–35 张，单张 ≤50MB，jpg/jpeg/png/webp/bmp/tif，建议 3:4 或 4:3）及标题、描述。配乐只确定风格意图；上传后根据抖音实际推荐候选选择歌曲。
+按图文 DNA template 编排封面、逐页内容、阅读顺序和正文；DNA 要求 CTA 时再加入。已有跨平台图组优先复用，检查事实、裁切、平台文案与授权；缺图用 `awk-img-gen`，复杂设计交 content-producer。交付有序图片清单（1–35 张，单张 ≤50MB，jpg/jpeg/png/webp/bmp/tif，建议 3:4 或 4:3）及标题、描述。配乐只确定风格意图；上传后根据抖音实际推荐候选选择歌曲。
 
 #### 【确认】图组与正文
 
@@ -211,17 +214,18 @@ DNA 约束的是选题与观看理由、标题与封面写法、内容创意原�
 
 - 视频名 / slug：
 - platform：douyin
-- workflow：reversal-ad / narration-video / collage-broll（视频形态未确定时省略本字段；省略 = CP 按其通用制作流程做，叙事 / 动效 / 蒙太奇手法由 CP 据创意自定）
+- workflow：reversal-ad / collage-broll / deck-talk（视频形态未确定时省略本字段；省略 = CP 按其通用制作流程做，叙事 / 动效 / 蒙太奇手法由 CP 据创意自定）
+- deck-talk 专属（仅该类型填写）：在 Brief 中逐项写 `- presenter_source：footage/avatar/audio`（兼容 none）、`- visual_source：slides/broll/mixed`、`- audio_origin：recorded/cloned/designed/stock-tts`、`- presenter：绝对路径`（需小窗时）、`- audio：绝对路径`（avatar/audio 模式）。实拍先用 talking-head-cut 剪好再交 CP；数字人交肖像+音频或音色档案；纯音频模式交音频，CP 配 B-roll。记录授权。
 - 选题与观看理由：
 - 核心传达：
 - 内容创意：创意原型 + 展开逻辑 + 记忆点（+ 反转设计，如为反转植入类）
 - 业务植入与 CTA：植入位置与方式原型 + 内容与业务的衔接句要求 + CTA 主目标与句式（只写要求，不写 DNA 规则原文）
 - 标题与简介：发布标题、简介文案、话题标签（main 定稿）
-- 封面要求：封面主文案 + 视觉方向
+- 封面要求：封面主文案 + 视觉方向；3:4 竖封面、4:3 横封面，关键文字避开边缘 15%；比例不符等比补底，禁止裁掉文字
 - 制作规格：横屏 / 竖屏、时长带、画面风格、配音音色与声音形态、BGM 与音效、字幕
 - 口播文案：`voiceover.md` 绝对路径 / 真人口播录音绝对路径 / 不适用（口播 = 真人出镜、数字人、真人录音；剪辑配解说的**旁白归 CP 写**，写「不适用」）
 - 素材清单：逐条**绝对路径** + 来源 + 授权（无素材时写「无，由 CP 按 Brief 取材」）
-- 交付物与验收：`video.mp4` + `cover.jpg` + `final-deliver.md`，回报三者绝对路径；验收标准
+- 交付物与验收：`video.mp4` + `cover-vertical.jpg`（3:4）+ `cover-horizontal.jpg`（4:3）+ `final-deliver.md`，回报各绝对路径；验收标准
 - 闸门：GATE A / GATE B 批准人（用户或 main 代理批准 + 批准范围）
 - 禁止事项：事实与承诺边界、合规红线、禁用方向
 ```
@@ -237,7 +241,7 @@ Brief 硬性规则：
 3. 参考模式下，把选题与创意结论写进 Brief 的「内容创意」段即可；`viral-chaser` 拆解报告是 main 的采样材料，**不作为 Brief 附件交给 CP**。
 4. spawn `content-producer` 委托制作：只交 Brief 一份——素材、口播文案 / 录音均已以绝对路径写在 Brief 内；不指定 CP 的工作区与制作方案。
 5. Brief 变更时更新版本并推送变更要点；已开工中间产物按新版取舍，弃用部分记入交付说明。
-6. CP 交付后，按其回报的绝对路径把成片与封面取回 `douyin/outputs/<work-name>/`（`video.mp4` / `cover.jpg`），并把交付说明要点记入作品目录。
+6. CP 交付后，按其回报的绝对路径把成片与双封面取回 `douyin/outputs/<work-name>/`（`video.mp4` / `cover-vertical.jpg` / `cover-horizontal.jpg`），并把交付说明要点记入作品目录。
 
 #### 【确认】成片与封面（仅视频）
 
@@ -245,36 +249,20 @@ main 自做的素材组装 / 轻剪辑先通过 `video-review`；CP 交付按其
 
 ## Step 6 - 发布
 
-按成品形态选择工具，先读对应工具说明及其引用的共用登录流程；打开页面并确认登录态后再发布。视频示例：
+先读 `douyin-publish` 工具说明。执行 `douyin-publish check` 验证 Camoufox 持久化创作者会话；未登录用 `douyin-publish login` 打开有头窗口完成登录。不调用 douyin-login 或 login-manager 准备发布会话。
+
+视频入口显式传入已经核对的横竖双封面，脚本等比补底、上传并保存，校验视频就绪、标题读回、双封面与 AIGC 声明后提交。原声图文必须明确 `--original-sound`，需要页面配乐时走图文分步工具。用户已要求发布且成品确认后执行：
 
 ```bash
-# 1. open 上传页 + agent 判定登录态（必做，不可跳过）
-douyin-video-publish open-page
-# 用页面元素（用户头像/用户名）判定登录态；未登录走 login-manager --platform douyin 有头重登
-
-# 2. 发布
-douyin-video-publish run --video douyin/outputs/<work-name>/<成片文件> --title "标题" --caption "简介 #话题1 #话题2"
+douyin-publish video --video /绝对路径/成片.mp4 --title "标题" --caption "简介 #话题" --cover-vertical /绝对路径/cover-vertical.jpg --cover-horizontal /绝对路径/cover-horizontal.jpg --confirm
+douyin-publish note --images /绝对路径/cover.png /绝对路径/page2.png --title "图文标题" --caption "正文 #话题" --original-sound --confirm
 ```
 
-图文示例：
+视频保留创作者页面 AIGC 声明流程；图文默认声明 AI，纯实拍图文按实际来源传 `--declaration none`。配乐调用 `douyin-note-publish music-list/music-select` 核实页面候选，不传 API 的 `--music-id`，不编造音乐信息。
 
-```bash
-douyin-note-publish open-page
-# 判定登录态后上传；音乐候选由上传后的页面提供
-douyin-note-publish upload --images /path/cover.png /path/page2.png
-douyin-note-publish music-list
-# 根据作品内容选择实际候选，复制其 choice
-douyin-note-publish music-select --choice "实际候选choice"
-douyin-note-publish fill --title "图文标题" --caption "描述 #话题"
-douyin-note-publish publish
-douyin-note-publish get-note-link --title "图文标题"
-```
+只有返回确认的作品 ID 与 URL 才记录成功。提交后超时、exit 3 或取链失败时先核实管理页，视频用 `douyin-video-publish get-link --session douyin`，图文用 `douyin-note-publish get-note-link --title "完整标题"`；禁止自动重发。单账号发布与取数串行，每 24 小时视频和图文合计不超过 5 条；风控后至少 30 分钟内不重试。
 
-- 发布前必做 `open-page` + 登录态判定，否则可能因 cookie 未预热而不生效。
-- AIGC 生成的内容按平台规则标注：`fill` 已内置自主声明"内容由AI生成"，无需额外操作；纯实拍素材不声明。
-- 登录异常按工具引用的共用登录流程处置。已点击发布后遇 exit 2 / exit 3 / 超时，先核实管理页并补取链接，不直接重跑 `run` 或 `publish`。
-- 图文和视频合计同一时间只能有一个发布任务在跑（浏览器 session 竞态），多平台分发时抖音这条必须串行。
-- 限频：单抖音号每 24h ≤ 5 条；触发风控立即降级，30 分钟内不重试。
+视频 exit 4 / `awaiting_verification` 表示等待用户短信验证，保留当前页面；按视频工具说明用 `verify-send` 与 `verify-code --code-file` 续接，或在窗口验证后 `resume`。期间不重跑发布，不调用 check/login 关闭或重开页面。视频取链仅核查保存的本次提交，不把旧作品记为本次成功。
 
 ## Step 7 - 记录
 
@@ -287,4 +275,4 @@ douyin-note-publish get-note-link --title "图文标题"
 ```
 
 2. 调 `published-track record`：`--platform douyin`、`--source-folder douyin/outputs/<work-name>/`、`--account <发布所用账号 alias>`、`--publish-url <对应发布工具返回的 url>`；图文 `--content-type post`、视频 `--content-type video`（`dna_id` 自动从 `dna-meta.json` 读取）。
-3. exit 3 仅补取链接或人工核实，禁止自动重新发布。发布流程到此结束；互动数据由 heartbeat 的 `published-track query --platform douyin --limit 30` + 逐条 `fetch-metrics --platform douyin --id <id>` 统一抓取（自动识别 note/video），复盘走 `review.md`。
+3. exit 3 仅补取链接或人工核实，禁止自动重新发布。发布流程到此结束；互动数据由 `douyin-engagement daily` 抓取并更新，复盘走 `review.md`。

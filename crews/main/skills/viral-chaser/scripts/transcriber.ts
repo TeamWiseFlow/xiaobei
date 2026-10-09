@@ -1,19 +1,19 @@
 #!/usr/bin/env -S node --experimental-strip-types
 /**
- * transcriber.ts — ASR transcription via 公共 ASR 路由（_shared/asr.py）
+ * transcriber.ts — ASR transcription via 公共 ASR 路由（skills/_shared/asr.py）
  *
- * 供应商优先级（2026-09 拍板）：
+ * 供应商优先：
  *   1. 火山录音文件极速版（volc.bigasr.auc_turbo，VOLC_ASR_* 凭据）
- *   2. 百炼业务空间（qwen-audio-3.0-asr-flash，WORKSPACE_ID + MODELSTUDIO_API_KEY/DASHSCOPE_API_KEY）
+ *   2. 百炼业务空间（qwen-audio-3.1-asr-flash → qwen-audio-3.0-asr-flash，WORKSPACE_ID + MODELSTUDIO_API_KEY/DASHSCOPE_API_KEY）
  *   3. 百炼 agent plan（qwen-audio-3.0-asr-flash，AWK_API_KEY，token-plan 端点）
- * 某家失败自动落下一家；协议细节见 _shared/volc_asr.py 与 _shared/bailian_asr.py。
+ * 某家失败自动落下一家；协议细节见公共 skills/_shared/volc_asr.py 与 bailian_asr.py。
  *
  * 选型说明：viral-chaser 的输入是本地 audio.wav（16kHz mono，≤10min）。
  * 两家都支持 base64 直传本地文件并返回 word 级时间戳（百炼超 10MB 自动
  * ffmpeg 压成 32kbps mp3 再传），无需对象存储/公网 URL。百炼把整段并成
  * 单 sentence，_shared/bailian_asr.py 按词级标点切回 utterances，与火山同构。
  *
- * 实现说明：沿用 xhs.ts 同一模式（python3 -c 内联脚本调 requests），避免
+ * 实现说明：调用公共 skills/_shared/asr.py，由公共路由处理供应商请求，避免
  * Node fetch/FormData 在部分环境的兼容异常。
  *
  * 注意：保留 synthesizeSegments 作为兜底——正常情况下路由会返回真实
@@ -25,6 +25,8 @@ import { existsSync, statSync } from "fs"
 import { execFile } from "child_process"
 import { promisify } from "util"
 import { fileURLToPath } from "url"
+import { join } from "node:path"
+import { homedir } from "node:os"
 
 const execFileAsync = promisify(execFile)
 
@@ -88,23 +90,11 @@ function synthesizeSegments(text: string, durationSeconds: number): TranscriptSe
   return segs
 }
 
-// 调公共 _shared/asr.py 路由（与 talking-head-cut / video-producer narration-align 共一份逻辑）。
-// 范式：python3 -c 加载 _shared 到 sys.path，import asr，调它拿 {ok, text, utterances, words}，
-// 输出 JSON 到 stdout 供 Node 解析。_shared 路径按本剧本位置算（crews/main/skills/_shared）。
-const SHARED_DIR = fileURLToPath(new URL("../../_shared/", import.meta.url))
-const PYTHON_CALL = `
-import json, os, sys
-sys.path.insert(0, ${JSON.stringify(SHARED_DIR)})
-from asr import asr, load_env_file
-load_env_file()
-result = asr(sys.argv[1])
-# 降级到 utterance 级供旧 TranscriptResult 结构兼容（viral-chaser 只用 utterance 级）
-segs = []
-if result.get("ok"):
-    for u in (result.get("utterances") or []):
-        segs.append({"start": round(u["start"], 3), "end": round(u["end"], 3), "text": u["text"]})
-print(json.dumps({"ok": result.get("ok", False), "text": result.get("text", ""), "segments": segs, "error": result.get("error")}, ensure_ascii=False))
-`
+// 共用公共 ASR 脚本的 JSON CLI；拷贝部署时从 managed skills 读取。
+const SOURCE_ASR_SCRIPT = fileURLToPath(new URL("../../../../../skills/_shared/asr.py", import.meta.url))
+const ASR_SCRIPT = existsSync(SOURCE_ASR_SCRIPT) ? SOURCE_ASR_SCRIPT : join(
+  process.env.OPENCLAW_STATE_DIR || join(homedir(), ".openclaw"), "skills", "_shared", "asr.py",
+)
 
 export async function transcribeAudio(audioPath: string, durationSeconds = 0): Promise<TranscriptResult> {
   if (!existsSync(audioPath)) {
@@ -120,11 +110,11 @@ export async function transcribeAudio(audioPath: string, durationSeconds = 0): P
 
   const { stdout } = await execFileAsync(
     "python3",
-    ["-c", PYTHON_CALL, audioPath],
+    [ASR_SCRIPT, audioPath],
     { timeout: 320_000, maxBuffer: 50 * 1024 * 1024 },
   )
 
-  let data: { ok: boolean; text?: string; segments?: TranscriptSegment[]; error?: string }
+  let data: { ok: boolean; text?: string; utterances?: TranscriptSegment[]; error?: string }
   try {
     data = JSON.parse(stdout.trim())
   } catch (e) {
@@ -135,13 +125,13 @@ export async function transcribeAudio(audioPath: string, durationSeconds = 0): P
     throw new Error(data.error || "ASR 未知错误")
   }
 
-  const apiSegments = (data.segments ?? []).map(s => ({
-    start: s.start,
-    end: s.end,
+  const apiSegments = (data.utterances ?? []).map(s => ({
+    start: Math.round(s.start * 1000) / 1000,
+    end: Math.round(s.end * 1000) / 1000,
     text: s.text,
   }))
 
-  // 火山返回了真实 utterances → 直接用
+  // ASR 返回真实 utterances 时直接使用。
   if (apiSegments.length) {
     return { text: data.text ?? "", segments: apiSegments, estimated: false }
   }
@@ -150,7 +140,7 @@ export async function transcribeAudio(audioPath: string, durationSeconds = 0): P
   const estimatedSegments = synthesizeSegments(data.text ?? "", durationSeconds)
   if (estimatedSegments.length) {
     process.stderr.write(
-      `[transcriber] 火山未返回 utterances，按音频时长估算 ${estimatedSegments.length} 个分段\n`,
+      `[transcriber] ASR 未返回 utterances，按音频时长估算 ${estimatedSegments.length} 个分段\n`,
     )
   }
   return {
