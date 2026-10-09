@@ -42,14 +42,32 @@ function main(argv) {
   const skills = dirs.map(dir => {
     const raw = fs.readFileSync(path.join(dir, "package.json"));
     digest.update(path.relative(root, dir).split(path.sep).join("/") + "\0").update(raw).update("\0");
-    return { dir, dependencies: Object.keys(JSON.parse(raw).dependencies || {}) };
+    const pkg = JSON.parse(raw);
+    const installer = pkg.xiaobei?.dependencyInstaller;
+    let script;
+    if (installer) {
+      if (typeof installer.script !== "string" || !Array.isArray(installer.inputs)) throw new Error(`Invalid dependencyInstaller: ${dir}`);
+      for (const input of [installer.script, ...installer.inputs]) {
+        if (typeof input !== "string" || path.isAbsolute(input)) throw new Error(`Invalid installer input: ${dir}`);
+        const target = path.resolve(dir, input);
+        if (!target.startsWith(dir + path.sep)) throw new Error(`Installer input outside skill: ${target}`);
+        digest.update(input + "\0").update(fs.readFileSync(target)).update("\0");
+      }
+      script = path.resolve(dir, installer.script);
+    }
+    return { dir, script, dependencies: Object.keys(pkg.dependencies || {}) };
   });
   const currentHash = digest.digest("hex");
   const stamp = path.join(path.resolve(opts["state-dir"]), ".skill-pkg-hash");
   const storedHash = fs.existsSync(stamp) ? fs.readFileSync(stamp, "utf8").trim() : "";
-  const missing = skill => !fs.existsSync(path.join(skill.dir, "node_modules")) || skill.dependencies.some(
-    name => !fs.existsSync(path.join(skill.dir, "node_modules", name, "package.json"))
-  );
+  const missing = skill => {
+    if (!fs.existsSync(path.join(skill.dir, "node_modules")) || skill.dependencies.some(
+      name => !fs.existsSync(path.join(skill.dir, "node_modules", name, "package.json"))
+    )) return true;
+    if (!skill.script) return false;
+    const result = spawnSync(process.execPath, [skill.script, "--check"], { cwd: skill.dir, stdio: "ignore" });
+    return !!result.error || result.status !== 0;
+  };
   const pending = skills.filter(skill => currentHash !== storedHash || missing(skill));
   if (!pending.length) {
     console.log(`Skill dependencies up to date (hash: ${currentHash.slice(0, 8)})`);
@@ -61,7 +79,9 @@ function main(argv) {
     console.log(`Installing skill dependencies: ${path.relative(root, skill.dir)}`);
     const args = ["install", "--omit=dev", "--no-audit", "--no-fund", "--loglevel=warn", `--registry=${opts.registry}`];
     const npmCli = opts["npm-cli"];
-    const result = spawnSync(npmCli ? process.execPath : "npm", npmCli ? [path.resolve(npmCli), ...args] : args, {
+    const command = skill.script ? process.execPath : npmCli ? process.execPath : "npm";
+    const commandArgs = skill.script ? [skill.script, "--registry", opts.registry, ...(npmCli ? ["--npm-cli", path.resolve(npmCli)] : [])] : npmCli ? [path.resolve(npmCli), ...args] : args;
+    const result = spawnSync(command, commandArgs, {
       cwd: skill.dir,
       stdio: "inherit",
     });

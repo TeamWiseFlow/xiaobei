@@ -1,12 +1,12 @@
 # Live Research（竞争对手直播调研）
 
-适用：用户要求研究指定竞争对手、重点客户或行业主播的抖音/小红书公开直播，了解商品与促销、销售话术、观众需求和互动方式。多信源竞对监控通过 [Competitor Watch](competitor-watch.md) 调用本流程，并把直播发现纳入对象报告。
+适用：用户要求研究指定竞争对手、重点客户或行业主播的抖音/小红书/TikTok/快手公开直播，了解商品与促销、销售话术、观众需求和互动方式。多信源竞对监控通过 [Competitor Watch](competitor-watch.md) 调用本流程，并把直播发现纳入对象报告。
 
 ## 1. 确定调研范围
 
 明确目标对象、平台与直播间、调研问题、观察时长和交付形式。可比较多个对象，但分别记录其观察窗口与样本范围；只在用户要求周期监控时按 `scheduling.md` 配置任务。
 
-目标可以是他人的公开直播间，无需使用主播账号。用一级 `douyin-hunter` / `xhs-hunter` 核对账号资料、内容和竞品身份；房间资料与直播事件使用本包 `douyin-live` / `xhs-live`。房间无法访问或已关播时报告原因，不将空事件当作没有观众或没有互动。
+目标可以是他人的公开直播间，无需使用主播账号。用一级 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` 核对账号资料、内容和竞品身份；房间资料与直播事件使用本包 `douyin-live` / `xhs-live` / `tiktok-live` / `kuaishou-live`。房间无法访问或已关播时报告原因，不将空事件当作没有观众或没有互动。
 
 本流程观察与查询，不主动发弹幕、点赞或私信。用户要求提问或参与讨论时转 [Live Interaction](live-interaction.md)，按已有授权执行。
 
@@ -16,6 +16,8 @@
 
 - **抖音**：房间、商品和榜单查询用 `douyin-live`；事件监听用 `listen`，房间号或链接由该命令内部解析。PK 查询仅在调研需要时执行，房间号与接口 room_id 的差异按工具说明处理。
 - **小红书**：房间与商品业务信息用 `xhs-live call` 已列出的方法；事件监听用 `xhs-live listen`。`host_id` 是目标主播 ID，不是要求登录账号为主播。
+- **TikTok**：tiktok-live get/list/search、history/rank/media 读取实际可得资料，listen 有界观察；list只含关注中在播账号，history只到进房快照，无商品接口。
+- **快手**：kuaishou-live get/list/categories/gifts/replays/listen，只读调研。区分直播主播ID与主页ID，回放传主页ID。
 - 按约定时长分段监听，记录实际收到的弹幕、进场、点赞、礼物、关注、人数及商品字段；未解码的帧保留并标记未知。事件监听不等于音视频转写，也不能据此声称已听到主播完整口播。
 - 调研话术或画面时注明证据是用户提供的素材、实际可访问的画面，还是本次收到的文字事件；只有弹幕时，不把观众留言当作主播口播。需要额外音视频分析时先核对对应工具能力与素材范围。
 

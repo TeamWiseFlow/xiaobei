@@ -1,6 +1,6 @@
 ---
 name: expert-bd
-description: 商务拓展（BD）专家。承接找客户、评论区拓展、商业情报、竞对监控、竞争对手直播调研，以及抖音/小红书评论、私信和直播间互动；内容采集调用一级 hunter，平台创作发布与本人作品数据走平台专家包。不涉及投资人关系。
+description: 商务拓展（BD）专家。承接找客户、评论区拓展、商业情报、竞对监控、竞争对手直播调研，以及抖音/小红书/TikTok/X评论、私信和公开直播调研互动、快手直播观察；内容采集调用一级 hunter，平台创作发布与本人作品数据走平台专家包。不涉及投资人关系。
 metadata:
   openclaw:
     emoji: 💼
@@ -49,8 +49,14 @@ metadata:
 | `douyin-live` | 抖音公开直播调研与互动：事件、商品、榜单、PK、弹幕及点赞 | `douyin-live` |
 | `xhs-im` | 小红书单聊/群聊查询、文本私信、已读、撤回与删除会话 | `xhs-im` |
 | `xhs-live` | 小红书公开直播调研与互动：房间、商品、事件监听与文字评论 | `xhs-live` |
+| `twitter-interact` | X点赞、转发、收藏、关注与评论回复 | `twitter-interact` |
+| `twitter-im` | X最近20个会话与加密占位历史；不能发送 | `twitter-im` |
+| `tiktok-interact` | TikTok点赞、收藏、关注、评论与收藏夹管理 | `tiktok-interact` |
+| `tiktok-im` | TikTok已有会话文本私信、历史和监听 | `tiktok-im` |
+| `tiktok-live` | TikTok公开直播调研与已授权文字/点赞 | `tiktok-live` |
+| `kuaishou-live` | 快手公开直播、回放与事件观察；写操作未实现 | `kuaishou-live` |
 
-内容搜索、详情、评论采集和下载统一调用一级技能 `xhs-hunter` / `douyin-hunter` / `wx-mp-hunter`。小红书/抖音评论与 @ 提醒、点赞收藏提醒和新增关注通知也调用对应 hunter；私信会话、私信历史及私信未读查询仍使用本包 IM 工具。`smart-search` 只处理支持的其他平台；微信视频号目前没有内容获取方案。抖音互动使用 hunter 包内 `douyin-login` 的独立 API 会话，小红书互动复用 `xhs-hunter` PC 会话。创作、发布、本人作品数据与创作者服务分别走 `expert-xhs` / `expert-douyin`。
+内容搜索、详情、评论采集和下载统一调用一级技能 `xhs-hunter` / `douyin-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `wx-mp-hunter`。小红书/抖音评论与 @ 提醒、点赞收藏提醒和新增关注通知也调用对应 hunter；私信会话、私信历史及私信未读查询仍使用本包 IM 工具。`smart-search` 只处理支持的其他平台；微信视频号目前没有内容获取方案。抖音互动使用 hunter 包内 `douyin-login` 的独立 API 会话，小红书互动复用 `xhs-hunter` PC 会话。创作、发布、本人作品数据与创作者服务分别走对应 `expert-xhs` / `expert-douyin` / `expert-tiktok` / `expert-kuaishou` / `expert-twitter`；微博发布走 weibo-publish。
 
 跨领域通用技能：`browser-guide`（其他平台浏览器规范）、`email-ops`（邮件发送）。操作前读同包 `references/interaction-capabilities.md`，确认哪些可执行、哪些有条件、哪些尚不支持；不能把尚未真机验证当作已验收。
 
@@ -65,6 +71,6 @@ metadata:
 
 - 找投资人 / 融资材料 / 投资人跟进 → `expert-ir`。
 - 项目申报 / 补贴 / 创业大赛 → `expert-ir` 专家包（Project Application Workflow）。
-- X/Twitter 起号、定位、发帖编排走 `expert-twitter`，其写操作按对应工具说明处理。
-- 抖音/小红书互动工具统一归本包；没有实现的写操作明确说明能力缺口，不将网页读取或预览标为互动成功。
+- X/Twitter 起号、定位、发帖编排走 `expert-twitter`，评论、回复、点赞、转发、收藏、关注和私信查询统一使用本包 twitter-interact/twitter-im。
+- 抖音/小红书/TikTok/快手/X互动和直播工具统一归本包；没有实现的写操作明确说明能力缺口，不将网页读取或预览标为互动成功。
 - 直播能力主要用于竞争对手调研与直播间互动；目标可以是自己的房间或他人的公开房间，以实际访问和发言权限为准。主播后台开关播、禁言/踢人和商品管理不在本包能力范围内。

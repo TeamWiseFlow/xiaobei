@@ -18,7 +18,12 @@
 | 小红书/抖音内容搜索、详情、评论读取、点赞收藏提醒、新增关注通知、媒体下载 | 一级技能 `xhs-hunter` / `douyin-hunter` |
 | 小红书/抖音私信、评论发布/回复、点赞、收藏、关注等写操作，竞争对手直播调研与直播间互动 | `expert-bd` |
 | 微信视频号运营相关 | `expert-wx-channel` |
-| X/Twitter 运营相关 | `expert-twitter` |
+| TikTok 创作、发布与本人作品复盘 | `expert-tiktok` |
+| 快手创作、发布与本人作品复盘 | `expert-kuaishou` |
+| X/Twitter 创作、发布与本人作品复盘 | `expert-twitter` |
+| TikTok/快手/X/微博内容搜索、账号、作品、评论与下载 | 一级 `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` |
+| 微博发布 | `weibo-publish` |
+| TikTok/快手/X互动与公开直播调研 | `expert-bd`，按能力表执行已有接口 |
 | 商务拓展 BD（找客户、评论区拓展（“截流”）、商业情报采集、竞对动向监控，及推特/小红书互动、闲鱼操作等配套操作） | `expert-bd` |
 | 投资人关系 IR（项目申报、投资人发掘与跟进） | `expert-ir` |
 | sales-cs crew 的启用与复盘升级 | `sales-cs-manager` |
@@ -39,7 +44,8 @@
 | 发布记录与互动指标 | `db/published_track.db` | `published-track` 技能 |
 | BD 线索/互动、情报条目 | `db/bd_record.db`、`db/info_record.db` | `expert-bd` 包内工具 `bd-record` / `info-record` |
 | IR 投资人档案/接触记录/项目申报 | `db/ir_record.db` | `expert-ir` 包内工具 `ir-record` |
-| B站/快手浏览器导出登录态 | `~/.openclaw/logins/` | `login-manager` 技能 |
+| X/TikTok/微博 API 会话与浏览器身份 | `~/.openclaw/logins/platform-api/` | 对应 hunter 的 `login/export`，内部由 platform-runtime 有头登录与隔离验证导入 |
+| 快手独立主站/创作者/直播会话 | `~/.openclaw/logins/platform-api/` | `kuaishou-hunter login/login-confirm` |
 | 抖音发布/本人取数登录态 | Camoufox 持久化 session `douyin` 的 profile | `douyin-publish login/check` |
 | 抖音采集/互动登录态 | 独立 API 会话（路径由 `douyin-login status` 返回） | `douyin-hunter` 包内 `douyin-login` |
 | 小红书 PC / Creator 登录态 | 各工具管理的独立会话 | `xhs-hunter login` / `xhs-publish login` |
@@ -47,7 +53,7 @@
 `published-track` 只负责记录、查询及指标写库；具体取数由各平台专家包的 engagement tool 执行。抖音 engagement 用 HTTP 接口，cookie/UA 临时取自发布 profile，不另存登录态。
 
 - `<platform>` 为平台代号，对照如下：
-> `微信公众号` → `wx_mp`；`微信视频号` → `wx_channel`；`小红书` → `xhs`; `抖音` → `douyin`；`bilibili（b站）` → `bilibili`；`快手` → `kuaishou`；`知乎` → `zhihu`; `twitter/推特/X` → `twitter`；`微博` → `weibo`.
+> `微信公众号` → `wx_mp`；`微信视频号` → `wx_channel`；`小红书` → `xhs`; `抖音` → `douyin`；`TikTok` → `tiktok`；`bilibili（b站）` → `bilibili`；`快手` → `kuaishou`；`知乎` → `zhihu`; `twitter/推特/X` → `twitter`；`微博` → `weibo`.
 - 发布记录义务：除用户明确要求或特殊说明不记录外，发布成功后一律调 `published-track record` 记录。
 
 **平台运营文件夹**：对于每一个启动运营的平台，在 Workspace 根按平台代号单独建一个文件夹（如 `wx_mp/`、`xhs/`、`douyin/`），该平台的运营数据全部收纳其中：`ref/` 参考材料、`outputs/` 成片与素材等产出物，以及上表的结构化数据子目录（`dna/`、`calibration/`）。各子目录专款专用，不混放。

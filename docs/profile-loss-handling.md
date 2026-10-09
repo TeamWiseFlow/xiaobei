@@ -1,7 +1,7 @@
 # profile 丢失 / 损坏 / 指纹错配 处理规范
 
 > spec `browser-stack-replacement-spec-2026-07.md` §8（补充 D，强化原则 5）。
-> 本文档是 canonical 程序，供 login-manager / browser-guide / 各平台 skill 引用。
+> 本文档供 browser-guide 和各平台技能引用。平台登录按当前技能入口执行；X/TikTok/微博登录由 platform-runtime 内部管理。
 > HEARTBEAT.md 约束 4 已落地「凌晨心跳跳过 + 等白天」策略，本文档补白天恢复流程。
 
 ## 核心原则
@@ -47,37 +47,28 @@ ls ~/.camoufox-cli/profiles/<platform>/
 # 若 camoufox-cli.json 缺失 / cookies.sqlite 损坏 / 目录被删 → profile 丢失
 ```
 
-login-manager 探活失败（`login-manager check <platform>` exit 2）且确认非网络问题 → 走重建。
+对应平台 `check` 返回明确鉴权失败时，先检查原 profile 是否完整。API 鉴权失败不等于 profile 丢失；网络、风控和浏览器技术错误不能据此重建。
 
-### 2. 删除旧 profile（彻底）
+### 2. 备份损坏的 profile
 
-```bash
-rm -rf ~/.camoufox-cli/profiles/<platform>
-# 同时清中央 cookie + UA（已失效，留着会诱导误用 import）
-rm -f ~/.openclaw/logins/<platform>.json ~/.openclaw/logins/<platform>.ua.json
-```
+确认损坏并取得用户同意后，由对应平台流程关闭并备份旧 profile，再重建。不要清空其他账号、整个平台凭据目录或其他平台状态。X/TikTok/微博的新导出先在临时目录验证，成功才替换指定账号；失败保留旧 API 会话。
 
 ### 3. 重建 profile + 重登录（按原则 3 选模式）
 
-```bash
-# 有头登录（douyin / twitter / xhs-publish / xhs-browse / weibo / zhihu / xianyu / reddit / youtube）
-login-manager login-headed <platform>
-# → camoufox-cli --session <platform> --persistent --headed open <login-url>
-# → 用户在 Firefox 窗口完成登录
-# → login-manager 导出 cookie + UA（forked cli identity export）
-# → close
+| 平台 | 当前登录入口 |
+|---|---|
+| X / TikTok / 微博 | 对应 `x-hunter` / `tiktok-hunter` / `weibo-hunter` 的 `login --account <alias>`；用户确认后 `export --account <alias>` |
+| 快手 | `kuaishou-hunter login/login-confirm` 的 QR/SMS 流程，不使用浏览器 profile |
+| 抖音发布/本人取数 | `douyin-publish login`，同一持久 profile，不导出中央 Cookie |
+| 抖音采集/互动 | `douyin-login` 的独立 API 登录流程 |
+| 小红书 PC / Creator | `xhs-hunter login` / `xhs-publish login` 各自管理的 API 会话 |
+| 其他平台 | 阅读该平台技能，使用其现有登录流程 |
 
-# 无头截图 QR（wechat-channel / wx-mp）
-login-manager qr-headless <platform>
-# → 发 QR PNG 给用户
-login-manager qr-confirm <platform> --session <s> --timeout 180
-```
+X/TikTok/微博的导出规则见 [运行库登录说明](../crews/main/skills/platform-runtime/references/login.md)。TikTok 写能力需要同次 Studio 会话材料，不能以普通 Cookie 登录成功代替。
 
 ### 4. 验证
 
-```bash
-login-manager check <platform>   # exit 0 = 恢复成功
-```
+调用同一平台工具的 `check`，确认在线身份属于预期账号。导出成功不代表发布、私信等写能力已经验收；依照对应工具限制处理。
 
 ## 临时性 session 不受影响
 

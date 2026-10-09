@@ -86,7 +86,7 @@ When the login page shows a QR code (WeChat Official Account backend, WeChat Cha
 6. If no scan within **3 minutes** and no reply arrives, send: _"扫码超时，将继续处理当前可访问的内容。"_ and proceed.
 
 > **显式有头/无头模式场景规则**：只有以下场景需要显式指定 `camoufox-cli` 的有头/无头参数：
-> 1. **login-manager 登录**（kuaishou / bilibili）——强制 `--headed`，用户在浏览器手动扫码/短信/账号密码。抖音发布/取数使用 `douyin-publish login` 的 Camoufox 持久化会话，采集/互动使用 `douyin-login` 独立 API 会话；小红书登录使用 `xhs-hunter` 或 `xhs-publish` 各自的登录命令。
+> 1. **平台登录入口**：X / TikTok / 微博使用对应 `x-hunter` / `tiktok-hunter` / `weibo-hunter` 的 `login`，由 platform-runtime 强制有头持久会话；X 的 profile 名为 twitter。用户在浏览器完成登录并确认后，调用同一 hunter 的 `export` 或 `login-confirm`，不自动轮询。抖音发布/取数使用 `douyin-publish login` 的 Camoufox 持久化会话，采集/互动使用 `douyin-login` 独立 API 会话；小红书使用 `xhs-hunter` 或 `xhs-publish` 各自的登录命令；快手使用 `kuaishou-hunter login/login-confirm` 的独立 QR/SMS 登录。
 > 2. **需要用户手动过验证**（captcha / 滑块 / 短信）——`--headed`，用户才能在浏览器里手动操作
 > 3. **web-form-fill 表单填报**——强制 `--headed`，便于用户时刻观察填报情况、可随时介入纠正
 >

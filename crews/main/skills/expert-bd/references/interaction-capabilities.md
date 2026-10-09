@@ -1,4 +1,4 @@
-# 抖音与小红书互动能力
+# 平台互动能力
 
 内容搜索、用户资料、作品与评论采集、评论/@提醒、点赞收藏提醒及新增关注通知调用一级 hunter；私信和互动写操作在 expert-bd 内执行。创作、发布、本人已发作品数据和创作者服务仍转平台专家包。表内尚不支持的能力保留为空缺。
 
@@ -30,3 +30,19 @@
 - 小红书私信发送、已读、撤回、删除、实时监听和直播发送/监听仍需要真实账号验收。抖音评论、私信与直播写操作也不能因离线测试通过而宣称已送达；先以单条已授权任务核对响应与平台实际结果。
 - 评论采集可能触发验证码或限频，小红书扫码可能触发人机验证。停止并报告实际错误，不无限重试，不当作零结果或自动登出。
 - 所有写操作先预览，已有用户授权时加 `--confirm`；提交成功与实际送达/对方已读分开记录。超时或连接中断先查结果，禁止直接换通道重发。
+
+## TikTok / 快手 / X
+
+| 能力 | TikTok | 快手 | X/Twitter |
+|---|---|---|---|
+| 作品点赞/取消、收藏/取消 | tiktok-interact | 未实现 | twitter-interact |
+| 评论发布/回复 | tiktok-interact comment；reply按真实父评论参数 | 未实现 | twitter-interact comment/reply（回复推文） |
+| 评论删除/点赞 | 未实现 | 未实现 | twitter-interact call comment delete/like/unlike |
+| 关注/取消 | tiktok-interact follow/unfollow | 未实现 | twitter-interact follow/unfollow |
+| 转发/取消 | 未实现 | 未实现 | twitter-interact retweet/unretweet |
+| 收藏夹管理 | call folder create/update/add；先收藏再加入 | 未实现 | 未实现 |
+| 私信查询 | tiktok-im list/history | 未实现 | twitter-im list/history：仅20个会话首页、加密占位消息 |
+| 私信发送/监听 | tiktok-im send/listen；仅已有会话文本 | 未实现 | 未实现 |
+| 公开直播观察 | tiktok-live | kuaishou-live；回放使用主页ID | 未实现 |
+| 直播发言/点赞 | tiktok-live send/like；需同次写材料 | 未实现 | 未实现 |
+| 送礼支付、主播后台 | 不提供 | 不提供 | 不提供 |

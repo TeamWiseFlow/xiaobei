@@ -4,7 +4,7 @@
 
 核心判断：冷启动阶段不要把 X 当朋友圈，也不要当公众号。它更像开放广场：陌生人会快速扫过你的头像、简介、主贴和回复。所有动作都服务一个问题：**陌生人看到你 3 秒钟，凭什么停下来？**
 
-每一步要么落到工具（`twitter-post` / `smart-search` / `published-track`），要么明确是 agent 推理或用户动作，不允许模糊的"专家来分析"。互动操作按需使用本包 `twitter-interact`。
+每一步要么落到工具（`twitter-post` / `x-hunter` / `twitter-engagement` / `twitter-style-profiler` / `published-track`），要么明确是 agent 推理或用户动作，不允许模糊的"专家来分析"。互动操作按需使用`expert-bd` 的 `twitter-interact`。
 
 本 Workflow 的产出物（定位句、简介草稿、置顶帖选题、账号观察表、选题库、复盘记录表等）统一存在 Workspace 根平台运营文件夹 `twitter/`。
 
@@ -56,8 +56,8 @@
 
 | 事项 | 执行方式 |
 | --- | --- |
-| 头像 / 简介 | agent 出草稿，用户在 X 上更新；用户明确授权时，agent 用 camoufox-cli 按 `browser-guide` 驱动浏览器更新 |
-| 置顶帖 | agent 按定位句起草（说明未来会持续分享什么），经用户确认后走 `twitter-post` 发布，再置顶（agent 用 camoufox-cli 点置顶菜单，失败则交用户手动） |
+| 头像 / 简介 | agent 出草稿，用户在 X 上更新；当前接口不提供主页设置 |
+| 置顶帖 | agent 按定位句起草（说明未来会持续分享什么），经用户确认后走 `twitter-post` 发布，由用户在 X 上置顶（当前接口不提供置顶） |
 | 代表内容 | 置顶帖下逐步沉淀 5-10 个代表内容链接或目录 |
 
 验收按「主页承接清单」逐条过：
@@ -70,7 +70,7 @@
 
 ## Step 4 - 同领域信号与选题库
 
-1. 用 `smart-search` 找 20 个同领域账号（也接受用户直接提供账号清单），记录他们最近常聊什么，产出账号观察表。
+1. 用 `x-hunter call user search` 和 `x-hunter user-posts` 有界采样同领域账号（也接受用户直接提供账号清单），记录他们最近常聊什么，产出账号观察表。
 2. 从观察表提炼 10 个候选选题。
 3. 选题优先从真实工作流里找，不要为了发帖硬憋选题。内容类型对照：
 
@@ -90,13 +90,13 @@
 按 Step 4 的选题库持续输出，主贴与回复并行：
 
 - **主贴**：按内容类型表轮换产出（工具实测 / 流程复盘 / 踩坑记录 / 模板资产 / 观点判断），每条走 `twitter-post` 发布；长内容用 Thread；每条内容都要能回答"陌生人凭什么停下来"。
-- **回复曝光**：每天在同领域帖子下发高质量回复（走 `twitter-post` Reply workflow），让陌生人先通过回复发现账号；回复必须过下方回复质量公式，差回复不发。
+- **回复曝光**：每天在同领域帖子下发高质量回复（走 expert-bd 的 `twitter-interact comment/reply`，按已有授权执行），让陌生人先通过回复发现账号；回复必须过下方回复质量公式，差回复不发。
 - **互动升级**：每周至少把 1 条被看见的高质量回复扩写成主贴或 Thread。
 
 执行约束：
 
-- 所有发帖走 `twitter-post`，遵守其频率限制（单帖间隔 ≥ 30 分钟、单日 ≤ 50 帖）；每次发布成功后执行 `published-track record`（`--platform twitter`，`dna_id` 留空）。
-- 点赞、转推、关注等互动操作按需使用本包 `twitter-interact`，不在起号流程中默认安排。
+- 所有发帖走 `twitter-post`，遵守其频率限制（单帖间隔 ≥ 30 分钟、单日 ≤ 50 帖）；发布脚本返回真实 ID/URL 后自动记录 published-track，检查 recorded 字段；DNA 归属由作品目录 dna-meta.json 写入。
+- 点赞、转推、关注等互动操作按需使用`expert-bd` 的 `twitter-interact`，不在起号流程中默认安排。
 - 回复质量按下方公式把关，差回复不发。
 
 ### 回复质量公式
@@ -123,7 +123,7 @@
 数据来源（不编造，缺哪项写"数据不可得"）：
 
 - 用户提供的 X 后台数据或截图；
-- 必要时 agent 用 camoufox-cli 打开推文页 / 分析页 snapshot 取值。
+- `twitter-engagement daily` 获取本人作品的实际指标并回填 published-track，未提供的后台画像/主页访问/关注归因由用户提供。
 
 复盘表：
 
@@ -164,3 +164,7 @@
 - 不建议靠抽奖、互关、无关热点换短期数字。
 - 不建议只发主贴而不去高质量回复区露面。
 - 未经核验不给出 X 最新规则、API 限制或自动化安全承诺；平台功能入口与算法权重按待确认信息处理。
+
+## 内容 DNA 衔接
+
+定位确认后，按 [Style DNA](style-dna.md) 对文字/图文、视频分别建样本规则，使用 twitter-style-profiler 保存报告、DNA 文档和 template。内容生产前读取指定 DNA，通过 [Content Production](content-production.md) 准备正文或视频 Brief。周复盘统一衔接 [Review](review.md)；数据不足时保留待验证假设，不从单次曝光推断稳定风格。

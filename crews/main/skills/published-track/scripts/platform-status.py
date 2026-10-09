@@ -24,7 +24,7 @@ def platform_status(workspace, platform):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--platform', required=True, choices=['douyin', 'xhs', 'wx_channel', 'wx_mp'])
+    parser.add_argument('--platform', required=True, choices=['douyin', 'xhs', 'wx_channel', 'wx_mp', 'tiktok', 'kuaishou', 'twitter', 'weibo'])
     args = parser.parse_args()
     workspace = Path(os.path.abspath(Path(__file__).parent / '../../..'))
     result = platform_status(workspace, args.platform)

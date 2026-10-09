@@ -578,6 +578,28 @@ CREATE TABLE IF NOT EXISTS pub_wx_channel (
   updated_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now','localtime'))
 );
 
+-- 微博
+CREATE TABLE IF NOT EXISTS pub_weibo (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  content_type TEXT NOT NULL CHECK(content_type IN ('article','video','post')),
+  source_folder TEXT NOT NULL,
+  publish_url TEXT,
+  publish_date TEXT NOT NULL,
+  distribute_status INTEGER NOT NULL DEFAULT 0,
+  views INTEGER DEFAULT 0,
+  likes INTEGER DEFAULT 0,
+  comments INTEGER DEFAULT 0,
+  shares INTEGER DEFAULT 0,
+  favorites INTEGER DEFAULT 0,
+  notes TEXT,
+  dna_id TEXT,
+  account TEXT,
+  perf_evaluated INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now','localtime')),
+  updated_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now','localtime'))
+);
+
 SQL
 
 # ── 迁移：为已有表补 cal_bias_signals / cal_bump_evaluated 列 ──────────────

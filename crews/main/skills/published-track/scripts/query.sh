@@ -22,12 +22,13 @@ if [ ! -f "$DB" ]; then
   exit 0
 fi
 
-PLATFORM="" LIMIT="" UNPUBLISHED=false STALE_DAYS="" BELOW=""
+PLATFORM="" LIMIT="" ROW_ID="" UNPUBLISHED=false STALE_DAYS="" BELOW=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --platform)      PLATFORM="$2"; shift 2 ;;
     --limit)         LIMIT="$2"; shift 2 ;;
+    --id)            ROW_ID="$2"; shift 2 ;;
     --unpublished)   UNPUBLISHED=true; shift ;;
     --stale-days)    STALE_DAYS="$2"; shift 2 ;;
     --below)         BELOW="$2"; shift 2 ;;
@@ -77,6 +78,17 @@ WHERE=""
 if [ -n "$STALE_DAYS" ]; then
   WHERE="WHERE publish_date <= date('now','-$STALE_DAYS days')"
 fi
+if [ -n "$ROW_ID" ]; then
+  if [[ ! "$ROW_ID" =~ ^[1-9][0-9]*$ ]]; then
+    echo '{"ok":false,"error":"--id must be a positive record row ID"}'
+    exit 1
+  fi
+  if [ -n "$WHERE" ]; then
+    WHERE="$WHERE AND id=$ROW_ID"
+  else
+    WHERE="WHERE id=$ROW_ID"
+  fi
+fi
 
 LIMIT_CLAUSE=""
 if [ -n "$LIMIT" ]; then
@@ -97,7 +109,7 @@ if [ -n "$BELOW" ] && [ -n "$STALE_DAYS" ]; then
     CONDS+="$C < $BELOW"
   done
 
-  ROWS=$(sqlite3 -json "$DB" "SELECT * FROM $TABLE WHERE publish_date <= date('now','-$STALE_DAYS days') AND ($CONDS) ORDER BY publish_date DESC $LIMIT_CLAUSE;" 2>/dev/null)
+  ROWS=$(sqlite3 -json "$DB" "SELECT * FROM $TABLE $WHERE AND ($CONDS) ORDER BY publish_date DESC $LIMIT_CLAUSE;" 2>/dev/null)
 fi
 
 echo "${ROWS:-[]}"

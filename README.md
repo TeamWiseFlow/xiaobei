@@ -5,7 +5,7 @@
 - 微信公众号文章写作、排版与推送
 - 小红书/小绿书图文创作与发布
 - 图文海报生成
-- 视频生成与多平台分发（支持视频号、抖音、小红书）
+- 视频生成与多平台分发（支持视频号、抖音、小红书、快手、tiktok）
 - Twitter/X、微博、知乎等平台发文
 - 微信朋友圈内容发布（通过企业微信接口）
 - 爆款视频追爆分析、仿写与再创作（支持抖音、B站和小红书视频链接）
@@ -14,7 +14,7 @@
 - 自媒体评论区获客
 - 7*24 小时智能客服（售前接待）
 - 通过社交媒体寻找潜在客户或市场调研
-- 信息搜集与情报：内置 Smart Search，覆盖小红书、抖音、微博、知乎、B站、Twitter、YouTube、视频号、LinkedIn、Reddit、新闻、政务、财经、学术、购物、GitHub 等 18 类信源——无需配置任何 key、纯免费
+- 信息搜集与情报：支持小红书、抖音、微博、知乎、快手、B站、Twitter、YouTube、视频号、LinkedIn、Reddit、新闻、政务、财经、学术、购物、GitHub 等 18 类信源——无需配置任何 key、纯免费
 - "四声分析"法战略研判与讨论
 - 产品deck、ppt制作，投资/IR 材料准备
 - 网站设计与制作、ICP 备案等材料辅助
@@ -34,13 +34,19 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 
 ## 🚀 **V5.7.3 更新**
 
-- content producer 新增 `deck-talk` 幻灯讲解 workflow，支持实拍口播、数字人讲解和纯音频配 B-roll 三种模式，按 Brief 编排逐页或逐段内容、动效与音轨;
-- xiaobei 可直接指挥content producer，用户可选择将brief出具、节点验收等委托xiaobei;
+- 新增带B-roll的口播视频制作能力，对比纯AIGC模式，单条成本由几十下降到几块，且更易获平台推荐：
+  - B-roll 支持 幻灯片生成\剪纸人动画\操作录屏，前两者基于hyperframes，后者基于xiaobei浏览器自动化能力，均无需调用aigc模型，用户有现成素材也可直接提供；
+  - 口播音频支持用户录制和TTS合成两种，TTS合成支持自定义音色，支持混入口音（降低ai味，避免被平台限流）；
+  - 支持屏幕小窗添加数字人同步画面，仅需提供一张照片（建议用真人）
+  - 上述流程均支持由xiaobei出方案并自主委托content-producer完成制作全流程，用户只需最终验收
+- 新增卡片内容生产能力：内置“群聊误发式单图”创意、“问答式连续讨论流三图”创意。均使用html代码生成，无需AIGC模型，无平台限流风险；
+
+**成品展示见xiaobei的微信视频号和小红书号**：https://openclaw-for-business.com/media
+
 - 新增抖音平台图文音乐内容发布能力，支持多图上传、选择推荐配乐与发布链接回收;
-- 小红书和抖音新增原生界面卡片内容生产形态：内置“群聊误发式单图”创意、“问答式连续讨论流三图”创意；
-- 小红书新增笔记与用户搜索、评论采集、图片和视频下载；图文与视频发布、作品数据复盘能力升级。
-- 小红书新增直播控场、私信、蒲公英达人合作和千帆分销商资料查询能力。
-- AIGC 端点支持阿里云百炼 Agent Plan：现在无需去多个平台开通不同账号，最简只用初始安装时的百炼账号就可获得全部能力。
+- 大幅优化小红书平台支持性能，并新增蒲公英达人合作和千帆分销商资料查询能力；
+- 新增对快手和tiktok平台的支持，优化 x（twitter）和weibo平台的支持；
+- 音乐生成新增支持百炼平台
 
 详见 [CHANGELOG.md](CHANGELOG.md)
 
@@ -277,17 +283,15 @@ v5.6.0 中我们几乎重构了 OpenClaw 原版的浏览器自动化方案（详
 | `002-disable-web-search-env-var` | **留**：openclaw 内置 web search 大部分需要申请 api key 甚至海外网络，小贝自带完全免费、零部署的 Smart Search 解决方案 | `OPENCLAW_DISABLE_WEB_SEARCH=1` |
 | `007-prefer-camoufox-cli` | **留**（改名）：在 browser 工具描述中提示优先用 camoufox-cli 做浏览器自动化，原 browser 工具仅作兜底 | 无 |
 
-**基于这套浏览器栈，我们沉淀了一批浏览器自动化技能**——这些技能源自我们自 AI 首席情报官项目以来长期积累的浏览器自动化技术经验，覆盖登录、填报、发布、互动、抓取等完整工作流：
+**浏览器与平台技能覆盖登录、填报、发布、互动、采集等工作流**，按平台使用浏览器自动化或 HTTP API：
 
 | 技能 | 职责 |
 |------|------|
 | `browser-guide` | 浏览器操作最佳实践总纲——登录墙 / CAPTCHA / lazy-load / paywall / 有头无头场景规则 / eval 用法 |
 | `smart-search` | 智能搜索——绕开 openclaw 内置 web search 的 api key 依赖，零部署免费方案 |
-| `web-form-fill` | 网络表单填报——从信息搜集到浏览器填报的完整工作流，强制有头模式便于用户随时介入 |
-| `login-manager` | 快手、B 站登录态管理——有头手动登录、探活和中央 cookie+UA 存储；抖音使用 `douyin-login` 独立 API 会话 |
-| 各平台发布/互动 skill | `twitter-post` / `twitter-interact` / `weibo-publish` / `zhihu-publish` / `xhs-publish` / `xhs-hunter` / `douyin-hunter` / `douyin-publish` / `douyin-engagement` / `douyin-im` / `douyin-interact` / `douyin-live` / `wechat-channels-publish` / `xianyu-ops` / `wx-mp-hunter` / `wx-mp-engagement` 等平台专属技能 |
+| `ui-demo` | 浏览器操作演习与录屏，为教程、产品演示及视频 B-roll 提供素材 |
 
-浏览器技能使用 camoufox-cli 与持久化 session，按场景切换有头/无头模式。小红书的 `xhs-hunter` 使用 PC 会话，`xhs-publish` 与 `xhs-engagement` 共用 Creator 会话；接口所需计算值由 OFB Relay 提供。
+浏览器技能使用 camoufox-cli 与持久化 session，按场景切换有头/无头模式。
 
 ## 目录结构
 
@@ -300,7 +304,7 @@ wiseflow/
 │   ├── it-engineer/       # [built-in] IT 工程师——幕后运维 + 排障 sub-agent
 │   ├── content-producer/  # 内容制作者——视频/视觉生产线
 │   └── sales-cs/          # 销售型客服——绑 awada，默认禁用，按需招募
-├── skills/                # 公共技能（≥2 crew 共用，smart-search / browser-guide / login-manager 等）
+├── skills/                # 公共技能（≥2 crew 共用，smart-search / browser-guide 等）
 ├── patches/               # wiseflow 基础补丁
 │   ├── *.patch            # git 补丁（按序号顺序应用到 openclaw/）
 │   └── overrides.sh       # pnpm 依赖覆盖（如替换 playwright → patchright）
@@ -341,9 +345,7 @@ wiseflow/
 - Feedparser（Parse feeds in Python） https://github.com/kurtmckee/feedparser
 - SearXNG（a free internet metasearch engine which aggregates results from various search services and databases） https://github.com/searxng/searxng
 - opencli（A CLI for social media & web platforms — smart-search skill 借鉴了其搜索 URL 模式与平台适配方案） https://github.com/jackwener/opencli
-- AiToEarn（多平台自媒体发布工具 — `published-track` 的 18 平台文本/媒体限制规则表与内容校验、twitter 互动操作模式借鉴自此） https://github.com/yikart/AiToEarn
 - 文颜(Markdown文章排版美化工具，支持微信公众号、今日头条、知乎等平台。) https://github.com/caol64/wenyan
-- Everything Claude Code（Claude Code 全局 skill / rule / agent 集合，wiseflow 的 complex-task 等编排 skill 借鉴了其 blueprint 和 gan-style-harness 的设计思路） https://github.com/affaan-m/everything-claude-code
 - awesome-design-md（A curated collection of design systems in markdown format — Designer 内置设计系统库参考了此项目的设计系统结构） https://github.com/VoltAgent/awesome-design-md
 - cheat-on-content（自媒体打分算法借鉴、取数方案借鉴） https://github.com/XBuilderLAB/cheat-on-content
 - AutoClip（AI 视频智能切片系统 — `talking-head-cut` 技能的高光剪辑算法与工作流借鉴自此；`video-producer` 的 Stage 13b motion-audit 镜头抽帧打分思路亦借鉴其高光判定） https://github.com/zhouxiaoka/autoclip

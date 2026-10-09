@@ -126,3 +126,5 @@
 - 部分平台可能需要登录才能查看完整内容（遵循 `browser-guide`）
 
 平台路由：抖音、小红书、微信公众号的搜索与内容获取分别使用一级 `douyin-hunter`、`xhs-hunter`、`wx-mp-hunter`，不调用 smart-search 构造这些平台的站内 URL；微信视频号目前没有内容获取方案。
+
+TikTok、快手、X、微博的搜索、账号、作品、评论和下载分别使用一级 tiktok-hunter、kuaishou-hunter、x-hunter、weibo-hunter。触达与直播使用 expert-bd 能力表中的工具；快手没有普通互动写接口，X 私信不能发送，微博评论写入尚不支持，不尝试浏览器补造能力。

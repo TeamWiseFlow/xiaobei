@@ -11,3 +11,5 @@
 7. 用 bd-record 记录真实目标、动作、时间和结果。区分已提交、已核实送达和失败；汇总真实回复、待跟进及能力缺口。没有用户要求不建立周期任务。
 
 直播间提问、答疑与合作互动按 [Live Interaction](live-interaction.md) 执行；竞争对手直播调研按 [Live Research](live-research.md) 执行。取数、登录失效或风控不触发重新发布内容。
+
+TikTok 互动通过 tiktok-interact/tiktok-im/tiktok-live，写操作需要同次 ticket-guard 材料。X 评论、回复、点赞、转发、收藏与关注使用 twitter-interact；twitter-im 只查询首页会话及加密占位历史。所有写操作先预览，已有授权时 --confirm；快手只支持直播观察，没有评论、点赞、关注、私信或直播发言接口。

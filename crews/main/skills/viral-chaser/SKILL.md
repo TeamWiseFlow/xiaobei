@@ -27,14 +27,14 @@ metadata:
 # Viral Chaser（追爆分析 — 报告产出）
 
 Use this skill when:
-- 用户提供抖音 / B 站 / 小红书 / 快手视频链接，或本地视频，希望拆解分析
+- 用户提供抖音 / 小红书 / 快手 / TikTok / X / 微博视频链接，或本地视频，希望拆解分析
 - 需要分析爆款视频的结构和公式
 
 **本技能仅产出追爆报告**，不生成脚本，不制作视频。如需据此生成视频，需另行委托 `content-producer` （spawn subagent）执行。
 
-**采集路由：** 抖音用 `douyin-hunter`，小红书用 `xhs-hunter`；B 站和快手在对应 hunter 接入后使用。hunter 尚不可用时停止链接采集，说明缺口或使用用户已提供的本地视频，不在本技能恢复下载逻辑。analyzer 不依赖来源平台，只接受本地视频与可选独立音轨。
+**采集路由：** 抖音、小红书、快手、TikTok、X、微博分别用 `douyin-hunter`、`xhs-hunter`、`kuaishou-hunter`、`tiktok-hunter`、`x-hunter`、`weibo-hunter`。其他平台暂不支持，需要使用用户已提供的本地视频，不在本技能恢复下载逻辑。analyzer 不依赖来源平台，只接受本地视频与可选独立音轨。
 
-**视频限定：** 抖音、小红书图文用对应 hunter 下载，转 `expert-douyin` / `expert-xhs` workflow 分析。微信视频号、TikTok 链接目前没有本技能的 hunter 采集方案。
+**视频限定：** 图文内容的分析不在本技能范围内。
 
 ---
 
@@ -50,7 +50,7 @@ Use this skill when:
 
 ### Step 1 — Create workspace
 
-将工作目录建在来源平台的运营文件夹 `<platform>/ref/`（平台代号 douyin / bilibili / xhs / kuaishou）下：
+将工作目录建在来源平台的运营文件夹 `<platform>/ref/`（平台代号 douyin / xhs / kuaishou / tiktok / twitter / weibo）下：
 
 ```bash
 mkdir -p "<platform>/ref/<slug>/references"
@@ -68,8 +68,10 @@ mkdir -p "<platform>/ref/<slug>/references"
 |---|---|---|
 | 抖音 | `douyin-hunter` | 本地视频、作品资料与完整来源链接 |
 | 小红书 | `xhs-hunter` | 本地视频、作品资料与含 xsec_token 的真实链接 |
-| B 站 | 对应 bilibili hunter（接入后） | 含音轨的视频，或本地视频与独立音轨；作品资料 |
-| 快手 | 对应快手 hunter（接入后） | 本地视频与作品资料 |
+| 快手 | `kuaishou-hunter` | 本地视频与作品资料 |
+| TikTok | `tiktok-hunter` | 本地视频与作品资料 |
+| X/Twitter | `x-hunter` | 本地视频与推文资料 |
+| 微博 | `weibo-hunter` | 本地视频与微博资料 |
 
 抖音和小红书的独立采集命令示例：
 
@@ -78,7 +80,7 @@ douyin-hunter fetch --url '<视频链接>' --video-only --download-media --outpu
 xhs-hunter fetch '<视频链接>' --video-only --download-media --output-dir '<工作目录>/references'
 ```
 
-这些 hunter 将视频保存为 `video.mp4`、资料保存为 `note.json`。以各自实际输出为准；保留原始资料，不让 agent 重写为 analyzer 的输入 schema。B 站与快手的命令、文件格式按届时的 hunter 文档执行，不预设尚未实现的 CLI。
+这些 hunter 将视频保存为 `video.mp4`、资料保存为 `note.json`。以各自实际输出为准；保留原始资料，不让 agent 重写为 analyzer 的输入 schema。新增平台使用 `<hunter> fetch <视频链接> --video-only --download-media --output-dir <目录>`，视频文件名与扩展名以 media_paths 返回为准。
 
 只分析本地视频时跳过 hunter 采集。图文不进入 analyzer。
 
@@ -90,7 +92,7 @@ xhs-hunter fetch '<视频链接>' --video-only --download-media --output-dir '<�
 viral-chaser --video '<工作目录>/references/video.mp4' --output-dir '<工作目录>/references'
 ```
 
-若 hunter 提供独立音轨（例如 B 站 DASH），用 `--audio '<本地音轨路径>'` 指定同一视频的同步音轨；不下载音轨 URL。`--no-frames` 跳过抽帧，只用于用户明确只需转写时。`--output-dir` 优先于已有 `OUTPUT_DIR` 环境变量，未指定则写入视频所在目录。
+若 hunter 提供独立音轨（与视频同步的独立音轨），用 `--audio '<本地音轨路径>'` 指定同一视频的同步音轨；不下载音轨 URL。`--no-frames` 跳过抽帧，只用于用户明确只需转写时。`--output-dir` 优先于已有 `OUTPUT_DIR` 环境变量，未指定则写入视频所在目录。
 
 The script outputs a **JSON object to stdout**. Read it and proceed with analysis.
 
@@ -293,5 +295,5 @@ Read: <platform>/ref/<slug>/references/frames/frame_01_3s.jpg
 ## Notes
 
 - 原始平台资料由 hunter 保存；analyzer 仅生成本地媒体分析数据，不增加新平台适配器。
-- B 站/快手 hunter 接入后沿用“hunter 采集 → 本地 analyzer → 拆解报告”的流程，登录检查、短链解析与下载限制以各 hunter 文档为准。
+- 快手/TikTok/X/微博沿用“hunter 采集 → 本地 analyzer → 拆解报告”的流程，登录检查、短链解析与下载限制以各 hunter 文档为准。
 - 只有转写与抽帧完成并核对结果后才写分析结论；hunter 失败不运行 analyzer，本地分析失败不重新采集或恢复平台登录。

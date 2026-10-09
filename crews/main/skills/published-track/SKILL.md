@@ -12,7 +12,7 @@ metadata:
 
 # published-track — 发布记录追踪
 
-统一管理所有平台（微信公众号、微信视频号、知乎、B站、抖音、快手、小红书、今日头条、掘金、Twitter/X、Facebook、Instagram、TikTok、YouTube、Pinterest、Threads）的发布记录与互动数据。
+统一管理所有平台（微信公众号、微信视频号、知乎、B站、抖音、快手、小红书、微博、今日头条、掘金、Twitter/X、Facebook、Instagram、TikTok、YouTube、Pinterest、Threads）的发布记录与互动数据。
 
 > 企业微信朋友圈不纳入追踪记录（无公开 URL、互动数据无法自动获取、运营复盘价值低），发布后不调 `record.sh`。
 
@@ -42,8 +42,12 @@ published-track init-db
 | 快手 | `pub_kuaishou` | video | plays, likes, comments, shares |
 | 小红书 | `pub_xhs` | video/post | views, likes, favorites, comments, shares；deep_metrics / deep_captured_at / deep_source；fan_portrait（单篇画像 JSON） |
 | Twitter/X | `pub_twitter` | post/video | views, likes, retweets, replies, bookmarks |
+| TikTok | `pub_tiktok` | video/post | plays, likes, comments, favorites, shares |
+| 微博 | `pub_weibo` | post/video | views, likes, comments, favorites, shares（字段存在不代表接口可自动取得） |
 
 `--platform` 取「表名」去掉 `pub_` 前缀，如 `wx_mp`、`wx_channel`、`xhs`、`bilibili`。
+
+`published-track query --platform <平台> --id <数据库行ID>` 可读取单条记录，供 engagement 精确核对账号与完整发布链接。
 
 ---
 

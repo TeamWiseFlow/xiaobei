@@ -1,6 +1,6 @@
 ---
 name: smart-search
-description: 智能搜索路由器。根据用户意图选择最佳搜索源，构造 URL 并导航，获取内容。仅在默认搜索手段效果不佳启用。排除抖音、小红书、微信公众号和微信视频号；前三者直调对应 hunter，视频号暂无方案。
+description: 智能搜索路由器。根据用户意图选择最佳搜索源，构造 URL 并导航，获取内容。仅在默认搜索手段效果不佳启用。排除已有专属 hunter 的抖音、小红书、TikTok、快手、X、微博、微信公众号及微信视频号；有 hunter 的平台直接调用，视频号暂无方案。
 metadata:
   openclaw:
     emoji: 🔍
@@ -12,12 +12,16 @@ metadata:
 
 ## 不支持的平台（先判断）
 
-本技能不支持 douyin、xhs、wx-mp（微信公众号）和微信视频号，也不为它们构造浏览器搜索 URL 或站内回退。
+本技能不支持 douyin、xhs、tiktok、kuaishou、x/twitter、weibo、wx-mp（微信公众号）和微信视频号，也不为它们构造浏览器搜索 URL 或站内回退。
 
 | 指定平台或平台链接 | 处理 |
 |---|---|
 | 抖音 | `douyin-hunter` |
 | 小红书 | `xhs-hunter` |
+| TikTok | `tiktok-hunter` |
+| 快手 | `kuaishou-hunter` |
+| X/Twitter | `x-hunter` |
+| 微博 | `weibo-hunter` |
 | 微信公众号 / wx-mp / mp.weixin.qq.com | 直接调用一级技能 `wx-mp-hunter` |
 | 微信视频号 / channels / wechat-channels | 明确告知目前没有搜索和内容获取方案，不能宣称支持 |
 
@@ -41,9 +45,7 @@ metadata:
 | 夸克 / Quark | `sites/general.md` → Quark | 通用搜索（fallback） |
 | 知乎 | `sites/zhihu.md` | 中文问答 |
 | B站 / Bilibili | `sites/bilibili.md` | 视频/番剧 |
-| 微博 / Weibo | `sites/weibo.md` | 热点/舆论 |
 | YouTube / 油管 | `sites/youtube.md` | 视频 |
-| Twitter / X / 推特 | `sites/twitter.md` | 实时讨论 |
 | Reddit | `sites/reddit.md` | 社区讨论 |
 | GitHub | `sites/github.md` | 代码/项目 |
 | LinkedIn / 领英 | `sites/linkedin.md` | 职业/招聘 |
@@ -69,7 +71,7 @@ metadata:
 | **info** | reuters.com / bbc.com / ft.com / 36kr.com / 财新 / 新浪财经 / 澎湃 | 行业新闻 / 公司动态 / 政策 | 时效性强；中文 + 英文混合；财经类需付费墙 |
 | **media** | youtube.com / bilibili.com / pexels-footage / pixabay-footage（本仓 skill）| 视频 / 音乐 / 媒体库 | 视频 metadata 重要；版权注意 |
 | **shopping** | amazon.com / taobao.com / jd.com / pdd.cn | 电商 / 价格 / 评测 | 国内电商需登录；价格波动大 |
-| **social** | x.com / weibo.com | 实时讨论 / 社区 | 短文本；高噪；需 cookie |
+| **social** | 对应平台专属 hunter | 实时讨论 / 社区 | X/微博分别使用 x-hunter/weibo-hunter，不走本技能 |
 | **tech** | github.com / stackoverflow.com / jianshu.com / juejin.cn / segmentfault.com / v2ex.com | 代码 / 开源 / 编程 | 强时效；英文为主；stackoverflow 答案质量高 |
 | **travel** | ctrip.com / booking.com / tripadvisor.com / mafengwo.cn | 旅游 / 交通 | 季节性强；多语种；图片重要 |
 | **other** | duckduckgo.com / startpage.com / kagi.com / sogou.com / yandex.com | 兜底 / 隐私搜索 / 国内外通用 | 隐私优 DDG；国内兜底 sogou；俄罗斯 Yandex |
@@ -127,13 +129,10 @@ metadata:
 | 平台 | Warmup URL |
 |------|-----------|
 | 知乎 | `https://www.zhihu.com` |
-| 微博 | `https://weibo.com` |
 | YouTube | `https://www.youtube.com` |
-| Twitter/X | `https://x.com` |
 | Reddit | `https://www.reddit.com` |
 | 雪球 | `https://xueqiu.com` |
 | LinkedIn | `https://www.linkedin.com` |
-| TikTok | `https://www.tiktok.com` |
 | 路透社 | `https://www.reuters.com` |
 
 **不需要 Warmup**：Bing、Baidu、Quark、GitHub、arXiv、Wikipedia、HackerNews、V2EX、贴吧、Amazon、百度学术、万方、国务院

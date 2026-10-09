@@ -1,0 +1,2 @@
+# Content Production
+读取定位、业务知识和指定 DNA 文档/template，提出选题与传播理由。用 x-hunter 核查事实与素材，存 twitter/outputs/<作品>/；明确素材授权。文字/图文由 main 完成正文、图片顺序与首图，图像可用 awk-img-gen/native-ui-card；不机械复制其他平台标题与字数限制。未订阅或未确认长推权限时，每条正文控制在280权重内，纯中文约140字还需计入标点、链接等。视频全案只出 Brief 和口播稿，附素材绝对路径与验收标准后委托 content-producer；旁白由 CP 写。落 dna-meta.json，核对成品、正文、账号、可见范围和 AI 声明，再用 twitter-post publish 预览，逐条检查 text_check.posts 与 warnings；超限先精简，或确认当前账号具备 X Premium 长推权限。帖串须核对并批准完整内容，每条分别检查，不能自动拆帖提交。已有发布授权且长度/权限已满足时 --confirm；检查真实 ID/URL、审核状态与 recorded 字段。未知结果先核查本人列表，不重发。完成后按 Review 复盘，不附带任何未授权互动。

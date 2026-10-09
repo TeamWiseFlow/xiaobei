@@ -1,4 +1,4 @@
-# v5.7.3(2026-10-10)
+# v5.7.3(2026-10-09)
 
 - `aigc-video-gen music` 增加百炼业务空间 `fun-music-v1`：支持提示词/歌词、纯音乐、演唱性别及 MP3/WAV，同步生成后下载音频并保存 metadata；新增音乐专用选路，自动优先 MiniMax 再完整百炼业务空间，支持显式 `--platform dashscope`，火山/Agent Plan 视频凭据不触发音乐生成。
 - deck-render、通用视觉片段、片尾和字幕按系统选择默认中文字体：Windows 使用自带微软雅黑且安装器不再下载 Noto；Linux/macOS 保留 Noto Sans CJK SC。旧 Python 动效兼容入口也可读取 Windows 字体文件。
@@ -13,9 +13,22 @@
 
 ### 平台职责与视频分析
 
-- `expert-douyin` / `expert-xhs` 聚焦创作、发布、本人作品数据与创作者服务；私信及其他互动写操作、竞争对手直播调研与直播间互动统一收进 `expert-bd`，直播 workflow 按调研与互动拆分。内容搜索、账号/作品/评论读取、互动提醒与媒体下载统一由一级 `douyin-hunter` / `xhs-hunter` 提供。
-- `viral-chaser` 改为编排 hunter 取资料与下载，再用本地 analyzer 提取音频、公共 ASR 转写和全片关键帧；删除 analyzer 内的登录、探活、链接解析与下载链路。图文由 hunter 下载、对应平台专家 workflow 分析，后续 B 站与快手沿用相同职责划分。
-- 公共 `smart-search` 不支持抖音、小红书、微信公众号和微信视频号；前三者直接调用对应 hunter，视频号暂未提供搜索与取内容方案。`published-track` 只管理发布记录、查询与指标入库，各平台 engagement 工具负责取数后回填。
+- `expert-douyin` / `expert-xhs` / `expert-tiktok` / `expert-kuaishou` / `expert-twitter` 聚焦创作、发布、本人作品数据与创作者服务；私信及其他互动写操作、竞争对手直播调研与直播间互动统一收进 `expert-bd`，直播 workflow 按调研与互动拆分。内容搜索、账号/作品/评论读取、互动提醒与媒体下载由对应平台的一级 hunter 提供，以各平台已实现接口为准。
+- `viral-chaser` 改为编排 hunter 取资料与下载，再用本地 analyzer 提取音频、公共 ASR 转写和全片关键帧；删除 analyzer 内的登录、探活、链接解析与下载链路。支持抖音、小红书、TikTok、快手、X、微博视频，不再支持 B 站链接；图文由 hunter 下载、对应平台专家 workflow 分析。
+- 公共 `smart-search` 将抖音、小红书、TikTok、快手、X、微博和微信公众号路由到对应 hunter；微信视频号暂未提供搜索与取内容方案。`published-track` 只管理发布记录、查询与指标入库，各平台 engagement 工具负责取数后回填。
+
+### TikTok、快手、X 与微博能力扩展
+
+- 新增 `expert-tiktok` / `expert-kuaishou`，扩充 `expert-twitter`：提供起号、账号对标、定性风格 DNA、内容生产、改片与复盘 workflow，配套发布、本人作品取数及风格分析工具；取数匹配完整作品 ID 与账号后回填 `published-track`。
+- 新增 `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter`，按平台接口提供搜索、账号与作品查询、评论读取、媒体下载，支持 `viral-chaser` 获取本地视频素材；微博沿用独立 `weibo-publish`，升级图文/视频发布及发布记录，不新增专家包。
+- `expert-bd` 增加 TikTok 互动、私信与直播工具，接入快手直播读取/监听；X 互动从专家包移入 BD，并新增私信会话读取。快手普通互动写/私信、X Chat 消息发送与加密正文、微博互动写等缺少可复用接口的能力保持不支持。
+- 登录与会话管理并入内部 `platform-runtime`，移除独立 `login-manager` 技能。X、TikTok、微博由各自 hunter 发起 Camoufox 登录，导出 cookie 与真实 UA，在隔离状态验证身份后保存 API 会话；快手使用 hunter 二维码/短信登录。TikTok 写入材料需同次浏览器会话取得，缺少 ticket-guard 材料时保持只读。
+- X、TikTok、微博 hunter 明确专属登录窗口归属；login 核验窗口与持久 profile 并返回 session、窗口状态及当前 URL，新增 `login-status` 检查窗口。导出失败提示检查专属会话，窗口故障与 Cookie 缺失分别报告，不依据 profile 中历史 Cookie 判断登录有效。
+- 发布先本地预览，确认提交后保存收据；结果未知时阻止重复发布，发布成功但入库失败时仅补记录。下载使用作品详情返回的媒体地址，平台 cookie 不发送给媒体 CDN。
+- X 发布预览增加正文与帖串逐条权重、普通/长推模式和 Premium 权限提醒；未订阅或权限未确认时，每条保持280权重内，超限先精简。创作、发布及回复指引说明中文通常按2权重计数，登录校验不验证订阅权限，Blue 权限错误不触发重登。
+- 发布失败保留脱敏后的上游消息、平台 result、HTTP 状态及请求阶段，写入收据并返回诊断，继续阻止 unknown 结果重发。快手视频当前仅覆盖空简介、私密、立即发布的分支；公开、带标题/正文/话题或定时的视频在上传前拒绝，交用户在原平台完成。
+- 微博视频上传超时由默认30秒调整为独立300秒，可配置30–900秒，进程预算同步延长；最终视频提交补上与本次实际 Cookie 匹配的 CSRF 头，缺 Token 时停止。诊断区分上传、转码与最终提交，仅记录超时和头存在状态，保持未知结果禁止重发；修复位于适配层，保留依赖模块不变。
+- 快手私密视频与微博短视频已获本机发布成功反馈；修复“缺公开链接/作品 ID 延迟返回”误报。快手区分创作者作品 ID 与上传 fileId，私密作品无 URL 也可入库和匹配本人指标；微博补完整 ID/短码解析，提交成功后以本次媒体 ID 精确查询本人视频。新增 accepted 收据保存平台确认，后续只查结果或补入库，保持 unknown 防重发；不拼造快手公开链接，不修改保留依赖模块。
 
 ### 抖音发布、采集与本人取数
 
@@ -30,7 +43,7 @@
 
 - `ui-demo` 有头演习的后续命令统一保持 `--headed`，避免 daemon 切换模式导致窗口与页面丢失；录屏按实际时长、关键帧与分辨率检查，经 IM 交付前转为 MP4。无声原始录屏按素材检查，整理成片画布并合成音轨后再走成片闸门。
 - `video-edit extract` 新增 `--mode full`，自动读取时长并转换完整 MP4/WebM 等视频；支持保持原始分辨率、无音轨以及 H.264 / yuv420p / faststart 输出。
-- 源码/Docker 与四个 tarball 安装器共用 `install-skill-deps.mjs`，扫描公共、crew 与嵌套工具的技能依赖；哈希命中后仍检查 `node_modules` 和单包是否存在，目录丢失时补装，安装失败或结果不完整时不写成功哈希。`ui-demo` 缺依赖时返回明确的修复指引。
+- 源码/Docker 与四个 tarball 安装器共用 `install-skill-deps.mjs`，扫描公共、crew 与嵌套工具的技能依赖；支持 per-skill 自定义依赖安装器，安装脚本与配置纳入哈希。哈希命中后仍检查依赖存在性及自定义完整性，缺失或损坏时补装，安装失败或结果不完整时不写成功哈希。`ui-demo` 缺依赖时返回明确的修复指引。
 
 ### 小红书能力升级
 
