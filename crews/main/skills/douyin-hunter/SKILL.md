@@ -15,7 +15,7 @@ metadata:
 
 ## ID 使用规则
 
-用户、作品和评论 ID 必须从原始响应或完整链接读取，按字符串原样保存和传递。禁止截断、添加省略号或先转 JavaScript Number；终端摘要和日志中的缩略 ID 不能作为后续调用参数。若只拿到缩略值，重新读取原始 JSON 或重新搜索，禁止凭前缀补全。
+用户、作品和评论 ID 必须从原始响应或受支持的作品链接读取，按字符串原样保存和传递。禁止截断、添加省略号或先转 JavaScript Number；终端摘要和日志中的缩略 ID 不能作为后续调用参数。若只拿到缩略值，重新读取原始 JSON 或重新搜索，禁止凭前缀补全。
 
 `user-posts --user` 和 `user_profile` 的 `sec_user_id` 参数使用完整的 `sec_uid`，不要替换成数字 `uid`。仅有 `MS4w` 前缀不代表 ID 完整有效。
 
@@ -36,6 +36,10 @@ douyin-hunter comments --id 作品ID --comment-id 评论ID --count 20
 douyin-hunter user-posts --user "https://www.douyin.com/user/完整sec_uid" --count 20
 douyin-hunter collect user_posts --params '{"sec_user_id":"完整sec_uid"}' --count 50 --output-dir /绝对路径/采集
 ```
+
+`fetch` 和 `comments` 的 `--url` 支持 `www.douyin.com` 完整作品链接（含 `modal_id`）、`https://v.douyin.com/` 分享短链及 `www.iesdouyin.com` / `iesdouyin.com` 的 HTTPS 分享作品链接；纯数字作品 ID 使用 `--id`。短链由脚本匿名还原，最多跟随 5 次跳转，只接受上述官方域名的 HTTPS 地址。直接传入短链，不需要手动打开网页或复制作品 ID。
+
+短链错误按返回码处理：`SHORT_URL_EXPIRED` 请用户重新分享；`SHORT_URL_TIMEOUT` / `SHORT_URL_NETWORK_ERROR` 表示还原时网络失败；`SHORT_URL_HTTP_ERROR` 表示分享服务返回 HTTP 错误；`SHORT_URL_INVALID_REDIRECT` / `SHORT_URL_REDIRECT_MISSING` / `SHORT_URL_REDIRECT_LOOP` / `SHORT_URL_TOO_MANY_REDIRECTS` / `SHORT_URL_ITEM_ID_MISSING` 表示跳转异常或未找到作品 ID，停止并报告原错误。不要将短链还原失败当作采集登录失效，也不要自行改用浏览器绕行。
 
 `fetch` 返回 `note` 和 `media_paths`；保存 `note.json`、`video.mp4` 或有序 `image-01.jpg` 等图片，视频供 `viral-chaser` 使用，图文供 `expert-douyin` workflow 分析。图文按图片形态识别，不因附带动态封面误判成视频。公开详情只记录实际提供的点赞、评论、分享和收藏，不将详情中的播放数作为可靠播放量。本人已发作品使用 expert-douyin 的 `douyin-engagement` 通过 HTTP 接口取数，临时读取发布 profile 的 cookie/UA；其他账号播放量及后台深指标不自动获取。`fetch --video-only` 在下载前拒绝图文。评论读取、点赞收藏提醒和新增关注通知归本技能；点赞、收藏、发表评论、私信和直播互动调用 expert-bd。
 

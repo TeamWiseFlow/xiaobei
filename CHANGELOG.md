@@ -1,5 +1,6 @@
 # v5.8.1
 
+- **修复抖音分享短链采集**：`douyin-hunter` 可直接使用 `v.douyin.com` 短链抓取作品、下载素材及读取评论/回复，兼容 `iesdouyin.com` 官方分享页、完整作品链接和数字 ID。短链逐跳校验官方 HTTPS 目标，最多 5 次跳转；链接失效、超时、网络失败和跳转异常分别报错，不误判为登录过期。
 - **Python 改为小贝自管运行时**：固定 CPython 3.12 版本、构建号及各平台校验值，Linux、macOS、Windows、源码安装与 Docker 共用安装入口。预构建包内置目标平台的解释器压缩包，在最终安装目录创建 `tools/python` 共享 venv，不依赖系统 Python，也不再添加 deadsnakes PPA。
 - **统一 Python 依赖与升级维护**：技能依赖集中安装到共享 venv，取消系统及用户级 pip、`--user` 和 `--break-system-packages`。解释器或依赖环境需要重建时备份旧 venv，失败自动恢复；迁移保留用户原有 Python 和用户级依赖。安装入口、Gateway 服务和 agent 默认命令接入同一环境，视频编排的 Python 子进程沿用当前解释器。
 - **整理 crew 提示与执行边界**：内部 crew 的 Python 环境说明由 setup 按实际路径生成；换行、exec 和 Python 提示每次删除旧段落后重写，保留段落外的用户正文。sales-cs 的完整操作规范直接维护在模板中，明确禁止自行编写或执行 Python 脚本，缺少能力时写 feedback；安装器不再向对外 crew 追加内部派工提示。

@@ -5,25 +5,91 @@ import json
 import re
 import time
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
+import requests
 from .http import DouyinRequestError, _send, request, session, serialized
 
 ENDPOINTS = json.loads(Path(__file__).with_name("endpoints.json").read_text())
+ITEM_HOSTS = {"www.douyin.com", "v.douyin.com", "www.iesdouyin.com", "iesdouyin.com"}
+SHORT_URL_MAX_REDIRECTS = 5
+
+
+def _item_url(value, error, *, base=None):
+    try:
+        if any(c.isspace() or ord(c) < 32 or ord(c) == 127 or c == "\\" for c in value):
+            raise ValueError(error)
+        parsed = urlsplit(urljoin(base, value) if base else value)
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname not in ITEM_HOSTS
+            or parsed.port not in (None, 443)
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise ValueError(error)
+        return parsed
+    except ValueError:
+        raise ValueError(error) from None
+
+
+def _item_id(parsed):
+    match = re.search(r"/(?:video|note|slides)/(\d{15,22})(?:/|$)", parsed.path)
+    if not match:
+        match = re.search(r"(?:^|&)modal_id=(\d{15,22})(?:&|$)", parsed.query)
+    return match.group(1) if match else None
+
+
+def _short_item_id(value):
+    current, visited = value, set()
+    # Use an anonymous client, independent of API cookies, Relay and netrc auth.
+    with requests.Session() as client:
+        client.trust_env = False
+        for hop in range(SHORT_URL_MAX_REDIRECTS + 1):
+            parsed = _item_url(current, "SHORT_URL_INVALID_REDIRECT")
+            ident = _item_id(parsed)
+            if ident:
+                return ident
+            if current in visited:
+                raise ValueError("SHORT_URL_REDIRECT_LOOP")
+            visited.add(current)
+            try:
+                with client.get(
+                    current, timeout=(5, 10), allow_redirects=False, stream=True
+                ) as response:
+                    status = response.status_code
+                    if status in (404, 410):
+                        raise ValueError("SHORT_URL_EXPIRED")
+                    if status in (301, 302, 303, 307, 308):
+                        location = response.headers.get("Location")
+                        if not location:
+                            raise ValueError("SHORT_URL_REDIRECT_MISSING")
+                        target = _item_url(
+                            location, "SHORT_URL_INVALID_REDIRECT", base=current
+                        ).geturl()
+                        if hop == SHORT_URL_MAX_REDIRECTS:
+                            raise ValueError("SHORT_URL_TOO_MANY_REDIRECTS")
+                        current = target
+                    elif status >= 400:
+                        raise ValueError("SHORT_URL_HTTP_ERROR")
+                    else:
+                        raise ValueError("SHORT_URL_ITEM_ID_MISSING")
+            except requests.Timeout:
+                raise ValueError("SHORT_URL_TIMEOUT") from None
+            except requests.RequestException:
+                raise ValueError("SHORT_URL_NETWORK_ERROR") from None
 
 
 def item_id(value):
-    if re.fullmatch(r"\d{15,22}", str(value)):
-        return str(value)
-    p = urlsplit(str(value))
-    if p.scheme != "https" or p.hostname not in ("www.douyin.com", "v.douyin.com"):
-        raise ValueError("INVALID_ITEM_URL")
-    m = re.search(r"/(?:video|note|slides)/(\d{15,22})(?:/|$)", p.path)
-    if m:
-        return m.group(1)
-    m = re.search(r"(?:^|&)modal_id=(\d{15,22})(?:&|$)", p.query)
-    if not m:
-        raise ValueError("ITEM_ID_REQUIRED")
-    return m.group(1)
+    value = str(value).strip()
+    if re.fullmatch(r"\d{15,22}", value):
+        return value
+    parsed = _item_url(value, "INVALID_ITEM_URL")
+    ident = _item_id(parsed)
+    if ident:
+        return ident
+    if parsed.hostname == "v.douyin.com":
+        return _short_item_id(value)
+    raise ValueError("ITEM_ID_REQUIRED")
 
 
 def common(profile, state):
