@@ -134,9 +134,9 @@ Stage 9  delivery-promise-lock 交付承诺八类锁定 + motion_ratio 预估
 Stage 10 render-shot        按 slot 渲染（AIGC 走 aigc-video-gen i2v 首尾帧插值；静图走 awk-img-gen）
          visual-render      Stage 10 HTML/GSAP + HyperFrames 确定性视觉渲染（产品段、标题动画、纸拼贴、录屏圈选）
          motion-graphics    旧 JSON/Pillow spec 兼容入口；新项目使用 visual-render
-Stage 11 mix-audio          配音配乐四场景分流（A 人物对话声画同出 / B 旁白一次性 TTS 带字级时间戳 + 对齐 /
-                            C BGM 成片后统一生成（优先 bgm-library 免版税曲库，pexels/pixabay 并列；定制风格用
-                            aigc-video-gen music）/ D 甲方口播录音 → ASR 时间戳 → 按时间戳补素材）
+Stage 11 mix-audio          声音按需求分流：A 人物对话声画同出 / B 纯旁白用 awk-tts + 字级时间戳与对齐 /
+                            C 纯 BGM 用 bgm-library / D 甲方口播录音 → ASR 时间戳 → 按时间戳补素材 /
+                            E 背景音、音效、环境音及带背景/环境的人声优先用 aigc-video-gen audio，一次生成完整音轨
          narration-layout   逐句 TTS 模式（每句独立 mp3）：素材前后各留1s气口 + 防重叠守卫 + 越界断言 + 可选混音；
                             整段模式的时间戳对齐仍走 narration-align，两者互补
 Stage 12 assemble           按序拼接成片（原子工具箱，见下节，我按场景组合，不写死流程）
@@ -149,6 +149,7 @@ Stage 15 交付              回报成片 + 封面 + final-deliver.md 的绝对�
 
 - **复用前核对版本**：检查当前输入/参数与产物校验记录，文件存在不代表本版已完成。`assemble --video-only` 校验有序源内容与输出哈希；审片记录绑定当前素材和成片哈希。改输入后重做受影响步骤，保留旧版供对比。
 - **剪辑验收**：Stage 12 先听看 5–20 秒带声样片；Stage 13 在最终字幕/响度处理后跑 `video-producer edit-audit`，提交最终时间轴干声、源素材时间窗和实际审片记录。字段与命令见工具说明的 `references/edit-audit.md`。技术 pass、运动比例达标或换素材编号不能代替节奏与动作复用审核。
+- **声音入口**：需要背景音、音效、环境音或带这些声音的人声时，优先 `aigc-video-gen audio`（百炼业务空间 `qwen-audio-3.1-tts-next`）；纯人声旁白用 `awk-tts`，纯 BGM 用 `bgm-library`。完整混合音轨直接与画面合成，不再默认拆成 TTS + BGM，也不重复加配乐。此模型无独立干声/字级字幕；有人声先走 `narration-align <project> --audio <实际文件名> --asr --force` 公共 ASR 并逐句核对，`edit-audit` 用 `sound_policy=audio-scene` + `scene_audio` 绑定最终时间轴音频，停顿与人声可懂度由真实试听核验，不冒充干声静音检测。参数见公共 `aigc-video-gen` 和工具 `references/edit-audit.md`。
 - **声音政策**：新混音执行常规 normalize；甲方要求保留已认可音轨时，先锁定原音源，`pip-compose --audio-mode copy` 全轨封装，再 `normalize --locked-audio` 只测量与逐包验证，不因 -14 LUFS 目标重编码、裁切或改增益。明确无声用 `--silent-ok` 核验。最终媒体变更后重新做技术和剪辑审核。
 - 类型 workflow 附带的制作约定（阶段产物、素材 sourcing、验收清单）在该类型视频上生效；**不能裁掉基线阶段，闸门位置与"停下发甲方"的纪律不变**。甲方已在 Brief 中代理批准某道闸门时，把批准范围落 `gates/` 后继续。
 - 可选工具 `reference-concepts`：甲方给了参考视频拆解报告时，据报告出 2–3 个差异化概念落 `reference/concepts.md`。

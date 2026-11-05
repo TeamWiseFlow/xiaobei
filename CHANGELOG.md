@@ -1,5 +1,8 @@
 # v5.8.1
 
+- **新增声音场景生成**：`aigc-video-gen audio` 使用百炼业务空间 `qwen-audio-3.1-tts-next`，一次生成人声、背景音、音效与环境音，支持参考音频及 WAV/MP3 输出；移除原 `music` 子命令、Fun-Music 和 MiniMax 音乐生成。
+- **修复音频时长与 WAV 校验**：按完整解码后的采样数记录实测时长，区分 VBR MP3 探测估值、接口报告和计费时长。对已识别的 WAV 占位长度头，在采样完整且与接口时长吻合时修正长度字段，保留原件与 PCM 哈希；其他损坏保留原始文件并报告具体原因。新增 `audio --resume [--source ...]`，无需重新生成即可恢复下载、修复或重测已有音频。
+- **统一声音选用与验收**：背景音、环境音及带背景/环境的人声优先用 `aigc-video-gen audio`，纯人声用 `awk-tts`，纯 BGM 用 `bgm-library`。完整混合音轨不重复叠加配乐，字幕通过公共 ASR 对齐并跳过旧 TTS 时间戳，审片按实际试听核验台词、停顿与人声可懂度；明确相对输出路径限制及目标时长、台词准确性须核验。
 - **修复抖音分享短链采集**：`douyin-hunter` 可直接使用 `v.douyin.com` 短链抓取作品、下载素材及读取评论/回复，兼容 `iesdouyin.com` 官方分享页、完整作品链接和数字 ID。短链逐跳校验官方 HTTPS 目标，最多 5 次跳转；链接失效、超时、网络失败和跳转异常分别报错，不误判为登录过期。
 - **Python 改为小贝自管运行时**：固定 CPython 3.12 版本、构建号及各平台校验值，Linux、macOS、Windows、源码安装与 Docker 共用安装入口。预构建包内置目标平台的解释器压缩包，在最终安装目录创建 `tools/python` 共享 venv，不依赖系统 Python，也不再添加 deadsnakes PPA。
 - **统一 Python 依赖与升级维护**：技能依赖集中安装到共享 venv，取消系统及用户级 pip、`--user` 和 `--break-system-packages`。解释器或依赖环境需要重建时备份旧 venv，失败自动恢复；迁移保留用户原有 Python 和用户级依赖。安装入口、Gateway 服务和 agent 默认命令接入同一环境，视频编排的 Python 子进程沿用当前解释器。

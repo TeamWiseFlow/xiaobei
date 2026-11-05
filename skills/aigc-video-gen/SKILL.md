@@ -1,6 +1,6 @@
 ---
 name: aigc-video-gen
-description: AIGC 视频片段生成（声画同出）。支持文生、图生和参考生视频，时长按模型限定。music 子命令支持音乐生成。
+description: AIGC 视频片段生成（声画同出），支持文生、图生和参考生视频。audio 子命令使用百炼 qwen-audio-3.1-tts-next 生成背景音、音效、环境音及带背景/环境的人声；纯人声用 awk-tts，纯 BGM 用 bgm-library。
 metadata:
   openclaw:
     emoji: 🎞️
@@ -12,37 +12,49 @@ metadata:
 ---
 # AIGC Video Gen — 百炼 Wan3.0 / HappyHorse、火山 Seedance、MiniMax Hailuo
 
-直连阿里云百炼业务空间 / Token Plan Wan3.0、火山方舟 Seedance 或 MiniMax Hailuo 端点生成视频片段（声画同出）。同模型声画同步出，无需单独 TTS。百炼业务空间 Fun-Music 与 MiniMax 提供独立音乐生成能力（`music` 子命令）。
+直连阿里云百炼业务空间 / Token Plan Wan3.0、火山方舟 Seedance 或 MiniMax Hailuo 端点生成视频片段（声画同出）。同模型声画同步出，无需单独 TTS。百炼业务空间 `qwen-audio-3.1-tts-next` 提供独立声音场景生成能力（`audio` 子命令），一次输出人声、背景音、音效和环境音。
 
 > 本 skill 是公共能力，供 main agent（`video-edit` 素材补充环节的"为组装目的 AIGC 补充"）和 content-producer 共同调用。
 
 ## 平台与模型
 
-| 平台 | 环境变量 | 视频模型 | 音乐模型 |
+| 平台 | 环境变量 | 视频模型 | 音频模型 |
 |------|---------|---------|---------|
-| 百炼业务空间 | `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`（或 `DASHSCOPE_API_KEY`） | `wan3.0-video-prime` → `wan3.0-video` | `fun-music-v1` |
+| 百炼业务空间 | `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`（或 `DASHSCOPE_API_KEY`） | `wan3.0-video-prime` → `wan3.0-video` | `qwen-audio-3.1-tts-next` |
 | 百炼 Token Plan | `AWK_API_KEY` | `wan3.0-video` | — |
 | 火山引擎方舟 | `VOLC_SEEDANCE_API_KEY` | `doubao-seedance-2-5-260628`、`doubao-seedance-2-0-fast-260128` | — |
-| MiniMax Hailuo | `MINIMAX_API_KEY` | `MiniMax-H3` | `music-3.0` |
+| MiniMax Hailuo | `MINIMAX_API_KEY` | `MiniMax-H3` | — |
 
 - 三个平台的上述视频模型**均支持声画同出**（t2v / i2v / r2v 三种模式）。
 - **视频平台自动判断写在 `aigc-video-gen.sh` 里**：argv 含 `--platform <value>` 时转发到对应供应商脚本（剔除 `--platform` 参数）；无 `--platform` 时按 env 自动判——有 `MINIMAX_API_KEY` 走 MiniMax，否则有 `VOLC_SEEDANCE_API_KEY` 走火山，否则有 `MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`/`WORKSPACE_ID` 走百炼，否则有 `AWK_API_KEY` 走百炼（agent plan 兜底，排最后：它是主模型 key，只在无显式视频平台凭据时触发），皆无则输出提示让 Agent 改用 `pexels-footage` / `pixabay-footage`（退出码 2）。
-- **三供应商脚本拆分**（共享逻辑在 `scripts/aigc_common.py`，与三脚本同目录）：
-  - `scripts/gen_minimax.py` — MiniMax Hailuo 视频生成（含 `--ref-audio` 多模态参考）+ `music` 子命令
+- **入口脚本**（共享逻辑在 `scripts/aigc_common.py`）：
+  - `scripts/gen_minimax.py` — MiniMax Hailuo 视频生成（含 `--ref-audio` 多模态参考）
   - `scripts/gen_volc.py` — 火山引擎 Seedance 视频生成
-  - `scripts/gen_dashscope.py` — 百炼业务空间 / Token Plan Wan3.0 视频与业务空间 Fun-Music 音乐
-- **音乐单独选路**：`music --platform dashscope` 固定百炼业务空间，`music --platform minimax` 固定 MiniMax。自动模式优先已配置的 MiniMax，否则选完整百炼业务空间凭据；火山视频凭据和 `AWK_API_KEY` 不触发音乐生成。缺音乐凭据时退出码2。
+  - `scripts/gen_dashscope.py` — 百炼业务空间 / Token Plan Wan3.0 视频
+  - `scripts/gen_audio.py` — 百炼业务空间声音场景生成与已有结果恢复
+  - `scripts/audio_media.py` — 完整解码计时与受限 WAV 占位头修复
+- **音频固定业务空间**：`audio` 直接调用百炼业务空间，不受 MiniMax/火山视频凭据影响；可显式传 `--platform dashscope`，其他平台直接报错。缺完整业务空间凭据退出码2，不回退 Token Plan、legacy 或其他供应商。
+
+## 声音能力选用
+
+| 需求 | 使用技能 |
+|------|---------|
+| 背景音、音效、环境音，或带背景/环境的人声（如口播 + 激昂配乐） | 优先 `aigc-video-gen audio`，一次生成完整音轨 |
+| 单纯的人声旁白、干声 TTS、音色复刻/设计 | `awk-tts` |
+| 单纯的 BGM / 背景音乐 | `bgm-library` 搜索、试听、下载并保留署名 |
+
+先按声音需求选入口。完整混合音轨直接交后期与画面合成，不默认再分别生成 TTS/BGM，也不叠加第二条配乐。甲方已锁定的原音轨继续保留，不为使用新模型重配。
 
 ### ⚠️ MINIMAX_API_KEY 缺失处理
 
-所有 MiniMax 能力（Hailuo-H3 视频生成 + 背景音乐生成）都要求环境变量中提供 `MINIMAX_API_KEY`。**缺 `MINIMAX_API_KEY` 时需实时提醒用户提供 key**，然后交 **IT engineer** 配置：
+MiniMax Hailuo-H3 视频生成要求环境变量中提供 `MINIMAX_API_KEY`。**缺 `MINIMAX_API_KEY` 时需实时提醒用户提供 key**，然后交 **IT engineer** 配置：
 
 ```
 [error] MINIMAX_API_KEY 未设置 —— 请实时提醒用户提供 key,然后交 IT engineer 配置
 ```
 
 Agent 读到此报错后的处理流程：
-1. 实时向用户说明需要 MiniMax API key 才能使用 Hailuo-H3 视频生成 / 背景音乐生成能力
+1. 实时向用户说明需要 MiniMax API key 才能使用 Hailuo-H3 视频生成能力
 2. 请用户提供 key
 3. 把 key 交给 IT engineer 配置到环境变量 `MINIMAX_API_KEY`
 4. 配置完成后重试
@@ -180,39 +192,53 @@ aigc-video-gen --platform minimax --model "MiniMax-H3" \
   --prompt "<声画同出描述>" --output output_videos/<topic>/generations/03.mp4
 ```
 
-### 音乐生成（music 子命令）
+### 声音场景生成（audio 子命令）
 
 ```bash
-# 百炼业务空间：纯音乐 BGM，默认 fun-music-v1
-aigc-video-gen music --platform dashscope \
-  --prompt "轻快的电子背景音乐，适合科技产品展示" --instrumental \
-  --output output_videos/<topic>/bgm/01.mp3
+# 口播 + 激昂背景音乐，直接生成一条完整音轨
+# 在提示词中明确台词、音色、表达方式和背景，不把场景指令当作台词。
+aigc-video-gen audio \
+  --prompt '短视频励志口播。年轻男声，坚定有力，吐字清晰，说：“从今天开始，把想法变成行动。”背景是激昂的管弦乐，音量低于人声，结尾自然收束。' \
+  --output output_videos/<topic>/audio/narration.wav
 
-# 百炼业务空间：自定义歌词，选择男声，输出 WAV
-aigc-video-gen music --platform dashscope --gender male \
-  --lyrics "[verse]清晨阳光穿过窗，新的故事正开场。[chorus]迎着风向前走，梦想就在下一站。" \
-  --format wav --output output_videos/<topic>/music/song.wav
+# 环境音 / 音效，不需要人声
+aigc-video-gen audio \
+  --prompt '雨夜环境音：持续细雨拍打窗户，远处偶尔有闷雷；无说话声。' \
+  --output output_videos/<topic>/audio/ambience.wav
 
-# 保留 MiniMax；自动模式也优先 MiniMax
-aigc-video-gen music --platform minimax \
-  --prompt "轻快的电子背景音乐，适合科技产品展示" \
-  --output output_videos/<topic>/bgm/minimax.mp3
-
-# 仅配置百炼业务空间时可省略 --platform
-aigc-video-gen music \
-  --prompt "舒缓的钢琴纯音乐" --instrumental \
-  --output output_videos/<topic>/bgm/01.mp3
+# 长口播与声音场景写入 UTF-8 提示词文件；本地参考音频由脚本编码提交
+aigc-video-gen audio --prompt-file output_videos/<topic>/audio/scene.txt \
+  --ref-audio reference.wav --output output_videos/<topic>/audio/scene.mp3
 ```
 
-百炼音乐规则：
+- 使用 `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`，并开通 `qwen-audio-3.1-tts-next` 权限。沿用项目的 `WORKSPACE_ID` 名称。
+- `--prompt` / `--prompt-file` 二选一，1–3000字符；中英文。写清任务、人物音色、台词、表达方式、背景/环境和声音先后变化；台词用引号标出，多人称呼保持一致。
+- `--ref-audio` 最多3条，按传入顺序用 `@voice1`、`@voice2`、`@voice3` 引用。支持公网 URL 或本地 WAV/MP3/OGG Opus；本地文件由脚本检查每条≤30秒、≤10MB后编码为 Base64，URL 的格式/大小/时长由服务端验证。不得引用不存在的编号；不使用 TTS 系统音色或复刻音色 ID。
+- 同步生成，使用 `input.text_prompt`，调用 `/services/audio/tts/SpeechSynthesizer`；不轮询视频任务。WAV/MP3 按输出后缀选择，默认48kHz双声道。完整音频 URL 有效期24小时，生成后立即下载并验证可完整解码。
+- 不提供 `--duration`；播客最多240秒，其他场景最多120秒，超过限制先按叙事边界拆分。提示词里的“约28秒”和 `--rate` 都不保证精确时长；生成后按完整解码的实测时长核对画面与末句，不裁掉台词凑时长。用于剪辑与字幕对齐时优先输出 WAV。
+- `--output` 必须是当前工作区的相对路径，如 `douyin/outputs/<work>/audio/scene.wav` 或 `output_videos/<topic>/audio/scene.wav`；不接受绝对路径或越出工作区的路径。提示词文件与参考音频属于输入，可用绝对路径。
+- metadata 中的 `duration` 按完整解码后的采样数计算，`duration_source=decoded-samples`；`decoded_samples` 为每声道采样帧数，实际 `sample_rate` / `channels` 一并记录。`probe_duration` 仅为探测值，VBR MP3 可能按码率估算；`reported_duration` 是接口报告，`usage.duration` 是计费字段，均不替代实测值。恢复旧 metadata 时把原时长留在 `previous_duration`。
+- WAV 检查 RIFF/chunk 边界。仅当命中支持的 PCM16 占位长度头、实际数据采样块完整、且数据时长与接口 `reported_duration` 相差不超过0.01秒时，才修正两个长度字段；保留 `.original.wav`、原文件哈希和 PCM 哈希，PCM 数据不变。普通截断、未知错误头、采样块不完整或时长无法互证均报错，不把短文件强行修成“成功”。
+- 下载或验证失败在 metadata 保存诊断、生成链接和已有原始字节，不覆盖先前有效音频，不重新提交生成。只有 `status=downloaded` 才表示音频已通过下载/解码校验；此状态不代表台词和听感已经验收。metadata 含临时签名链接，排障交付时不要直接外发原件。
+- 对照批准稿逐句检查重复、漏句、词句替换与末句完整，并实际试听语速、自然度和背景/人声比例。参考音频不保证逐字保真；ASR 差异须听校，不能仅凭转写认定模型改词，也不能据单个样本认定某个参考输入必然造成重复。
+- 本模型不返回字级字幕或独立干声。带人声的完整音轨可交 `video-producer narration-align <project> --audio <实际音频文件名> --asr --force` 走公共 ASR 获取时间戳（文件名须与 WAV/MP3 产物一致；跳过同名旧 TTS 字幕并更新旧对齐结果），再逐句核对台词与尾音；不要按文案字数估时，也不要把混合音轨标成干声。成片审片按 `expert-video` 的完整声音场景规则执行。
 
-- 需要 `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`，且已开通 `fun-music-v1` 权限。仅有 Token Plan / legacy key 时停止，不切换端点。
-- 非流式同步生成，返回音频 URL 后立即下载；有效期24小时。默认生成歌曲；背景音乐应显式加 `--instrumental`。
-- `--prompt` 与 `--lyrics` 至少提供一项；同时提供时歌词优先，prompt 不生效。prompt 为1–2000字符，歌词中文5–350字符、英文5–2000字符。
-- `--instrumental` 需要 prompt，歌词和演唱性别将被忽略。歌曲可用 `--gender male|female`，不传时服务默认女声。
-- MP3/WAV 格式按输出后缀选择；显式 `--format` 须与后缀一致。百炼接口无时长参数，不传 `--duration`，生成时长记录在 metadata；所需片段由后期剪辑取得。
+#### 已有结果恢复（不重新生成）
 
-接口：[Fun-Music 使用指南](https://help.aliyun.com/zh/model-studio/fun-music)、[API 参考](https://help.aliyun.com/zh/model-studio/fun-music-api)。
+```bash
+# 优先复用已保留的原始下载；没有本地文件时才从同一生成链接重新下载
+# 不需要模型凭据，不提交新的生成请求，不与 --output 或生成参数同用
+aigc-video-gen audio --resume douyin/outputs/<work>/audio/scene.json
+
+# 旧版失败记录没有原件路径时，显式指定此前取回的原始文件
+# 原件只读；目标仍使用 metadata 中原有的工作区输出路径
+aigc-video-gen audio --resume douyin/outputs/<work>/audio/scene.json \
+  --source douyin/outputs/<work>/audio/scene-original.wav
+```
+
+对 `status=downloaded` 且已有本地音频的旧记录，`--resume` 只做本地解码、更新可靠时长，不访问生成接口或下载链接。失败时保留原件并报告具体原因；链接失效且没有本地原件时停止，不能自动新生成。
+
+接口：[音频生成指南](https://docs.bailian.console.aliyun.com/zh/model-studio/audio-generation)、[API参考](https://docs.bailian.console.aliyun.com/zh/model-studio/audio-generation-api)。
 
 ## Parameters
 
@@ -235,35 +261,41 @@ aigc-video-gen music \
 | `--model` | auto | 显式指定模型 ID（关闭候选链 fallback）；不指定则按模式走首选 + 候选链 |
 | `--output` | required | 输出 MP4 路径（必须在 `output_videos/` 或 `<platform>/outputs/` 下，供应商脚本内部 `ensure_safe_output` 校验） |
 
-### 音乐生成参数（music 子命令）
+### 声音场景参数（audio 子命令）
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--platform` | auto | `dashscope`（百炼业务空间）或 `minimax`；自动优先 MiniMax |
-| `--prompt` | 按平台 | 音乐描述；MiniMax 必需，百炼与歌词至少提供一项 |
-| `--lyrics` | — | 百炼歌词；与 prompt 同时提供时优先歌词 |
-| `--instrumental` | off | 百炼纯音乐模式，需要 prompt |
-| `--gender` | 服务默认女声 | 百炼歌曲演唱性别：`male` / `female` |
-| `--format` | 输出后缀 | 百炼 `mp3` / `wav`，须与输出后缀一致 |
-| `--model` | `fun-music-v1` | 百炼音乐模型 |
-| `--duration` | — | MiniMax 兼容参数；百炼不支持，音乐时长由模型决定 |
-| `--output` | required | 输出音频路径（须在 `output_videos/tmp/fragments/artifacts` 或 `<platform>/outputs/` 下） |
+| `--platform` | `dashscope` | 仅百炼业务空间，可省略 |
+| `--prompt` / `--prompt-file` | 生成时必填 | 文本或 UTF-8 文件，二选一，1–3000字符；不与恢复模式同用 |
+| `--resume` | — | 已有 metadata JSON，只恢复下载/校验/修复与实测计时；不新生成 |
+| `--source` | — | 恢复模式的已有原始音频文件，可选；不修改该输入文件 |
+| `--ref-audio` | — | 公网 URL / 本地 WAV、MP3、OGG Opus，可重复最多3条 |
+| `--format` | 输出后缀 | `wav` / `mp3`，须与输出后缀一致 |
+| `--sample-rate` | `48000` | 8000 / 16000 / 24000 / 44100 / 48000 Hz |
+| `--channels` | `2` | 1（单声道）或2（双声道） |
+| `--volume` | `50` | 输出音量0–100 |
+| `--rate` | `1.0` | 语速0.5–2.0 |
+| `--seed` | 服务端默认 | 请求随机种子 |
+| `--model` | `qwen-audio-3.1-tts-next` | 固定已支持模型，无候选链回退 |
+| `--output` | 生成时必填 | 当前工作区相对 WAV/MP3 路径，须在 `output_videos/tmp/fragments/artifacts` 或 `<platform>/outputs/` 下；绝对路径不可用，恢复时沿用 metadata 路径 |
 
 ## Output
 
 - **视频生成**：MP4 视频片段 + 同名 `.json` metadata；百炼记录实际使用模型、端点模式、请求比例与发送比例、声音开关
-- **音乐生成**：音频文件 + 同名 `.json` metadata；百炼支持 MP3/WAV，记录实际模型、业务空间模式、输入、音频链接/ID、格式、生成时长、返回歌词/声道/采样率与 request_id
+- **声音场景生成**：WAV/MP3 + 同名 `.json` metadata，记录模型、业务空间、提示词、参考来源、输出参数、音频链接/ID、生成与实测时长及 request_id；不保存参考音频 Base64
 - 决策审计：workdir 下 `decisions.log`（append-only，记候选链 fallback）
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `WORKSPACE_ID` + `MODELSTUDIO_API_KEY` / `DASHSCOPE_API_KEY` | 百炼业务空间视频与 Fun-Music 音乐 |
-| `AWK_API_KEY` | 百炼 agent plan 视频 key（token-plan 端点；无业务空间凭据时启用），不用于音乐 |
+| `WORKSPACE_ID` + `MODELSTUDIO_API_KEY` / `DASHSCOPE_API_KEY` | 百炼业务空间视频与 Qwen Audio 声音场景 |
+| `AWK_API_KEY` | 百炼 agent plan 视频 key（token-plan 端点；无业务空间凭据时启用），不用于独立音频生成 |
 | `VOLC_SEEDANCE_API_KEY` | 火山 Seedance 视频生成专用的普通方舟 API key（非 Coding/Token Plan，不可与 `ARK_API_KEY` 混用） |
-| `MINIMAX_API_KEY` | MiniMax API key（Hailuo-H3 视频生成 + 背景音乐生成共用） |
+| `MINIMAX_API_KEY` | MiniMax API key（仅 Hailuo-H3 视频生成） |
 
 ## Fallback 路径
 
-`MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`/`WORKSPACE_ID`/`AWK_API_KEY`、`VOLC_SEEDANCE_API_KEY`、`MINIMAX_API_KEY` 均未配 → wrapper 退出码 2，Agent 应改用 `pexels-footage` / `pixabay-footage` 走 Stock Footage 模式兜底。
+`MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`/`WORKSPACE_ID`/`AWK_API_KEY`、`VOLC_SEEDANCE_API_KEY`、`MINIMAX_API_KEY` 均未配 → 视频 wrapper 退出码 2，Agent 应改用 `pexels-footage` / `pixabay-footage` 走 Stock Footage 模式兜底。
+
+音频缺少完整百炼业务空间凭据时退出码2，按需补齐凭据；不要自动改成纯 TTS、曲库 BGM 或视频素材来替代所需声音场景。

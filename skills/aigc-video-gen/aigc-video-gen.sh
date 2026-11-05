@@ -3,9 +3,10 @@
 # 让 agent 用 `aigc-video-gen <args>` 走 PATH，零路径拼接。
 #
 # 三供应商脚本拆分：
-#   scripts/gen_minimax.py    — MiniMax Hailuo（视频 + 音乐）
+#   scripts/gen_minimax.py    — MiniMax Hailuo 视频
 #   scripts/gen_volc.py       — 火山引擎 Seedance
-#   scripts/gen_dashscope.py  — 百炼业务空间 Wan3.0 / Fun-Music、Agent Plan HappyHorse
+#   scripts/gen_dashscope.py  — 百炼业务空间 / Token Plan Wan3.0 视频
+#   scripts/gen_audio.py      — 百炼业务空间 Qwen Audio 声音场景生成
 #
 # Dispatch 顺序：
 #   1. argv 含 --platform <value> → 转发到对应 gen_*.py（剔除 --platform 参数）
@@ -13,7 +14,7 @@
 #      MODELSTUDIO_API_KEY/DASHSCOPE_API_KEY/WORKSPACE_ID → dashscope；
 #      AWK_API_KEY → dashscope（agent plan 模式，排最后：它是主模型 key，
 #      只在没有任何显式视频平台凭据时才兜底触发百炼）
-#      音乐单独按 MINIMAX_API_KEY → 完整百炼业务空间凭据选路。
+#      audio 固定百炼业务空间，不参与视频供应商选路。
 #   3. 皆无 → 输出提示让 Agent 改用 pexels-footage / pixabay-footage（退出码 2）
 set -euo pipefail
 SELF="${BASH_SOURCE[0]}"
@@ -56,22 +57,25 @@ strip_platform() {
   printf '%s\0' "${out[@]}"
 }
 
-# music 使用独立供应商选路，避免火山 / Agent Plan 视频凭据误触发。
+# audio 使用独立入口，不受视频凭据影响；帮助无需配置凭据。
 mapfile -d '' -t CLEAN_ARGS < <(strip_platform "$@")
 COMMAND="${CLEAN_ARGS[0]:-video}"
 
+if [ "$COMMAND" = "music" ]; then
+  echo "[error] music 已移除；声音场景用 aigc-video-gen audio，纯人声用 awk-tts，纯 BGM 用 bgm-library。" >&2
+  exit 2
+fi
+if [ "$COMMAND" = "audio" ]; then
+  if [ -n "$PLATFORM" ] && [ "$PLATFORM" != "dashscope" ]; then
+    echo "[error] audio 仅支持 dashscope（百炼业务空间）" >&2
+    exit 2
+  fi
+  exec python3 "$SCRIPTS/gen_audio.py" "${CLEAN_ARGS[@]:1}"
+fi
+
 # ---- 2. 无 --platform 时按 env 自动判 -----------------------------------------
 if [ -z "$PLATFORM" ]; then
-  if [ "$COMMAND" = "music" ]; then
-    if [ -n "${MINIMAX_API_KEY:-}" ]; then
-      PLATFORM="minimax"
-    elif [ -n "${WORKSPACE_ID:-}" ] && { [ -n "${MODELSTUDIO_API_KEY:-}" ] || [ -n "${DASHSCOPE_API_KEY:-}" ]; }; then
-      PLATFORM="dashscope"
-    else
-      echo "[error] 音乐生成凭据未配置：需 MINIMAX_API_KEY，或 WORKSPACE_ID + MODELSTUDIO_API_KEY/DASHSCOPE_API_KEY（百炼业务空间）。" >&2
-      exit 2
-    fi
-  elif [ -n "${MINIMAX_API_KEY:-}" ]; then
+  if [ -n "${MINIMAX_API_KEY:-}" ]; then
     PLATFORM="minimax"
   elif [ -n "${VOLC_SEEDANCE_API_KEY:-}" ]; then
     PLATFORM="volcengine"
@@ -89,11 +93,6 @@ if [ -z "$PLATFORM" ]; then
     echo "       若要启用 AI 直生成，请配置上述任一平台的环境变量。" >&2
     exit 2
   fi
-fi
-
-if [ "$COMMAND" = "music" ] && [ "$PLATFORM" = "volcengine" ]; then
-  echo "[error] music 仅支持 minimax / dashscope（百炼业务空间）" >&2
-  exit 1
 fi
 
 # ---- 3. dispatch 到对应 gen_*.py ----------------------------------------------

@@ -1,33 +1,33 @@
 #!/usr/bin/env python3
-"""Stage 11 — mix-audio：配音配乐四场景分流。
+"""Stage 11 — mix-audio：声音五场景分流。
 
 Usage:
-  python3 scripts/mix-audio.py <project_dir>
+  video-producer mix-audio <project_dir>
 
 入：project_dir/script/script.md（含 delivery_cues / 对白 / 旁白标记）
 出：project_dir/audio/ 目录 + subtitles.srt 模板
-    （实际音频产物由 agent 按下方四场景路径生成）
+    （实际音频产物由 agent 按下方声音路径生成）
 
-四场景分流（agent 按 script.md 实际内容判断走哪条）：
+五场景分流（agent 按 script.md 实际内容判断走哪条）：
 
   A. 人物对话 → 声画同出
      aigc-video-gen i2v 渲染时人物对白自带语音，不单独做 TTS。
      本场景无需 mix-audio 处理，直接进 assemble。
 
-  B. 旁白 → 一次性 TTS + ASR 对齐
+  B. 纯人声旁白 → awk-tts 一次性 TTS + ASR 对齐
      1. agent 把整片旁白词写好，一次性 TTS 生成 audio/narration.mp3
         （保证语音一致性，不要分段生成）
      2. 跑 narration-align（Stage 11）：
-        python3 scripts/narration-align.py <project_dir>
-        → 调火山 ASR 极速版对 narration.mp3 转写，输出
+        video-producer narration-align <project_dir>
+        → 复用 TTS 字级时间戳，缺失时调用公共 ASR 转写 narration.mp3，输出
         audio/narration-segments.json（utterance 级真实时间戳，秒）
      3. agent 拿 segments 按 shot 时长切片对应，assemble 时混入
 
-  C. 背景音乐 → 成片合成后一次性生成/下载
-     1. 成片 video.mp4 合好后，按成片时长统一生成或下载 BGM
+  C. 纯 BGM → bgm-library 搜索、试听与下载
+     1. 按成片时长从 bgm-library 选曲、试听与下载，保留署名
      2. 落 audio/bgm.mp3，assemble 时混入
      BGM 可选路径：
-       - pexels-footage / pixabay-footage 搜 background music
+       - bgm-library：按英文风格标签或预设选曲，保留 ATTRIBUTION.txt
        - 静音占位（无 BGM 需求时）
 
   D. 甲方口播录音 → ASR 时间戳 → 按时间戳补素材
@@ -35,7 +35,11 @@ Usage:
      2. 跑 narration-align 拿 utterance 级真实时间戳
      3. agent 拿时间戳按句排素材，assemble 时混入；不重配旁白
 
-混合场景：A/B/C/D 任意组合均可能，agent 按 script.md 与 Brief 判断。
+  E. 背景音、音效、环境音或带背景/环境的人声 → aigc-video-gen audio
+     一次生成完整音轨；有人声时用 narration-align --audio <实际文件名> --asr --force 公共 ASR 对齐并逐句核验。
+     不重复叠加 BGM，不能把完整音轨当干声；edit-audit 用 audio-scene + scene_audio，实际试听停顿。
+
+混合场景：A/B/C/D/E 按 Brief 需求选择；E 的完整音轨不再叠加 B/C，agent 按 script.md 与 Brief 判断。
 """
 
 import argparse
@@ -113,33 +117,37 @@ def main() -> None:
 
     print(f"[done] audio/ 目录已建 + subtitles.srt 模板已落")
     print()
-    print("=== 配音配乐四场景分流（agent 按 script.md 判断走哪条）===")
+    print("=== 声音五场景分流（agent 按 script.md 判断走哪条）===")
     print()
     print("A. 人物对话 → 声画同出")
     print("   aigc-video-gen i2v 渲染时人物对白自带语音，不单独做 TTS。")
     print("   本场景无需 mix-audio，直接进 assemble。")
     print()
-    print("B. 旁白 → 一次性 TTS 带字级时间戳 + 对齐")
+    print("E. 背景音、音效、环境音及带背景/环境的人声 → 优先 aigc-video-gen audio")
+    print("   一次生成完整音轨，不再分别生成 TTS/BGM；有人声时 narration-align --audio <实际文件名> --asr --force 走公共 ASR 并逐句核验。")
+    print("   完整混音不冒充干声；edit-audit 用 audio-scene + scene_audio，停顿与可懂度由实际试听核验。")
+    print()
+    print("B. 纯人声旁白 → awk-tts 一次性 TTS 带字级时间戳 + 对齐")
     print("   1. agent 把整片旁白词写好，一次性 TTS 生成 audio/narration.mp3")
     print("      （保证语音一致性，不要分段生成）")
     print("      调 awk-tts 时加 --enable-subtitle，火山单向流式 HTTP 原生返回")
     print("      字级时间戳（sentence.words 带 startTime/endTime，秒），")
     print("      awk-tts 自动落盘 audio/narration.subtitle.json")
     print("   2. 跑 narration-align（Stage 11）：")
-    print("        python3 scripts/narration-align.py <project_dir>")
+    print("        video-producer narration-align <project_dir>")
     print("      → 优先复用 narration.subtitle.json（TTS 原生字级时间戳，零额外调用）")
-    print("      → 缺失时回退火山 ASR 极速版转写 narration.mp3")
+    print("      → 缺失时走公共 ASR 路由转写 narration.mp3")
     print("      → 输出 audio/narration-segments.json（统一 segments 格式）")
     print("   3. agent 拿 segments 按 shot 时长切片对应，assemble 时混入")
     print()
-    print("C. 背景音乐 → 成片合成后一次性生成/下载")
-    print("   1. 成片 video.mp4 合好后，按成片时长统一生成或下载 BGM")
+    print("C. 纯 BGM → bgm-library 搜索、试听与下载")
+    print("   1. 按成片时长从 bgm-library 选曲、试听与下载，保留署名")
     print("   2. 落 audio/bgm.mp3，assemble 时混入")
     print("   BGM 可选路径：")
-    print("     - pexels-footage / pixabay-footage 搜 background music")
+    print("     - bgm-library：按英文风格标签或预设选曲，保留 ATTRIBUTION.txt")
     print("     - 静音占位（无 BGM 需求时）")
     print()
-    print("混合场景：A/B/C/D 任意组合均可能，agent 按 script.md 与 Brief 判断。")
+    print("混合场景：A/B/C/D/E 按 Brief 需求选择；E 的完整音轨不再叠加 B/C，agent 按 script.md 与 Brief 判断。")
     print()
     print("D. 甲方口播录音 → ASR 时间戳 → 按时间戳补素材")
     print("   1. agent 把甲方给的口播录音落 audio/voiceover.<ext>（Brief 给绝对路径；文案落稿锁定，不重写）")

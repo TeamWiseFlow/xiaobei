@@ -194,7 +194,7 @@ bash scripts/update.sh --skip-sync
 >
 > 百炼业务空间 Wan3.0 支持2–30秒或智能时长 `--duration -1`、480P/720P/1080P、参考音频与无声输出；Agent Plan 保留 HappyHorse 候选链。素材与组合限制见[Wan3.0 使用指南](https://help.aliyun.com/zh/model-studio/wan3-video-generation-guide)。
 
-> 音乐生成可用 `aigc-video-gen music --platform dashscope` 调用百炼业务空间 `fun-music-v1`，支持歌曲、纯音乐及 MP3/WAV；纯音乐加 `--instrumental`。需完整业务空间凭据及模型权限，不使用 Agent Plan。自动选路为 MiniMax → 百炼业务空间，详见[音乐生成技能说明](skills/aigc-video-gen/SKILL.md)。
+> 声音场景用 `aigc-video-gen audio` 调用百炼业务空间 `qwen-audio-3.1-tts-next`，一次生成口播人声与背景音/环境音，也可单独生成音效、环境音；需 `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`，不使用 Token Plan。单纯人声旁白用 `awk-tts`，单纯 BGM 用 `bgm-library`。原 `music` 子命令及百炼/MiniMax 音乐生成已移除，详见[声音生成技能说明](skills/aigc-video-gen/SKILL.md)。
 
 > **🖼️ 图像生成模型配置**
 >

@@ -70,7 +70,7 @@ video-producer pip-compose --base /absolute/slides.mp4 --presenter /absolute/pre
 
 ### 剪辑样片与最终审片
 
-Stage 12 先听看 5–20 秒代表性带声样片。最终合成后跑 `video-producer edit-audit <project> --preview <最终视频>`，检查最终时间轴旁白干声的长空档、按内容哈希和源时间窗识别重复动作，并登记绑定当前计划/素材/成片的真实审片；status=pass 才交付。计划字段、逐项例外及审片命令见 [references/edit-audit.md](references/edit-audit.md)。不要用 BGM 混音检测旁白停顿，不以 motion_ratio 或换素材 ID 证明画面不重复。
+Stage 12 先听看 5–20 秒代表性带声样片。最终合成后跑 `video-producer edit-audit <project> --preview <最终视频>`，检查最终时间轴旁白干声的长空档、按内容哈希和源时间窗识别重复动作，并登记绑定当前计划/素材/成片的真实审片；status=pass 才交付。计划字段、逐项例外及审片命令见 [references/edit-audit.md](references/edit-audit.md)。不要用 BGM 混音检测旁白停顿。`aigc-video-gen audio` 的完整混合音轨使用 `sound_policy=audio-scene` 与 `scene_audio`，停顿、台词与人声可懂度由公共 ASR 对齐后实际试听核验；工具不把该音轨作为干声静音检测。不以 motion_ratio 或换素材 ID 证明画面不重复。
 
 ### Stage 13–14：审核、响度、字幕和封面
 
@@ -133,7 +133,7 @@ video-producer interp <video.mp4> --target-fps 30 --output <out.mp4>  # 更顺�
 | `visual-render` | `scaffold <composition-dir> --width/--height/--duration/--fps/--background`；`check/preview/render <composition-dir>` | HTML 项目、静帧联系表或 MP4 | 共用 deck-render 锁定的 HyperFrames/GSAP/Chromium 运行时；适用产品段、标题、纸拼贴和录屏圈选。素材在 `assets/`，编辑 `index.html` 的 DOM/CSS/GSAP；预览用 `--output <空目录> --at 0,1,2`，渲染用 `--output <clip.mp4> [--workers 1] [--force]` |
 | `motion-graphics` | 新项目用 `scaffold/check/preview/render`；旧项目仍可用 `<project_dir> --spec mg.json` | 单段 clip.mp4 | 新子命令直接转交 `visual-render`；旧 JSON/Pillow 模板只兼容已制作项目，不再用于新创作 |
 | `batch-i2v` | `--batch gen-jobs.json [--dry-run]` | 多个 i2v MP4 | 特殊生成式动作的可选批量调度；逐条调公共 `aigc-video-gen`，job 写 `"mute": true` 时出片后无损去音轨；普通纸片组装使用 `visual-render` |
-| `mix-audio` | script.md（delivery_cues） | `audio/` 目录 + `subtitles.srt` 模板 | 配音配乐四场景分流：A 人物对话声画同出 / B 旁白一次性 TTS 带字级时间戳 + 对齐 / C BGM 成片后统一生成 / D 甲方口播录音 → ASR 时间戳 → 按时间戳补素材 |
+| `mix-audio` | script.md（delivery_cues） | `audio/` 目录 + `subtitles.srt` 模板 | 声音分流：A 对话声画同出 / B 纯人声 awk-tts + 字级时间戳与对齐 / C 纯 BGM 用 bgm-library / D 原口播录音 + ASR / E 背景音、环境音及带背景/环境的人声优先 aigc-video-gen audio 一次生成 |
 | `narration-align` | audio/narration.mp3 + audio/narration.subtitle.json | `audio/narration-segments.json` | 旁白字级时间戳对齐（**整段模式**：一条连续 narration.mp3；优先复用 `awk-tts --enable-subtitle` 的原生时间戳，缺失时回退公共 ASR 路由：火山 → 百炼） |
 | `narration-layout` | `<project_dir> --plan narration_plan.json [--srt ...] [--mix ...] [--force]` | `audio/abs_starts.json` + SRT + 可选混音 | 逐句旁白排布（**逐句模式**：每句独立 mp3，与 narration-align 互补）：实测镜头时长累积起点 → 每句对齐镜头起点 + 防重叠守卫 → 逐句/末句越界断言（违反非零退出打印明细）→ SRT（样式参数化，force_style 落 abs_starts.json 供 burn-srt 引用）→ 可选一步混音（内部复用 audio-mix：N 路旁白 + BGM fade） |
 | `clip-trim` | `--input/--output/--start/--end/--speed/--sync-audio/--pre-buffer/--duration/--normalize/--grade/--windows/--zoompan/--low-load` | 切好的片段 | 精确切素材段（入点/出点/倍速/前置缓冲，视频、音频、图片分别处理；`--pre-buffer 0.5` 防切 MP3 吞首字）；`--normalize 1920x1080@25` 切片即归一（scale+pad+sar+fps）；`--grade warm` 预设调色；`--windows "12.0:3.2,44.5:1.4"` 一镜多窗切后 concat；`--zoompan 1.08` 定帧缓推（视频源在 --start 取帧）；`--low-load` 低载编码（nice19/veryfast/crf18/threads2） |

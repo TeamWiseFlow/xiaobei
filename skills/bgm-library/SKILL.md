@@ -2,7 +2,7 @@
 name: bgm-library
 description: 搜索、筛选并下载 ccMixter 免版税背景音乐（仅 CC BY / CC BY-SA，商用安全），
   自动生成 TASL 署名。支持关键词搜索、5 套场景预设、按标签下载候选曲、按 ID 下载。
-  纯客户端，无需 API key。
+  纯 BGM 优先使用本技能；背景音、环境音及带背景/环境的人声优先用 aigc-video-gen audio。纯客户端，无需 API key。
 metadata:
   openclaw:
     emoji: 🎵
@@ -155,7 +155,8 @@ video-edit audio-mix input.mp4 --bgm <已下载的曲目.mp3> --bgm-start 47 --b
 选曲策略：
 
 - ✅ **优先 `bgm-library`**：免 key、免版税、自动署名、商用安全；适合绝大多数配乐场景
-- ✅ **需要定制风格 / 无法在 ccMixter 找到匹配时**：用 `aigc-video-gen music`（MiniMax 生成，需 `MINIMAX_API_KEY`）
+- ✅ **纯 BGM**：继续用 `bgm-library` 换标签、预设或候选曲；也可使用用户提供的授权曲目。
+- ✅ **背景音、音效、环境音，或带背景/环境的人声**：优先用 `aigc-video-gen audio` 一次生成；纯人声旁白用 `awk-tts`。完整混合音轨不再叠一遍 BGM。
 - ❌ **不要**放开 `--no-commercial-only` 下 NC/ND 协议曲目到商用成片
 - ✅ 先试听几处候选段落，核对旋律、节奏、人声冲突和循环接缝；用户要高潮段时，明确选段起点与长度，不默认曲首或全曲 RMS 最大段就是高潮。
 - ✅ 默认增益只是起点。试听带旁白样片，测量所选段落的电平，再调节比例；频谱平坦度只能作为音色参考，不能据一个阈值判废曲目或认证旋律。

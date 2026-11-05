@@ -162,17 +162,12 @@ video-edit audio-mix input.mp4 --narration speech.mp3 --bgm music.mp3 --normaliz
 - 先试听所选段落与旁白的代表性样片，再决定增益。不要把某条作品的 BGM/人声比例作为通用标准；提高音量无法补救选到鼓点循环或弱起前奏。
 - 混音后运行公共 `video-review`，并抽听末 3 秒确认末句完整。音轨等长仍可能只有 BGM 或补静音，不能代替末句检查；修改成片后重新审核。
 
-旁白音频的生成：
+声音素材按需求选择：
 
-1. **优先使用 OpenClaw 内置 TTS 工具**（`tts_generate` 或 agent 内置语音合成能力）
-2. 内置 TTS 不可用时，使用公共 `awk-tts` 技能（多供应商：火山豆包 2.0 → 百炼业务空间 → 百炼 agent plan，凭据在哪家走哪家）
-3. 混音前核对旁白与画面时长；旁白短时补静音，超出画面 0.1 秒以上直接报错。先调整旁白或画面，不用 `-t` 自动截掉末句。
-
-BGM（`--bgm` 文件）的来源：
-
-- ✅ **优先公共 `bgm-library` 技能**：ccMixter 免版税曲库（CC BY / CC BY-SA，商用安全），免 key、自动署名。`bgm-library pick "<主题>" --output <project-dir>/audio/` 选曲下载后传给 `--bgm`
-- 需要定制风格 / ccMixter 无匹配时，用公共 `aigc-video-gen music`（MiniMax 生成，需 `MINIMAX_API_KEY`）
-- 用户自带曲目直接用；成片发布时必须把 `bgm-library` 产出的 `ATTRIBUTION.txt` 附到视频简介（CC 协议法律要求）
+1. 背景音、音效、环境音及带背景/环境的人声，优先公共 `aigc-video-gen audio` 一次生成完整音轨；如“口播 + 激昂配乐”，在同一提示词写明台词、人声和背景要求。完整音轨作为 `--narration` 与画面合成，不再加同一份 BGM；先试听，避免再叠原视频配乐。
+2. 单纯人声旁白用公共 `awk-tts`；需要字级时间戳加 `--enable-subtitle`。声音场景音轨没有原生字级字幕，需要字幕时由公共 ASR 对齐并逐句核对。
+3. 单纯 BGM 用公共 `bgm-library`：`bgm-library pick "<英文风格标签>" --output <project-dir>/audio/`，试听选段后传给 `--bgm`。无匹配时换标签、预设或候选曲；用户自带授权曲目也可直接使用。
+4. 混音前核对声音与画面时长；音轨短时补静音，超出画面0.1秒以上直接报错。先调整声音或画面，不用 `-t` 截掉末句。成片发布时把曲库产出的 `ATTRIBUTION.txt` 写入视频简介。
 
 ## 能力四：字幕烧录（subtitles）
 
