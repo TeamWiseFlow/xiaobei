@@ -224,12 +224,14 @@ Agent 不需要手动上传图片；发布脚本会自动收集并上传上述�
 
 - 指定 `author`、`source_url` 时逐字或按原意执行；未指定时，author 使用 `xiaobei`, source_url不填。
 - `need_open_comment` 和 `only_fans_can_comment` 按用户要求,如果没有要求的话，前者选True，后者选False。
+- 公众号长文的简介写入 `digest`：用户已指定时沿用指定文字，需要拟写时基于定稿内容简短概括。该字段可省略，省略时由微信按默认规则生成；它不会插入正文，不要用会加入正文的 `description` 代替。
 
 公众号长文：
 
 ```yaml
 ---
 title: 最终标题
+digest: "图文简介"            # 可选，独立简介，不会插入正文
 cover: cover.jpg             # 可选，缺省自动取正文第一张图
 author: 作者名称              # 可选，≤ 8 个汉字 / 24 bytes
 source_url: https://...      # 可选，原文链接，仅用户指定时写入
@@ -276,7 +278,7 @@ image_list:
 调 `wx-mp-publisher <article.md> [theme] [--account ALIAS]` 推草稿箱：
 
 - 小绿书：frontmatter 有 `image_list` 时自动走图片消息接口，忽略主题参数。
-- 脚本自带发布前校验（图片纯文件名引用、`author` 长度），校验失败直接退出。
+- 脚本自带发布前校验（图片纯文件名引用、`author` 长度、`digest` 字符串类型），校验失败直接退出。
 - 必须等待脚本完整返回后再判定结果，禁止提前自行判断发布成功。
 
 ### 9-3. 公众号特例：media_id 占位与 URL 升级

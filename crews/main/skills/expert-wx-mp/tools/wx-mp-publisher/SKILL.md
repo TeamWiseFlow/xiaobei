@@ -51,7 +51,7 @@ wx-mp-publisher <markdown_file> [theme] [--account ALIAS]
 脚本自动：
 - 从 `accounts.json` 取目标账号凭据
 - 自动收集正文、`cover`、`image_list` 中的本地图片并随稿件一起上传
-- 发布前校验图片引用和 frontmatter `author`；校验失败会直接退出
+- 发布前校验图片引用、frontmatter `author` 长度和 `digest` 类型；校验失败会直接退出
 - POST multipart 到 `${RELAY_BASE_URL}/api/v1/wx-mp/publish`，带 `X-OFB-Key`
 - 校验响应包络 `{ success, data, error }`
 
@@ -92,6 +92,7 @@ wx-mp-publisher <markdown_file> [theme] [--account ALIAS]
 ```yaml
 ---
 title: 文章标题
+digest: "用于展示在图文卡片上的简短介绍" # 可选，图文简介；不会插入正文
 cover: cover.jpg             # 可选，缺省自动取正文第一张图
 author: 作者名称              # 可选，≤ 8 个汉字 / 24 字节（超长报 45110）
 source_url: https://...      # 可选，原文链接
@@ -99,6 +100,10 @@ need_open_comment: true      # 可选，是否开启评论（默认 false）
 only_fans_can_comment: false # 可选，是否仅粉丝可评论（默认 false）
 ---
 ```
+
+图文简介使用 `digest`，直接写在原稿的 frontmatter 中，发布命令不变。用户给出简介时使用指定文字；需要拟写时依据定稿内容简短概括，不新增事实。不需要自定义简介时省略该字段或写 `digest: ""`，由微信按默认规则生成。简介须为 YAML 字符串，纯数字等内容加引号。
+
+`digest` 作为独立简介传给微信，不会插入正文；`description` 会以引用前缀加入正文。不要用 `description` 代替图文简介。`digest` 用于普通图文，小绿书仍按下文提交图片和正文。
 
 ### 小绿书（图片消息）
 
@@ -118,7 +123,7 @@ image_list:
 了解产品与使用方式，请访问官网：https://example.com
 ```
 
-将示例官网替换为用户确认的真实地址。`description` 会以 `> 本次更新摘要` 和空行作为引用前缀加入正文，随后接原正文及官网 CTA；它不会覆盖正文，不要把它当成独立于 `content` 的替代字段。图片消息不依赖主题进行 HTML 排版；传入的主题仍须通过 relay 参数校验。
+将示例官网替换为用户确认的真实地址。`description` 会先作为引用引言加入正文，随后接原正文及官网 CTA；小绿书提交时由 core 转为纯文本。它不会覆盖正文，不要把它当成独立于 `content` 的替代字段。图片消息不依赖主题进行 HTML 排版；传入的主题仍须通过 relay 参数校验。
 
 ✅ 将说明文字与官网 CTA 写在 frontmatter 后的正文，`image_list` 列出轮播图片。
 ❌ 因为图片消息“不含 HTML”就删掉正文，或只将整篇文案放入 `description`。
@@ -157,6 +162,7 @@ Agent 不需要手动上传图片；脚本会自动收集并上传上述本地�
 | `MISSING_APP_ID` / `MISSING_APP_SECRET`（relay 400） | accounts.json 中该账号凭据为空，补全 |
 | `MISSING_MARKDOWN`（relay 400） | 检查 markdown 文件内容非空 |
 | `45110: author size out of limit` | frontmatter `author` 超 8 汉字 / 24 字节，缩短后再发 |
+| `frontmatter digest（图文简介）须为字符串` | 将简介写成 YAML 字符串；纯数字等内容加引号，不需要时删除字段 |
 | 本地图片不存在 / 图片 `ENOENT` | 按 Markdown 所在目录核对图片路径，确认源文件存在 |
 | `INVALID_THEME`（relay 400） | 改用主题表中的内置 ID，或传已登记的自定义 ID / CSS 文件 |
 | relay 502 | relay 调微信失败，检查 AppSecret / IP 白名单（见 `REFERENCE.md`） |
