@@ -89,11 +89,11 @@ irm https://raw.atomgit.com/wiseflow/xiaobei/raw/master/scripts/install-atomgit.
 
 > 按网络环境选一条线路：能正常访问 GitHub 可用 `install.sh` / `install.ps1`；国内客户推荐 AtomGit 预构建 tarball 配合 `XIAOBEI_GITHUB_PROXY`，客户端无需完整构建 OpenClaw。两条线路安装产物一致。
 
-> `XIAOBEI_GITHUB_PROXY` 可设为其他 HTTPS URL 前缀；不设置时 GitHub 下载保持直连。它覆盖浏览器、指纹模型、GeoIP、Matrix 原生库及安装期间的 GitHub Git 拉取；代理模式还为未自定义的 npm/pnpm、Node headers 和 Playwright 下载配置国内镜像。uBlock 的 Mozilla 下载、系统包管理器及非 GitHub 的可选依赖仍按各自来源访问，不能仅凭此开关承诺全程国内访问。完整范围与覆盖配置见 [安装脚本说明](scripts/README.md#github-下载代理)。升级时也需要设置该变量，并使用包含此功能的新安装包。
+> `XIAOBEI_GITHUB_PROXY` 可设为其他 HTTPS URL 前缀；不设置时 GitHub 下载保持直连。它覆盖浏览器、指纹模型、Matrix 原生库及安装期间的 GitHub Git 拉取；代理模式还为未自定义的 npm/pnpm、Node headers 和 Playwright 下载配置国内镜像。正式 tarball 已内置 uBlock 和 GeoIP，安装时无需从 Mozilla 或 GeoIP 上游下载；源码或旧包的回退下载、系统包管理器及非 GitHub 的可选依赖仍按各自来源访问。完整范围与覆盖配置见 [安装脚本说明](scripts/README.md#github-下载代理)。升级时也需要设置该变量，并使用包含此功能的新安装包。
 
 > install 脚本默认拉最新 release tag + 下载 tarball。指定版本：`export XIAOBEI_TAG=v5.6.3`（PowerShell：`$env:XIAOBEI_TAG="v5.6.3"`）。
 
-> 💡 **下载中断 / 安装失败？** 主程序 tarball 有版本缓存；浏览器资源会自动尝试最多 5 次，中断后优先续传，连续 2 分钟没有新数据才超时。当前 Camoufox 156.0.1-beta.36 Linux x64 压缩包约 1.29 GB。五次都失败后临时文件会清理；需要跨次安装续传时，可用 `curl` 下载到本地目录，再通过 `XIAOBEI_BROWSER_DOWNLOADS` 提供给资源安装器，校验通过后使用。见[资源下载缓存](scripts/README.md#浏览器资源下载缓存)。
+> 💡 **下载中断 / 安装失败？** 主程序 tarball 有版本缓存；浏览器资源会自动尝试最多 5 次，中断后优先续传，连续 2 分钟没有新数据才超时。当前 Camoufox 156.0.1-beta.36 Linux x64 压缩包约 1.29 GB。五次都失败后临时文件会清理；可将预下载的 Camoufox、uBlock 或 GeoIP 文件保留原名放进 `~/.xiaobei/cache/`，直接重跑安装脚本，校验通过后使用。见[资源下载缓存](scripts/README.md#浏览器资源下载缓存)。
 
 > ⚠️ **Windows 必须装 bash**（Git Bash 或 WSL）。install.ps1 / install-atomgit.ps1 用 `tar`（Win10 1803+ 自带）解压 tarball，但 `setup-crew.sh` 是 bash 脚本，部署 crew workspace 离不开 bash。无 bash 时脚本会跳过 crew 模板部署并提示手动补跑——此时小贝团队起不来。装 Git Bash：https://git-scm.com （安装时勾选 "Add to PATH"）。
 

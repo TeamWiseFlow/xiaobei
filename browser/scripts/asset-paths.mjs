@@ -11,6 +11,6 @@ export function assetPaths() {
     launcher: join(directory, process.platform === "darwin" ? "Camoufox.app/Contents/MacOS/camoufox" : process.platform === "win32" ? "camoufox.exe" : "camoufox-bin"),
     addon: join(directory, "addons", "UBO"),
     model: join(directory, "fpgen"),
-    geoip: join(directory, "geoip-aio-all.mmdb"),
+    geoip: join(directory, `geoip-aio-all-${lock.geoip.version}.mmdb`),
   };
 }

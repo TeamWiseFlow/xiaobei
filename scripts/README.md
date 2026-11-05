@@ -23,9 +23,23 @@
 
 ### Ubuntu / Debian 系统依赖
 
-`install.sh` 和 `install-atomgit.sh` 在下载与解压前检查 `curl`、`tar`、`zstd`、`ca-certificates`、`python3`、`python3-pip`。存在缺项时先执行 `apt-get update`，再仅安装缺少的包；依赖齐全则跳过 apt。普通用户通过 `sudo` 安装系统包，程序与运行数据仍归该用户；root 直接运行时直接调用 apt。权限不足、apt 失败或安装后 Python/pip 仍不可用时提前退出，升级路线此时尚未停止已有 Gateway。其他平台保留原有系统依赖准备方式。
+`install.sh` 和 `install-atomgit.sh` 在下载与解压前检查 `curl`、`tar`、`zstd`、`ca-certificates`。存在缺项时通过 apt 仅安装缺少的包；不安装或替换系统 Python，也不添加 deadsnakes 等 PPA。普通用户按需使用 sudo，root 直接调用 apt。基础工具准备失败时，尚未停止已有 Gateway。
 
-安装脚本自带的 Node/pnpm 和预构建 OpenClaw 不要求预装系统 Node、Git 或完整编译工具。Python 库仍由脚本使用可用的 Python/pip 安装，并优先选择已有 pip 的解释器。
+### xiaobei自管 Python
+
+Linux、macOS、Windows、源码安装与 Docker 共用 `scripts/python-runtime.mjs`：
+
+- 解释器版本、构建号及各平台 SHA-256 固定在 `scripts/python-runtime.lock.json`，采用 Astral python-build-standalone 的 CPython 3.12。解释器及其安全更新随小贝发布维护。
+- `tools/python-base/<版本-构建-平台>/` 保存完整解释器，`tools/python/` 是该安装实例所有技能共用的 venv；Windows 可执行目录为 `Scripts`，其他平台为 `bin`。依赖仍统一声明在仓根 `requirements.txt`。
+- 预构建包内置目标平台原始 Python 压缩包，在客户最终安装路径创建 venv；源码安装从 `~/.xiaobei/cache/` 复用或下载并校验。`XIAOBEI_CACHE_DIR` 可覆盖缓存位置，预下载文件保持原名即可。GitHub 下载支持统一的 `XIAOBEI_GITHUB_PROXY`。
+- 依赖始终由该 venv 的 `python -m pip` 安装，不使用 `--user`、`--break-system-packages` 或默认 `--trusted-host`。可用 `XIAOBEI_PYPI_INDEX_URL` 指定包索引。
+- 解释器或依赖声明改变时重建环境；旧 venv 保留为 `tools/python.backup-*`，新环境准备失败时恢复旧环境。依赖标记保存在 venv 内，不复用旧用户目录的成功标记。无变化则复用，依赖失败阻止安装继续。
+- 安装入口与服务 PATH 接入此 venv；安装器使用 OpenClaw 原生 `tools.exec.pathPrepend`，保证 agent 临时脚本的 `python` / `python3` 默认指向该环境。保留用户其他 PATH 项及各 agent 的执行模式、审批与白名单。远程 node 或独立 sandbox 需要在其自身环境部署运行时，不能使用宿主路径代替。
+- 内部 crew 模板不预写 `### Python 环境`；每次 setup 清理旧区块，在 AGENTS.md 的 `## Tools` 下按实际路径重新生成唯一一份，保留其他备注。新建、既有及尚未注册的 internal 工作区都走同一入口，Python configure 复用该生成器。临时任务需要独立依赖时 spawn IT Engineer，使用同一自管解释器准备任务环境。
+- `workspace-guides.py` 生成的真实换行、exec 和 Python 提示统一先删除旧段落再写入当前版本，段落外的用户正文保留；不按已有标题跳过，也不做逐条对齐。
+- 提示生成器只处理 internal。sales-cs 等 external crew 的全部操作规范直接由模板提供：禁止自行创建、修改或执行 Python 脚本，缺少能力时写入本工作区 `feedback/YYYY-MM-DD.md`，不要求 spawn IT Engineer；旧实例的提示由维护者按需调整。技能、命令白名单同步及共享业务知识旧路径迁移继续保留。
+
+迁移不卸载用户的旧 Python、依赖或 PPA。不要直接搬运 venv；改变安装目录时重新运行安装器。Docker 的解释器与 venv 留在镜像程序层，不新增持久卷。
 
 下面的一行安装命令使用 `curl` 获取脚本，因此极简系统若连 curl 或 CA 证书也没有，需要先准备这两项，或先通过浏览器取得脚本再本地执行：
 
@@ -92,11 +106,17 @@ irm https://raw.atomgit.com/wiseflow/xiaobei/raw/master/scripts/install-atomgit.
 
 该功能需要使用包含 `browser/scripts/download-network.mjs` 的新 tarball；仅更新 bootstrap 脚本不能让旧发行包获得资源代理能力，启用变量时遇到旧包会明确报错。
 
-此变量不是通用 HTTP/HTTPS 代理。Mozilla 的 uBlock、apt/brew/winget 等系统包管理器、ONNX 可选 NuGet 下载等仍按各自配置访问，不对这些地址机械添加 GitHub 前缀；完整国内网络安装还需逐项验证这些来源。无 CUDA 的 CPU 云电脑可另设 `ONNXRUNTIME_NODE_INSTALL_CUDA=skip`，此开关不自动改变 GPU 安装选项。
+此变量不是通用 HTTP/HTTPS 代理。正式 tarball 已内置 uBlock 和 GeoIP；源码或旧包缺少内置 uBlock 时，Mozilla 下载仍按原地址访问。apt/brew/winget 等系统包管理器、ONNX 可选 NuGet 下载等也按各自配置访问，不对这些地址机械添加 GitHub 前缀；完整国内网络安装还需逐项验证这些来源。无 CUDA 的 CPU 云电脑可另设 `ONNXRUNTIME_NODE_INSTALL_CUDA=skip`，此开关不自动改变 GPU 安装选项。
 
 #### 浏览器资源下载缓存
 
-弱网下下载浏览器压缩包，可先用支持续传的下载器保存为 `<缓存目录>/<assets.lock.json 中的平台 asset.name>`，设置 `XIAOBEI_BROWSER_DOWNLOADS=<缓存目录>`，再单独运行 `node browser/scripts/install-assets.mjs`。资源安装器会先核对 SHA-256，再使用缓存，不需要重跑 OpenClaw 构建；缓存文件不能只改名或跳过校验。该缓存入口也适用于 uBlock 和 GeoIP，指纹模型使用 SDK 自身的安装目录。
+主程序 tarball、Camoufox、uBlock 和 GeoIP 的预下载文件统一放在 `~/.xiaobei/cache/`，保留下载链接中的原始文件名、不要解压，直接重跑一键安装脚本即可，无需额外环境变量。例如当前 uBlock 文件为 `~/.xiaobei/cache/ublock_origin-1.74.0.xpi`，浏览器文件名见 `browser/assets.lock.json` 的平台 `asset.name`。资源安装器会先核对 SHA-256，再使用本地文件；不匹配则报错，不跳过校验或自动换文件。
+
+自定义公共缓存目录用 `XIAOBEI_CACHE_DIR`；只覆盖浏览器资源目录用 `XIAOBEI_BROWSER_DOWNLOADS`，其优先级更高。仍可单独运行 `~/xiaobei/tools/node/bin/node ~/xiaobei/browser/scripts/install-assets.mjs`，它使用相同的默认缓存和覆盖规则。缓存中缺少的资源继续从原地址下载；指纹模型使用 SDK 自身的安装目录。
+
+正式 tarball 在构建时通过 `scripts/prepare-browser-data.mjs` 保存 `browser/assets.lock.json` 固定的 GeoIP 数据库和 uBlock 原始 XPI。安装时优先读取包内 `browser/data/geoip-aio-all-<版本>.mmdb` 和 `browser/data/ublock_origin-<版本>.xpi`，校验 SHA-256，uBlock 解压后再核对 manifest 版本；客户机无需访问这两项资源的上游下载地址。源码部署或旧包缺少内置文件时，才依次尝试预下载缓存和上游地址。
+
+GeoIP 上游每周构建且只保留最近两版，随包保存使旧包不依赖上游历史 release。更新资源 pin 必须同步版本、URL、SHA-256；GeoIP 运行目录使用带版本号的文件名，避免与旧数据库的校验值混用。固定上游文件已删除且没有可信缓存时，构建应失败并要求维护者更新 pin，不在客户安装时静默改用 latest。uBlock 保留原始签名 XPI，不重新打包或修改其内容。
 
 Camoufox、uBlock 和 GeoIP 的内置资源下载默认包含首次最多尝试 5 次。连接中断、HTTP 408/429/5xx 会分别等待 3、6、12、24 秒后重试；同一次安装中优先用 Range 续传，服务端不支持时从头重下。每 30 秒显示下载进度，连续 2 分钟没有新数据才超时，没有固定的总下载时限。HTTP 403/404、磁盘写入错误和 SHA-256 校验失败会立即报错。指纹模型沿用 SDK 自带的重试，并打印请求次数及错误原因。
 
@@ -115,7 +135,7 @@ bash scripts/update.sh --atomgit
 2. 解析最新 release tag（GitHub 线路走 `api.github.com`，回退 gh CLI；atomgit 线路走 `api.atomgit.com/api/v5`；`XIAOBEI_TAG` 直接指定）
 3. 下载预构建 tarball → 解压到 `~/xiaobei/`（程序目录）
 4. `pnpm install --prod --frozen-lockfile`（用自带的 portable Node + pnpm，在 `openclaw/` 下）
-5. `pip install --user`（skills 的 Python 依赖）
+5. 使用小贝自管 Python 3.12 venv 安装技能依赖（各平台共用机制）
 6. awada 本地插件 deps（`awada/` 下 `npm install --omit=dev` 装 ws+zod）
 7. `install-browser.mjs`：先安装 `browser/package.json` 锁定的 Playwright，再调用 `install-playwright.mjs` 预装配套 Chromium headless shell，并准备 Camoufox 固定资产。驱动仅在 `browser/node_modules`，唯一 Chromium 缓存为 `browser/.browsers`；`--skip-assets` 同时跳过 Chromium 下载。已有浏览器资源会复用。
 8. `install-deck-render.sh`（Windows 为 `.ps1`）：安装或校验 FFmpeg/FFprobe、锁定 HyperFrames/GSAP、实例共享 Playwright/Chromium 与中文字体（Linux/macOS 为 Noto Sans CJK SC，Windows 为系统微软雅黑）；重跑会复用已有依赖。
@@ -189,7 +209,7 @@ cd openclaw && pnpm build && cd ..   # 首次或修改源码后手动 build
 **仅同步 crew workspace 的 markdown 文件**。不碰源码，不 build，不重启。适合只更新了 crew 模板内容（SOUL.md、AGENTS.md 等）的场景。
 
 ```bash
-./scripts/setup-crew.sh          # 幂等同步（不覆盖已有文件）
+./scripts/setup-crew.sh          # 同步配置并更新生成提示，保留用户正文
 ./scripts/setup-crew.sh --force  # 强制覆盖（含 MEMORY.md 等个性化文件）
 ```
 

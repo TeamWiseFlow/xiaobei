@@ -10,6 +10,10 @@ crews/content-producer/skills/expert-video/tools/deck-render/package-lock.json
 **/.DS_Store
 **/__pycache__
 .venv
+tools/python
+tools/python-base
+tools/python.backup-*
+tools/.python-install.lock
 tmp
 *.log
 docs/

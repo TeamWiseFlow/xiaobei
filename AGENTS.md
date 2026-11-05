@@ -37,6 +37,9 @@
 - **BOOTSTRAP.md**：一次性首次运行引导，完成后删除
 - **USER.md**：服务对象信息
 
+- internal crew 模板不写 `### Python 环境`；该段由统一提示生成器在每次 setup 时清理旧区块并重建到 AGENTS.md 的 `## Tools` 节末尾，路径按实际部署生成，其他本机备注保留。`workspace-guides.py` 内的提示统一按标题删除旧段落后重写，保留段落外的用户正文，不做已有标题即跳过或逐条对齐。
+- external crew 的 AGENTS.md 模板必须直接包含完整操作规范，明确禁止自行创建、修改或执行 Python 脚本；缺少能力或需要编程时写入本工作区 `feedback/YYYY-MM-DD.md`。安装与升级脚本不向 external crew 自动注入提示，不要求其 spawn 未配置的 IT Engineer；已部署实例的自定义正文保持不变。
+
 ## 创建/更新 skill 时，如果涉及到脚本或者 cli 指导内容，必须遵从以下原则：
 - 1、多步骤操作且涉及中间态保存的（下一步操作的某一输入为上一步返回结果），哪怕每一步都只是一条命令，也必须做脚本！
 - 2、涉及多分支选择，且分支选择依靠明确变量的（如环境变量中是否有某个值，或者按某个入参的值判断分支）应该优先用脚本。
@@ -88,7 +91,7 @@ SKILL.md 是写给**执行时的智能体**看的操作手册，不是开发日�
 
 ### Python 依赖
 
-在仓根 `requirements.txt` 声明。`scripts/apply-addons.sh` 扫描 `skills/`、`crews/*/skills/`、仓根下所有 `requirements.txt`，合并去重后 `pip install --user`。内容哈希守卫，依赖集变化才重装。
+在仓根 `requirements.txt` 声明。源码、预构建包和 Docker 统一调用 `scripts/python-runtime.mjs`，使用项目锁定的 CPython 与 `tools/python` 共享 venv；扫描公共技能、crew 技能及仓根依赖，合并去重后由该解释器安装。依赖标记归 venv，解释器或依赖变化时重建，不使用系统/用户级 pip、`--user` 或 `--break-system-packages`。agent 默认解释器通过原生 `tools.exec.pathPrepend` 接入；Python Tools 指导仅给 internal crew，不扩大 sales-cs 等 external crew 的权限。
 
 ### Node 依赖
 

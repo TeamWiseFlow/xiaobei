@@ -83,6 +83,9 @@ load_runtime_environment() {
       *) export PATH="$OPENCLAW_HOME/bin:$PATH" ;;
     esac
   fi
+  source "$XIAOBEI_ROOT/scripts/lib/python-runtime.sh"
+  xiaobei_use_python_runtime "$XIAOBEI_ROOT"
+  node "$XIAOBEI_ROOT/scripts/python-runtime.mjs" configure --root "$XIAOBEI_ROOT" --config "$OPENCLAW_HOME/openclaw.json"
 }
 
 # ─── 3. 首启生成 gateway token ─────────────────────────────────────

@@ -20,7 +20,7 @@
 #   3. git fetch + reset --hard 拉取最新 wiseflow 代码
 #   4. 读取 openclaw.version，按锚定版本检出 openclaw 子目录
 #      - 若已是目标 commit，跳过耗时的 install
-#   5. apply-addons.sh（patches + skills + crew 模板，先升级 pip，再按需安装 Python 依赖；内含 setup-crew.sh）
+#   5. apply-addons.sh（patches + skills + crew 模板、自管 Python 与依赖；内含 setup-crew.sh）
 #   6. pnpm build（编译 openclaw dist）
 #   7. daemon 升级（已装只 reload + restart 不卸装，避免掐断正在跑的会话）
 #   8. 微信 channel 插件同步 + meta 回正
@@ -354,6 +354,8 @@ ADDON_ARGS=(--no-build --no-restart)
 [ "$FORCE" = "true" ] && ADDON_ARGS+=(--force)
 [ "$SKIP_CREW" = "true" ] && ADDON_ARGS+=(--skip-crew)
 "$PROJECT_ROOT/scripts/apply-addons.sh" "${ADDON_ARGS[@]}"
+source "$PROJECT_ROOT/scripts/lib/python-runtime.sh"
+xiaobei_use_python_runtime "$PROJECT_ROOT"
 echo ""
 
 # Build/provision the shared driver and browser before renderer checks.
@@ -476,7 +478,7 @@ if [ "$(uname -s)" = "Linux" ]; then
   _wrapper_bin="$OPENCLAW_HOME/bin"
   _cur_path="$(grep -E '^PATH=' "$SYSTEMD_ENV_FILE" | tail -n1 | sed -E 's/^PATH=//' || true)"
   _prefix=""
-  for _d in "$_node_dir" "$_program_bin" "$_wrapper_bin"; do
+  for _d in "$VIRTUAL_ENV/bin" "$_node_dir" "$_program_bin" "$_wrapper_bin"; do
     [ -n "$_d" ] || continue
     case ":$_cur_path:" in *":$_d:"*) ;; *) _prefix="${_prefix:+$_prefix:}$_d" ;; esac
   done
@@ -492,6 +494,8 @@ if [ "$(uname -s)" = "Linux" ]; then
     mv "${SYSTEMD_ENV_FILE}.new" "$SYSTEMD_ENV_FILE"
     chmod 600 "$SYSTEMD_ENV_FILE"
   fi
+
+  node "$PROJECT_ROOT/scripts/python-runtime.mjs" service-env --root "$PROJECT_ROOT" --env-file "$SYSTEMD_ENV_FILE"
 
   # --- WSL2 环境：注入 GUI 显示变量 ---
   if grep -qi microsoft /proc/version 2>/dev/null; then
@@ -605,6 +609,7 @@ elif [ "$(uname -s)" = "Darwin" ]; then
   if [ -f "$MACOS_GATEWAY_ENV" ]; then
     _write_missing_env "$MACOS_GATEWAY_ENV" export
     chmod 600 "$MACOS_GATEWAY_ENV"
+    node "$PROJECT_ROOT/scripts/python-runtime.mjs" service-env --root "$PROJECT_ROOT" --env-file "$MACOS_GATEWAY_ENV"
 
     # 重启 gateway 使新环境变量生效
     cd "$OPENCLAW_DIR"

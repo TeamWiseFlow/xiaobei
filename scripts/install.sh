@@ -9,14 +9,14 @@
 #   - update.sh  = git clone 源码用户的升级路线（git fetch + reset → checkout openclaw@pin → apply-addons.sh → pnpm build → daemon reload；需系统 Node/git/pnpm，pnpm 必须 11+）
 #
 # 执行流程：
-#   0. Ubuntu/Debian 检查并补齐 curl/tar/zstd/CA/Python/pip（仅安装缺项，普通用户按需 sudo）
+#   0. Ubuntu/Debian 检查并补齐基础工具；Python 由小贝自管，不添加 PPA
 #   1. 检测 OS + arch → 选 tarball asset（linux-x64 / mac-arm64 / mac-x64 / win-x64）
 #   2. bootstrap gum UI（TTY 才有，非 TTY 静默跳过）
 #   3. 解析最新 release tag（GitHub API，回退 gh CLI）
 #   4. 下载 xiaobei-{ver}-{plat}.{tar.zst|tar.gz} → 临时文件（linux 用 zst，mac/win 用 gzip，bsdtar 原生支持）
 #   5. 解压到 WISEFLOW_ROOT（默认 ~/xiaobei，程序目录）：openclaw/ + tools/node + tools/pnpm + bin/openclaw + crews/ + skills/ + scripts/ + camoufox-cli/ + awada/
 #   6. pnpm install --prod --frozen-lockfile（用 ship 的 portable node + pnpm，在 openclaw/ 下；只拉依赖不编译，无 OOM，native 自动按平台）
-#   7. 先升级 pip，再 pip install --user（skills 的 python deps，扫 requirements.txt）
+#   7. 在小贝自管的 Python 3.12 venv 安装技能依赖（Linux/macOS 共用机制）
 #   8. 放置 config-templates/openclaw.json → ~/.openclaw/openclaw.json（运行数据目录 OPENCLAW_HOME）+ 预填微信 channel binding
 #   9. setup-crew.sh（裸跑，无 --force；--force 只用户手动修复用；crew 模板来自 WISEFLOW_ROOT/crews，workspace 落 OPENCLAW_HOME）
 #   10. camoufox-cli：npm install -g 本地 fork（ship 的 portable node）+ camoufox-cli install 下 Firefox
@@ -47,6 +47,7 @@ WISEFLOW_ROOT_DEFAULT="${XIAOBEI_HOME:-$HOME/xiaobei}"
 # tarball 内 ship 的 portable Node / pnpm 入口（相对 WISEFLOW_ROOT）
 PORTABLE_NODE="tools/node/bin/node"
 PORTABLE_PNPM="tools/pnpm/bin/pnpm.mjs"
+PYTHON_RUNTIME_BIN=""
 
 # ═══════════════════════════════════════════════════════════════════
 # 色彩 / UI（fork 自上游 install.sh）
@@ -294,15 +295,12 @@ detect_os_or_die() {
 # Keep this bootstrap self-contained: the tarball and portable Node are not available yet.
 missing_linux_system_packages() {
     local tool
-    for tool in curl tar zstd python3; do
+    for tool in curl tar zstd; do
         command -v "$tool" &>/dev/null || printf '%s\n' "$tool"
     done
     if ! command -v dpkg-query &>/dev/null || \
         [[ "$(dpkg-query -W -f='${Status}' ca-certificates 2>/dev/null || true)" != "install ok installed" ]]; then
         printf '%s\n' ca-certificates
-    fi
-    if ! command -v python3 &>/dev/null || ! python3 -m pip --version &>/dev/null; then
-        printf '%s\n' python3-pip
     fi
     return 0
 }
@@ -345,10 +343,19 @@ ensure_system_dependencies() {
     remaining="$(missing_linux_system_packages)"
     if [[ -n "$remaining" ]]; then
         ui_error "System dependencies still unavailable after installation: ${remaining//$'\n'/, }"
-        ui_info "Check command paths and python3 -m pip --version before rerunning the installer."
+        ui_info "Check command paths before rerunning the installer."
         return 1
     fi
     ui_success "System dependencies installed"
+}
+
+prepare_python_runtime() {
+    local node="$WISEFLOW_ROOT/$PORTABLE_NODE"
+    "$node" "$WISEFLOW_ROOT/scripts/python-runtime.mjs" install --root "$WISEFLOW_ROOT" || return $?
+    source "$WISEFLOW_ROOT/scripts/lib/python-runtime.sh"
+    xiaobei_use_python_runtime "$WISEFLOW_ROOT" || return $?
+    PYTHON_RUNTIME_BIN="$VIRTUAL_ENV/bin"
+    ui_success "Managed Python runtime ready"
 }
 
 # Bootstrap is standalone: no Node runtime or neighbouring files are required yet.
@@ -540,59 +547,9 @@ pnpm_install_prod() {
     ui_success "Dependencies installed"
 }
 
-# skills 的 python 依赖（扫仓内 requirements.txt，pip install --user）
-# 优先选已有 pip 的高版本 python（3.12/3.11/3.10），回退 python3。
+# Dependencies were installed transactionally with the owned interpreter/venv.
 install_python_deps() {
-    local root="$WISEFLOW_ROOT"
-    local merged=""
-    local f
-    while IFS= read -r -d '' f; do
-        merged+="$(cat "$f" 2>/dev/null)"$'\n'
-    done < <(find "$root/skills" "$root/crews" "$root" -maxdepth 4 -name requirements.txt -print0 2>/dev/null)
-    [[ -z "$merged" ]] && { ui_info "No requirements.txt found; skip python deps"; return 0; }
-    # 选 python：优先 3.12/3.11/3.10，回退 python3
-    local PY_BIN=""
-    for cand in python3.12 python3.11 python3.10 python3; do
-        if command -v "$cand" &>/dev/null; then
-            [[ -n "$PY_BIN" ]] || PY_BIN="$cand"
-            if "$cand" -m pip --version &>/dev/null; then PY_BIN="$cand"; break; fi
-        fi
-    done
-    if [[ -z "$PY_BIN" ]]; then
-        ui_warn "python3 未安装，跳过 python 依赖（skills 用到时再装）"
-        return 0
-    fi
-    if ! "$PY_BIN" -m pip --version &>/dev/null; then
-        ui_warn "$PY_BIN -m pip 不可用，跳过 python 依赖"
-        return 0
-    fi
-    local pip_args=(--user --no-warn-script-location --disable-pip-version-check
-        -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com)
-    local pip_install_args=("${pip_args[@]}")
-    # Ubuntu 22.04 自带的旧 pip 不识别 --break-system-packages；新 pip 用它处理 PEP 668。
-    if "$PY_BIN" -m pip install --help 2>/dev/null | grep -F -- '--break-system-packages' >/dev/null; then
-        pip_install_args+=(--break-system-packages)
-    fi
-    ui_info "Upgrading pip via $PY_BIN"
-    if ! "$PY_BIN" -m pip install "${pip_install_args[@]}" --upgrade pip; then
-        ui_warn "pip 升级失败，将按当前 pip 支持的参数尝试安装技能依赖"
-    fi
-    # 升级后重新检测，确保后续调用使用同一解释器及升级后的参数能力。
-    pip_install_args=("${pip_args[@]}")
-    if "$PY_BIN" -m pip install --help 2>/dev/null | grep -F -- '--break-system-packages' >/dev/null; then
-        pip_install_args+=(--break-system-packages)
-    fi
-    ui_info "Installing python skill deps via $PY_BIN"
-    # --no-warn-script-location 抑制 'script installed in .../bin which is not on PATH'（小白噪音）
-    # --disable-pip-version-check 抑制 pip 升级提示
-    # PEP 668：现代系统（Homebrew/Debian/PEP 668）下 pip install --user 仍被拒，
-    # 支持时加入 --break-system-packages；--user 保持依赖安装到当前用户目录。
-    if printf '%s' "$merged" | sort -u | grep -vE '^\s*#|^\s*$' | \
-        "$PY_BIN" -m pip install "${pip_install_args[@]}" -r /dev/stdin; then
-        ui_success "Python deps done"
-    else
-        ui_warn "pip install 部分失败，可稍后手动补"
-    fi
+    ui_success "Python skill deps ready in $VIRTUAL_ENV"
 }
 
 install_deck_render() {
@@ -885,7 +842,8 @@ install_weixin_plugin() {
 # XIAOBEI_HOME 由 install_gateway_and_env 写进 daemon.env，gateway 启动时 ${XIAOBEI_HOME} env ref 解析到本目录。
 install_awada_plugin() {
     local node="$WISEFLOW_ROOT/$PORTABLE_NODE"
-    local npm_bin; npm_bin="$(dirname "$node")/npm"
+    local node_bin_dir; node_bin_dir="$(dirname "$node")"
+    local npm_cli="$WISEFLOW_ROOT/tools/node/lib/node_modules/npm/bin/npm-cli.js"
     local awada_dir="$WISEFLOW_ROOT/awada"
     [[ -d "$awada_dir" ]] || { ui_warn "awada 不在 tarball 内：${awada_dir}；跳过"; return 0; }
     if [ -d "$awada_dir/node_modules/silk-wasm" ] && [ -d "$awada_dir/node_modules/typebox" ] && [ -d "$awada_dir/node_modules/ws" ] && [ -d "$awada_dir/node_modules/zod" ]; then
@@ -893,10 +851,14 @@ install_awada_plugin() {
         return 0
     fi
     ui_info "Installing awada plugin deps (silk-wasm + typebox + ws + zod) via npmmirror"
-    if bash -c "cd '$awada_dir' && '$npm_bin' install --omit=dev --registry=https://registry.npmmirror.com"; then
+    # npm 的 shebang 和依赖生命周期脚本都需要 node；显式使用自带运行时。
+    if env PATH="$node_bin_dir:$PATH" "$node" "$npm_cli" --prefix "$awada_dir" install --omit=dev --registry=https://registry.npmmirror.com; then
         ui_success "awada deps installed"
     else
-        ui_warn "awada deps install 失败；可后续手动：cd '$awada_dir' && npm install --omit=dev"
+        local retry_command
+        printf -v retry_command 'env PATH=%q:"$PATH" %q %q --prefix %q install --omit=dev --registry=https://registry.npmmirror.com' \
+            "$node_bin_dir" "$node" "$npm_cli" "$awada_dir"
+        ui_warn "awada deps install 失败；可后续手动：${retry_command}"
     fi
 }
 
@@ -1159,6 +1121,8 @@ bind_weixin_channel() {
 
 main() {
     parse_args "$@"
+    # 兼容既有 tarball：其资源安装器已支持此变量，统一默认到主程序缓存目录。
+    export XIAOBEI_BROWSER_DOWNLOADS="${XIAOBEI_BROWSER_DOWNLOADS:-${XIAOBEI_CACHE_DIR:-$HOME/.xiaobei/cache}}"
     configure_verbose
     github_download_url 'https://github.com/' >/dev/null
     detect_os_or_die
@@ -1212,7 +1176,10 @@ main() {
     # ─── Step 2: 下载 + 解压 tarball（更新 program）──────────
     ui_stage "Downloading pre-built tarball"
     download_and_extract_tarball
+    # 后续插件安装和 setup-crew 的子进程也会调用裸 node/npm。
+    export PATH="$WISEFLOW_ROOT/tools/node/bin:$PATH"
     configure_download_network
+    prepare_python_runtime
 
     # ─── Step 3: pnpm install --prod（拉依赖，无 OOM）────────
     ui_stage "Installing dependencies (pnpm install --prod)"
@@ -1249,6 +1216,7 @@ main() {
         # （openclaw 首启自动生成的极简 config）则用 template 覆盖，否则更新路线永远修不回完整 config。
         ui_stage "Checking config health"
         place_config_template
+        "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/python-runtime.mjs" configure --root "$WISEFLOW_ROOT" --config "$OPENCLAW_HOME/openclaw.json"
         ui_stage "Refreshing gateway env and restarting"
         refresh_gateway_env_only
     else
@@ -1258,6 +1226,7 @@ main() {
         # 故不再运行时 mutate（曾因此把 plugins 顶层写坏致 "Invalid input"）。
         ui_stage "Placing config template"
         place_config_template
+        "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/python-runtime.mjs" configure --root "$WISEFLOW_ROOT" --config "$OPENCLAW_HOME/openclaw.json"
 
         ui_stage "Setting up crew templates"
         if [[ -f "$WISEFLOW_ROOT/scripts/setup-crew.sh" ]]; then
@@ -1366,23 +1335,25 @@ write_missing_env() {
     done
 }
 
-# 确保 env 文件的 PATH 含 node bin + program bin（openclaw 启动器）+ wrapper bin
+# 确保 env 文件的 PATH 含 Node、Python runtime、program bin 和 wrapper bin
 # （~/.openclaw/bin，skill-wrappers.sh 暴露的技能软链）。gateway 是 systemd/launchd 服务，
 # 不 source shell rc；agent exec 调裸技能名（如 `aigc-video-gen`）靠 PATH 解析 wrapper 软链，
-# 故三者 daemon.env PATH 缺一不可。幂等：仅当三者均已就位才跳过。
+# daemon.env 必须显式携带这些目录。幂等：仅当所需目录均已就位才跳过。
 ensure_env_path() {
-    local env_file="$1" node_bin_dir="$2" oc_bin_dir="$3" wrapper_bin_dir="${4:-}"
+    local env_file="$1" node_bin_dir="$2" oc_bin_dir="$3" wrapper_bin_dir="${4:-}" python_bin_dir="${5:-}"
     [ -f "$env_file" ] || return 0
-    local need="${node_bin_dir}:${oc_bin_dir}"
+    local need="${node_bin_dir}"
+    [ -z "$python_bin_dir" ] || need="${need}:${python_bin_dir}"
+    need="${need}:${oc_bin_dir}"
     [ -n "$wrapper_bin_dir" ] && need="${need}:${wrapper_bin_dir}"
     local cur; cur="$(grep -E '^PATH=' "$env_file" | tail -n1 | sed -E 's/^PATH=//' || true)"
     if [ -z "$cur" ]; then
         printf 'PATH=%s:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n' "$need" >> "$env_file"
         return 0
     fi
-    # 三者都已就位才跳过（旧逻辑只查 node_bin_dir，会漏补 wrapper bin）
+    # Python runtime 也必须检查，才能升级已有的服务 PATH。
     local d all_present=1
-    for d in "$node_bin_dir" "$oc_bin_dir" "$wrapper_bin_dir"; do
+    for d in "$node_bin_dir" "$python_bin_dir" "$oc_bin_dir" "$wrapper_bin_dir"; do
         [ -n "$d" ] || continue
         case ":$cur:" in *":$d:"*) ;; *) all_present=0 ;; esac
     done
@@ -1479,6 +1450,15 @@ stop_gateway_if_running() {
 # 更新路线用：不问 AWK_API_KEY、不 daemon install，只幂等刷 gateway env 路径
 # （PATH + XIAOBEI_HOME/OPENCLAW_STATE_DIR 走 .env 业务变量）+ restart gateway 让新 program 生效。
 # env 分工对齐首装：业务变量在 .env，daemon.env 只放 3 固定值 + OPENCLAW_STATE_DIR + PATH。
+restart_linux_gateway() {
+    local unit="openclaw-gateway.service"
+    run_required_step "Reloading Gateway service" systemctl --user daemon-reload
+    run_required_step "Enabling Gateway autostart" systemctl --user enable "$unit"
+    systemctl --user reset-failed "$unit" 2>/dev/null || true
+    run_required_step "Starting Gateway service" systemctl --user restart "$unit"
+    run_required_step "Checking Gateway service is active" systemctl --user is-active --quiet "$unit"
+}
+
 refresh_gateway_env_only() {
     local claw_cmd="$WISEFLOW_ROOT/bin/openclaw"
     local node_bin_dir; node_bin_dir="$(dirname "$WISEFLOW_ROOT/$PORTABLE_NODE")"
@@ -1486,6 +1466,26 @@ refresh_gateway_env_only() {
     local dot_env="$OPENCLAW_HOME/.env"
     local systemd_env="$OPENCLAW_HOME/daemon.env"
     local macos_env="$OPENCLAW_HOME/service-env/ai.openclaw.gateway.env"
+
+    if [ "$(uname -s)" = "Linux" ]; then
+        local load_state
+        if ! load_state="$(systemctl --user show openclaw-gateway.service --property=LoadState --value)"; then
+            if [[ "$load_state" != "not-found" ]]; then
+                ui_error "Cannot inspect the Gateway user service; check the systemd user session and rerun."
+                return 1
+            fi
+        fi
+        if [[ "$load_state" == "not-found" || ! -f "$systemd_env" ]]; then
+            ui_info "Gateway service or environment missing; completing service installation"
+            load_env_vars_for_cli "$dot_env"
+            install_gateway_and_env
+            return $?
+        fi
+        if [[ -z "$load_state" ]]; then
+            ui_error "Gateway service state is unknown; cannot finish installation."
+            return 1
+        fi
+    fi
 
     # 刷 .env 业务变量（XIAOBEI_HOME / OPENCLAW_STATE_DIR），幂等
     if [ -f "$dot_env" ]; then
@@ -1506,7 +1506,8 @@ refresh_gateway_env_only() {
     local daemon_env_file
     if [ "$(uname -s)" = "Darwin" ]; then daemon_env_file="$macos_env"; else daemon_env_file="$systemd_env"; fi
     if [ -f "$daemon_env_file" ]; then
-        ensure_env_path "$daemon_env_file" "$node_bin_dir" "$oc_bin_dir" "$OPENCLAW_HOME/bin"
+        ensure_env_path "$daemon_env_file" "$node_bin_dir" "$oc_bin_dir" "$OPENCLAW_HOME/bin" "$PYTHON_RUNTIME_BIN"
+        "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/python-runtime.mjs" service-env --root "$WISEFLOW_ROOT" --env-file "$daemon_env_file"
         grep -vE "^OPENCLAW_STATE_DIR=" "$daemon_env_file" 2>/dev/null > "${daemon_env_file}.new" || true
         mv "${daemon_env_file}.new" "$daemon_env_file"
         printf 'OPENCLAW_STATE_DIR=%s\n' "$OPENCLAW_HOME" >> "$daemon_env_file"
@@ -1514,8 +1515,8 @@ refresh_gateway_env_only() {
             "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/refresh-gateway-service-metadata.mjs" \
                 "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/openclaw-gateway.service"
             ensure_systemd_wait_display_dropin
-            systemctl --user daemon-reload 2>/dev/null || true
-            systemctl --user restart "openclaw-gateway.service" 2>/dev/null && ui_success "Restarted gateway"
+            restart_linux_gateway
+            ui_success "Restarted gateway"
         elif [ "$(uname -s)" = "Darwin" ]; then
             "$claw_cmd" gateway restart 2>/dev/null && ui_success "Restarted gateway"
         fi
@@ -1597,7 +1598,8 @@ install_gateway_and_env() {
         printf 'OPENCLAW_STATE_DIR=%s\n' "$OPENCLAW_HOME"
     } >> "$daemon_env_file"
     chmod 600 "$daemon_env_file"
-    ensure_env_path "$daemon_env_file" "$node_bin_dir" "$oc_bin_dir" "$OPENCLAW_HOME/bin"
+    ensure_env_path "$daemon_env_file" "$node_bin_dir" "$oc_bin_dir" "$OPENCLAW_HOME/bin" "$PYTHON_RUNTIME_BIN"
+    "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/python-runtime.mjs" service-env --root "$WISEFLOW_ROOT" --env-file "$daemon_env_file"
     ui_success "daemon.env written (gateway service 用，3 固定值 + PATH + OPENCLAW_STATE_DIR)"
 
     # 把 .env 业务变量加载进当前 install shell，让后续 daemon install / gateway restart / channels login
@@ -1616,19 +1618,22 @@ install_gateway_and_env() {
             ui_success "systemd drop-in created (will reload after daemon install)"
         fi
         ui_info "Installing gateway daemon service"
-        "$claw_cmd" daemon uninstall 2>/dev/null || true
-        "$claw_cmd" daemon install || { ui_warn "daemon install failed; run later: $claw_cmd daemon install"; return 0; }
+        if ! "$claw_cmd" daemon install --force; then
+            ui_error "Gateway service installation failed; fix the error above and rerun the installer."
+            return 1
+        fi
         if command -v systemctl >/dev/null 2>&1; then
-            systemctl --user daemon-reload 2>/dev/null || true
-            systemctl --user reset-failed "openclaw-gateway.service" 2>/dev/null || true
-            systemctl --user restart "openclaw-gateway.service" 2>/dev/null && ui_success "Restarted gateway with daemon.env"
+            restart_linux_gateway
+            ui_success "Restarted gateway with daemon.env"
         fi
     elif [ "$(uname -s)" = "Darwin" ]; then
         # --- Darwin: 先 daemon install（创建 mac env 文件），再追加 key，再 restart ---
         ui_info "Installing gateway daemon service"
-        "$claw_cmd" daemon uninstall 2>/dev/null || true
-        "$claw_cmd" daemon install || { ui_warn "daemon install failed; run later: $claw_cmd daemon install"; return 0; }
-        "$claw_cmd" gateway restart 2>/dev/null || true
+        if ! "$claw_cmd" daemon install --force; then
+            ui_error "Gateway service installation failed; fix the error above and rerun the installer."
+            return 1
+        fi
+        run_required_step "Starting Gateway service" "$claw_cmd" gateway restart
         ui_success "Restarted gateway with macos env"
     else
         ui_warn "Unsupported platform for daemon install; run manually: $claw_cmd daemon install"

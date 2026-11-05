@@ -69,9 +69,11 @@ BOOTSTRAP.md 只承担一次性用户信息采集。完成后将用户资料写�
 `scripts/setup-crew.sh` 部署模板和技能、同步声明、生成配置及环境备忘；不执行引擎构建或重启 Gateway。
 
 - 新模板直接包含 AGENTS.md 的 Tools 节，不携带 TOOLS.md 或 HEARTBEAT.md。
-- 文件编辑、exec、真实换行、会话文件约定及 Docker 运行约束写入 AGENTS.md；已存在的提示不重复追加，保留用户正文。
+- internal crew 的文件编辑、exec、真实换行、会话文件约定及 Docker 运行约束写入 AGENTS.md。`workspace-guides.py` 生成的换行、exec 和 Python 提示每次按标题删除旧段落后重写，不检查标题存在就跳过，不做逐条对齐；段落外的用户正文保留。external crew 的回复、媒体发送、文件编辑、exec 和真实换行规范直接写在模板中，不由脚本追加，也不注入 Technical Issue Dispatch Protocol 或 sessions_spawn 规范。
 - 已部署工作区不整文件覆盖；模板正文的更新不等于实例自定义正文已被替换。`--force` 是覆盖选项，不能用于日常迁移用户资料。
 - setup 不迁移、归档或删除旧 TOOLS.md / HEARTBEAT.md，也不为它们触发 Doctor；旧文件由用户升级后手动删除。
+- internal crew 模板不写 `### Python 环境`。每次 setup 由统一 internal workspace 入口清理旧标记区块及同名 Python 段落，再在 AGENTS.md 的 `## Tools` 节末尾生成唯一一份，填入实际自管路径；其他 Tools 备注保留，没有 Tools 节时自动补齐。该过程覆盖新建、既有及尚未注册的 internal 工作区；Python configure 使用同一生成器。需要独立依赖的临时任务 spawn IT Engineer 使用同一自管解释器准备任务环境。
+- 提示生成器不处理 external crew；其完整规范直接由模板维护。sales-cs 等 external 模板明确禁止自行创建、修改或执行 Python 脚本，缺少能力时写 `feedback/YYYY-MM-DD.md`，不要求其创建 IT Engineer 子 agent。旧实例的提示由维护者按需调整，原有共享业务知识路径迁移与技能、命令白名单同步继续保留。
 - 源码部署的 OFB_ENV.md 记录安装路径和 dotenv 位置；IT 从 AGENTS.md 获知该文件后按需读取。
 - 业务知识正文为 main workspace 的 `business_knowledge/business_knowledge.md`，其他 crew 只共享 `business_knowledge/` 目录软链。setup 与 `sales-cs-enablement link` 共用迁移脚本：备份旧正文、修正迁移后的相对链接和工作区文档引用、移除指向旧正文的文件软链；新旧正文冲突或目标已有真实目录时保留原状并报错。
 

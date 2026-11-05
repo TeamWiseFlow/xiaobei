@@ -38,6 +38,7 @@
     "bridge",
     "scripts",
     "assets.lock.json",
+    "data",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "plugin",

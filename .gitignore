@@ -3,6 +3,8 @@ node_modules/
 package-lock.json
 .browsers/
 .deck-render-browser
+browser/data/*.mmdb
+browser/data/*.xpi
 
 # default ignore
 /test/
@@ -14,6 +16,11 @@ package-lock.json
 __pycache__
 .env
 .venv/
+/tools/python/
+/tools/python.backup-*/
+/tools/python-base/
+/tools/python-assets/
+/tools/.python-install.lock
 
 # temporary files
 *.tmp

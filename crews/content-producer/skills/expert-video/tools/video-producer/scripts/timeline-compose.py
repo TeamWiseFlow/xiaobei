@@ -111,7 +111,7 @@ def main() -> None:
 
         clip_dst = work_dir / f"clip-{i:02d}.mp4"
         cmd = [
-            "python3", str(SCRIPT_DIR / "clip-trim.py"),
+            sys.executable, str(SCRIPT_DIR / "clip-trim.py"),
             "--input", str(src),
             "--output", str(clip_dst),
         ]
@@ -135,7 +135,7 @@ def main() -> None:
                 continue
             clip = work_dir / f"clip-{i:02d}.mp4"
             mixed = work_dir / f"clip-{i:02d}-mixed.mp4"
-            cmd = ["python3", str(SCRIPT_DIR / "audio-mix.py")]
+            cmd = [sys.executable, str(SCRIPT_DIR / "audio-mix.py")]
             cmd.extend(["--track", str(clip), "--delay", "0", "--volume", "1.0"])
             for tr in audio_tracks:
                 tsrc = Path(tr["source"])
@@ -156,7 +156,7 @@ def main() -> None:
     norm_msg = f"，归一化={width}x{round(width*9/16)}@{fps}fps" if width and fps else "，未归一化"
     print(f"[compose] 拼接 {len(clip_paths)} 段，转场={args.transition}{norm_msg}")
     cmd = [
-        "python3", str(SCRIPT_DIR / "assemble.py"),
+        sys.executable, str(SCRIPT_DIR / "assemble.py"),
         str(project),
         "--source-dir", "artifacts/timeline",
         "--output", args.output,
@@ -194,7 +194,7 @@ def main() -> None:
             # 简化：该段音轨 = clip 音轨（如有）+ audio_tracks 混合，然后 adelay 到段起始 + apad 到总时长
             if audio_tracks:
                 mixed = work_dir / f"clip-{i:02d}-mixed.mp4"
-                mix_cmd = ["python3", str(SCRIPT_DIR / "audio-mix.py")]
+                mix_cmd = [sys.executable, str(SCRIPT_DIR / "audio-mix.py")]
                 mix_cmd.extend(["--track", str(clip), "--delay", "0", "--volume", "1.0"])
                 for tr in audio_tracks:
                     tsrc = Path(tr["source"])
@@ -253,7 +253,7 @@ def main() -> None:
     globals_audio = tl.get("audio_globals") or []
     if globals_audio:
         tmp_with_globals = work_dir / "with-globals.mp4"
-        cmd = ["python3", str(SCRIPT_DIR / "audio-mix.py")]
+        cmd = [sys.executable, str(SCRIPT_DIR / "audio-mix.py")]
         cmd.extend(["--track", str(out_path), "--delay", "0", "--volume", "1.0"])
         for tr in globals_audio:
             tsrc = Path(tr["source"])

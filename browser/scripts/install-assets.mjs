@@ -13,6 +13,7 @@ import {
   copyFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import AdmZip from "adm-zip";
 import { ensureModel, MODEL_PIN } from "camoufox/dist/fpgen/index.js";
@@ -21,10 +22,18 @@ import { githubDownloadUrl } from "./download-network.mjs";
 import { downloadAsset, verify } from "./download-asset.mjs";
 export { lock };
 export { verify };
-async function download(url, file, sha256) {
-  const cache = process.env.XIAOBEI_BROWSER_DOWNLOADS;
-  const cached = cache && join(cache, new URL(url).pathname.split("/").pop());
-  if (cached && existsSync(cached)) {
+async function download(url, file, sha256, bundledName) {
+  if (bundledName) {
+    const bundled = fileURLToPath(new URL(`../data/${bundledName}`, import.meta.url));
+    if (existsSync(bundled)) {
+      await verify(bundled, sha256);
+      copyFileSync(bundled, file);
+      return;
+    }
+  }
+  const cache = process.env.XIAOBEI_BROWSER_DOWNLOADS || process.env.XIAOBEI_CACHE_DIR || join(homedir(), ".xiaobei", "cache");
+  const cached = join(cache, new URL(url).pathname.split("/").pop());
+  if (existsSync(cached)) {
     await verify(cached, sha256);
     copyFileSync(cached, file);
     return;
@@ -145,7 +154,7 @@ export async function installAssets({ modelInstaller = prepareModel } = {}) {
       if (existsSync(addon))
         throw new Error("Incomplete UBO directory exists; inspect it before retrying");
       const archive = join(stage, "ubo.xpi");
-      await download(lock.ubo.url, archive, lock.ubo.sha256);
+      await download(lock.ubo.url, archive, lock.ubo.sha256, `ublock_origin-${lock.ubo.version}.xpi`);
       const unpacked = join(stage, "ubo");
       extract(archive, unpacked);
       if (
@@ -160,7 +169,7 @@ export async function installAssets({ modelInstaller = prepareModel } = {}) {
       throw new Error("Installed UBO differs from the asset lock");
     if (!existsSync(paths.geoip)) {
       const file = join(stage, "geoip.mmdb");
-      await download(lock.geoip.url, file, lock.geoip.sha256);
+      await download(lock.geoip.url, file, lock.geoip.sha256, `geoip-aio-all-${lock.geoip.version}.mmdb`);
       renameSync(file, paths.geoip);
     } else await verify(paths.geoip, lock.geoip.sha256);
     await modelInstaller(paths.model);

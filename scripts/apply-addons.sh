@@ -7,7 +7,7 @@
 #   2. 应用基础补丁（patches/*.patch）+ 依赖覆盖（patches/overrides.sh）
 #   3. 安装默认全局 skills（项目根目录 skills/ → ~/.openclaw/skills/）
 #   4. 注入 awada 扩展路径 + 同步 openclaw.json skills 节点
-#   5. 安装依赖：Node per-skill（node_modules 落仓内技能目录）/ Python 先升级 pip，再统一 pip install --user
+#   5. 安装依赖：Node per-skill（node_modules 落仓内技能目录）/ Python 统一安装到小贝自管 venv
 #   6. 编译 dist + 重启 gateway service
 # Crew 模板安装由 setup-crew.sh 单独负责（扫顶层 crews/）。
 #
@@ -22,7 +22,7 @@ xiaobei_configure_download_network "$PROJECT_ROOT"
 CREWS_DIR="$PROJECT_ROOT/crews"
 OPENCLAW_DIR="$PROJECT_ROOT/openclaw"
 OPENCLAW_HOME="$HOME/.openclaw"
-CONFIG_PATH="$OPENCLAW_HOME/openclaw.json"
+CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-$OPENCLAW_HOME/openclaw.json}"
 GLOBAL_SHARED_SKILLS_FILE="$OPENCLAW_HOME/GLOBAL_SHARED_SKILLS"
 FORCE=false
 SKIP_CREW=false
@@ -57,6 +57,12 @@ done
 
 source "$PROJECT_ROOT/scripts/lib/crew-workspaces.sh"
 source "$PROJECT_ROOT/scripts/lib/skill-wrappers.sh"
+node "$PROJECT_ROOT/scripts/python-runtime.mjs" install --root "$PROJECT_ROOT"
+source "$PROJECT_ROOT/scripts/lib/python-runtime.sh"
+xiaobei_use_python_runtime "$PROJECT_ROOT"
+if [ -f "$CONFIG_PATH" ]; then
+  node "$PROJECT_ROOT/scripts/python-runtime.mjs" configure --root "$PROJECT_ROOT" --config "$CONFIG_PATH"
+fi
 
 # 便携 md5：读 stdin 输出裸 hash。
 # Linux md5sum / macOS md5 命令名不同，且 macOS 无 md5sum（set -e 下会 abort）。
@@ -321,116 +327,7 @@ ensure_openclaw_bin_in_path
 node "$PROJECT_ROOT/scripts/install-skill-deps.mjs" \
   --root "$PROJECT_ROOT" --state-dir "$OPENCLAW_HOME"
 
-# ─── 安装全仓统一 Python 依赖（pip --user）──────────────────────
-# 扫描 skills/、crews/ 和仓根的 requirements.txt，合并去重。
-# 每次先升级 pip；技能依赖仍受内容哈希守卫，仅在依赖集变化时重装。
-# 使用 --user，按 pip 的实际支持情况加入 --break-system-packages。
-PIP_HASH_FILE="$OPENCLAW_HOME/.skill-pip-hash"
-
-merged_pip_deps="$(node -e "
-  const fs = require('fs');
-  const path = require('path');
-  const lines = new Set();
-  function scan(dir) {
-    if (!fs.existsSync(dir)) return;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === 'node_modules' || entry.name === '.git') continue;
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        scan(full);
-      } else if (entry.name === 'requirements.txt') {
-        try {
-          const content = fs.readFileSync(full, 'utf8');
-          content.split(/\\r?\\n/).forEach(line => {
-            const trimmed = line.trim();
-            if (trimmed && !trimmed.startsWith('#')) lines.add(trimmed);
-          });
-        } catch {}
-      }
-    }
-  }
-  scan('$PROJECT_ROOT/skills');
-  scan('$CREWS_DIR');
-  // 仓根 requirements.txt（全仓统一声明，CLAUDE.md 规范）
-  const rootReq = path.join('$PROJECT_ROOT', 'requirements.txt');
-  if (fs.existsSync(rootReq)) {
-    try {
-      fs.readFileSync(rootReq, 'utf8').split(/\\r?\\n/).forEach(line => {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith('#')) lines.add(trimmed);
-      });
-    } catch {}
-  }
-  console.log(Array.from(lines).sort().join('\\n'));
-" 2>/dev/null || echo '')"
-
-current_pip_hash="$(printf '%s' "$merged_pip_deps" | _md5)"
-stored_pip_hash="$(cat "$PIP_HASH_FILE" 2>/dev/null || echo '')"
-
-if [ -n "$merged_pip_deps" ]; then
-  # 查找可用的 pip 命令：pip → pip3 → python3 -m pip
-  PIP_CMD=""
-  if command -v pip &>/dev/null; then
-    PIP_CMD="pip"
-  elif command -v pip3 &>/dev/null; then
-    PIP_CMD="pip3"
-  elif python3 -m pip --version &>/dev/null; then
-    PIP_CMD="python3 -m pip"
-  fi
-
-  if [ -z "$PIP_CMD" ]; then
-    echo "  ⚠️  pip not found. Attempting to bootstrap pip via get-pip.py..." >&2
-    if curl -fsSL https://mirrors.aliyun.com/pypi/simple/pip/ &>/dev/null; then
-      curl -fsSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py && \
-      python3 /tmp/get-pip.py --user -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com && \
-      rm -f /tmp/get-pip.py
-      # 重新检测
-      if command -v pip &>/dev/null; then
-        PIP_CMD="pip"
-      elif command -v pip3 &>/dev/null; then
-        PIP_CMD="pip3"
-      elif python3 -m pip --version &>/dev/null; then
-        PIP_CMD="python3 -m pip"
-      fi
-    fi
-  fi
-
-  if [ -z "$PIP_CMD" ]; then
-    echo "  ❌ pip not available. Install it with: sudo apt install python3-pip" >&2
-  else
-    pip_base_flags=(--user --quiet --no-warn-script-location --disable-pip-version-check
-      -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com)
-    pip_install_flags=("${pip_base_flags[@]}")
-    # Ubuntu 22.04 的旧 pip 不认识该参数；新 pip 需要它处理 PEP 668。
-    if $PIP_CMD install --help 2>/dev/null | grep -F -- '--break-system-packages' >/dev/null; then
-      pip_install_flags+=(--break-system-packages)
-    fi
-    echo "🐍 Upgrading pip ($PIP_CMD --user)..."
-    if ! $PIP_CMD install "${pip_install_flags[@]}" --upgrade pip; then
-      echo "  ⚠️  pip 升级失败，将按当前 pip 支持的参数尝试安装技能依赖" >&2
-    fi
-
-    if [ "$current_pip_hash" != "$stored_pip_hash" ] || [ ! -f "$PIP_HASH_FILE" ]; then
-      echo "🐍 Installing skill Python dependencies ($PIP_CMD --user)..."
-      pip_req_tmp="$OPENCLAW_HOME/.skill-requirements.txt"
-      echo "$merged_pip_deps" > "$pip_req_tmp"
-      # 升级后重新检测参数支持，后续安装仍使用同一个 pip 命令。
-      pip_install_flags=("${pip_base_flags[@]}")
-      if $PIP_CMD install --help 2>/dev/null | grep -F -- '--break-system-packages' >/dev/null; then
-        pip_install_flags+=(--break-system-packages)
-      fi
-      if $PIP_CMD install "${pip_install_flags[@]}" -r "$pip_req_tmp"; then
-        echo "$current_pip_hash" > "$PIP_HASH_FILE"
-        echo "✅ Python dependencies installed (hash: ${current_pip_hash:0:8})"
-      else
-        echo "  ❌ pip install failed" >&2
-      fi
-      rm -f "$pip_req_tmp"
-    else
-      echo "✅ Python dependencies up to date (hash: ${current_pip_hash:0:8})"
-    fi
-  fi
-fi
+# Python dependencies were installed in the managed venv before workspace setup.
 
 # 有 overrides 或 patches 时才需要同步依赖
 if [ "$NEEDS_INSTALL" = "true" ]; then

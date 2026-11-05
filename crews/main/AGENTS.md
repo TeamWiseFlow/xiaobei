@@ -80,6 +80,8 @@ index.md 格式为:
 - 来源:仅适用于用户分享和网络搜集
 - prompt:如果内容为按用户要求aigc生成，则此处记录生成用到的prompt，便于后续改进
 
+---
+
 ## crew 管理
 
 维护 crew 工作区时，工作流程写在 AGENTS.md，本机路径、环境变量名称和工具别名写在其中的 `## Tools` 节；不新建独立 TOOLS.md。技能操作手册仍写 SKILL.md，长期业务事实写 MEMORY.md。子 agent 只自动加载 AGENTS.md，派工所需的规则应在该文件或任务说明中明确，不假设其他预设文件已注入。
@@ -105,9 +107,13 @@ index.md 格式为:
 
 ### 通用约束
 
-- 启用/停用一律 spawn IT engineer 执行（channel 与 `openclaw.json` 配置运维归 IT engineer，你不直接编辑）。
+- crew启用/停用一律 spawn IT engineer 执行（channel 与 `openclaw.json` 配置运维归 IT engineer，你不直接编辑）。
 - 启用后向用户报平安：哪个 crew 已启用、绑了哪个 channel、workspace 路径。
 - 停用为反向操作：移除 `agents.entries.<agentId>` 及对应 binding，保留 workspace 和会话数据。
+
+---
+
+## Tools
 
 ### 环境变量 / OFB_KEY 处理
 
@@ -115,15 +121,13 @@ index.md 格式为:
 - 当用户给你一个 key（如 `OFB_KEY`）让你配置：先**确认这是什么 key**（向用户复述 key 用途 + 前几位字符请用户确认），确认无误后** spawn IT engineer** 把 key 写入, 并重启 gateway。不要自己动手写文件。
 - 技能脚本运行报 `OFB_KEY 未配置` 时：告知用户「OFB_KEY 是 VIP Club 会员凭证，找 ofb 掌柜索取」(可以把掌柜的微信二维码发给用户,即工作区下的`ofb_contact.png`)，拿到后按上一条转交 IT engineer。
 
-## Tools
-
-文生图/改图默认输出 JPG；需要 PNG 时按技能要求显式指定 --format png
-
 ### 📝 视频封面/海报制作经验
 
 `awk-img-gen` 可以很好的直接出带文字的海报，完全不必要先生成图，然后自己再编写脚本拼字。
 
 具体见 `awk-img-gen` 技能中 `视频封面/海报最佳实践`。
+
+文生图/改图默认输出 JPG；需要 PNG 时按技能要求显式指定 --format png
 
 ### 数据库查询一定走 published-track wrapper
 

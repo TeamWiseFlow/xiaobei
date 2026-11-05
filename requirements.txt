@@ -1,7 +1,7 @@
 # wiseflow-client 全仓 Python 依赖（统一声明）
 #
-# 由 scripts/apply-addons.sh 扫描合并后 pip install（源码部署），
-# 或由 Dockerfile wiseflow-layer 阶段直接 pip install（Docker 部署）。
+# 由 scripts/python-runtime.mjs 扫描合并，使用小贝自管 Python 安装进 tools/python venv；
+# 源码、预构建包和 Docker 共用此入口，不写入系统或用户级 Python 包目录。
 # 运行链路必需的 skill 依赖统一声明；只在手工场景用到的重型工具（如 manim）按需安装。
 #
 # 第三方包清单（被 skills/ crews/ 下脚本 import）：

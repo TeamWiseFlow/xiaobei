@@ -414,23 +414,21 @@ for (const b of bins) console.log("+" + b);
   done <<< "$skill_names"
 }
 
-# 向 external crew 的 AGENTS.md 追加渠道回复规则（幂等）
-# 规则：调用工具的 turn 不得包含面向客户的文本，所有文本在最后一个 turn 统一输出
-inject_channel_reply_rules() {
-  local agents_md="$1"
+# 仅维护 internal crew 的运行指导；换行、exec 和 Python 区块每次删除后重写。
+# external crew 的操作规范由模板维护，不自动改写部署实例。
+inject_internal_workspace_guides() {
+  local workspace_dir="$1" runtime="$2"
+  local agents_md="$workspace_dir/AGENTS.md"
   [ -f "$agents_md" ] || return 0
-  grep -qF "## 渠道回复规则（自动注入）" "$agents_md" && return 0
-  cat >> "$agents_md" << 'RULES'
-
----
-
-## 渠道回复规则（自动注入）
-
-调用任何工具（exec / message / read 等）的 turn 中，不得包含任何面向客户的文本。面向客户的完整回复必须在所有工具执行完成后，在最后一个 turn 中统一输出。违反此规则会导致客户收到多条内容相近的消息。
-RULES
+  [ "$(resolve_crew_type "$workspace_dir/SOUL.md")" = "internal" ] || return 0
+  inject_file_edit_guide "$agents_md"
+  inject_exec_guide "$agents_md" "$workspace_dir"
+  inject_agents_md_sections "$agents_md"
+  inject_media_send_guide "$agents_md"
+  python3 "$(dirname "${BASH_SOURCE[0]}")/workspace-guides.py" python-runtime "$agents_md" "$runtime"
 }
 
-# 向 AGENTS.md 追加通用标准 section（幂等）
+# 以下生成函数只由 internal workspace 入口调用。
 # 1. Technical Issue Dispatch Protocol
 # 2. sessions_spawn 规范
 inject_agents_md_sections() {
@@ -518,100 +516,15 @@ inject_text_newline_guide() {
   python3 "$(dirname "${BASH_SOURCE[0]}")/workspace-guides.py" newline "$agents_md"
 }
 
-append_workspace_guide() {
-  python3 "$(dirname "${BASH_SOURCE[0]}")/workspace-guides.py" append "$1" "$2"
+replace_workspace_guide() {
+  python3 "$(dirname "${BASH_SOURCE[0]}")/workspace-guides.py" replace "$1" "$2"
 }
 
 inject_exec_guide() {
   local agents_md="$1" workspace_dir="$2"
   [ -f "$agents_md" ] || return 0
-  # 独立升级既有 workspace：旧 exec section 不会因幂等检查而挡住换行提示修正。
   inject_text_newline_guide "$agents_md"
-  grep -q "## exec 命令规范" "$agents_md" && return 0
-
-  # 按 SOUL.md 的 crew-type 分发（2026-07-07 简化，删 T0~T3 抽象）：
-  #   internal              → 无白名单，短提示即可
-  #   external + ALLOWED_COMMANDS 有 + 条目 → allowlist 模式，注入完整白名单规范
-  #   external 无 + 条目     → deny，无 shell 执行权限，不注入
-  local soul="${workspace_dir:-}/SOUL.md"
-  local crew_type=""
-  [ -f "$soul" ] && crew_type="$(resolve_crew_type "$soul")"
-  local ws="${workspace_dir:-<workspace>}"
-
-  # external crew 是否有 ALLOWED_COMMANDS + 条目（决定 deny 还是 allowlist）
-  local ext_has_allowlist="false"
-  if [ "$crew_type" = "external" ] && [ -f "${workspace_dir:-}/ALLOWED_COMMANDS" ]; then
-    if grep -qE '^[[:space:]]*\+' "${workspace_dir:-}/ALLOWED_COMMANDS"; then
-      ext_has_allowlist="true"
-    fi
-  fi
-
-  if [ "$crew_type" = "external" ] && [ "$ext_has_allowlist" = "true" ]; then
-    append_workspace_guide "$agents_md" "$ws" << 'GUIDE'
-
-## exec 命令规范
-
-本 crew 为**对外 crew**，exec 走 **allowlist**——只允许 `ALLOWED_COMMANDS` 里 `+` 声明的命令/脚本，其余一律拒绝（prompt injection 防线）。
-
-exec allowlist 会解析管道、`&&`、`||`、`;` 和常见重定向，并逐段检查实际执行的命令是否都在白名单中。
-
-**允许的常见写法**：
-```bash
-ls -la /tmp/file.txt 2>/dev/null && echo "EXISTS" || echo "NOT"
-some-cmd > /tmp/out.txt
-echo a; echo b
-cat file.txt | grep keyword
-```
-
-注意：重定向只支持 POSIX 风格写法（如 `> file`、`2> err.log`、`2>&1`）。不要使用 bash/zsh 专属的 `&>` / `&>>`，这类写法在 `/bin/sh` 下可能被解释为后台执行。重定向只改变当前已批准命令的 stdin/stdout/stderr；命令本身仍必须在 allowlist 中。`echo ok; rm file` 只有在 `echo` 和 `rm` 都被允许时才会通过。
-
-**仍然禁止使用隐式执行子命令的 shell 扩展：**
-
-- ❌ `echo $(whoami)` — 命令替换会额外执行子命令
-- ❌ ``echo `id` `` — 反引号命令替换会额外执行子命令
-- ❌ `cat <(id)` / `tee >(cmd)` — process substitution 会额外执行子命令
-- ❌ `cmd & other-cmd` — 后台执行不受控
-
-**以下写法同样会导致 allowlist miss，禁止使用：**
-
-- ❌ `cd /abs/path && python3 ./skills/xxx/scripts/yyy.py` — `cd` 不在 allowlist 中；脚本必须用绝对路径直接调用，禁止 `cd` 前缀
-- ❌ `bash /abs/path/to/script.sh` — setup-crew 已为脚本赋权，直接用绝对路径调用即可。加 `bash` 前缀会触发 openclaw exec 审批的 `requiresBoundArgPattern`（shell wrapper 必须绑定脚本 argPattern），而白名单里没有裸 `bash` 条目，必然 miss。`sh`/`zsh` 同理
-- ❌ `./skills/xxx/scripts/yyy.sh` — 相对路径依赖 CWD 易误拼；一律用绝对路径
-- ❌ `for d in ...; do ls $d; done` — `for`/`while`/`if` 等 shell keyword 不在 allowlist 中；改用逐个调用或 python 脚本
-- ❌ `KEY=value python3 script.py` — 内联 env 赋值会改变命令前缀导致 allowlist miss；环境变量由系统注入
-- ❌ `env | grep -iE "API_KEY|MODEL"` / `printenv PEXELS_API_KEY` — `env`/`printenv` 不在 allowlist 中；检查环境变量写 python 脚本
-- ❌ `mkdir -p {notes,images}` — exec 不会展开花括号（brace expansion），会直接创建一个名为 `{notes,images}` 的单个文件夹，而非 `notes` 和 `images` 两个文件夹
-
-**正确写法：**
-
-- ✅ `@@WS@@/skills/xxx/scripts/yyy.sh`（绝对路径直接调用，setup-crew 已赋权）
-- ✅ `python3 @@WS@@/skills/xxx/scripts/yyy.py`（绝对路径，无 env 前缀）
-- ✅ `python3 /tmp/check_env.py`（探查环境变量：脚本内容 `import os; print(bool(os.environ.get("PEXELS_API_KEY")))`）
-- ✅ `mkdir -p notes images`（逐一直写目录名，不用花括号展开）
-- ✅ 逐个调用 `ls dir1/`、`ls dir2/` …（替代 `for` 循环），或写 python 脚本批量处理
-
-## Python 调用规范
-
-**严禁** `python3 -c "..."` inline eval 形式——此类命令无法通过 exec allowlist，会被系统拦截。
-
-必须先将 Python 逻辑写入脚本文件，再以 `python3 /path/to/script.py` 调用：
-
-```bash
-# ❌ 禁止
-python3 -c "from PIL import Image; img.save('out.jpg')"
-
-# ✅ 正确：先写脚本，再执行
-cat > /tmp/my_script.py << 'EOF'
-from PIL import Image
-# ...
-EOF
-python3 /tmp/my_script.py
-```
-
-临时脚本统一写到 `/tmp/` 下，执行后可删除。
-GUIDE
-  elif [ "$crew_type" = "internal" ]; then
-    append_workspace_guide "$agents_md" "$ws" << 'GUIDE'
+  replace_workspace_guide "$agents_md" "$workspace_dir" << 'GUIDE'
 
 ## exec 命令规范
 
@@ -620,6 +533,4 @@ GUIDE
 脚本调用仍建议用绝对路径（如 `python3 @@WS@@/skills/xxx/scripts/yyy.py`），仅为跨环境/跨 workspace 稳定，非安全约束。
 
 GUIDE
-  fi
-  # external 无 + 条目（deny）或未知 crew-type：不注入（无 shell 执行权限）
 }
