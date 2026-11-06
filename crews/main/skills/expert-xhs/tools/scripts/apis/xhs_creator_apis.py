@@ -668,7 +668,7 @@ class XHS_Creator_Apis:
                 # Creator-only sessions may submit for asynchronous transcoding,
                 # but unavailable www authentication never proves readiness.
                 if readiness.get('reason') == 'auth_unavailable':
-                    logger.warning('转码查询缺少认证；提交后仍需核实可播放状态')
+                    logger.info('转码状态暂无法查询，继续按异步转码流程提交；发布结果以提交回执为准')
                     break
                 if readiness['state'] == 'readiness_unknown':
                     raise VideoReadinessError(readiness)

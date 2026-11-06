@@ -19,15 +19,45 @@ metadata:
 xhs-hunter login
 ```
 
-读取返回的 `qr_path`，将图片交给用户扫码。用户确认后执行：
+在受管 `exec` 中以 `background=true`、`timeoutSeconds=480` 执行该命令，取得执行会话后用 `process log` / `process poll` 读取输出。不要使用 shell `&`、`nohup` 或在显示二维码后结束执行会话。命令输出 `awaiting_scan` 和 `qr_path` 后仍会运行，直到登录成功、需要安全验证、失败或达到 7 分钟任务期限；二维码准备最多等待 90 秒。
+
+读取输出中的 `qr_path`，将图片交给用户扫码，并保持原执行会话运行。用户确认后另行执行：
 
 ```bash
 xhs-hunter login-confirm
 ```
 
+`login-confirm` 返回 `pending` 只表示后台任务仍在运行、尚未取得最终结果，不能据此断言用户没有扫码或没有确认。后台进程退出、原执行会话结束或任务超时会返回具体失败原因并清除本次二维码；不要继续展示旧码或反复查询已失败的任务。返回 `awaiting_verification` 时按下一节续接；返回 `authenticated` 才表示正式会话已就位。当前任务结束后可用 `process poll` 回收执行结果，不主动终止仍在等待扫码的会话。
+
 后续运行 `xhs-hunter check` 检查登录态。Cookie 有效时可重复使用；失效或二维码超时后重新运行 `xhs-hunter login` 扫码。扫码二维码文件只用于当前登录，路径不代表登录成功。终端直连场景还可运行交互式 `xhs-hunter login-phone`，按提示输入手机号和验证码；此命令的输入提示不是 JSON。
 
 后台登录日志 `~/.openclaw/logs/xhs-pc-login.log` 在登录执行期间按 5 MiB 轮转，保留 `.1`–`.3` 三份备份，连同当前文件最多约 20 MiB。日志为私有排障材料，不向用户转发原文。
+
+## 安全验证与续接
+
+后台扫码登录或读取返回 `VERIFICATION_REQUIRED` 时暂停原业务命令，使用本技能处理当前验证任务。不要重新扫码登录、重复发短信、连续重试读取或自动重发作品。交互式 `login-phone` 若返回 `supported:false`，按返回的同账号网页链接完成验证后重新发起登录，不调用后台验证命令。
+
+```bash
+xhs-hunter verify-start
+```
+
+此命令只为当前任务准备一次验证。返回 `awaiting_code` 时将脱敏手机号告知用户，取得验证码后保存为当前用户所有、权限 0600 的普通文件，再执行：
+
+```bash
+xhs-hunter verify-code --code-file /绝对路径/验证码文件
+```
+
+不要把验证码写入命令行参数、日志或长期记忆。验证码错误最多提交三次；提交后删除自建的验证码文件。发送结果未知时停在 `preparing`，不得重复发送；先核查当前任务，必要时请用户重新发起登录。
+
+返回 `awaiting_scan` 时把 `qr_path` 图片交给用户；用户确认后执行：
+
+```bash
+xhs-hunter verify-confirm
+```
+
+`verify-confirm` 每次只查询一次状态，轮询至少间隔 1.5 秒。二维码过期、取消或失败时不自动换码。`authenticated` 表示原扫码登录已续接并验证正式账号；`verified` 表示读取验证完成，需要重新执行原读取命令，工具不会自动重放业务请求。账号、登录任务变化或超过任务有效期后，旧验证不能继续。
+
+只支持当前任务的短信验证和 App 扫码验证。其他验证类型按返回的同账号网页链接请用户处理，不自动绕行。私有验证材料由脚本管理，不打开或转发其 JSON 原文。
 
 ## 彻底清空本地账号与换号
 

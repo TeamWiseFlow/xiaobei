@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { readFile, mkdir, writeFile, rename, chmod } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -53,8 +55,48 @@ export async function atomicJson(path, value) {
   await rename(temp, path);
 }
 export function packageRoot() {
-  try { return dirname(createRequire(import.meta.url).resolve('catbus-cli/package.json')); }
-  catch { throw new PlatformError('DEPENDENCY_MISSING', '平台依赖未安装，请通过项目安装流程安装 skill Node 依赖'); }
+  const profile = JSON.parse(readFileSync(join(runtimeDir, 'runtime-profile.json'), 'utf8'));
+  try { return dirname(createRequire(import.meta.url).resolve(profile.package + '/package.json')); }
+  catch {
+    // A verified earlier installation stays usable until the prepared package is installed.
+    let entries = [];
+    try { entries = readdirSync(join(runtimeDir, 'node_modules'), { withFileTypes: true }); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('@')) continue;
+      const root = join(runtimeDir, 'node_modules', entry.name);
+      try {
+        const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+        const registry = readFileSync(join(root, 'dist/platforms/index.js'));
+        if (pkg.version === profile.version && createHash('sha256').update(registry).digest('hex') === profile.registrySha256
+            && JSON.stringify(pkg.dependencies) === JSON.stringify(profile.dependencies)) return root;
+      } catch { /* Not a compatible platform package. */ }
+    }
+    throw new PlatformError('DEPENDENCY_MISSING', '平台依赖未安装，请通过项目安装流程安装 skill Node 依赖');
+  }
+}
+const contracts = new Map();
+export function runtimeContract(root = packageRoot()) {
+  if (contracts.has(root)) return contracts.get(root);
+  let value;
+  try { value = JSON.parse(readFileSync(join(root, 'runtime-contract.json'), 'utf8')); }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    // Read the fixed installed binary's interface without changing its business modules.
+    value = {
+      version: 1,
+      stateEnvironment: /process\.env\.([A-Z][A-Z0-9_]*_HOME)\b/.exec(readFileSync(join(root, 'dist/core/paths.js'), 'utf8'))?.[1],
+      errorExport: /export class (\w+) extends Error/.exec(readFileSync(join(root, 'dist/core/errors.js'), 'utf8'))?.[1],
+      rawSymbol: /Symbol\.for\('([^']+)'\)/.exec(readFileSync(join(root, 'dist/core/schemas.js'), 'utf8'))?.[1],
+    };
+  }
+  if (value.version !== 1 || !/^[A-Z][A-Z0-9_]{1,63}$/.test(value.stateEnvironment || '')
+      || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value.errorExport || '')
+      || !/^[A-Za-z0-9_.-]{1,128}$/.test(value.rawSymbol || '')) {
+    throw new PlatformError('DEPENDENCY_INVALID', '平台运行库适配协议无效');
+  }
+  contracts.set(root, value);
+  return value;
 }
 export async function networkProxy(platform) {
   const key = 'PLATFORM_API_' + platform.toUpperCase() + '_PROXY';
@@ -87,7 +129,8 @@ export async function runBackend(platform, args, { home = stateHome, identityFil
   if (proxy && !args.some(arg => arg === '--proxy' || arg.startsWith('--proxy='))) args.push('--proxy', proxy);
   const command = process.env.PLATFORM_API_CLI || process.execPath;
   const argv = process.env.PLATFORM_API_CLI ? [platform, ...args] : [join(runtimeDir, 'scripts/api-runner.mjs'), platform, ...args];
-  const env = { ...process.env, CATBUS_HOME: home };
+  const env = { ...process.env, PLATFORM_RUNTIME_STATE_HOME: home,
+    [runtimeContract().stateEnvironment]: home };
   if (identityFile) env.PLATFORM_API_IDENTITY_FILE = identityFile;
   if (loginJob) {
     env.PLATFORM_API_LOGIN_JOB = loginJob;

@@ -20,12 +20,12 @@ if TYPE_CHECKING:
 
 
 CREATOR_SEC_CH_UA = (
-    '"Not;A=Brand";v="8", "Chromium";v="152", '
-    '"Google Chrome";v="152"'
+    '"Google Chrome";v="155", "Chromium";v="155", '
+    '"Not(A:Brand";v="24"'
 )
 CREATOR_CURRENT_BROWSER_UA = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-    '(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36'
+    '(KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36'
 )
 # Chrome 152's XHR/fetch requests on the Creator publish page use the short
 # language list.  The longer list is only observed on the cross-origin media
@@ -173,7 +173,7 @@ def get_request_headers_template(
             'userAgent',
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
             'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/152.0.0.0 Safari/537.36',
+            'Chrome/155.0.0.0 Safari/537.36',
         ),
         'accept': 'application/json, text/plain, */*',
         'accept-language': CREATOR_ACCEPT_LANGUAGE,

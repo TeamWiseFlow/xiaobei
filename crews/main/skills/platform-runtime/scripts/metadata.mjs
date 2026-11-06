@@ -10,7 +10,7 @@ async function platformMetadata(platform) {
     const options = await import(pathToFileURL(join(root, 'dist/core/options.js')));
     const argv = await import(pathToFileURL(join(root, 'dist/cli/argv.js')));
     const { z } = await import(pathToFileURL(join(root, 'node_modules/zod/index.js'))).catch(async () => {
-      // npm hoists zod beside catbus-cli.
+      // npm may hoist the schema dependency beside the runtime package.
       const { createRequire } = await import('node:module');
       return import(pathToFileURL(createRequire(join(root, 'package.json')).resolve('zod')));
     });

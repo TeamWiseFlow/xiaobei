@@ -36,7 +36,7 @@ CREATOR_LOGIN_ACCEPT_LANGUAGE = 'zh-CN,zh;q=0.9'
 CREATOR_USER_AGENT = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
     'AppleWebKit/537.36 (KHTML, like Gecko) '
-    'Chrome/152.0.0.0 Safari/537.36'
+    'Chrome/155.0.0.0 Safari/537.36'
 )
 _SECURITY_COOKIE_LENGTHS = {
     'websectiga': 64,
@@ -262,8 +262,8 @@ class XHSCreatorLoginApi:
         # acw_tc must not be flattened into the shared Creator Cookie map.
         navigation_headers = build_creator_navigation_headers({
             'upgrade-insecure-requests': '1',
-            'user-agent': CREATOR_USER_AGENT,
-            'sec-ch-ua': CREATOR_SEC_CH_UA,
+            'user-agent': self.profile.release.get('userAgent', CREATOR_USER_AGENT),
+            'sec-ch-ua': self.profile.release.get('secChUa', CREATOR_SEC_CH_UA),
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"Windows"',
             'accept': (
@@ -320,8 +320,8 @@ class XHSCreatorLoginApi:
         """
         navigation_headers = build_creator_navigation_headers({
             'upgrade-insecure-requests': '1',
-            'user-agent': CREATOR_USER_AGENT,
-            'sec-ch-ua': CREATOR_SEC_CH_UA,
+            'user-agent': self.profile.release.get('userAgent', CREATOR_USER_AGENT),
+            'sec-ch-ua': self.profile.release.get('secChUa', CREATOR_SEC_CH_UA),
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"Windows"',
             'accept': (
@@ -641,7 +641,7 @@ class XHSCreatorLoginApi:
             websectiga = generate_websectiga(
                 code,
                 profile={
-                    'userAgent': CREATOR_USER_AGENT,
+                    'userAgent': self.profile.release.get('userAgent', CREATOR_USER_AGENT),
                     'platform': 'Win32',
                     'pageUrl': self.creator_url + '/login',
                 },

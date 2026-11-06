@@ -101,12 +101,18 @@ def publish(args, body: str, topics: list[dict]) -> dict:
             "message": f"平台返回成功但未给出笔记 ID。{SUBMISSION_RECOVERY}",
         }
     observe("publish", "ok", **progress)
+    receipt_message = "平台已接受并返回作品 ID；无需重发，公开与可播放状态按实际核实结果记录"
+    if (progress.get('readiness') or {}).get('reason') == 'auth_unavailable':
+        receipt_message = (
+            "发布已提交成功，平台已接受并返回作品 ID；无需重发。"
+            "转码状态查询认证不足，工具尚未核实可播放状态；无需因此重新登录 Creator。"
+        )
     return {
         "ok": True,
         "accepted": True,
         "submission_attempted": True,
         "status": "submitted",
-        "message": "平台已接受并返回作品 ID；无需重发，公开与可播放状态按实际核实结果记录",
+        "message": receipt_message,
         "id_resolved": True,
         "visibility_requested": "private" if args.private else "public",
         "public": None,

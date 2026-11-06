@@ -3,6 +3,7 @@ import random
 import time
 
 from loguru import logger
+from xhs_utils.verification import VerificationRequired
 
 from xhs_utils.http_util import REQUEST_TIMEOUT
 from xhs_utils.relay import compute
@@ -507,7 +508,7 @@ class XHSLoginApi:
             return None
 
     def _initialize_navigation(self, cookies):
-        headers = build_pc_navigation_headers(get_common_headers())
+        headers = build_pc_navigation_headers(get_common_headers(self.profile.release))
         response = self.http.get(
             self.web_url + '/',
             headers=headers,
@@ -517,7 +518,7 @@ class XHSLoginApi:
         )
         self._merge_response_cookies(cookies, response)
         headers = build_pc_navigation_headers(
-            get_common_headers(),
+            get_common_headers(self.profile.release),
             self._cookies_for_url(self.web_url, cookies),
         )
         response = self.http.get(
@@ -573,6 +574,7 @@ class XHSLoginApi:
             data,
             tier='0301',
             mns_profile='qrcode_create',
+            include_b1=False,
         )
         headers = build_pc_login_headers(
             headers,
@@ -644,7 +646,9 @@ class XHSLoginApi:
 
     def _login_by_qrcode_status(self, qr_id, code, cookies):
         api = '/api/sns/web/v1/login/qrcode/status'
-        params = {"qr_id": qr_id, "code": code}
+        handshake = create_web_ssk_handshake()
+        params = {"qr_id": qr_id, "code": code,
+                  "client_public_key_base64": handshake['client_public_key_base64']}
         splice_api = splice_str(api, params)
         visitor_session = str(cookies.get('web_session') or '')
 
@@ -694,7 +698,17 @@ class XHSLoginApi:
         elif not cookies.get('web_session') or cookies.get('web_session') == visitor_session:
             raise RuntimeError('二维码登录响应缺少正式 web_session')
 
+        self._accept_login_ssk(handshake, login_info.get('ssk'))
         return cookies
+
+    def _accept_login_ssk(self, handshake, encrypted):
+        if not encrypted:
+            return
+        value = accept_web_ssk(handshake['private_key_base64'], str(encrypted))
+        state = {'webSsk': json.dumps({'xhs-pc-web': value}, separators=(',', ':'))}
+        self.local_storage.update(state)
+        self.profile.update_storage(state, None)
+        self.profile.mark_fingerprint_ready(True)
 
     def get_user_info(self, cookies):
         api = '/api/sns/web/v2/user/me'
@@ -763,7 +777,9 @@ class XHSLoginApi:
             return False, res.get('msg', '验证码响应缺少 mobile_token'), {'cookies': cookies, 'res_json': res}
 
         login_api = '/api/sns/web/v2/login/code'
-        data = {"mobile_token": mobile_token, "zone": zone, "phone": phone}
+        handshake = create_web_ssk_handshake()
+        data = {"mobile_token": mobile_token, "zone": zone, "phone": phone,
+                "client_public_key_base64": handshake['client_public_key_base64']}
         headers, data = self._signed_request_params(cookies, login_api, data)
         headers = build_pc_login_headers(
             headers,
@@ -776,7 +792,9 @@ class XHSLoginApi:
             proxies=self.proxies,
             timeout=REQUEST_TIMEOUT
         )
-        self._merge_response_cookies(cookies, resp)
+        self._merge_response_cookies(
+            cookies, resp, append_shared=('web_session', 'id_token',
+                                         'x-rednote-datactry', 'x-rednote-holderctry'))
 
         res = resp.json()
         if not res.get('success'):
@@ -787,6 +805,7 @@ class XHSLoginApi:
         cookies.pop('web_session', None)
         cookies['web_session'] = session
         self.profile.update_cookies(cookies)
+        self._accept_login_ssk(handshake, (res.get('data') or {}).get('ssk'))
         return True, '成功', {
             'cookies': cookies,
             'res_json': res,
@@ -883,6 +902,10 @@ class XHSLoginApi:
                     qr_data['qr_id'], qr_data['code'], cookies
                 )
             except Exception as exc:
+                if isinstance(exc, VerificationRequired):
+                    self._pending_qr = {'qr_id': qr_data['qr_id'], 'code': qr_data['code']}
+                    self._merge_response_cookies(cookies, exc.response)
+                    raise
                 logger.error(f'二维码状态检查失败: {exc}')
                 return None
             if success:

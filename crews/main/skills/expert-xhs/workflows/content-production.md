@@ -242,7 +242,8 @@ Brief 硬性规则：
 ```bash
 # 1. 探活（批量发布只探活一次）
 xhs-publish check
-# exit 0 = 有效；exit 2 = 无会话或认证失效 -> xhs-publish login，发送返回的二维码图片，等用户确认后 xhs-publish login-confirm，再探活一次
+# exit 0 = 有效；exit 2 = 无会话或认证失效 -> 按 xhs-publish 工具手册以原生 exec background=true、timeoutSeconds=480 运行 login
+# 从 process log/poll 读取二维码并发送；保持登录执行会话运行，等用户确认后另行运行 xhs-publish login-confirm
 
 # 2. 图文发布
 xhs-publish --mode image --title "标题" --body @/绝对路径/body.txt --images img1.jpg img2.jpg img3.jpg

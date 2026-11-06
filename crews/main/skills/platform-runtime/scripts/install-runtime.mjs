@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve, basename, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { homedir } from 'node:os';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const hash = (data, algorithm = 'sha256', encoding = 'hex') => createHash(algorithm).update(data).digest(encoding);
@@ -49,35 +51,50 @@ export async function extractArchive(archive, destination) {
 export async function prunePackage(directory) {
   const pkg = await readJson(join(directory, 'package.json'));
   if (pkg.name !== profile.package || pkg.version !== profile.version) throw new Error('Unexpected platform package version');
-  const retained = Object.keys(pkg.dependencies).filter(name => !profile.excludeDependencies.includes(name)).sort();
-  if (JSON.stringify(retained) !== JSON.stringify(Object.keys(profile.dependencies).sort()) || profile.excludeDependencies.some(name => !pkg.dependencies[name])) throw new Error('Platform dependency layout changed; review the profile before upgrading');
+  if (JSON.stringify(pkg.dependencies) !== JSON.stringify(profile.dependencies)) throw new Error('Platform dependency layout changed; review the profile before upgrading');
   const registryPath = join(directory, 'dist/platforms/index.js');
   const registry = await fs.readFile(registryPath, 'utf8');
   if (hash(registry) !== profile.registrySha256) throw new Error('Platform registry changed; review the profile before upgrading');
   const platformDirs = await fs.readdir(join(directory, 'dist/platforms'), { withFileTypes: true });
-  const excluded = platformDirs.filter(entry => entry.isDirectory() && !entry.name.startsWith('_') && !profile.platforms.includes(entry.name)).map(entry => entry.name);
+  const actual = platformDirs.filter(entry => entry.isDirectory() && !entry.name.startsWith('_')).map(entry => entry.name).sort();
+  if (JSON.stringify(actual) !== JSON.stringify([...profile.platforms].sort())) throw new Error('Unexpected platform package scope');
   for (const platform of profile.platforms) await fs.access(join(directory, 'dist/platforms', platform, 'index.js'));
-  let pruned = registry;
-  for (const platform of excluded) {
-    const line = `import ${platform} from './${platform}/index.js';\n`;
-    if (!pruned.includes(line)) throw new Error('Unexpected platform import: ' + platform);
-    pruned = pruned.replace(line, '');
-    await fs.rm(join(directory, 'dist/platforms', platform), { recursive: true });
-  }
-  const declaration = /export const PLATFORMS = \[([^\]]+)\];/;
-  const original = pruned.match(declaration);
-  if (!original) throw new Error('Unexpected platform registration');
-  const selected = original[1].split(',').map(id => id.trim()).filter(id => profile.platforms.includes(id));
-  if (selected.length !== profile.platforms.length) throw new Error('Incomplete platform registration');
-  pruned = pruned.replace(declaration, `export const PLATFORMS = [${selected.join(', ')}];`);
-  await fs.writeFile(registryPath, pruned);
   for (const entry of await fs.readdir(join(directory, 'static'), { withFileTypes: true })) {
-    if (entry.isDirectory() && !entry.name.startsWith('_') && !profile.platforms.includes(entry.name)) await fs.rm(join(directory, 'static', entry.name), { recursive: true });
+    if (entry.isDirectory() && !entry.name.startsWith('_') && !profile.platforms.includes(entry.name)) throw new Error('Unexpected platform assets');
   }
-  // Only dependency/registration metadata changes. Retained business modules
-  // and shared modules are copied verbatim from the integrity-checked release.
-  pkg.dependencies = profile.dependencies;
-  await fs.writeFile(join(directory, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
+  const contract = await readJson(join(directory, 'runtime-contract.json'));
+  if (contract.version !== 1 || !/^[A-Z][A-Z0-9_]{1,63}$/.test(contract.stateEnvironment || '')
+      || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(contract.errorExport || '')
+      || !/^[A-Za-z0-9_.-]{1,128}$/.test(contract.rawSymbol || '')) throw new Error('Invalid runtime adapter contract');
+}
+
+export async function preparedArchive() {
+  const filename = profile.artifact?.filename;
+  if (!filename || filename !== basename(filename)) throw new Error('Invalid prepared artifact name');
+  const candidates = [process.env.XIAOBEI_PLATFORM_RUNTIME_ARCHIVE,
+    join(process.env.XIAOBEI_CACHE_DIR || join(homedir(), '.xiaobei/cache'), filename), join(cache, filename)].filter(Boolean);
+  let archive;
+  for (const file of candidates) {
+    try { archive = await fs.readFile(file); break; }
+    catch (error) { if (error.code !== 'ENOENT' || file === process.env.XIAOBEI_PLATFORM_RUNTIME_ARCHIVE) throw error; }
+  }
+  if (!archive) {
+    const url = new URL(profile.artifact.url);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com'
+        || !url.pathname.startsWith('/TeamWiseFlow/xiaobei/releases/download/')) throw new Error('Invalid prepared artifact location');
+    const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
+    if (!response.ok) throw new Error('Prepared platform artifact is unavailable; preload the fixed package into the install cache');
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > 64 * 1024 * 1024) throw new Error('Prepared platform artifact is too large');
+      chunks.push(chunk);
+    }
+    archive = Buffer.concat(chunks);
+  }
+  if ('sha512-' + hash(archive, 'sha512', 'base64') !== profile.integrity) throw new Error('Platform package integrity mismatch; installation stopped');
+  return archive;
 }
 
 async function fileHashes(directory) {
@@ -121,7 +138,8 @@ function probeRuntime(directory) {
   // Also catches missing transitive/native modules when a matching installer
   // hash would otherwise skip a damaged installation. This makes no requests.
   const probe = profile.platforms.map(id => `await import(${JSON.stringify(join(directory, profile.package, 'dist/platforms', id, 'web/commands.js'))});`).join('\n') + `\nconst require = (await import('node:module')).createRequire(${JSON.stringify(join(directory, profile.package, 'package.json'))}); const {createCanvas}=require('@napi-rs/canvas'); if(!createCanvas(2,2).toBuffer('image/png').length) throw new Error('Canvas unavailable'); const cv=await require('@techstark/opencv-js'); const mat=new cv.Mat(); mat.delete(); const {createTransport}=await import(require.resolve('wreq-js')); const transport=await createTransport({browser:'chrome_131'}); await transport.close();`;
-  const result = spawnSync(process.execPath, ['--input-type=module', '-e', probe], { cwd: dirname(directory), env: { ...process.env, CATBUS_HOME: join(dirname(directory), '.runtime/probe-state') }, encoding: 'utf8', timeout: 60000 });
+  const contract = JSON.parse(readFileSync(join(directory, profile.package, 'runtime-contract.json'), 'utf8'));
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', probe], { cwd: dirname(directory), env: { ...process.env, [contract.stateEnvironment]: join(dirname(directory), '.runtime/probe-state') }, encoding: 'utf8', timeout: 60000 });
   if (result.error || result.status !== 0) throw new Error('Prepared platform runtime cannot load on this machine: ' + (result.error?.message || result.stderr));
 }
 
@@ -137,20 +155,17 @@ async function install(options) {
   let stage, preserveStage = false;
   try {
     stage = await fs.mkdtemp(join(root, '.runtime-install-'));
-    const packed = npm(options, stage, ['pack', `${profile.package}@${profile.version}`, '--json', '--ignore-scripts', '--workspaces=false', `--registry=${options.registry}`], true)[0];
-    if (packed.filename !== basename(packed.filename)) throw new Error('Unexpected package archive filename');
-    const archive = await fs.readFile(join(stage, packed.filename));
-    if ('sha512-' + hash(archive, 'sha512', 'base64') !== profile.integrity) throw new Error('Platform package integrity mismatch; installation stopped');
+    const archive = await preparedArchive();
     await extractArchive(archive, stage);
     const packageDir = join(stage, 'package');
     await prunePackage(packageDir);
     const expectedFiles = await fileHashes(packageDir);
     await fs.mkdir(join(stage, '.runtime'));
-    const slim = npm(options, stage, ['pack', packageDir, '--json', '--ignore-scripts', '--workspaces=false', '--pack-destination', join(stage, '.runtime')], true)[0];
-    await fs.rename(join(stage, '.runtime', slim.filename), join(stage, '.runtime/catbus-cli.tgz'));
+    await fs.writeFile(join(stage, '.runtime/platform-backend.tgz'), archive);
+    await fs.writeFile(join(stage, '.runtime', profile.artifact.filename), archive);
     await fs.writeFile(join(stage, 'package.json'), JSON.stringify(sourcePackage, null, 2) + '\n');
     npm(options, stage, ['install', '--omit=dev', '--no-audit', '--no-fund', '--loglevel=warn', `--registry=${options.registry}`]);
-    const archivePath = join(stage, '.runtime/catbus-cli.tgz');
+    const archivePath = join(stage, '.runtime/platform-backend.tgz');
     const marker = { fingerprint, version: profile.version, platforms: profile.platforms, archiveSha256: hash(await fs.readFile(archivePath)), files: expectedFiles };
     await validate(join(stage, 'node_modules'), marker, archivePath);
     await fs.writeFile(join(stage, '.runtime/install.json'), JSON.stringify(marker, null, 2) + '\n');
@@ -180,7 +195,7 @@ async function install(options) {
 }
 
 async function main(args) {
-  if (args.length === 1 && args[0] === '--check') return validate(modules, await readJson(join(cache, 'install.json')), join(cache, 'catbus-cli.tgz'));
+  if (args.length === 1 && args[0] === '--check') return validate(modules, await readJson(join(cache, 'install.json')), join(cache, 'platform-backend.tgz'));
   const options = { registry: process.env.npm_config_registry || 'https://registry.npmmirror.com' };
   for (let index = 0; index < args.length; index += 2) {
     if (!['--registry', '--npm-cli'].includes(args[index]) || !args[index + 1]) throw new Error('Use the project skill dependency installer');

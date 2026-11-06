@@ -28,6 +28,18 @@ class PcHttpClient(BrowserHttpClient):
             http_version=PC_HTTP_VERSION,
         )
 
+    def request(self, method, url, **kwargs):
+        from xhs_utils.verification import VerificationRequired, check_response
+
+        response = super().request(method, url, **kwargs)
+        try:
+            check_response(response)
+        except VerificationRequired as exc:
+            exc.request_cookie = next((str(v) for k, v in (kwargs.get('headers') or {}).items()
+                                       if str(k).lower() == 'cookie'), '')
+            raise
+        return response
+
 
 __all__ = [
     'PC_IMPERSONATE',

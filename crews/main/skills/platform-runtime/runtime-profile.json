@@ -1,10 +1,17 @@
 {
-  "package": "catbus-cli",
+  "package": "xiaobei-platform-backend",
   "version": "0.1.0",
-  "integrity": "sha512-NigI2Wuwrnq08/hR7KF6HgeaQK+y6UdEmAmqK5gUu5yUBDhkzLMy8c6C8xVPJdOyXid6EoZayDRHUaj8IO1waA==",
-  "registrySha256": "213d66519a0c3fd7efff3dcb04075fc83587cd30958f4d0f25536bd7f9bdbd54",
-  "platforms": ["tiktok", "kuaishou", "weibo", "x"],
-  "excludeDependencies": ["onnxruntime-web", "@cv-cat/catbus-assets-jd", "@cv-cat/catbus-assets-ocr"],
+  "integrity": "sha512-VLeiQ0SMgtLYT0TNQZ7s244/fllji3hjvH2gi3T236YHNUxxRboCxGyYmAYncPOaah0CuoE1FWMqhzdU1HHgrw==",
+  "registrySha256": "1504cb728c9f7f44478265372c76889255958058e49009b691cc508e468aa12a",
+  "platforms": [
+    "tiktok",
+    "kuaishou",
+    "weibo",
+    "x"
+  ],
+  "excludeDependencies": [
+    "onnxruntime-web"
+  ],
   "dependencies": {
     "@napi-rs/canvas": "1.0.10",
     "@techstark/opencv-js": "5.0.0-release.1",
@@ -15,5 +22,9 @@
     "smol-toml": "1.9.0",
     "wreq-js": "3.2.0",
     "zod": "4.6.5"
+  },
+  "artifact": {
+    "filename": "xiaobei-platform-backend-0.1.0.tgz",
+    "url": "https://github.com/TeamWiseFlow/xiaobei/releases/download/platform-runtime-0.1.0/xiaobei-platform-backend-0.1.0.tgz"
   }
 }
