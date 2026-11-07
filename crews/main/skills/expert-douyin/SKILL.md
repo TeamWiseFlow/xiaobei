@@ -39,10 +39,10 @@ metadata:
 | 工具 | 用途 | 命令 |
 |------|------|------|
 | `douyin-style-profiler` | 生成单篇作品（视频 / 图文，`--kind`）的 DNA report，并聚合 DNA 文档与 template（视频 = Brief + 口播文案模板；图文 = 写作模板） | `douyin-style-profiler` |
-| `douyin-engagement` | 通过 Camoufox 读取本人已发作品基础与深度指标并更新发布记录 | `douyin-engagement` |
-| `douyin-publish` | 持久会话登录、视频/图文一键及分步发布、配乐、验证续接与取链 | `douyin-publish` |
+| `douyin-engagement` | 通过 HTTP 读取本人已发作品基础与深度指标并更新发布记录 | `douyin-engagement` |
+| `douyin-publish` | API 扫码登录、视频/原声图文发布、验证续接与取链 | `douyin-publish` |
 
-跨领域通用技能：`douyin-hunter`（搜索、作品、详情和评论采集）、`viral-chaser`（本地视频转写、关键帧与 DNA 采样）、`smart-search`（跨平台搜索）、`content-calibrator`（DNA 评估）、`published-track`（发布记录与指标库）。内容搜索、详情、评论采集和媒体下载统一调用一级技能 `douyin-hunter`。视频先由 hunter 下载，再按 `viral-chaser` 流程运行本地 analyzer；图文分析在本包 workflow 内完成。发布走 Camoufox 持久化 session `douyin`；本人取数走 HTTP 接口，仅临时复用该 profile 的 cookie/UA，登录用 `douyin-publish login`；hunter 与 expert-bd 互动独立使用 `douyin-login` API 会话。
+跨领域通用技能：`douyin-hunter`（搜索、作品、详情和评论采集）、`viral-chaser`（本地视频转写、关键帧与 DNA 采样）、`smart-search`（跨平台搜索）、`content-calibrator`（DNA 评估）、`published-track`（发布记录与指标库）。内容搜索、详情、评论采集和媒体下载统一调用一级技能 `douyin-hunter`。视频先由 hunter 下载，再按 `viral-chaser` 流程运行本地 analyzer；图文分析在本包 workflow 内完成。发布与本人取数默认通过 HTTP，和 douyin-hunter、expert-bd 共用 douyin-login 的 API 会话。主站与创作者通道分别刷新，不使用 Camoufox profile，不拼接账号凭据。
 
 按业务选择工具时查阅同包 `references/api-capabilities.md`。作品互动、私信、竞争对手直播调研与直播间互动统一转 `expert-bd`，本包只保留创作、发布、本人已发作品数据与创作者服务。
 
@@ -70,7 +70,7 @@ DNA 是**从一批作品样本提取并聚合出的内容生产规则集**：视
 
 - **发布限频**：单抖音号每 24h ≤ 5 条；触发风控立即降级，30 分钟内不重试。
 - **串行发布**：`douyin-publish` 的视频和图文共用账号发布锁，同一时间只跑一个发布任务。
-- **AIGC 标注**：AI 生成的内容按平台规则标注，视频工具在创作者页面选择 AIGC 声明，图文默认声明 AI；声明不可用时停止并报告，不绕过标注。
+- **AIGC 标注**：AI 生成的内容按平台规则标注，视频工具在最终请求中写入 AIGC 声明，图文默认声明 AI；声明不可用时停止并报告，不绕过标注。
 - **简介引流**：视频简介可提及产品与业务，但不放明显引流信息；禁止二维码、联系方式；可引导主动搜索或看主页。
-- **登录态**：发布使用 Camoufox 持久化 session `douyin`；取数通过 HTTP 接口完成，仅临时读取同一 profile 的 cookie/UA。未登录执行 `douyin-publish login`，登录态仅留在 profile，不走 login-manager。
+- **登录态**：发布、取数与采集共用 douyin-login 的 API 会话；已有有效登录不重复扫码，不读取浏览器 profile，不走 login-manager。
 - **数据诚实**：互动数据只来自平台接口、`viral-chaser` 返回或用户提供的线索，不编造；估算值必须标注估算方法，不可得的数据写明"数据不可得"。

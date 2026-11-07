@@ -53,6 +53,33 @@ def parser() -> argparse.ArgumentParser:
     return command
 
 
+def result_summary(action, aweme_id, response):
+    result = {"action": action, "aweme_id": aweme_id}
+    status = response.get("status_code") if isinstance(response, dict) else None
+    if type(status) not in (int, str) or status not in (0, "0"):
+        return {"ok": False, "accepted": None, **result,
+                "error": "PLATFORM_INTERACTION_UNCONFIRMED",
+                "message": "无法确认平台是否接受了本次请求，请在 App 核对结果，不要直接重试。",
+                "response": response}
+    result = {"ok": True, "accepted": True, **result}
+    if action in {"comment", "reply"}:
+        comment = response.get("comment")
+        comment = comment if isinstance(comment, dict) else {}
+        ident = next((str(value) for value in (comment.get("cid"), comment.get("comment_id"), response.get("comment_id"))
+                      if type(value) in (int, str) and re.fullmatch(r"[1-9][0-9]{0,21}", str(value))), None)
+        label = "评论" if action == "comment" else "评论回复"
+        result.update(comment_id=ident, visibility_verified=False,
+                      message=(f"平台已接受{label}请求并返回评论 ID；公开可见性尚未核验，App 同步可能延迟。"
+                               if ident else f"平台已接受{label}请求，但未返回可核对的评论 ID；公开可见性尚未核验，不要直接重发。"))
+    else:
+        label = {"like": "点赞", "unlike": "取消点赞", "favorite": "收藏", "unfavorite": "取消收藏",
+                 "collection-move": "移入收藏夹", "collection-remove": "移出收藏夹"}[action]
+        result.update(account_state_verified=False,
+                      message=f"平台已接受{label}请求；当前账号状态尚未核验，App 同步可能延迟。")
+    result["response"] = response
+    return result
+
+
 def main() -> int:
     args = parser().parse_args()
     aweme_id = work_id(args.url)
@@ -127,13 +154,9 @@ def main() -> int:
         body,
         confirm=True,
     )
-    print(
-        json.dumps(
-            {"ok": True, "action": args.action, "aweme_id": aweme_id, "response": data},
-            ensure_ascii=False,
-        )
-    )
-    return 0
+    result = result_summary(args.action, aweme_id, data)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result["ok"] else 1
 
 
 if __name__ == "__main__":

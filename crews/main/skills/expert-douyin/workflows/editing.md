@@ -25,13 +25,13 @@
 | 改正文、逐页文字 | 按 `body-voice` 修改，同步对应图片上的文字，核对事实和前后表述 |
 | 增删图片、调整顺序 | 按 `content-idea` / `imageset-visual` 整理新的图序与逐页信息；涉及叙事变化先确认调整方案 |
 | 换首图、改版式或配色 | 按 `title-cover` / `imageset-visual` 调整；用户给图优先采用，需生成图片用 `awk-img-gen`，复杂设计出 Brief 委托 content-producer |
-| 换配乐 | 记录期望风格；上传后用 `music-list` 读取实际候选，再用 `music-select --choice` 选曲并验证；明确使用原声时传 `publish --original-sound`，不为图文调用视频音轨工具 |
+| 换配乐 | 记录期望风格并说明当前 HTTP 图文入口仅支持原声；不调用浏览器配乐命令，不为图文调用视频音轨工具 |
 
 改完检查：图序与文字对应、图片清晰度与裁切、首图与正文一致、无错字或缺页；图组 1–35 张，单张 ≤50MB，格式 jpg/jpeg/png/webp/bmp/tif。
 
 ### 【确认】修改后的图组与正文
 
-向用户展示修改后的完整图组（含首图）、图序、正文及配乐风格意图（实际曲目上传后选择），并说明改动。确认后进入 Step 4；图文不走 video-review 或“成片与封面”确认。
+向用户展示修改后的完整图组（含首图）、图序、正文及配乐风格意图（当前图文入口仅支持原声），并说明改动。确认后进入 Step 4；图文不走 video-review 或“成片与封面”确认。
 
 ## Step 3B - 视频修改
 
@@ -52,7 +52,7 @@ main 自做组装 / 轻剪辑通过 `video-review` 后交付；CP 改制按其�
 ## Step 4 - 交付、发布与记录
 
 1. 保留修改后的作品和文案记录；可复用风格偏好按 `style-dna.md` 反馈回流，单次修改不默认改变 DNA。
-2. 用户只要求修改时，到交付结束。用户要求发布 / 重新发布时，进入 `content-production.md` Step 6–7：视频走 `douyin-publish video`；图文走 `douyin-publish note`。先用 `douyin-publish check` 验证 Camoufox 持久化创作者会话；未登录使用 `douyin-publish login`。原声图文加 `--original-sound`，配乐按图文分步工具说明处理。
+2. 用户只要求修改时，到交付结束。用户要求发布 / 重新发布时，进入 `content-production.md` Step 6–7：视频走 `douyin-publish video`；图文走 `douyin-publish note`。先用 `douyin-publish check` 验证与采集共用的 API 创作者会话；未登录使用 `douyin-publish login`。原声图文加 `--original-sound`；HTTP 入口不支持配乐选择。
 3. 已发布作品改后重新上线会产生新作品链接；发布前确认用户要重新发布。原作品是否删除由用户决定，不自动删除。
 4. 成功取得新链接后用 `published-track record` 记录新发布日期、链接和账号；图文 `--content-type post`、视频 `--content-type video`。用新作品目录保存这次发布版本与 `dna-meta.json`，避免同目录同日 upsert 覆盖旧作品记录；修改未换 DNA 时沿用原绑定。
 5. 已点击发布后发生登录异常、超时或取链失败，先核实管理页 / 补取链接，不自动重发。

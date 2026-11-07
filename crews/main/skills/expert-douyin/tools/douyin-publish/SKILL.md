@@ -1,54 +1,41 @@
 ---
 name: douyin-publish
-description: 使用 Camoufox 持久化创作者会话登录并发布抖音视频或图文；支持本地预览、分步填表与配乐、短信续接和取链。
+description: 通过统一 API 会话发布抖音视频和原声图文，支持扫码登录、AI 声明、双封面、验证续接与发布结果核查。
 ---
 
 # 抖音发布
 
-发布使用 Camoufox 持久化 session `douyin`，登录态保存在 profile。本人作品取数由 douyin-engagement 通过 HTTP 完成，仅在进程内临时读取同一 profile 的 cookie/UA。不手工导出或导入 cookie，不使用 hunter 的 API 会话代替发布会话。
+创作者与采集、互动共用 `douyin-login` 管理的 API 会话，不启动 Camoufox，不读取浏览器 profile，不使用 login-manager。主站与创作者分别维护 token 和证书，工具自动刷新；不要拼接其他账号的 Cookie、UA 或安全材料。
 
 ## 登录与检查
 
-```bash
-douyin-publish login
-douyin-publish check
-```
+先执行 `douyin-publish check` 验证本人 UID、创作者会话和作品读取。已有有效 API 登录无需再次扫码。只有明确未登录或用户要求重新登录时执行 `douyin-publish login`，将返回的二维码交用户扫码，再执行 `douyin-login poll --timeout 120` 完成身份确认。登录 MFA 按 `douyin-login` 手册处理。
 
-`login` 打开有头创作者中心，请用户完成扫码或页面验证；返回 `awaiting_user_login` 不代表已经登录。用户完成后用 `check` 验证创作者接口，检查会关闭浏览器进程并保留 profile。未登录返回 exit 2；验证码、风控和接口异常停止处理，不无限重试。
-
-`check` 返回 `PUBLISH_PENDING` 是已有视频提交未结案，不是登录失效或取数故障；先用 `douyin-publish video resume` 只读核查原任务，不重新扫码、重传或清状态。核查确认原作品后工具自动结案，后续发布才可继续。用户提供已发布作品链接或明确授权取消本地任务时，按 [视频操作说明](references/video.md) 使用 `video close`，不要手改收据。
+检查失败区分认证、风控、限频与计算错误；不因创作者接口失败就重新初始化采集账号。未结案提交必须保留，恢复原账号后只核查，不重发。
 
 ## 视频与图文
 
-先展示目标账号、文件、标题和正文，执行不带 `--confirm` 的命令生成本地预览；用户已授权后在同一命令加 `--confirm`。
+核对目标账号、媒体、标题、正文和声明。不带 `--confirm` 只做本地预览，无网络副作用；已有发布授权后在原命令加 `--confirm`。
 
 ```bash
 douyin-publish video run --video /绝对路径/video.mp4 --title "标题" --caption @/绝对路径/body.txt --cover-vertical /绝对路径/vertical.jpg --cover-horizontal /绝对路径/horizontal.jpg
 douyin-publish note run --images /绝对路径/1.png /绝对路径/2.png --title "标题" --caption @/绝对路径/body.txt --original-sound
 ```
 
-`video/note run` 是一键流程；原来的 `video --video …`、`note --images …` 简写仍可用。分步提交 `video publish` 和 `note publish` 同样必须加 `--confirm`；不带时只返回核对提示，不操作浏览器。上传、填表、配乐等分步操作按下方参考说明执行。
+正文文件使用 UTF-8 和真实换行，文件只放已确认的纯正文与话题，不含标题或交付说明；不拼接 shell 命令读取正文。短正文仍可直接传入，以 `@` 开头的参数按文件路径处理。
 
-先将已确认的纯正文和话题写入 UTF-8 `body.txt`，用 `--caption @/绝对路径/body.txt` 由脚本读取。相对路径按当前工作目录解析；路径含空格时给整个 `@路径` 参数加引号。文件读取失败或正文超长时在浏览器操作前停止；预览的 `caption` 是实际正文。文件须有真实换行，不把标题或交付说明放进正文，不用 `$(cat ...)` 或将多行正文拼进命令。短文字仍支持直接传入；以 `@` 开头的参数一律按文件路径处理，文件内容只读取一次，正文里的 `@提及` 按原文保留。`video/note fill/run --caption` 均支持文件。
+视频需要 3:4 竖封面和 4:3 横封面，工具等比补底并写入最终请求；默认 AI 声明，视频不接受 `--declaration none`。图文默认 AI 声明，非 AI 内容可传 `--declaration none`；仅支持明确指定 `--original-sound` 的原声图文，不承诺 HTTP 配乐选择。浏览器填表、草稿和配乐命令不能替代 HTTP 入口。
 
-视频入口保留浏览器 AIGC 声明流程，不支持 `--declaration none`。图文默认声明 AI，可按实际来源传 `--declaration none`；原声图文必须明确传 `--original-sound`。视频分步操作、草稿修复与短信续接先读 [视频操作说明](references/video.md)；图文配乐和分步操作先读 [图文操作说明](references/note.md)。
+已授权上传、暂不提交时，在 `run --confirm` 后加 `--prepare-only`；核对 `state: prepared` 后用相同类型的 `publish --confirm` 提交原请求。可见性用 `--visibility public|private|friends`，默认 public。
 
-视频提交必须有 3:4 竖封面与 4:3 横封面。比例不符时等比补底保留完整内容，不裁掉边缘文字；补底过宽也可能被平台拒绝，两张封面都要通过页面检测。`COVER_BORDER_TOO_LARGE` / `COVER_QUALITY_REJECTED` 时按目标比例重新构图或更换封面，不反复加宽补底或跳过检测。缺视频、标题或双封面即停止，不点击发布。
+具体收据、二次验证和结果核查先读 [HTTP 发布与验证续接](references/http.md)。视频补充见 [视频说明](references/video.md)，图文补充见 [图文说明](references/note.md)。
 
-封面与 AIGC 声明必须在唯一可见的目标弹窗内保存；支持 dialog/modal/Semi Modal，不能只看 `role="dialog"` 或页面文字就判断已完成。已有声明弹窗时用 `video fill` / `cover` 续编，脚本先完成声明再操作正文/封面；同类弹窗不唯一或设置未保存时停止并保留草稿。浏览器异常的安全定位字段见 `references/video.md`。
+## 结果核查与记录
 
-“设置横封面获更多流量”是引导，不是第二个编辑器；`video cover` 只关闭已识别引导，再处理当前编辑器并核验双封面。“预览封面/标题”会暂时移除播放器，不能据此重传；工具会在当前已知草稿切回“预览视频”，最终仍须通过视频就绪、时长、正文、双封面和 AIGC 核验。
+`status` 只读本地收据；`resume` 和 `get-link` 核查本次任务。提交前保存意图；网络异常、空响应或验证要求发生后，任何续接都不会自动再 POST。返回 `submission_attempted: true` 且无确认 ID 时报告“已尝试提交，正在核实”，不能说未发布或重发。验证完成也不等于发布成功。
 
-封面预览检测须确认本次选择的文件，并重新查找当前弹窗；相同图片可能复用缓存而没有新 load 事件，弹窗也可能重建。`COVER_UPLOAD_TIMEOUT` 不代表上传一定失败，先用 `video status` 核查并续编当前草稿，不重传整段视频或点击发布。
+只有真实作品 ID 与完整链接才能调用 `published-track record` 入库并去重。平台接受、公开、可播放、审核通过分别判断，不用全局最新旧作品替代本次作品。用户已确认发布成功时据此结案，不要求重复确认；未核实的公开和播放状态保持未知。
 
-封面入口按「竖封面」/「横封面」名称定位，不按排列顺序选。上传前须确认当前编辑器标题或内部激活选项卡与目标类型一致；`COVER_EDITOR_MISMATCH` 时停止并保留草稿。上传框只从当前编辑器内选择，首次上传/替换输入框不代表两个封面方向；不能通过放宽图片比例检测掩盖传错槽位。
+旧浏览器收据保留原文件，不自动迁入 API 任务，不清除旧 profile。遗留未结案任务会阻止新的提交；历史状态核查与用户确认结案由维护者按原任务处理，不能借换登录方式重发。
 
-视频 exit 4 / `awaiting_verification` 表示等待用户短信验证，页面保持打开；读视频操作说明，用 `douyin-publish video verify-send`、`douyin-publish video verify-code --code-file`，或由用户在当前窗口验证后 `douyin-publish video resume`。不要重跑发布或用 check/login 关闭验证页。
-
-未结案的视频任务会阻止普通登录、取数和图文操作关闭共用浏览器。仅验证页面已丢失或登录失效时，用 `douyin-publish login --resume-video` 恢复原账号，随后 `douyin-publish video resume` 核查原提交；该入口保留提交记录，当前短信弹窗仍在时拒绝关闭。
-
-只在返回确认的完整作品 ID 与公开链接后入库。exit 3、超时或取链失败时，到作品管理页核实；视频用 `douyin-publish video resume` 或 `douyin-publish video get-link` 核查保存的本次任务，不用全局最新旧作品代替；图文用 `douyin-publish note get-link --title "完整标题"`。未提交的失败草稿用 `douyin-publish video edit-draft` 续编。禁止自动重发。已停用 API 发布及其 job-file/status/verify 子命令，不用它们核查浏览器任务。
-
-`publish_attempted:true` / `submission_attempted:true` 后结果未确认，须报告“已尝试提交，正在核实”，不能说“没发布”或再次点发布。用户确认已发布时据此更新最终结论；取链仍用原任务只读核查，缺 ID 时不编造入库。委派任务将 `reconciliation`、回执位置和下一步及时回传父任务；main 统筹多平台发布时逐项回报并继续其他已授权平台，不只等成功链接。
-
-发布和取数共用排他锁，串行执行。单账号每 24h 视频和图文合计 ≤5 条；风控后至少 30 分钟不重试。
+发布与取数串行执行。单账号每 24h 视频和图文合计不超过 5 条；风控后至少 30 分钟不重试。

@@ -11,7 +11,7 @@
 - `viral-chaser` 只编排视频分析：先调用对应 hunter 获取资料与下载，再运行本地 analyzer 做转写和关键帧提取。analyzer 不集成探活、登录、链接解析或下载；快手、TikTok、X 和微博同样通过各自 hunter 执行；不支持 B 站链接。图文下载调用 hunter，分析由对应平台专家 workflow 完成。
 - 公共 `smart-search` 专用于 Camoufox 浏览器搜索。当前 crew 已配置 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `wx-mp-hunter` 且任务命中其能力时优先使用；这些技能目前仅 main 配置，未配置的 crew 按已有站点浏览器规则或公开索引搜索，不调用不可用技能，不因采集技能失败就自动绕行。普通站点统一复用持久化 `default` session/profile，不按站点或类别另建 profile；自媒体专用 profile 和 API 会话按各技能实际登录约定执行；微信视频号仍没有搜索与取内容方案。
 - `published-track` 只管理发布记录、查询和指标入库，不负责平台取数；具体取数全部放在对应专家包的 engagement tool，工具采集后调用 `published-track update-metrics`。
-- 后续能力移植和新增平台均按此划分。抖音发布使用 Camoufox 持久化 session `douyin`；本人取数走 HTTP 接口，仅临时从同一 profile 读取 cookie/UA，不另存登录态、不走 login-manager。hunter 和 expert-bd 互动使用独立 API 登录态。
+- 后续能力移植和新增平台均按此划分。抖音采集、创作者发布、本人取数和 expert-bd 互动共用 douyin-login 的 API 会话；平台请求走 HTTP，主站与创作者 token/证书分别维护，不读取 Camoufox profile、不拼接凭据、不走 login-manager。旧浏览器收据仅保留历史提交核查，不用于新登录或发布。
 - TikTok、快手、X、微博共用 `platform-runtime` 内部运行库；登录与会话管理归运行库，由各自 hunter 暴露登录命令，不另设 `login-manager` 技能。安装时按固定四平台配置裁剪其他平台及专属依赖，不改保留平台的业务或签名代码；上游版本、包校验值、注册结构变化必须复核后再升级。
 
 - main 的 `expert-osbi` 负责公开信息提取、跟踪、分析与市场研究，`expert-bd` 保留 Lead Hunting，负责潜客探索筛选、互动和联络；邮件联络使用公共 `email-ops`。原始资料获取按平台调用 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `wx-mp-hunter` 或公共 `smart-search`；公开直播读取与监听使用 `douyin-hunter live` / `xhs-hunter live` / `tiktok-hunter live` / `kuaishou-hunter live`，直播写操作归 BD；通用 RSS/Atom 解析和情报记录工具归 OSBI。技能操作指导必须写出具体技能名，不用“使用一级 hunter”等泛称代替。
@@ -105,4 +105,4 @@ SKILL.md 是写给**执行时的智能体**看的操作手册，不是开发日�
 
 - 所有技能共用 `browser/package.json` 锁定的 `playwright-core`，仅安装到 `browser/node_modules`；技能不得另声明 `playwright` / `playwright-core` / `@playwright/test`，不得安装 Python Playwright。
 - Chromium headless shell 由 `scripts/install-playwright.mjs` 在安装/升级时预装，唯一缓存是 `browser/.browsers`；不要在技能内下载、回退系统 Chrome 或另建浏览器缓存。
-- Node 使用 `browser/scripts/shared-playwright.mjs`，Python 使用 `browser/bridge/shared_playwright.py`；缺依赖交统一安装器修复，技能执行时不临时下载。平台会话与网页浏览仍走 xiaobei-browser/Camoufox。
+- Node 使用 `browser/scripts/shared-playwright.mjs`，Python 使用 `browser/bridge/shared_playwright.py`；缺依赖交统一安装器修复，技能执行时不临时下载。网页浏览和仍需浏览器的平台会话走 xiaobei-browser/Camoufox；已有 API 登录的平台按各自技能约定执行。

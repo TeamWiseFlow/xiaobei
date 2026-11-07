@@ -1,13 +1,11 @@
 ---
 name: douyin-engagement
-description: 通过 HTTP 接口获取本人已发布视频和图文的基础、深度指标，复用发布 profile 登录态并回填发布记录。
+description: 通过统一 API 会话读取本人已发布视频和图文的基础、深度指标，回填发布记录。
 ---
 
-# 抖音已发布作品取数
+# 抖音本人作品取数
 
-取数使用 HTTP 请求，不在浏览器页面内抓取。脚本临时从 Camoufox 持久化 session `douyin` 的 profile 读取 cookie 和 UA，读取后关闭浏览器，凭据只保留在进程内存。与发布共用 profile 和排他锁；不使用 login-manager、中央 cookie 文件或 hunter 的 API 会话。
-
-冷启动时脚本先打开 `about:blank` 加载持久 profile；已有浏览器时沿用其有头/无头模式，直接读取，不导航当前页面。读取失败保留已有窗口；脚本自己启动的浏览器在失败时清理。读取成功后关闭浏览器，再发 HTTP 请求。
+使用与 `douyin-hunter`、`douyin-publish` 共用的 `douyin-login` API 会话。先验证本人 UID，再刷新创作者 token 和对应证书，通过 HTTP 获取指标；不启动 Camoufox，不从 profile 读取 Cookie，不使用 login-manager，不因失败切换其他账号或凭据。
 
 ```bash
 douyin-engagement check
@@ -16,12 +14,10 @@ douyin-engagement fetch --row-id 12
 douyin-engagement daily
 ```
 
-未登录时执行 `douyin-publish login`，在有头窗口完成扫码后重跑 `check`。`list` 只读取发布记录；`fetch` 的 row-id 是数据库行 ID，`daily` 扫描最近 30 条记录。
+已有 API 登录不重复扫码；明确认证失效时按 `douyin-login` 完成登录后重跑 check。`list` 只读取发布记录，row-id 是数据库行 ID，daily 扫描最近 30 条记录。API 会话/创作者通道/计算错误分开报告，不能把所有错误都当作登出。
 
-脚本通过 HTTP 请求创作者 `item/list`，最多 10 页，每页 50 条，以完整作品 ID 匹配。视频和图文均支持。播放、点赞、评论、分享、收藏优先使用创作者指标；缺失的后四项再由 `fetch-retro-data.ts` 调用公开 `aweme/detail` 补充，公开播放量始终不采用。创作者接口不依赖签名；公开详情使用 OFB Relay 签名，缺少凭证时报告缺项，不影响已取得的创作者指标。
+创作者 item/list 最多 10 页、每页 50 条，以完整作品 ID 匹配本人账号。优先采用创作者播放、点赞、评论、分享、收藏；缺失的后四项可用同一 API 会话的公开详情补充，公开播放量不采用。403 风控、429 限频或认证拒绝时停止本轮，不继续公开补采或自动重登。
 
-工具调用 `published-track update-metrics` 写库。平台实际返回的完播、跳出、封面点击率等其余数值写入 `deep_metrics`，来源 `douyin:creator_item_list`；基础字段来源逐项记录在 `field_sources`。响应未提供的深指标不承诺可用。
+工具调用 `published-track update-metrics` 写库。平台实际返回的完播、跳出、封面点击率等写入 deep_metrics，来源 douyin:creator_item_list；基础字段来源逐项记录在 field_sources。以 metrics、deep、field_sources 和 unavailable_reasons 为准；明确零值正常写入，缺失不补零，旧值不算本次采集。未返回的深指标不承诺可用。
 
-以 `metrics`、`deep`、`field_sources` 和 `unavailable_reasons` 为准；明确的零正常写入，缺失不补零。完整 ID 保留整数精度，不按标题猜作品。未找到作品、游标异常、接口空体、风控即报告原因；不能改用公开播放量补数。库内旧值不算本次采集值。
-
-`SESSION_EXPIRED`（exit 2）表示登录态缺失或失效。`PROFILE_SESSION_UNAVAILABLE` / `PROFILE_SESSION_INVALID`（exit 1）表示初始化或读取故障，登录状态尚未确认；报告 `stage` 和 `reason`，按技术故障处理，不要求重新登录。其余错误按返回原因停止；采集失败不触发重发。发布和取数不可并行。
+发布与取数使用同一 API 账号并串行执行。历史 profile 适配仅供维护者诊断，不作为新登录或普通取数流程，不与 API 凭据拼接。

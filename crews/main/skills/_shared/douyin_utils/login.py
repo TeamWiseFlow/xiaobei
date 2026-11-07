@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 import uuid
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 import requests
 from relay_sign import RelaySignError, douyin_v2
@@ -39,6 +40,8 @@ MFA_ROUTES = {
 }
 MFA_ACTIONS = {*MFA_ROUTES, "mfa-prepare", "mfa-resume"}
 MFA_ACTIONS |= {"sms-" + action for action in MFA_ACTIONS}
+SESSION_ACTIONS = {"web-refresh", "creator-refresh"}
+CREATOR_QR_ACTIONS = {"creator-qr", "creator-poll"}
 CREATOR_ROUTES = {
     "verify-prepare": ("GET", {"/passport/safe/query_decision/"}),
     "verify-send": ("POST", {"/passport/web/send_code/"}),
@@ -51,10 +54,13 @@ def compute(operation, inputs):
     try:
         value = douyin_v2("passport", operation, inputs)
     except RelaySignError as exc:
-        raise DouyinRequestError(exc.code, status=exc.status) from exc
+        raise DouyinRequestError(exc.code, status=exc.status, relay_info=exc.relay_info) from exc
     except (RuntimeError, requests.RequestException) as exc:
         raise DouyinRequestError(
-            "OFB_KEY_MISSING" if not os.environ.get("OFB_KEY") else "SIGN_UNAVAILABLE"
+            "OFB_KEY_MISSING" if not os.environ.get("OFB_KEY") else "SIGN_UNAVAILABLE",
+            relay_info={"source": "relay", "reason": "client_error", "profile": "passport",
+                        "operation": operation, "action": inputs.get("action"), "http_status": None,
+                        "exception_type": type(exc).__name__},
         ) from exc
     if not isinstance(value, dict) or not isinstance(value.get("runtime"), str):
         raise DouyinRequestError("INVALID_RELAY_RESPONSE")
@@ -233,7 +239,8 @@ def validate_flow_plan(action, plan):
         validate_mfa_plan(action, plan)
         return
     creator = action in CREATOR_ROUTES
-    validate_plan(plan, hosts={"creator.douyin.com"} if creator else LOGIN_HOSTS)
+    hosts = {"creator.douyin.com"} if creator else LOGIN_HOSTS | ({"creator.douyin.com"} if action == "creator-refresh" else set())
+    validate_plan(plan, hosts=hosts)
     target = urlsplit(plan["url"])
     if creator:
         method, paths = CREATOR_ROUTES[action]
@@ -241,6 +248,28 @@ def validate_flow_plan(action, plan):
                 or any(c.isspace() for c in plan["url"]) or "\\" in plan["url"]
                 or any(token in target.path.lower() for token in ("%2f", "%5c", "%00", "%2e"))
                 or method == "GET" and plan["body"]):
+            raise DouyinRequestError("INVALID_RELAY_RESPONSE")
+    elif action in CREATOR_QR_ACTIONS:
+        from urllib.parse import parse_qs
+        query = parse_qs(target.query)
+        if (target.hostname != "login.douyin.com"
+                or (plan["method"], target.path) not in {("GET", "/passport/web/get_qrcode/"), ("POST", "/passport/web/check_qrconnect/")}
+                or query.get("aid") != ["6383"] or query.get("scene") != ["secondary_verify"]
+                or query.get("verify_scene") != ["creator"]):
+            raise DouyinRequestError("INVALID_RELAY_RESPONSE")
+    elif action in SESSION_ACTIONS:
+        from urllib.parse import parse_qs
+        allowed = ((action == "web-refresh" and plan["method"] == "GET"
+                    and target.hostname == "www.douyin.com" and target.path == "/jingxuan")
+                   or (action == "creator-refresh" and plan["method"] == "POST"
+                       and target.hostname == "creator.douyin.com"
+                       and target.path == "/passport/ticket_guard/get_client_cert/"
+                       and parse_qs(target.query).get("aid") == ["2906"])
+                   or (plan["method"] == "POST" and target.hostname == "mssdk.bytedance.com"
+                       and target.path == "/web/r/token"))
+        from urllib.parse import parse_qs
+        if not allowed or (target.hostname == "mssdk.bytedance.com" and
+                           parse_qs(target.query).get("ms_appid") != ["2906" if action == "creator-refresh" else "6383"]):
             raise DouyinRequestError("INVALID_RELAY_RESPONSE")
     elif action == "refresh" and (plan["method"], target.hostname, target.path) not in REFRESH_ROUTES:
         raise DouyinRequestError("INVALID_RELAY_RESPONSE")
@@ -294,7 +323,33 @@ def adopt_verification(state, result, action):
         state.state.pop("sec_uid", None)
 
 
-def flow(action, fields=None, *, consume_mfa=False):
+def rejected_legacy_creator_sms(saved):
+    """Allow read-only recovery only from the known pre-mix-mode rejection."""
+    plan=saved.get("request") or {}
+    response=saved.get("response") or {}
+    target=urlsplit(plan.get("url", ""))
+    pairs=parse_qsl(plan.get("body", ""), keep_blank_values=True)
+    form=dict(pairs)
+    try:
+        value=json.loads(response.get("body", ""))
+    except (TypeError, ValueError):
+        return False
+    data=value.get("data") if isinstance(value, dict) else None
+    return (saved.get("action")=="verify-send" and saved.get("sent") is True
+            and saved.get("fields", {}).get("method")=="mobile_sms_verify"
+            and plan.get("method")=="POST" and target.scheme=="https"
+            and target.netloc=="creator.douyin.com" and target.path=="/passport/web/send_code/"
+            and len(form)==len(pairs) and "mix_mode" not in form and form.get("type")=="3737"
+            and form.get("aid")=="2906" and form.get("std_verify_way")=="mobile_sms_verify"
+            and response.get("status")==200 and response.get("request_id")==plan.get("request_id")
+            and not any(k.lower()=="x-tt-verify-passport-decision" and v for k,v in response.get("headers", {}).items())
+            and isinstance(data, dict) and value.get("message")=="error"
+            and value.get("error_code") in (None,1003) and data.get("error_code")==1003
+            and all(data.get(k)=="" for k in ("captcha", "desc_url", "mobile_ticket"))
+            and not data.get("ticket") and not data.get("verify_ticket"))
+
+
+def flow(action, fields=None, *, consume_mfa=False, restart=False):
     """Persist each response before advancing, so computation retries send no SMS twice."""
     fields = fields or {}
     creator = action in CREATOR_ROUTES
@@ -302,9 +357,49 @@ def flow(action, fields=None, *, consume_mfa=False):
     with session_lock(DEFAULT_SESSION):
         state = session()
         require_runtime(state)
-        if creator and str(state.state.get("uid", "")) != fields.get("uid"):
+        if (creator or action in SESSION_ACTIONS | CREATOR_QR_ACTIONS) and str(state.state.get("uid", "")) != fields.get("uid"):
             raise DouyinRequestError("API_ACCOUNT_MISMATCH")
         saved = state.state.get(flow_key, {})
+        if restart:
+            previous = saved.get("fields") or {}
+            plan = saved.get("request") or {}
+            response = saved.get("response") or {}
+            target = urlsplit(plan.get("url", ""))
+            verification = state.state.get("creator_verification") or {}
+            original_prepare = (saved.get("action") == action and not verification
+                    and all(previous.get(k) == fields.get(k) for k in ("uid", "decision", "log_id"))
+                    and plan.get("method") == "GET" and target.scheme == "https"
+                    and target.netloc == "creator.douyin.com" and target.path == "/passport/safe/query_decision/"
+                    and response.get("status") == 200 and response.get("request_id") == plan.get("request_id"))
+            rejected_send = (rejected_legacy_creator_sms(saved) and previous.get("uid") == fields.get("uid")
+                    and verification.get("id") == previous.get("verification_id")
+                    and verification.get("log_id") == fields.get("log_id")
+                    and verification.get("status") == "prepared" and verification.get("ticket_present") is False)
+            if action != "verify-prepare" or not (original_prepare or rejected_send):
+                raise DouyinRequestError("VERIFICATION_ACTION_PENDING")
+            next_fields = {**fields, "restart": "true"}
+            result = compute("flow", {"ua": state.ua, "runtime": state.state["relay_runtime"],
+                                      "action": action, "fields": next_fields,
+                                      **({"response": response} if rejected_send else {})})
+            if result.get("complete") is not False:
+                raise DouyinRequestError("INVALID_RELAY_RESPONSE")
+            validate_flow_plan(action, result.get("request"))
+            diagnostic = state.path.parent / "diagnostics" / ("creator-prepare-restart-" + uuid.uuid4().hex + ".json")
+            write_private(diagnostic, {"runtime": state.state["relay_runtime"], "flow": saved,
+                                       "verification": verification})
+            adopt(state, result, save=False)
+            state.state.pop("creator_verification", None)
+            fields = next_fields
+            saved = {"action": action, "fields": fields, "request": result["request"]}
+            state.state[flow_key] = saved
+            state.save()
+        elif creator and action == "verify-prepare" and saved.get("action") == action:
+            # Response harvesting may add region cookies. Resume the original
+            # exact fields instead of rebuilding the pending request's cookie.
+            previous = saved.get("fields") or {}
+            if any(previous.get(k) != fields.get(k) for k in ("uid", "decision", "log_id")):
+                raise DouyinRequestError("VERIFICATION_ACTION_PENDING")
+            fields = previous
         verification = login_verification_status(state.state)
         if saved.get("verification_result") and not consume_mfa:
             raise DouyinRequestError("LOGIN_VERIFICATION_REQUIRED", verification=verification)
@@ -326,7 +421,7 @@ def flow(action, fields=None, *, consume_mfa=False):
             plan = saved.get("request")
             if plan and not saved.get("response"):
                 validate_flow_plan(action, plan)
-                if saved.get("sent") and action in {"sms-send", "sms-login", *MFA_ACTIONS, *CREATOR_ROUTES}:
+                if saved.get("sent") and action in {"sms-send", "sms-login", *MFA_ACTIONS, *CREATOR_ROUTES, *SESSION_ACTIONS, *CREATOR_QR_ACTIONS}:
                     raise DouyinRequestError("VERIFICATION_STEP_RESULT_UNKNOWN" if creator else "LOGIN_STEP_RESULT_UNKNOWN")
                 saved["sent"] = True
                 state.save()
@@ -338,7 +433,8 @@ def flow(action, fields=None, *, consume_mfa=False):
                     data=plan["body"].encode() if plan["body"] else None,
                     timeout=30,
                 )
-                response_cookies = state.harvest(response, plan["url"])
+                response_cookies = (state.harvest(response, plan["url"], persist=False)
+                                    if action in CREATOR_QR_ACTIONS else state.harvest(response, plan["url"]))
                 # The landing HTML is not a computation input; retain structured responses.
                 text = (
                     response.text
@@ -438,6 +534,12 @@ def flow(action, fields=None, *, consume_mfa=False):
                 state.state.pop(flow_key, None)
                 if action == "bootstrap":
                     state.state["initialized"] = True
+                if action in SESSION_ACTIONS:
+                    channel = action.removesuffix("-refresh")
+                    if (payload.get("session_channel") != channel or type(payload.get("expires_at")) is not int
+                            or payload["expires_at"] <= time.time()):
+                        raise DouyinRequestError("INVALID_RELAY_RESPONSE")
+                    state.state.setdefault("session_channels", {})[channel] = payload["expires_at"]
                 state.save()
                 return payload
             plan = result.get("request")
@@ -452,6 +554,17 @@ def flow(action, fields=None, *, consume_mfa=False):
             }
             state.save()
         raise DouyinRequestError("LOGIN_STEP_LIMIT")
+
+
+def refresh_channel(channel):
+    if channel not in {"web", "creator"}:
+        raise ValueError("INVALID_SESSION_CHANNEL")
+    state = session()
+    uid = str(state.state.get("uid", ""))
+    if not uid.isdigit():
+        raise DouyinRequestError("SELF_PROFILE_REQUIRED")
+    cookie = state.cookies("https://creator.douyin.com/" if channel == "creator" else "https://www.douyin.com/")
+    return flow(channel + "-refresh", {"uid": uid, "cookie": cookie})
 
 
 def prepare_mfa(*, sms=False):

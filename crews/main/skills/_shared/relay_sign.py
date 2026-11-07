@@ -8,7 +8,9 @@
 
 import json
 import os
+import re
 from typing import Any
+from urllib.parse import urlsplit
 
 import requests
 
@@ -21,10 +23,47 @@ _TIMEOUT = 30
 
 
 class RelaySignError(RuntimeError):
-    def __init__(self, code: str, status: int | None = None):
+    def __init__(self, code: str, status: int | None = None, *, relay_info=None):
         self.code = code
         self.status = status
+        self.relay_info = relay_info
         super().__init__(code)
+
+
+def _relay_info(reason, context, response=None, exception=None):
+    # Never copy exception messages, response bodies, credentials or query values.
+    info = {"source": "relay", "reason": reason, **context, "http_status": None}
+    if exception is not None:
+        info["exception_type"] = type(exception).__name__
+    if response is not None:
+        status = getattr(response, "status_code", None)
+        if isinstance(status, int) and not isinstance(status, bool) and 100 <= status <= 599:
+            info["http_status"] = status
+        headers = getattr(response, "headers", {})
+        kind = str(headers.get("content-type", "")).split(";", 1)[0].lower()
+        if re.fullmatch(r"[a-z0-9.+-]+/[a-z0-9.+-]+", kind):
+            info["content_type"] = kind
+        body = getattr(response, "content", None)
+        if isinstance(body, bytes):
+            prefix = body[:64].lstrip().lower()
+            info.update(body_bytes=len(body), body_kind="empty" if not body else
+                "html" if prefix.startswith((b"<!doctype html", b"<html")) else
+                "json" if prefix.startswith((b"{", b"[")) else "other")
+    return info
+
+
+def _douyin_context(profile, operation, inputs):
+    context = {"profile": profile, "operation": operation}
+    action = inputs.get("action")
+    if isinstance(action, str) and re.fullmatch(r"[a-z-]{1,40}", action):
+        context["action"] = action
+    target = inputs.get("url")
+    if isinstance(target, str):
+        parsed = urlsplit(target)
+        context["platform_host"] = parsed.hostname
+        context["platform_path"] = "/upload/v1/<store>" if parsed.path.startswith("/upload/v1/") else parsed.path
+        context["platform_method"] = inputs.get("method")
+    return context
 
 
 def _ofb_key() -> str:
@@ -37,26 +76,53 @@ def _ofb_key() -> str:
     return key
 
 
-def _post(path: str, body: dict) -> Any:
-    resp = requests.post(
-        f"{RELAY_BASE_URL}{path}",
-        headers={"Content-Type": "application/json", "X-OFB-Key": _ofb_key()},
-        json=body,
-        timeout=_TIMEOUT,
-    )
+def _post(path: str, body: dict, *, context=None, require_object=False) -> Any:
+    try:
+        key = _ofb_key()
+    except RuntimeError as exc:
+        if context is None:
+            raise
+        raise RelaySignError("OFB_KEY_MISSING", relay_info=_relay_info("configuration", context)) from exc
+    try:
+        resp = requests.post(
+            f"{RELAY_BASE_URL}{path}",
+            headers={"Content-Type": "application/json", "X-OFB-Key": key},
+            json=body,
+            timeout=_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        if context is None:
+            raise
+        if isinstance(exc, requests.Timeout):
+            reason = "timeout"
+        elif isinstance(exc, requests.exceptions.SSLError):
+            reason = "tls"
+        elif isinstance(exc, requests.exceptions.ContentDecodingError):
+            reason = "response_decode"
+        elif isinstance(exc, requests.exceptions.InvalidJSONError):
+            reason = "request_encode"
+        elif isinstance(exc, requests.ConnectionError):
+            reason = "connection"
+        else:
+            reason = "request"
+        info = _relay_info(reason, context, getattr(exc, "response", None), exc)
+        raise RelaySignError("SIGN_UNAVAILABLE", info["http_status"], relay_info=info) from exc
+    def failure(code, reason, exception=None):
+        return RelaySignError(code, resp.status_code,
+            relay_info=_relay_info(reason, context, resp, exception) if context is not None else None)
     try:
         env = resp.json()
     except ValueError as exc:
-        raise RelaySignError("SIGN_UNAVAILABLE", resp.status_code) from exc
+        raise failure("SIGN_UNAVAILABLE", "response_decode", exc) from exc
     if not isinstance(env, dict):
-        raise RelaySignError("SIGN_UNAVAILABLE", resp.status_code)
+        raise failure("SIGN_UNAVAILABLE", "response_shape")
     if not resp.ok or not env.get("success"):
         code = env.get("error")
-        if not isinstance(code, str) or not code.isupper() or len(code) > 40:
+        if not isinstance(code, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,39}", code):
             code = "SIGN_UNAVAILABLE"
-        raise RelaySignError(code, resp.status_code)
-    if "data" not in env:
-        raise RelaySignError("INVALID_RELAY_RESPONSE", resp.status_code)
+        raise failure(code, "relay_error")
+    if "data" not in env or require_object and not isinstance(env["data"], dict):
+        raise failure("INVALID_RELAY_RESPONSE", "response_data")
     return env["data"]
 
 
@@ -65,6 +131,7 @@ def douyin_v2(profile: str, operation: str, inputs: dict) -> dict:
     data = _post(
         "/api/v1/sign/douyin/v2",
         {"version": 2, "profile": profile, "operation": operation, "inputs": inputs},
+        context=_douyin_context(profile, operation, inputs), require_object=True,
     )
     if not isinstance(data, dict):
         raise RuntimeError("relay douyin v2 returned invalid data")

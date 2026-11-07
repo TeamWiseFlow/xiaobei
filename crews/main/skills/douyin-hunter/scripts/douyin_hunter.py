@@ -12,7 +12,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_shared"))
 from douyin_utils.api import ENDPOINTS, call, collect, item_id
-from douyin_utils.http import DouyinRequestError
+from douyin_utils.http import DouyinRequestError, public_error_info
 
 READ_METHODS = {
     k: v
@@ -169,6 +169,11 @@ def main():
     s.add_argument("--count", type=int, default=20)
     s.add_argument("--sort-type", default="0")
     s.add_argument("--publish-time", default="0")
+    s.add_argument("--length", choices=("all", "short", "medium", "long"), default="all")
+    s.add_argument("--range", choices=("all", "seen", "unseen", "following"), default="all")
+    s.add_argument("--content-type", choices=("all", "video", "image"), default="all")
+    s.add_argument("--fans", choices=("0_1k", "1k_1w", "1w_10w", "10w_100w", "100w_"))
+    s.add_argument("--user-type", choices=("common", "enterprise", "personal"))
     a = p.parse_args()
     if a.command == "methods":
         return {"ok": True, "methods": READ_METHODS}
@@ -246,6 +251,24 @@ def main():
             {"sec_user_id": a.user.split("/user/")[-1].split("?")[0]},
             a.count,
         )
+    if a.type != "user" and (a.fans or a.user_type):
+        raise ValueError("USER_FILTER_REQUIRES_USER_SEARCH")
+    if a.type in {"user", "live"} and (a.length != "all" or a.range != "all" or a.sort_type != "0" or a.publish_time != "0"):
+        raise ValueError("VIDEO_FILTER_REQUIRES_CONTENT_SEARCH")
+    filters = {"sort_type": a.sort_type, "publish_time": a.publish_time,
+               "filter_duration": {"all": "", "short": "0-1", "medium": "1-5", "long": "5-"}[a.length],
+               "search_range": {"all": "0", "seen": "1", "unseen": "2", "following": "3"}[a.range]}
+    if a.type == "general":
+        filters["content_type"] = {"all": "0", "video": "1", "image": "2"}[a.content_type]
+        filters = {"filter_selected": json.dumps(filters, separators=(",", ":")),
+                   "search_source": "tab_search", "is_filter_search": "1"}
+    elif a.type == "user":
+        filters = {**({"douyin_user_fans": a.fans} if a.fans else {}),
+                   **({"douyin_user_type": {"common": "common_user", "enterprise": "enterprise_user", "personal": "personal_user"}[a.user_type]} if a.user_type else {})}
+    elif a.type == "live":
+        filters = {}
+    if a.type != "general" and a.content_type != "all":
+        raise ValueError("CONTENT_FILTER_REQUIRES_GENERAL_SEARCH")
     return collect(
         {
             "video": "search_video",
@@ -255,11 +278,7 @@ def main():
         }[a.type],
         {
             "keyword": a.keyword,
-            **(
-                {"sort_type": a.sort_type, "publish_time": a.publish_time}
-                if a.type == "video"
-                else {}
-            ),
+            **filters,
         },
         a.count,
     )
@@ -269,6 +288,8 @@ if __name__ == "__main__":
     try:
         result = main()
         print(json.dumps(result, ensure_ascii=False))
+        if result.get("ok") is False:
+            sys.exit(1)
     except (DouyinRequestError, ValueError, OSError) as e:
         code = (
             e.code
@@ -277,7 +298,7 @@ if __name__ == "__main__":
             if isinstance(e, ValueError) and str(e).isupper()
             else "CLIENT_INPUT_ERROR"
         )
-        print(json.dumps({"ok": False, "error": code}))
+        print(json.dumps({"ok": False, "error": code, **public_error_info(e)}))
         sys.exit(
             2
             if code

@@ -28,7 +28,7 @@ metadata:
 | 天眼查 CLI（外部可选工具，命令 `tyc`） | 企业工商、股权及风险查询，用于客户/合作方尽调和交易对手核验；先遵循下文安装与授权规则 |
 | [bd-record](tools/bd-record/SKILL.md) | 线索与联络记录、帖子互动去重 |
 | [douyin-interact](tools/douyin-interact/SKILL.md) | 抖音作品点赞、收藏、评论/回复及已支持的收藏夹操作 |
-| [douyin-im](tools/douyin-im/SKILL.md) | 抖音文本、媒体和分享卡片私信及收信 |
+| [douyin-im](tools/douyin-im/SKILL.md) | 抖音文本/媒体/卡片私信、实时收信和指定消息回复 |
 | [douyin-live](tools/douyin-live/SKILL.md) | 抖音直播弹幕与点赞 |
 | [xhs-im](tools/xhs-im/SKILL.md) | 小红书会话/历史、单聊文本、已读、撤回与删除 |
 | [xhs-live](tools/xhs-live/SKILL.md) | 小红书直播文字评论与文字帧发送 |
@@ -58,7 +58,7 @@ metadata:
 
 公开作品、评论、账号、提醒与媒体按平台使用：抖音 `douyin-hunter`、小红书 `xhs-hunter`、TikTok `tiktok-hunter`、快手 `kuaishou-hunter`、X `x-hunter`、微博 `weibo-hunter`、微信公众号 `wx-mp-hunter`。其他网页用 `smart-search` / `browser-guide`。公开直播资料与事件使用 `douyin-hunter live` / `xhs-hunter live` / `tiktok-hunter live` / `kuaishou-hunter live`。私信会话、历史及私信未读仍由本包 IM 工具读取，它们服务于会话联络。
 
-抖音互动使用 `douyin-login` 独立 API 会话；小红书复用 `xhs-hunter` PC 会话，不混用 Creator 登录。TikTok 写入材料按 `tiktok-hunter` 登录说明核验。快手普通互动、私信与直播写操作未实现；微博互动写操作未实现。不要以浏览器操作补造未实现能力。
+抖音互动与采集、创作者共用 `douyin-hunter` 的 `douyin-login` API 登录态；小红书复用 `xhs-hunter` PC 会话，不混用 Creator 登录。TikTok 写入材料按 `tiktok-hunter` 登录说明核验。快手普通互动、私信与直播写操作未实现；微博互动写操作未实现。不要以浏览器操作补造未实现能力。
 
 ## 数据与边界
 

@@ -85,7 +85,7 @@ SDK 启动显式传 `executable_path` 和 UBO 路径，关闭默认扩展下载�
 
 真正切换时：盘点任务和人工等待 → 停止准入并结束已确认可关闭的 session → 归档旧 profiles/配置 → 创建新 profile → 按平台重新登录 → 校验预期账号。此流程应脚本化，保留归档位置与结果；本轮开发不自动对运行态执行。不要删原生锁或按 PID/文件年龄批量杀浏览器。
 
-新指纹不能靠导入旧 Cookie 造会话。抖音发布/本人取数共用 `douyin` profile；抖音采集互动、各平台 API 会话仍独立。浏览器重建不意味着删除四平台 API 会话或中央凭据。具体恢复流程见 [profile 操作说明](./profile-loss-handling.md)。
+新指纹不能靠导入旧 Cookie 造会话。抖音采集、发布、本人取数和互动共用 API 会话，不再依赖 `douyin` profile；旧浏览器提交收据保留用于历史核查。浏览器重建不意味着删除四平台 API 会话或中央凭据。具体恢复流程见 [profile 操作说明](./profile-loss-handling.md)。
 
 回退先停止新 daemon，再恢复旧程序及其完整旧 profile；不能让旧 Firefox 直接打开新内核写过的 profile。
 

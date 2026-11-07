@@ -8,8 +8,8 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from douyin_utils.api import call, ENDPOINTS
-from douyin_utils.http import DouyinRequestError, session
+from douyin_utils.api import call, ENDPOINTS, ensure_webid
+from douyin_utils.http import DouyinRequestError, public_error_info
 from douyin_utils.ws import listen
 
 LIVE_METHODS = {k: v for k, v in ENDPOINTS.items() if v["profile"] == "live"}
@@ -148,9 +148,7 @@ def main():
         return {"ok": True, "data": stream}
     if a.command == "history":
         current = snapshot(room(a.room))
-        user_id = session().state.get("tokens", {}).get("webid")
-        if not user_id:
-            raise ValueError("DEVICE_ID_MISSING")
+        user_id = ensure_webid()
         return {"ok": True, "scope": "recent_room_snapshot_up_to_15",
                 "data": call("live_fetch", {"room_id": ident(current, "id"),
                                             "user_unique_id": numeric(user_id)})}
@@ -192,9 +190,7 @@ def main():
                     "products", {"room_id": room_id, "author_id": ident(owner, "id")}
                 ),
             }
-        user_id = a.user_unique_id or session().state.get("tokens", {}).get("webid")
-        if not user_id:
-            raise ValueError("DEVICE_ID_MISSING")
+        user_id = a.user_unique_id or ensure_webid()
         return listen(
             "live",
             room_id=room_id,
@@ -253,7 +249,10 @@ if __name__ == "__main__":
             if str(e).isupper()
             else "LIVE_CLIENT_ERROR"
         )
-        print(json.dumps({"ok": False, "error": code}))
+        output = {"ok": False, "error": code, **public_error_info(e)}
+        if code == "WEB_DEVICE_ID_UNAVAILABLE":
+            output["hint"] = "主站身份响应未提供可用 webid；执行 douyin-hunter check 后复核，不把 device_id 直接代入或随机生成"
+        print(json.dumps(output, ensure_ascii=False))
         sys.exit(
             2
             if code

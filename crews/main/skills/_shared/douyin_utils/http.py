@@ -4,11 +4,12 @@ from __future__ import annotations
 import base64
 import json
 import re
+import uuid
 from functools import wraps
-from urllib.parse import quote, unquote_plus, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, urlunsplit
 import requests
 from relay_sign import RelaySignError, douyin_v2
-from .session import ApiSession, DEFAULT_SESSION, SessionError, session_lock
+from .session import ApiSession, DEFAULT_SESSION, SessionError, session_lock, write_private
 from .verification import creator_verification
 
 API_SESSION_FILE = DEFAULT_SESSION
@@ -34,6 +35,7 @@ STATIC_HEADERS = {
     "referer",
     "origin",
     "x-tt-passport-trace-id",
+    "agw-js-conv",
 }
 COOKIE_FIELDS = {
     "__ac_signature",
@@ -52,7 +54,7 @@ def serialized(function):
 
 
 class DouyinRequestError(RuntimeError):
-    def __init__(self, code, *, status=None, missing_fields=None, response_info=None, response_prefix=None, response_headers=None, verification=None):
+    def __init__(self, code, *, status=None, missing_fields=None, response_info=None, response_prefix=None, response_headers=None, verification=None, request_info=None, diagnostic_file=None, relay_info=None):
         super().__init__(code)
         self.code, self.status = code, status
         self.missing_fields = list(missing_fields or [])
@@ -60,6 +62,40 @@ class DouyinRequestError(RuntimeError):
         self.response_prefix = response_prefix
         self.response_headers = response_headers
         self.verification = verification
+        self.request_info = request_info
+        self.diagnostic_file = diagnostic_file
+        self.relay_info = relay_info
+
+
+def public_error_info(exc):
+    info = {key: value for key in ("response_info", "request_info", "diagnostic_file", "relay_info", "preparation_step")
+            if (value := getattr(exc, key, None)) is not None}
+    status = getattr(exc, "status", None)
+    if isinstance(status, int) and not isinstance(status, bool) and 100 <= status <= 599:
+        info["http_status"] = status
+    return info
+
+
+def platform_error_context(state, profile, method, url, data, response):
+    parsed = urlsplit(url)
+    shapes = {}
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        name = key if re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", key) else "<other>"
+        shapes.setdefault(name, []).append({"type": "string", "length": len(value), "empty": not bool(value)})
+    info = {"profile": profile, "method": method, "host": parsed.hostname,
+            "path": parsed.path, "query_shape": shapes}
+    messages = {key: data[key][:2048] for key in ("status_msg", "status_message", "message")
+                if isinstance(data.get(key), str)}
+    base = data.get("BaseResp")
+    if isinstance(base, dict) and isinstance(base.get("StatusMessage"), str):
+        messages["BaseResp.StatusMessage"] = base["StatusMessage"][:2048]
+    diagnostic = state.path.parent / "diagnostics" / ("platform-" + uuid.uuid4().hex + ".json")
+    try:
+        write_private(diagnostic, {"status_code": data["status_code"], "messages": messages,
+                                   "request": info, "response": response_info(response)})
+    except (OSError, SessionError):
+        return info, None
+    return info, str(diagnostic)
 
 
 def response_info(response):
@@ -188,9 +224,11 @@ def _dynamic(profile, operation, inputs):
                     current.mark_runtime_expired()
             except DouyinRequestError:
                 pass
-        raise DouyinRequestError(exc.code, status=exc.status) from exc
+        raise DouyinRequestError(exc.code, status=exc.status, relay_info=exc.relay_info) from exc
     except (requests.RequestException, RuntimeError) as exc:
-        raise DouyinRequestError("SIGN_UNAVAILABLE") from exc
+        raise DouyinRequestError("SIGN_UNAVAILABLE", relay_info={"source": "relay", "reason": "client_error",
+            "profile": profile, "operation": operation, "http_status": None,
+            "exception_type": type(exc).__name__}) from exc
     if (
         not isinstance(value, dict)
         or not isinstance(value.get("query"), dict)
@@ -298,21 +336,10 @@ def prepare(
 
 
 def _send(method, url, *, headers, data, timeout):
-    # TLS fingerprint transport has no browser process or persistent browser profile.
-    from curl_cffi import requests as http
-
+    from .transport import send
     try:
-        return http.request(
-            method,
-            url,
-            headers=headers,
-            data=data,
-            timeout=timeout,
-            allow_redirects=False,
-            impersonate="chrome",
-            default_headers=False,
-            quote=False,
-        )
+        return send(method, url, headers=headers, data=data, timeout=timeout,
+                    scope=API_SESSION_FILE)
     except Exception as exc:
         raise DouyinRequestError("PLATFORM_NETWORK_ERROR") from exc
 
@@ -342,9 +369,21 @@ def request(
     expected_uid=None,
     verify_identity=False,
     empty_result=None,
+    before_send=None,
+    query_tail=None,
+    on_response=None,
 ):
+    if before_send is not None and not callable(before_send):
+        raise DouyinRequestError("INVALID_SEND_CALLBACK")
+    if on_response is not None and not callable(on_response):
+        raise DouyinRequestError("INVALID_RESPONSE_CALLBACK")
     _url(url, media=profile == "media")
     method = method.upper()
+    reply_read = (profile == "web" and method == "GET" and urlsplit(url).hostname == "www.douyin.com"
+                  and urlsplit(url).path == "/aweme/v1/web/comment/list/reply/")
+    if query_tail is not None and (not reply_read or not isinstance(query_tail, dict)
+            or set(query_tail) - {"verifyFp", "fp"} or any(not isinstance(v, str) for v in query_tail.values())):
+        raise DouyinRequestError("INVALID_QUERY_TAIL")
     if method not in {"GET", "POST", "PUT"}:
         raise DouyinRequestError("INVALID_METHOD")
     if params:
@@ -406,6 +445,8 @@ def request(
         for k, v in static_headers.items()
     ) or len({k.lower() for k in static_headers}) != len(static_headers):
         raise DouyinRequestError("INVALID_STATIC_HEADERS")
+    if any(k.lower() == "agw-js-conv" and v != "str" for k, v in static_headers.items()):
+        raise DouyinRequestError("INVALID_STATIC_HEADERS")
     if static_headers:
         inputs["headers"] = static_headers
     if fields:
@@ -426,6 +467,8 @@ def request(
     dynamic = _dynamic(profile, operation, inputs)
     adopt_runtime(state, dynamic)
     signed_url = _merge_query(url, dynamic["query"])
+    if query_tail:
+        signed_url = append_params(signed_url, query_tail)
     headers = dynamic["headers"]
     if any(
         not isinstance(k, str)
@@ -470,10 +513,7 @@ def request(
         else None
     )
     require_runtime(state)
-    response = _send(
-        method,
-        signed_url,
-        headers={
+    wire_headers = {
             "User-Agent": ua,
             **({"Cookie": cookie} if profile != "media" else {}),
             "Accept": next((v for k, v in static_headers.items() if k.lower() == "accept"), "application/json"),
@@ -485,10 +525,31 @@ def request(
             } if profile == "creator" else {}),
             **{k: v for k, v in static_headers.items() if k.lower() != "accept"},
             **headers,
-        },
+        }
+    if profile == "creator":
+        lower = {k.lower(): v for k, v in wire_headers.items()}
+        lower.update({"accept-encoding": "gzip, deflate, br, zstd", "priority": "u=1, i"})
+        order = ("x-tt-session-dtrait", "bd-ticket-guard-web-version", "bd-ticket-guard-client-data",
+                 "bd-ticket-guard-web-sign-type", "user-agent", "accept", "x-secsdk-csrf-token",
+                 "content-type", "bd-ticket-guard-ree-public-key", "bd-ticket-guard-version", "origin",
+                 "sec-fetch-site", "sec-fetch-mode", "sec-fetch-dest", "referer", "accept-encoding",
+                 "accept-language", "cookie", "priority")
+        wire_headers = {**{k: lower.pop(k) for k in order if k in lower}, **lower}
+    if reply_read:
+        wire_headers = {k: v for k, v in wire_headers.items()
+                        if k.lower() not in {"uifid", "x-tt-session-dtrait"}
+                        and not k.lower().startswith("bd-ticket-guard-")}
+    if before_send is not None:
+        before_send()
+    response = _send(
+        method,
+        signed_url,
+        headers=wire_headers,
         data=wire,
         timeout=timeout,
     )
+    if on_response is not None:
+        on_response(response)
     try:
         state.harvest(response, url)
     except SessionError as exc:
@@ -504,8 +565,11 @@ def request(
             response_headers=private_response_headers(response) if capture_response else None,
             verification=verification,
         )
-    if response.status_code in (401, 403):
+    if response.status_code == 401:
         raise DouyinRequestError("PLATFORM_AUTH_REJECTED", status=response.status_code)
+    if response.status_code == 403:
+        raise DouyinRequestError("PLATFORM_RISK_CONTROL", status=403,
+                                 response_info=response_info(response))
     if response.status_code == 429:
         raise DouyinRequestError("PLATFORM_RATE_LIMITED", status=429)
     if not 200 <= response.status_code < 300:
@@ -517,6 +581,8 @@ def request(
     try:
         data = json.loads(response.content)
     except (ValueError, UnicodeError) as exc:
+        if b"Uifid Not Found" in response.content[:4096]:
+            raise DouyinRequestError("PLATFORM_UIFID_MISSING", status=response.status_code) from exc
         raise DouyinRequestError(
             "PLATFORM_NON_JSON", status=response.status_code,
             response_info=response_info(response),
@@ -527,10 +593,15 @@ def request(
         raise DouyinRequestError("PLATFORM_BAD_RESPONSE")
     status = data.get("status_code")
     if status not in (None, 0, "0"):
+        if not isinstance(status, (str, int)) or not re.fullmatch(r"-?[0-9]{1,10}", str(status)):
+            raise DouyinRequestError("PLATFORM_BAD_RESPONSE")
+        request_info, diagnostic = platform_error_context(state, profile, method, url, data, response)
         raise DouyinRequestError(
             "PLATFORM_LOGIN_REJECTED"
             if str(status) == "8"
-            else "PLATFORM_STATUS_" + str(status)
+            else "PLATFORM_STATUS_" + str(status),
+            status=response.status_code, response_info=response_info(response),
+            request_info=request_info, diagnostic_file=diagnostic,
         )
     if verify_identity:
         user = data.get("user") or data.get("user_info")
@@ -540,7 +611,11 @@ def request(
         if not isinstance(user, dict) or not str(user.get("uid", "")).isdigit():
             raise DouyinRequestError("SELF_PROFILE_MISSING")
         state.state.update(uid=str(user["uid"]), sec_uid=user.get("sec_uid", ""))
-        if str(data.get("id", "")).isdigit():
-            state.state.setdefault("tokens", {})["device_id"] = str(data["id"])
+        identity_url = urlsplit(url)
+        if (identity_url.hostname == "www.douyin.com" and identity_url.path == "/aweme/v1/web/query/user/"
+                and re.fullmatch(r"[1-9][0-9]{0,19}", str(data.get("id", "")))):
+            ident = str(data["id"])
+            state.state.setdefault("tokens", {}).update(device_id=ident, webid=ident)
+            state.state.setdefault("token_sources", {})["webid"] = "query-user.id"
         state.save()
     return data

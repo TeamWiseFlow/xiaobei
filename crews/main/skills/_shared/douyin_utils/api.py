@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 import requests
 from .http import DouyinRequestError, _send, request, session, serialized
+from .search import user_filters, check_user_filters
 
 ENDPOINTS = json.loads(Path(__file__).with_name("endpoints.json").read_text())
 ITEM_HOSTS = {"www.douyin.com", "v.douyin.com", "www.iesdouyin.com", "iesdouyin.com"}
@@ -159,6 +160,23 @@ def common(profile, state):
     }
 
 
+def ensure_webid():
+    """Recover a platform-issued web identifier from the exact identity endpoint."""
+    current = session()
+    value = current.state.get("tokens", {}).get("webid")
+    if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]{0,19}", value):
+        return value
+    expected_uid = current.state.get("uid")
+    call("self", expected_uid=expected_uid)
+    refreshed = session().state
+    if expected_uid and refreshed.get("uid") != expected_uid:
+        raise DouyinRequestError("API_ACCOUNT_MISMATCH")
+    value = refreshed.get("tokens", {}).get("webid")
+    if not isinstance(value, str) or not re.fullmatch(r"[1-9][0-9]{0,19}", value):
+        raise DouyinRequestError("WEB_DEVICE_ID_UNAVAILABLE")
+    return value
+
+
 @serialized
 def csrf(host):
     if host not in ("creator.douyin.com", "live.douyin.com", "www.douyin.com"):
@@ -198,13 +216,15 @@ def csrf(host):
     state.save()
 
 
-def call(name, params=None, *, body=None, confirm=False, expected_uid=None):
+def call(name, params=None, *, body=None, confirm=False, expected_uid=None, _uifid_retry=False):
     if name not in ENDPOINTS:
         raise ValueError("UNKNOWN_METHOD")
     e = ENDPOINTS[name]
     if params is not None and not isinstance(params, dict):
         raise ValueError("PARAMS_OBJECT_REQUIRED")
     values = {**e["defaults"], **(params or {})}
+    if name == "search_users":
+        values = user_filters(values)
     if name == "followers" and str(values.get("max_time", "0")) == "0":
         values.update(max_time=str(int(time.time())), source_type="1")
     if name == "following":
@@ -227,7 +247,7 @@ def call(name, params=None, *, body=None, confirm=False, expected_uid=None):
     ):
         csrf(host)
     state = session()
-    query = common(e["profile"], state)
+    query = {} if name == "fast_detect" else common(e["profile"], state)
     if e.get("version"):
         query.update(zip(("version_code", "version_name"), e["version"]))
     if e.get("body_fields"):
@@ -236,18 +256,25 @@ def call(name, params=None, *, body=None, confirm=False, expected_uid=None):
         query.update(values)
     # Device tokens are issued by the platform or supplied by this API lifecycle.
     tokens = state.state.get("tokens", {})
-    for k in ("webid", "msToken") if e["profile"] == "web" else ("msToken",):
+    for k in ("webid", "msToken") if e["profile"] == "web" else ("msToken",) if e["profile"] != "creator" else ():
         if tokens.get(k):
             query[k] = tokens[k]
+    if e["profile"] == "creator":
+        if tokens.get("creator_msToken"):
+            query["msToken"] = tokens["creator_msToken"]
+        elif state.state.get("session_channels", {}).get("creator"):
+            raise DouyinRequestError("CREATOR_TOKEN_UNAVAILABLE")
+        elif tokens.get("msToken"):
+            query["msToken"] = tokens["msToken"]
     if e["profile"] == "web":
         cookie_values = {
             c["name"]: c["value"]
             for c in state.state["cookies"]
             if c.get("name") and c.get("value")
         }
-        if cookie_values.get("UIFID"):
+        if cookie_values.get("UIFID") and name != "replies":
             query["uifid"] = cookie_values["UIFID"]
-        if cookie_values.get("s_v_web_id"):
+        if cookie_values.get("s_v_web_id") and name != "replies":
             query.update(
                 verifyFp=cookie_values["s_v_web_id"], fp=cookie_values["s_v_web_id"]
             )
@@ -256,6 +283,9 @@ def call(name, params=None, *, body=None, confirm=False, expected_uid=None):
         for c in state.state["cookies"]
     ):
         raise DouyinRequestError("API_SESSION_EXPIRED")
+    if name == "replies":
+        for key in ("uifid", "verifyFp", "fp"):
+            query.pop(key, None)
     if name == "comment":
         query.update(
             app_name="aweme", enter_from="video_detail", previous_page="video_detail"
@@ -289,23 +319,42 @@ def call(name, params=None, *, body=None, confirm=False, expected_uid=None):
             browser_version=state.ua.removeprefix("Mozilla/"),
             tz_name="Asia/Shanghai",
         )
-    result = request(
-        e["profile"],
-        "request",
-        e["method"],
-        "https://" + host + e["path"],
-        params=query,
-        body=body,
-        body_encoding="form" if e.get("form") else "json",
-        verify_identity=name == "self",
-        expected_uid=expected_uid,
-        binary_response=e.get("binary", False),
-        empty_result=e.get("empty_result"),
-        content_type=e.get("content_type"),
-        static_headers={"referer": "https://" + host + "/", "origin": "https://" + host}
-        if e["method"] == "POST"
-        else {"referer": "https://" + host + "/"},
-    )
+    referer = "https://" + host + "/"
+    if name == "search_users":
+        from urllib.parse import quote
+        referer += "search/" + quote(str(values["keyword"]), safe="") + "?type=user"
+    if name == "create":
+        media_type = (body or {}).get("item", {}).get("common", {}).get("media_type")
+        referer += "creator-micro/content/post/" + ("image" if media_type == 2 else "video")
+    headers = {"referer": referer}
+    if name in {"comments", "replies"}:
+        headers["referer"] = "https://www.douyin.com/video/" + str(values.get("aweme_id") or values["item_id"])
+    if e["method"] == "POST":
+        headers["origin"] = "https://" + host
+    if name == "fast_detect":
+        headers["agw-js-conv"] = "str"
+    try:
+        result = request(
+            e["profile"], "request", e["method"], "https://" + host + e["path"],
+            params=query, body=body,
+            body_encoding="form" if e.get("form") else "json",
+            verify_identity=name == "self", expected_uid=expected_uid,
+            binary_response=e.get("binary", False), empty_result=e.get("empty_result"),
+            capture_response=name == "create", content_type=e.get("content_type"),
+            static_headers=headers,
+            **({"query_tail": {"verifyFp": cookie_values["s_v_web_id"], "fp": cookie_values["s_v_web_id"]}}
+               if name == "replies" and cookie_values.get("s_v_web_id") else {}),
+        )
+    except DouyinRequestError as exc:
+        if (exc.code == "PLATFORM_UIFID_MISSING" and not e.get("write")
+                and e["profile"] == "web" and name != "feed" and not _uifid_retry
+                and not state.cookies("https://www.douyin.com/").count("UIFID=")):
+            call("feed", _uifid_retry=True)
+            if not session().cookies("https://www.douyin.com/").count("UIFID="):
+                raise exc
+            return call(name, params, body=body, confirm=confirm,
+                        expected_uid=expected_uid, _uifid_retry=True)
+        raise
     if name == "live_fetch":
         from google.protobuf.json_format import MessageToDict
         from google.protobuf.message import DecodeError
@@ -329,28 +378,66 @@ def collect(name, params, count=20, pages=10):
         raise ValueError("METHOD_NOT_PAGEABLE")
     if not 1 <= count <= 100 or not 1 <= pages <= 10:
         raise ValueError("INVALID_COLLECTION_LIMIT")
-    values = dict(params)
+    values = user_filters(params) if name == "search_users" else dict(params)
+    feed = e.get("pagination") == "refresh-index"
+    if feed:
+        cursor = str(values.get(e["cursor"], e["defaults"][e["cursor"]]))
+        if not re.fullmatch(r"[0-9]{1,9}", cursor):
+            raise ValueError("INVALID_FEED_REFRESH_INDEX")
+        values[e["cursor"]] = cursor
     result = []
     seen = set()
     seen_pages = {str(values.get(e["cursor"], e["defaults"].get(e["cursor"], "0")))}
     for page in range(pages):
         values["count"] = str(min(count - len(result), int(values.get("count", 20))))
-        response = call(name, values)
+        response = call(name, dict(values))
         batch = response.get(e["list"])
+        cards = feed and batch is not None
+        if feed and batch is None:
+            batch = response.get("aweme_list")
         if not isinstance(batch, list):
             raise DouyinRequestError("PLATFORM_LIST_MISSING")
+        if cards:
+            decoded = []
+            for card in batch:
+                if not isinstance(card, dict):
+                    raise DouyinRequestError("PLATFORM_CARD_INVALID")
+                item = card.get("aweme")
+                if item in (None, ""):
+                    continue
+                if isinstance(item, str):
+                    try:
+                        item = json.loads(item)
+                    except (ValueError, TypeError) as exc:
+                        raise DouyinRequestError("PLATFORM_CARD_INVALID") from exc
+                if not isinstance(item, dict):
+                    raise DouyinRequestError("PLATFORM_CARD_INVALID")
+                if item.get("aweme_id"):
+                    decoded.append(item)
+            batch = decoded
+        before = len(result)
         for item in batch:
+            if not isinstance(item, dict):
+                raise DouyinRequestError("PLATFORM_ITEM_INVALID")
+            user = item.get("user_info")
             key = str(
                 item.get("aweme_id")
                 or item.get("cid")
                 or item.get("uid")
+                or (user.get("uid") if isinstance(user, dict) else None)
                 or json.dumps(item, sort_keys=True)
             )
             if key not in seen:
                 result.append(item)
                 seen.add(key)
+        if feed:
+            values[e["cursor"]] = str(int(values[e["cursor"]]) + 1)
         if len(result) >= count or not response.get("has_more"):
             break
+        if feed:
+            if batch and len(result) == before:
+                raise DouyinRequestError("PLATFORM_PAGE_NO_PROGRESS")
+            continue
         cursor = response.get(e.get("response_cursor", e["cursor"]))
         if cursor is None or str(cursor) in seen_pages:
             raise DouyinRequestError("PLATFORM_CURSOR_INVALID")
@@ -364,10 +451,25 @@ def collect(name, params, count=20, pages=10):
             values["need_time_list"] = "0"
         if name == "notices" and response.get("min_time") is not None:
             values["min_time"] = str(response["min_time"])
-    return {
+    output = {
         "ok": True,
         "items": result[:count],
         "count": min(count, len(result)),
         "pages": page + 1,
         "cursor": values.get(e["cursor"], "0"),
     }
+    if feed:
+        output.update(has_more=bool(response.get("has_more")),
+                      complete=len(result) >= count or not bool(response.get("has_more")),
+                      pagination="refresh-index")
+    if name in {"comments", "replies"}:
+        more = bool(response.get("has_more"))
+        complete = len(result) >= count or not more
+        output.update(has_more=more, complete=complete,
+                      stop_reason="requested_count" if len(result) >= count else
+                                  "platform_end" if not more else "page_limit")
+    if name == "search_users" and values.get("search_filter_value"):
+        output["filter_check"] = check_user_filters(output["items"], values)
+        if output["filter_check"]["state"] == "mismatch":
+            output.update(ok=False, error="SEARCH_FILTER_MISMATCH")
+    return output

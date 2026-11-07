@@ -8,7 +8,7 @@
    - 本次涉及合作洽谈、交易对手核验或尽调，需要补充企业背景时，先按下文“企业背景核验”执行，再据此准备联络文案；普通评论/私信不要求企业查询。
 2. 用一级 `douyin-hunter` / `xhs-hunter` 获取真实作品、评论和账号资料，保留完整 ID、链接及小红书 xsec_token。用 bd-record 查重；错误与样本不足如实标注。
 3. 读 `references/interaction-capabilities.md` 与目标工具说明。未实现的写操作报告缺口，不能将模拟预览当成功。
-4. 生成预览，核对目标和文案后执行已授权动作。抖音文本直达使用 `douyin-im send-to --to-user-id <真实数字UID> --text "文案"`，脚本内部建立和保存会话；小红书使用 `xhs-im send <用户ID> "文案"`。预览后实际执行加 `--confirm`，不让 agent 手工拼接中间会话文件。
+4. 生成预览，核对目标和文案后执行已授权动作。抖音文本直达使用 `douyin-im send-to --to-user-id <真实数字UID> --text "文案" --request-id <本次任务稳定编号>`，脚本内部复用/建立会话并保存发送回执；重试复用同一编号，结果未知时停止重发；小红书使用 `xhs-im send <用户ID> "文案"`。预览后实际执行加 `--confirm`，不让 agent 手工拼接中间会话文件。
 5. 抖音公开评论使用 `douyin-interact comment --url <作品链接> --text "文案"`；回复使用 `reply --comment-id <真实评论ID>`。小红书笔记评论接口尚未实现；不要调用直播评论命令代替笔记评论。
 6. 小红书私信查询用 `xhs-im list/history/unread`，需要标记已读、撤回或删除时用 `read/revoke/delete` 先预览；群聊只查询。结果不明先核对历史或平台页面，不自动重发。
 7. 邮件联络按公共 email-ops 的实际配置与授权执行；主题、收件人与正文必须有明确依据。

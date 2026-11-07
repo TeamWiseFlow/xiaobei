@@ -249,20 +249,20 @@ main 自做的素材组装 / 轻剪辑先通过 `video-review`；CP 交付按其
 
 ## Step 6 - 发布
 
-先读 `douyin-publish` 工具说明。执行 `douyin-publish check` 验证 Camoufox 持久化创作者会话；未登录用 `douyin-publish login` 打开有头窗口完成登录。不调用 douyin-login 或 login-manager 准备发布会话。
+先读 `douyin-publish` 工具说明。执行 `douyin-publish check` 验证与采集共用的 API 账号及创作者通道；已有登录不再扫码。明确未登录时用 `douyin-publish login` 生成二维码，按 douyin-login 完成扫码及身份确认。不启动浏览器或调用 login-manager。
 
-视频入口显式传入已经核对的横竖双封面，脚本等比补底、上传并保存，校验视频就绪、标题读回、双封面与 AIGC 声明后提交。原声图文必须明确 `--original-sound`，需要页面配乐时走图文分步工具。用户已要求发布且成品确认后执行：
+视频入口显式传入已经核对的横竖双封面，脚本等比补底、上传并校验处理状态，将双封面和 AIGC 声明写入最终请求。原声图文必须明确 `--original-sound`，HTTP 入口不支持配乐选择。用户已要求发布且成品确认后执行：
 
-先在作品目录将已确认的纯简介或正文和话题保存为 UTF-8 `body.txt`，用 `--caption @/绝对路径/body.txt` 让脚本读取，不把多行文案拼进命令。读取失败或内容超长时停止，不进入浏览器发布。
+先在作品目录将已确认的纯简介或正文和话题保存为 UTF-8 `body.txt`，用 `--caption @/绝对路径/body.txt` 让脚本读取，不把多行文案拼进命令。读取失败或内容超长时停止，不发送发布请求。
 
 ```bash
 douyin-publish video --video /绝对路径/成片.mp4 --title "标题" --caption @/绝对路径/body.txt --cover-vertical /绝对路径/cover-vertical.jpg --cover-horizontal /绝对路径/cover-horizontal.jpg --confirm
 douyin-publish note --images /绝对路径/cover.png /绝对路径/page2.png --title "图文标题" --caption @/绝对路径/body.txt --original-sound --confirm
 ```
 
-视频保留创作者页面 AIGC 声明流程；图文默认声明 AI，纯实拍图文按实际来源传 `--declaration none`。配乐调用 `douyin-publish note music-list/music-select` 核实页面候选，不传 API 的 `--music-id`，不编造音乐信息。
+视频将 AIGC 声明写入最终请求；图文默认声明 AI，纯实拍图文按实际来源传 `--declaration none`。不调用浏览器配乐命令或编造音乐信息。
 
-只有返回确认的作品 ID 与 URL 才记录成功。提交后超时、exit 3 或取链失败时先核实管理页，视频用 `douyin-publish video get-link --session douyin`，图文用 `douyin-publish note get-link --title "完整标题"`；禁止自动重发。单账号发布与取数串行，每 24 小时视频和图文合计不超过 5 条；风控后至少 30 分钟内不重试。
+只有返回确认的作品 ID 与 URL 才记录成功。提交后超时、exit 3 或取链失败时使用原任务的 `video resume/get-link` 或 `note resume/get-link` 只读核查；禁止自动重发。单账号发布与取数串行，每 24 小时视频和图文合计不超过 5 条；风控后至少 30 分钟内不重试。
 
 视频 exit 4 / `awaiting_verification` 表示等待用户短信验证，保留当前页面；按视频工具说明用 `verify-send` 与 `verify-code --code-file` 续接，或在窗口验证后 `resume`。期间不重跑发布，不调用 check/login 关闭或重开页面。视频取链仅核查保存的本次提交，不把旧作品记为本次成功。
 

@@ -1324,8 +1324,25 @@ def cmd_verify_code(*, session, code_file):
 
 
 def cmd_status(*, session):
-    return {'ok': False, 'state': read_state().get('state', 'idle'), 'session': session,
-            'page': page_status(session), 'hint': RESULT_HINT if read_state().get('state') in PENDING_STATES else DRAFT_HINT}
+    state = read_state()
+    pending = state.get('state') in PENDING_STATES
+    result = {'ok': True, 'state': state.get('state', 'idle'), 'session': session,
+              'read_only': True, 'current_action_submission_attempted': False,
+              'receipt_submission_attempted': bool(state.get('submission_attempted')) or pending or state.get('state') == 'published'}
+    try:
+        info = browser(session).command('info')
+        if not isinstance(info, dict) or type(info.get('running')) is not bool:
+            raise PublishError('BROWSER_STATE_INVALID', '无法确定浏览器运行状态；保留原收据，不重发作品')
+        if info['running']:
+            return {**result, 'browser_running': True, 'page_checked': True, 'page': page_status(session),
+                    'hint': RESULT_HINT if pending else DRAFT_HINT}
+    except RuntimeError as exc:
+        if not re.search(r'\b(?:session is not running|browser not launched)\b', str(exc), re.I):
+            raise
+    return {**result, 'browser_running': False, 'page_checked': False, 'page': None,
+            'page_unavailable_reason': 'BROWSER_SESSION_NOT_RUNNING',
+            'hint': '浏览器会话未运行，本次只读取本地收据，未打开页面或提交作品；' +
+                    (RESULT_HINT if pending else '已结案收据不代表本次状态查询发起了发布')}
 
 
 def cmd_run(*, video, title, caption='', cover_vertical, cover_horizontal):
@@ -1353,7 +1370,7 @@ def execute(args):
     try:
         with publish_lock(allow_pending_video=True):
             result = args.func(args)
-            if result.get('state') == 'published' and args.action not in ('run', 'close'):
+            if result.get('state') == 'published' and args.action not in ('run', 'close', 'status'):
                 try:
                     browser(SESSION).close()
                 except Exception:

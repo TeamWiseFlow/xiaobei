@@ -52,11 +52,10 @@
 | IR 投资人档案/接触记录/项目申报 | `db/ir_record.db` | `expert-ir` 包内工具 `ir-record` |
 | X/TikTok/微博 API 会话与浏览器身份 | `~/.openclaw/logins/platform-api/` | 对应 hunter 的 `login/export`，内部由 platform-runtime 有头登录与隔离验证导入 |
 | 快手独立主站/创作者/直播会话 | `~/.openclaw/logins/platform-api/` | `kuaishou-hunter login/login-confirm` |
-| 抖音发布/本人取数登录态 | Camoufox 持久化 session `douyin` 的 profile | `douyin-publish login/check` |
-| 抖音采集/互动登录态 | 独立 API 会话（路径由 `douyin-login status` 返回） | `douyin-hunter` 包内 `douyin-login` |
+| 抖音采集/发布/本人取数/互动登录态 | 统一 API 会话（路径由 `douyin-login status` 返回） | 登录用 `douyin-login`，创作者检查用 `douyin-publish check` |
 | 小红书 PC / Creator 登录态 | 各工具管理的独立会话 | `xhs-hunter login` / `xhs-publish login` |
 
-`published-track` 只负责记录、查询及指标写库；具体取数由各平台专家包的 engagement tool 执行。抖音 engagement 用 HTTP 接口，cookie/UA 临时取自发布 profile，不另存登录态。
+`published-track` 只负责记录、查询及指标写库；具体取数由各平台专家包的 engagement tool 执行。抖音发布和 engagement 均走 HTTP，与采集共用 douyin-login 的 API 会话，不读取浏览器 profile 或另存一套登录态。
 
 - `<platform>` 为平台代号，对照如下：
 > `微信公众号` → `wx_mp`；`微信视频号` → `wx_channel`；`小红书` → `xhs`; `抖音` → `douyin`；`TikTok` → `tiktok`；`bilibili（b站）` → `bilibili`；`快手` → `kuaishou`；`知乎` → `zhihu`; `twitter/推特/X` → `twitter`；`微博` → `weibo`.
