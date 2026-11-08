@@ -15,10 +15,33 @@ const targets = {
   "win-x64": { os: "win32", cpu: "x64", package: "@pnpm/exe.win32-x64" },
 };
 
-async function fetchBytes(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
-  if (!response.ok) throw new Error(`HTTP ${response.status}: ${url}`);
-  return Buffer.from(await response.arrayBuffer());
+export async function fetchBytes(url, { idleTimeoutMs = 120_000 } = {}) {
+  const controller = new AbortController();
+  let timer;
+  const progress = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(new Error("No portable pnpm download progress")), idleTimeoutMs);
+    timer.unref();
+  };
+  progress();
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${url}`);
+    if (!response.body) throw new Error(`Empty pnpm response: ${url}`);
+    const chunks = [];
+    let bytes = 0, reported = Date.now();
+    for await (const chunk of response.body) {
+      progress(); chunks.push(chunk); bytes += chunk.length;
+      if (Date.now() - reported >= 30_000) {
+        process.stderr.write(`Downloading portable pnpm: ${(bytes / 1048576).toFixed(1)} MiB\n`);
+        reported = Date.now();
+      }
+    }
+    return Buffer.concat(chunks);
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
+  }
 }
 
 async function extractPackage(name, version, registry, destination, expectedHash) {

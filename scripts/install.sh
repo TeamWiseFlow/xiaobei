@@ -761,7 +761,7 @@ is_promptable() {
 # ═══════════════════════════════════════════════════════════════════
 install_camoufox_cli() {
     local node="$WISEFLOW_ROOT/$PORTABLE_NODE"
-    local browser_args=(--root "$WISEFLOW_ROOT")
+    local browser_args=(--root "$WISEFLOW_ROOT" --defer-config)
     if [[ "$SKIP_BROWSER" == "true" ]]; then
         browser_args+=(--skip-assets)
     fi
@@ -828,10 +828,10 @@ install_weixin_plugin() {
         force_flag="--force"
     fi
     ui_info "Installing openclaw-weixin plugin (${pkg}@${ver}) via npmmirror"
-    if npm_config_registry=https://registry.npmmirror.com "$claw_cmd" plugins install "${pkg}@${ver}" --pin $force_flag 2>/dev/null; then
+    if npm_config_registry=https://registry.npmmirror.com "$claw_cmd" plugins install "${pkg}@${ver}" --pin --accept-capabilities $force_flag 2>/dev/null; then
         ui_success "openclaw-weixin plugin installed (${ver})"
     else
-        ui_warn "openclaw-weixin 插件安装失败；可后续手动：npm_config_registry=https://registry.npmmirror.com $claw_cmd plugins install ${pkg}@${ver} --pin $force_flag"
+        ui_warn "openclaw-weixin 插件安装失败；可后续手动：npm_config_registry=https://registry.npmmirror.com $claw_cmd plugins install ${pkg}@${ver} --pin --accept-capabilities $force_flag"
     fi
 }
 
@@ -1217,6 +1217,9 @@ main() {
         ui_stage "Checking config health"
         place_config_template
         "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/python-runtime.mjs" configure --root "$WISEFLOW_ROOT" --config "$OPENCLAW_HOME/openclaw.json"
+        local finalize_args=(--root "$WISEFLOW_ROOT" --config "$OPENCLAW_HOME/openclaw.json" --skip-crew)
+        [[ "$is_update" == "true" ]] && finalize_args+=(--stop-gateway)
+        run_required_step "Finalizing pinned OpenClaw configuration" "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/finalize-openclaw-upgrade.mjs" "${finalize_args[@]}"
         ui_stage "Refreshing gateway env and restarting"
         refresh_gateway_env_only
     else
@@ -1227,6 +1230,9 @@ main() {
         ui_stage "Placing config template"
         place_config_template
         "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/python-runtime.mjs" configure --root "$WISEFLOW_ROOT" --config "$OPENCLAW_HOME/openclaw.json"
+        local finalize_args=(--root "$WISEFLOW_ROOT" --config "$OPENCLAW_HOME/openclaw.json" --skip-crew)
+        [[ "$is_update" == "true" ]] && finalize_args+=(--stop-gateway)
+        run_required_step "Finalizing pinned OpenClaw configuration" "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/finalize-openclaw-upgrade.mjs" "${finalize_args[@]}"
 
         ui_stage "Setting up crew templates"
         if [[ -f "$WISEFLOW_ROOT/scripts/setup-crew.sh" ]]; then

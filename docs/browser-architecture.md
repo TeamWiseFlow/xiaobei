@@ -1,27 +1,27 @@
 # 小贝浏览器开发指南
 
-更新：2026-10-18。本文合并浏览器架构、5.8 升级交接和 WiseFlow 4 / OSBI 信息提取方案，作为后续浏览器开发的唯一设计入口。`browser/README.md` 只保留构建/调用方法；具体平台的登录、搜索和 profile 恢复仍按各技能及专项操作说明执行。
+更新：2026-11-08。本文合并浏览器架构、5.8 升级交接和 WiseFlow 4 / OSBI 信息提取方案，作为后续浏览器开发的唯一设计入口。`browser/README.md` 只保留构建/调用方法；具体平台的登录、搜索和 profile 恢复仍按各技能及专项操作说明执行。
 
-**当前范围：5.8 是破坏性升级，采用主仓 TypeScript SDK；升级后必须重建全部浏览器 profile、各平台重新登录** 
+**当前范围：使用主仓 TypeScript SDK。旧 v1 身份须重建；0.5.8 创建的兼容 v2 身份在 0.5.9 中保留原始指纹、创建版本和登录状态，不自动重置。**
 
 ## 1. 已确定的技术选择
 
 | 项目 | 当前决定 / 事实 |
 |---|---|
 | 应用层 | 自有 `browser/`、包 `@wiseflow/browser`，主命令 `xiaobei-browser`；5.8.x 保留 `camoufox-cli` 语法兼容入口，两者使用同一 runtime |
-| SDK | 主仓 npm **`camoufox 0.5.8`**，不是 Apify 的 `camoufox-js`；继续用 TypeScript，不重写成 Python |
+| SDK | 主仓 npm **`camoufox 0.5.9`**，不是 Apify 的 `camoufox-js`；继续用 TypeScript，不重写成 Python |
 | 自动化 | **`playwright-core 1.62.1`**；SDK peer `<1.63`，不得与 OpenClaw 的 1.63 强行合并依赖树 |
-| 浏览器 | SDK 配套 **`156.0.1-beta.36`**；版本、各平台文件名/校验值见 `browser/assets.lock.json` |
-| 指纹 | SDK 内置 fpgen 的 TypeScript port，固定模型 `model-2/2026`；字体/语音/音频/GPU 等由 SDK 依身份生成；应用持久化原始身份输入 |
-| 附加资产 | uBlock Origin 1.74.0、GeoIP AIO 2026.10.14；模型、数据库、扩展均由显式安装器准备并校验，启动不追 latest |
+| 浏览器 | SDK 配套 **`158.0.1-beta.41`**；版本、各平台文件名/校验值见 `browser/assets.lock.json` |
+| 指纹 | 独立固定 `fpgen-js 1.3.0`，固定模型 `model-2/2026`；字体/语音/音频/GPU 等由 SDK 依身份生成；应用持久化原始身份输入 |
+| 附加资产 | uBlock Origin 1.75.0、GeoIP AIO 2026.10.28；模型、数据库、扩展均由显式安装器准备并校验，启动不追 latest |
 | Node | 浏览器包 >=22.15；完整产品遵循 OpenClaw 所需 Node 版本，当前分发 Node 24.16.0 |
-| 基座 | 5.8.x 跟随 OpenClaw **2026.10.x**；具体 SHA 继续由 `openclaw.version` 固定，本轮起点 2026.10.4 |
+| 基座 | 5.8.x 跟随 OpenClaw **2026.10.x**；具体 SHA 继续由 `openclaw.version` 固定，当前锁定 2026.10.10 |
 | 裁剪 | 本轮不全面裁剪上游功能/依赖；跳过 Swift/Kotlin 客户端生成，保留 Web Control UI。浏览器工具仅暴露 runtime 已实现能力 |
 | 普通站点 | 共享持久化 `default`；平台专用 session、平台 API 会话继续遵循具体技能，不能按每个普通网站新建 profile |
 
 选择主仓的技术依据是：SDK 与新内核/配置 schema 同步、配套浏览器版本明确、身份各字段一致性处理更完整。它不构成目标站点通过率更高的实测结论。Apify 0.12.1 虽于 10/6 发布，但仍限制浏览器 `<beta.32`；其发布时间不等于支持新内核。Bin-Huang/camoufox-cli 0.7.6 仍用 camoufox-js 0.11.2 / Playwright 1.52.0（Python 分支为 camoufox 0.4.11），可参考其兼容性经验，不再跟随其应用层路线。
 
-证据：[主仓 SDK 已发布 README](https://cdn.jsdelivr.net/npm/camoufox@0.5.8/README.md)、[SDK 浏览器 pin](https://cdn.jsdelivr.net/npm/camoufox@0.5.8/dist/data-files/browser-pin.json)、[浏览器 release](https://github.com/daijro/camoufox/releases/tag/v156.0.1-beta.36)、[Apify 版本约束](https://cdn.jsdelivr.net/npm/camoufox-js@0.12.1/dist/__version__.js)。以已发布包内容为准，不把主仓未发布代码当成 0.5.8 已有能力。
+证据：[主仓 SDK 已发布 README](https://cdn.jsdelivr.net/npm/camoufox@0.5.9/README.md)、[SDK 浏览器 pin](https://cdn.jsdelivr.net/npm/camoufox@0.5.9/dist/data-files/browser-pin.json)、[浏览器 release](https://github.com/daijro/camoufox/releases/tag/v158.0.1-beta.41)、[Apify 版本约束](https://cdn.jsdelivr.net/npm/camoufox-js@0.12.1/dist/__version__.js)。以已发布包内容为准，不把主仓未发布代码当成当前已发布版本的能力。
 
 ## 2. 分层与代码入口
 
@@ -69,11 +69,11 @@ flowchart TD
 
 ### 3.1 固定资产与显式安装
 
-默认资产位于 `~/.camoufox-cli/assets/156.0.1-beta.36/`，与原 SDK cache 及用户 profiles 分开。`CAMOUFOX_INSTALL_DIR` 如设置，作为版本化资产的父目录；`XIAOBEI_BROWSER_ASSETS` 可指定完整资产目录；隔离状态使用 `XIAOBEI_BROWSER_HOME`。所有运行面必须使用同一份锁和路径解析。
+当前目标资产位于 `~/.camoufox-cli/assets/158.0.1-beta.41/`，与原 SDK cache 及用户 profiles 分开。`CAMOUFOX_INSTALL_DIR` 如设置，作为版本化资产的父目录；`XIAOBEI_BROWSER_ASSETS` 可指定完整资产目录；隔离状态使用 `XIAOBEI_BROWSER_HOME`。所有运行面必须使用同一份锁和路径解析。源码先更新、依赖尚未升级时，已安装 SDK 按 `browser/asset-locks/` 的对应锁继续使用原配资产；安装后自动选新锁。分发准备始终读取 `targetLock`，不把旧运行库的资产打进新包。
 
 安装器校验浏览器 ZIP、UBO、fpgen 模型和 GeoIP；下载失败或摘要不符不得输出 ready。旧二进制不会因安装新版而被覆盖；重复资产安装不触碰 profiles/浏览器配置；插件注册配置由统一迁移脚本处理。部署选择新版本后显式安装，不让运行时调用 SDK 的 fetch/latest 或在线 GeoIP 自动刷新。数据库是固定快照，后续按需要更新资产锁和复测，不默默改变运行身份。
 
-SDK 启动显式传 `executable_path` 和 UBO 路径，关闭默认扩展下载；fpgen 模型必须预装并解压，缺失则失败。代理地理信息从固定本地 GeoIP 读取，公共 IP 查询仍需通过指定代理联网。SDK 的 Linux fontconfig/原生目录缓存可能再生成；它们不是平台登录态，不代替持久 profile。
+SDK 启动显式传 `executable_path` 和 UBO 路径，排除重复加载默认扩展；浏览器 ZIP 内置 UBO 时先核对版本，macOS 使用 app 的 Resources 路径。fpgen 模型必须预装并解压，通过公开 `setModelDir` 选择固定目录，缺失则失败。代理地理信息从固定本地 GeoIP 读取，公共 IP 查询仍需通过指定代理联网。SDK 的 Linux fontconfig/原生目录缓存可能再生成；它们不是平台登录态，不代替持久 profile。
 
 支持资产包括 Linux x64/arm64、macOS Intel/Apple Silicon、Windows x64；存在下载资产不等于原生运行验收通过。模型约 210 MB 解压数据，浏览器 ZIP 约 1.3 GB；安装/打包要实测内存与磁盘峰值。
 
@@ -81,9 +81,11 @@ SDK 启动显式传 `executable_path` 和 UBO 路径，关闭默认扩展下载�
 
 `camoufox-cli.json` 文件名保留，内部版本为 **2**，记录 `sdk`、host OS、生成的 fpgen 指纹、locale 和必要派生配置；主仓基于固定输入稳定生成其余身份字段。按 host OS 生成，暂不支持跨 OS 迁移同一身份。不再沿用旧 canvas/font spacing 配置项。
 
-旧 v1 / 缺失 / 损坏身份不得自动换指纹后继续使用原登录态。明确返回 `PROFILE_RESET_REQUIRED`；停止该 session 后归档完整旧 profile，使用空 profile 重新登录。
+身份中的 `sdk` 表示创建版本，不改写为最近运行版本。仅明确兼容同一 v2 格式和固定模型的 `camoufox@0.5.8` / `camoufox@0.5.9`，沿用原始指纹；内核修复后的音频、屏幕等可观测值可以变化，不能因此重抽身份或导入 Cookie。
 
-真正切换时：盘点任务和人工等待 → 停止准入并结束已确认可关闭的 session → 归档旧 profiles/配置 → 创建新 profile → 按平台重新登录 → 校验预期账号。此流程应脚本化，保留归档位置与结果；本轮开发不自动对运行态执行。不要删原生锁或按 PID/文件年龄批量杀浏览器。
+旧 v1 / 未知 SDK / 缺失 / 损坏身份不得自动换指纹后继续使用原登录态。明确返回 `PROFILE_RESET_REQUIRED`；停止该 session 后归档完整旧 profile，使用空 profile 重新登录。
+
+不兼容身份需要重建时：盘点任务和人工等待 → 停止准入并结束已确认可关闭的 session → 归档旧 profiles/配置 → 创建新 profile → 按平台重新登录 → 校验预期账号。此流程应脚本化，保留归档位置与结果；本轮开发不自动对运行态执行。不要删原生锁或按 PID/文件年龄批量杀浏览器。
 
 新指纹不能靠导入旧 Cookie 造会话。抖音采集、发布、本人取数和互动共用 API 会话，不再依赖 `douyin` profile；旧浏览器提交收据保留用于历史核查。浏览器重建不意味着删除平台 API 会话或中央凭据。具体恢复流程见 [profile 操作说明](./profile-loss-handling.md)。
 
@@ -112,7 +114,7 @@ snapshot 目前使用公共 `locator.ariaSnapshot()` 默认模式并添加自有
 
 tab 使用稳定 tabId，同时保留 index；`switch --tab ID`、`close-tab --tab ID` 与旧序号语法并存，历史按 tab 隔离。稳定 tabId 不代表多任务无锁安全，仍须持有 lease。
 
-OpenClaw 2026.10.4 通过独立 `xiaobei-browser` 插件接入共享 client，工具名为 `xiaobei_browser`，原生 browser 插件禁用；不再使用工具注册或系统摘要补丁。工具 schema 限于支持能力，转换 targetId/ref 和媒体输出，执行 host、sandbox、文件和 evaluate 约束。公共 `browser-guide` 作为唯一通用操作手册，`smart-search` 继续负责站点搜索规则。单独的 `dangerouslyAllowPrivateNetwork: true` 与运行时现有网络能力相符；包含任何其他显式 SSRF 字段的策略和原生 run-bound/sandbox tabs 在不能正确执行约束时拒绝，不删除或忽略用户限制。上游 browser CLI、Gateway、dashboard/Control UI plumbing 暂保留；不自动 fallback 到 Chrome/CDP，也不机械恢复旧 35 个裁剪 patch。
+OpenClaw 2026.10.10 通过独立 `xiaobei-browser` 插件接入共享 client，工具名为 `xiaobei_browser`，原生 browser 插件禁用；不再使用工具注册或系统摘要补丁。工具 schema 限于支持能力，转换 targetId/ref 和媒体输出，执行 host、sandbox、文件和 evaluate 约束。公共 `browser-guide` 作为唯一通用操作手册，`smart-search` 继续负责站点搜索规则。单独的 `dangerouslyAllowPrivateNetwork: true` 与运行时现有网络能力相符；包含任何其他显式 SSRF 字段的策略和原生 run-bound/sandbox tabs 在不能正确执行约束时拒绝，不删除或忽略用户限制。上游 browser CLI、Gateway、dashboard/Control UI plumbing 暂保留；不自动 fallback 到 Chrome/CDP，也不机械恢复旧 35 个裁剪 patch。
 
 独立插件已通过隔离 Gateway 的真实工具调用及有头窗口跨命令验证，并在本机官方热重载生效；真实平台账号扫码/export、跨平台和完整分发仍按各自验收。当前引擎 dist 未为本次迁移重建，已禁用的原生 browser 构建残留不参与运行，后续正常 apply/build 会移除。运行中 Gateway 的 dist 保护不能通过停服/绕过来完成开发检查。
 
@@ -276,7 +278,7 @@ profile 旧身份兼容已降为可选评估；本轮优先验证“明确拒绝
 
 见 [运行时 README](../browser/README.md) 的构建/隔离安装命令。只在仓根 `test/browser/` 和 `test/expert-osbi/` 保存测试夹具、样例和日志；全部 ignored，跨机器移交须显式携带或重建，不拿本机测试充当已有 CI 覆盖。
 
-本轮 Linux 验证已完成：TypeScript 构建；浏览器 23 项（协议/生命周期、身份重建、安装器、全局软链接入口、真实操作与重开、原生 HTTPS CONNECT 代理认证）；OpenClaw adapter 19 项含真实工具调用及显式网络策略兼容/限制拒绝；统一 driver 录制 3 秒 VP8 WebM（1280×634）；固定资产新装/重复安装、包文件及本次文档链接检查。网页观测的 UA、屏幕、locale、语音、音频和 Canvas 像素重启后保持一致；PNG 附加块差异仍按 §9 记录。日志与观测在 ignored `test/browser/sdk-upgrade/`；部署后的真实官网 snapshot 在 `test/browser/deployment-20261017/`，不是跨平台或真实账号反侦测效果证明。
+2026-10-17 初始迁移的 Linux 验证已完成：TypeScript 构建；浏览器 23 项（协议/生命周期、身份重建、安装器、全局软链接入口、真实操作与重开、原生 HTTPS CONNECT 代理认证）；OpenClaw adapter 19 项含真实工具调用及显式网络策略兼容/限制拒绝；统一 driver 录制 3 秒 VP8 WebM（1280×634）；固定资产新装/重复安装、包文件及本次文档链接检查。网页观测的 UA、屏幕、locale、语音、音频和 Canvas 像素重启后保持一致；PNG 附加块差异仍按 §9 记录。日志与观测在 ignored `test/browser/sdk-upgrade/`；部署后的真实官网 snapshot 在 `test/browser/deployment-20261017/`，不是跨平台或真实账号反侦测效果证明。
 
 基本顺序：锁文件安装与 TypeScript 构建 → 本地协议/生命周期/安装失败测试 → 固定新资产的真实浏览器 E2E → OpenClaw adapter 隔离测试 → 原生平台/分发/真实业务验证。变化相关的检查通过后不无理由重复全仓测试。完整引擎构建若受现役 Gateway 保护，记录缺口，等待用户安排切换。
 

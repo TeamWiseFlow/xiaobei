@@ -12,11 +12,11 @@ import {
   writeFileSync,
   copyFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import AdmZip from "adm-zip";
-import { ensureModel, MODEL_PIN } from "camoufox/dist/fpgen/index.js";
+import { ensureModel, MODEL_PIN } from "fpgen-js";
 import { assetPaths, lock } from "./asset-paths.mjs";
 import { githubDownloadUrl } from "./download-network.mjs";
 import { downloadAsset, verify } from "./download-asset.mjs";
@@ -110,6 +110,12 @@ export async function installAssets({ modelInstaller = prepareModel } = {}) {
       extract(archive, unpacked);
       if (!existsSync(launcher(unpacked)))
         throw new Error("Verified archive lacks the browser launcher");
+      // Official builds now ship UBO in the browser archive. Its files are
+      // covered by the browser digest; validate the pin before moving anything.
+      const bundledAddon = join(unpacked, relative(directory, paths.addon), "manifest.json");
+      if (existsSync(dirname(dirname(bundledAddon))) &&
+          (!existsSync(bundledAddon) || JSON.parse(readFileSync(bundledAddon, "utf8")).version !== lock.ubo.version))
+        throw new Error("Browser-bundled UBO differs from the asset lock");
       const entries = readdirSync(unpacked);
       for (const name of entries) {
         if (
@@ -119,7 +125,6 @@ export async function installAssets({ modelInstaller = prepareModel } = {}) {
             "config.json",
             "camoufox-cli.json",
             "version.json",
-            "addons",
           ].includes(name) ||
           existsSync(join(directory, name))
         )

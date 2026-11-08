@@ -43,6 +43,7 @@ FORCE=false
 SKIP_SYNC=false
 SKIP_CREW=false
 SKIP_WEIXIN=false
+GATEWAY_STOPPED=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -115,6 +116,15 @@ if [ "${INSTALLED_PNPM_MAJOR:-0}" -lt "$REQUIRED_PNPM_MAJOR" ]; then
   echo "   升级：npm install -g pnpm@${REQUIRED_PNPM_MAJOR} --registry=https://registry.npmmirror.com"
   exit 1
 fi
+
+stop_gateway_for_upgrade() {
+  [ "$GATEWAY_STOPPED" != "true" ] || return 0
+  if [ -f "$OPENCLAW_DIR/dist/index.js" ] && [ -f "$OPENCLAW_CONFIG_PATH" ]; then
+    echo "⏸️  Stopping Gateway before replacing its dependencies/build..."
+    OPENCLAW_CONFIG_PATH="$OPENCLAW_CONFIG_PATH" node "$OPENCLAW_DIR/dist/index.js" daemon stop
+  fi
+  GATEWAY_STOPPED=true
+}
 
 ensure_openclaw_config() {
   if [ ! -f "$OPENCLAW_CONFIG_PATH" ]; then
@@ -199,7 +209,7 @@ install_weixin_channel() {
     # --force = "Overwrite an existing installed plugin"（7.1-2 起就有该 flag）。
     # bundled 路径本来就每次都装（不像 install.sh 有幂等跳过），缺这个 flag 时
     # 在已装过该插件的实例上会失败，进而触发下面的 exit 1，把整次 update 打断。
-    if (cd "$OPENCLAW_DIR" && pnpm openclaw plugins install "$plugin_tgz" --force); then
+    if (cd "$OPENCLAW_DIR" && pnpm openclaw plugins install "$plugin_tgz" --force --accept-capabilities); then
       echo "  ✅ bundled openclaw-weixin installed (${plugin_version})"
     else
       echo "❌ Bundled openclaw-weixin install failed"
@@ -208,7 +218,7 @@ install_weixin_channel() {
     fi
   else
     # 直接安装插件 pin；weixin-cli 自身的版本锁不会锁住它内部安装的插件版本。
-    if ! (cd "$OPENCLAW_DIR" && pnpm openclaw plugins install "${plugin_pkg}@${plugin_version}" --pin --force); then
+    if ! (cd "$OPENCLAW_DIR" && pnpm openclaw plugins install "${plugin_pkg}@${plugin_version}" --pin --force --accept-capabilities); then
       echo "❌ openclaw-weixin online install failed"
       echo "   Fix network/npm access or re-run with --skip-weixin to configure the onboarding channel later."
       exit 1
@@ -328,6 +338,8 @@ else
     echo "   Network update failed or target commit is not available locally; aborting install."
     exit 1
   fi
+  # Stop through the still-installed CLI before changing its source/dependencies.
+  stop_gateway_for_upgrade
   if ! git -C "$OPENCLAW_DIR" checkout "$OPENCLAW_COMMIT"; then
     echo "❌ Unable to checkout required openclaw commit from openclaw.version: $OPENCLAW_COMMIT"
     exit 1
@@ -335,7 +347,7 @@ else
   echo "  ✅ openclaw checked out at $OPENCLAW_VERSION"
 
   echo "  📦 Installing dependencies..."
-  (cd "$OPENCLAW_DIR" && pnpm install)
+  (cd "$OPENCLAW_DIR" && pnpm install --frozen-lockfile)
   OPENCLAW_UPDATED=true
 fi
 echo ""
@@ -349,6 +361,7 @@ echo ""
 
 # ─── 6. 应用 addons（patches + skills + crew 模板）──────────────
 # apply-addons 不 build、不 restart（由本脚本统一处理）
+stop_gateway_for_upgrade
 echo "🔄 Applying addons..."
 ADDON_ARGS=(--no-build --no-restart)
 [ "$FORCE" = "true" ] && ADDON_ARGS+=(--force)
@@ -358,8 +371,10 @@ source "$PROJECT_ROOT/scripts/lib/python-runtime.sh"
 xiaobei_use_python_runtime "$PROJECT_ROOT"
 echo ""
 
-# Build/provision the shared driver and browser before renderer checks.
-node "$PROJECT_ROOT/scripts/install-browser.mjs" --root "$PROJECT_ROOT" --build --global
+# The shared installer updates locked SDK/assets, verifies the built driver and
+# preserves compatible v2 identities. Do not replace binaries or relabel profiles here.
+echo "🌐 Updating and verifying the managed Camoufox runtime..."
+node "$PROJECT_ROOT/scripts/install-browser.mjs" --root "$PROJECT_ROOT" --build --global --defer-config
 
 echo "🎞️  Ensuring deck-render runtime..."
 "$PROJECT_ROOT/scripts/install-deck-render.sh"
@@ -367,12 +382,23 @@ echo ""
 
 # ─── 7. 编译 openclaw dist ──────────────────────────────────────
 echo "🔨 Building openclaw..."
-(cd "$OPENCLAW_DIR" && pnpm build)
+# Source upgrades need runtime artifacts; declaration/package checks stay in CI.
+(cd "$OPENCLAW_DIR" && OPENCLAW_RUN_NODE_SKIP_DTS_BUILD=1 pnpm build)
 echo "  ✅ Build complete"
 
 echo "🎨 Building Control UI assets..."
 (cd "$OPENCLAW_DIR" && pnpm ui:build)
 echo "  ✅ UI build complete"
+
+# Converge the pinned channel and its native capability consent before Doctor
+# and daemon activation; an old installation may predate this host contract.
+install_weixin_channel
+
+# Finalize with the new host; pre-build apply-addons deliberately defers this.
+echo "🧭 Migrating and validating configuration with OpenClaw $OPENCLAW_VERSION..."
+FINALIZE_ARGS=(--root "$PROJECT_ROOT" --config "$OPENCLAW_CONFIG_PATH")
+[ "$SKIP_CREW" = "true" ] && FINALIZE_ARGS+=(--skip-crew)
+node "$PROJECT_ROOT/scripts/finalize-openclaw-upgrade.mjs" "${FINALIZE_ARGS[@]}"
 echo ""
 
 # ─── 8. 环境变量收集 + daemon 安装 ─────────────────────────
@@ -584,8 +610,7 @@ if [ -e "$OPENCLAW_DIR/node_modules/openclaw" ] && [ ! -L "$OPENCLAW_DIR/node_mo
   echo "  🔗 redirected node_modules/openclaw -> local build ($OPENCLAW_VERSION)"
 fi
 
-# ─── 9.5 安装微信渠道插件（需要 openclaw CLI 已就绪）────────
-install_weixin_channel
+# 微信插件已在构建后、Doctor 和服务启动前完成同步。
 
 # weixin-cli 若仍绕过 symlink 写脏 meta，强制回正为本次安装版本（保险）
 node -e '

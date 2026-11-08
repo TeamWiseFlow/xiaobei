@@ -1,38 +1,39 @@
 {
-  "version": "156.0.1",
-  "release": "beta.36",
-  "source": "https://github.com/daijro/camoufox/releases/tag/v156.0.1-beta.36",
-  "reason": "Browser paired with official TypeScript SDK camoufox 0.5.8; playwright-core 1.62.1 satisfies its <1.63 peer range.",
+  "version": "158.0.1",
+  "release": "beta.41",
+  "source": "https://github.com/daijro/camoufox/releases/tag/v158.0.1-beta.41",
+  "reason": "Browser paired with official TypeScript SDK camoufox 0.5.9; playwright-core 1.62.1 satisfies its <1.63 peer range.",
   "assets": {
     "linux-x64": {
-      "name": "camoufox-156.0.1-beta.36-lin.x86_64.zip",
-      "sha256": "72637885ee67c93466ad377831c647192f8f08fb5c6fd9279de1320b49dd2b53"
+      "name": "camoufox-158.0.1-beta.41-lin.x86_64.zip",
+      "sha256": "3f2eb1d0451fa58e45e43e55f5e6181565069791ae60c0574f0ceb1f01341c33"
     },
     "linux-arm64": {
-      "name": "camoufox-156.0.1-beta.36-lin.arm64.zip",
-      "sha256": "8b5fd083721c807ee2a752265683482477105052fa0e21739388b527ae067c15"
+      "name": "camoufox-158.0.1-beta.41-lin.arm64.zip",
+      "sha256": "60e25f6eb95e13d9ec655bc02913d51057e669cb31542e6ace9d2190ab5380af"
     },
     "darwin-x64": {
-      "name": "camoufox-156.0.1-beta.36-mac.x86_64.zip",
-      "sha256": "abe133d2b1c7a8afe5a6af5f44adfd3169b16d4cc2268e99a81a41a6853f5782"
+      "name": "camoufox-158.0.1-beta.41-mac.x86_64.zip",
+      "sha256": "1afd6caa1e82caa41a4f56d8519f673e36b0835700b1c9c904e78a84c5711f3a"
     },
     "darwin-arm64": {
-      "name": "camoufox-156.0.1-beta.36-mac.arm64.zip",
-      "sha256": "0ad5663e40f4a2a836e28747256b79f39a5105905f1b244139a7a391f85fda32"
+      "name": "camoufox-158.0.1-beta.41-mac.arm64.zip",
+      "sha256": "9038f86d666c9780b6fff199d488737b8596c01f24e3e517845a0ecfb0cf8add"
     },
     "win32-x64": {
-      "name": "camoufox-156.0.1-beta.36-win.x86_64.zip",
-      "sha256": "096fd4832a7a32f2aa7f7bdd07fe6253dda296cbe783acd7bc2c86cf5ae62031"
+      "name": "camoufox-158.0.1-beta.41-win.x86_64.zip",
+      "sha256": "2644bd14f1cc345c768f6a70b576bcc87eb3d0bf0df54856d6fe0bbc3027515f"
     }
   },
   "ubo": {
-    "version": "1.74.0",
-    "url": "https://addons.mozilla.org/firefox/downloads/file/4981431/ublock_origin-1.74.0.xpi",
-    "sha256": "175756d74468c9ba45863f7fc333d3be670f82d5b066314e915814dd547d1652"
+    "version": "1.75.0",
+    "url": "https://addons.mozilla.org/firefox/downloads/file/5034826/ublock_origin-1.75.0.xpi",
+    "sha256": "5b74415860456370644bd80f16125e865b0e6c356bb5dfcfb84069967eaa5287",
+    "bundled": true
   },
   "sdk": {
     "name": "camoufox",
-    "version": "0.5.8"
+    "version": "0.5.9"
   },
   "model": {
     "tag": "model-2/2026",

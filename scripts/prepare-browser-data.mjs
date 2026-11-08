@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, copyFileSync } 
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { lock } from "../browser/scripts/asset-paths.mjs";
+import { targetLock as lock } from "../browser/scripts/asset-paths.mjs";
 import { downloadAsset, verify } from "../browser/scripts/download-asset.mjs";
 import { githubDownloadUrl } from "../browser/scripts/download-network.mjs";
 

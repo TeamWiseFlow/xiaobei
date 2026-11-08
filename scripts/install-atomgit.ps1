@@ -479,7 +479,7 @@ function Expose-SkillWrappers {
 
 # --- 8. camoufox-cli ---
 function Install-CamoufoxCli {
-    $browserArgs = @((Join-Path $Root "scripts\install-browser.mjs"), "--root", $Root)
+    $browserArgs = @((Join-Path $Root "scripts\install-browser.mjs"), "--root", $Root, "--defer-config")
     if ($SkipBrowser) { $browserArgs += "--skip-assets" }
     & $NodeExe @browserArgs
     if ($LASTEXITCODE -ne 0) { throw "xiaobei-browser install failed (exit $LASTEXITCODE)" }
@@ -560,11 +560,11 @@ function Install-WeixinPlugin {
             $forceFlag = @("--force")
         }
     }
-    $installArgs = @("plugins", "install", "$pkg@$ver", "--pin") + $forceFlag
+    $installArgs = @("plugins", "install", "$pkg@$ver", "--pin", "--accept-capabilities") + $forceFlag
     $forceHint = if ($forceFlag) { " --force" } else { "" }
     Invoke-Streamed { & $ClawCmd @installArgs }
     if ($LASTEXITCODE -eq 0) { Write-Ok "openclaw-weixin plugin installed ($ver)" }
-    else { Write-Warn "plugin install failed; you can run manually later: $ClawCmd plugins install $pkg@$ver --pin$forceHint" }
+    else { Write-Warn "plugin install failed; you can run manually later: $ClawCmd plugins install $pkg@$ver --pin --accept-capabilities$forceHint" }
 }
 
 # --- 10. awada local plugin deps (silk-wasm + typebox + ws + zod) ---
@@ -822,6 +822,10 @@ function Main {
         # minimized, repair it with the template).
         Place-Config
         Configure-PythonRuntime
+        $finalizeArgs = @((Join-Path $Root "scripts\finalize-openclaw-upgrade.mjs"), "--root", $Root, "--config", (Join-Path $OpenclawHome "openclaw.json"), "--skip-crew")
+        if ($isUpdate) { $finalizeArgs += "--stop-gateway" }
+        & $NodeExe @finalizeArgs
+        if ($LASTEXITCODE -ne 0) { throw "OpenClaw configuration finalization failed" }
         Write-Stage "Refreshing gateway env and restarting"
         $envFile = Join-Path $OpenclawHome "daemon.env"
         if (Test-Path $envFile) {
@@ -841,6 +845,10 @@ function Main {
     } else {
         Place-Config
         Configure-PythonRuntime
+        $finalizeArgs = @((Join-Path $Root "scripts\finalize-openclaw-upgrade.mjs"), "--root", $Root, "--config", (Join-Path $OpenclawHome "openclaw.json"), "--skip-crew")
+        if ($isUpdate) { $finalizeArgs += "--stop-gateway" }
+        & $NodeExe @finalizeArgs
+        if ($LASTEXITCODE -ne 0) { throw "OpenClaw configuration finalization failed" }
         Run-SetupCrew
         Sync-GlobalSkills
         Expose-SkillWrappers
