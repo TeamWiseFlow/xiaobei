@@ -27,8 +27,8 @@ metadata:
 | `email-ops`（公共技能） | 邮件起草、回复/跟进、会前会后沟通、合作提案与发送；先读取该技能 SKILL.md |
 | 天眼查 CLI（外部可选工具，命令 `tyc`） | 企业工商、股权及风险查询，用于客户/合作方尽调和交易对手核验；先遵循下文安装与授权规则 |
 | [bd-record](tools/bd-record/SKILL.md) | 线索与联络记录、帖子互动去重 |
-| [douyin-interact](tools/douyin-interact/SKILL.md) | 抖音作品点赞、收藏、评论/回复及已支持的收藏夹操作 |
-| [douyin-im](tools/douyin-im/SKILL.md) | 抖音文本/媒体/卡片私信、实时收信和指定消息回复 |
+| [douyin-interact](tools/douyin-interact/SKILL.md) | 抖音作品点赞、收藏及取消，评论与回复 |
+| [douyin-im](tools/douyin-im/SKILL.md) | 抖音文本/媒体/卡片私信、实时收信、指定消息回复与请求回执查询 |
 | [douyin-live](tools/douyin-live/SKILL.md) | 抖音直播弹幕与点赞 |
 | [xhs-im](tools/xhs-im/SKILL.md) | 小红书会话/历史、单聊文本、已读、撤回与删除 |
 | [xhs-live](tools/xhs-live/SKILL.md) | 小红书直播文字评论与文字帧发送 |
@@ -58,9 +58,13 @@ metadata:
 
 ## 获取互动语境
 
-公开作品、评论、账号、提醒与媒体按平台使用：抖音 `douyin-hunter`、小红书 `xhs-hunter`、TikTok `tiktok-hunter`、快手 `kuaishou-hunter`、X `x-hunter`、微博 `weibo-hunter`、微信公众号 `wx-mp-hunter`。其他网页用 `smart-search` / `browser-guide`。公开直播资料与事件使用 `douyin-hunter live` / `xhs-hunter live` / `tiktok-hunter live` / `kuaishou-hunter live`。私信会话、历史及私信未读仍由本包 IM 工具读取，它们服务于会话联络。
+先按[互动能力表](references/interaction-capabilities.md)选择当前 crew 已配置的技能和工具；仓内有实现不代表本实例已部署入口。缺少入口时报告部署缺口，按用户安排交 IT Engineer 处理，不临时补装、拼内部脚本路径或改用浏览器补造能力。
 
-抖音互动与采集、创作者共用 `douyin-hunter` 的 `douyin-login` API 登录态；小红书复用 `xhs-hunter` PC 会话，不混用 Creator 登录。TikTok 写入材料按 `tiktok-hunter` 登录说明核验。快手普通互动、私信与直播写操作未实现；微博互动写操作未实现。不要以浏览器操作补造未实现能力。
+- **公开语境**：抖音 `douyin-hunter`、小红书 `xhs-hunter`、TikTok `tiktok-hunter`、快手 `kuaishou-hunter`、X `x-hunter`、微博 `weibo-hunter`、YouTube `youtube-hunter`、微信公众号 `wx-mp-hunter`，按各自已实现范围读取账号、作品、评论、提醒和媒体；不假定每个平台都有全部提醒。其他网页使用 `smart-search` / `browser-guide`，已有采集技能失败时不自动换浏览器绕行。
+- **直播语境**：使用 `douyin-hunter live` / `xhs-hunter live` / `tiktok-hunter live` / `kuaishou-hunter live` / `youtube-hunter live` 获取房间、近期消息或有界事件样本；读取与监听不授权发言、点赞或私信。公开直播调研交 `expert-osbi`。
+- **私信语境**：抖音使用 `douyin-im listen` 获取实时入站消息、`info` 核对已保存会话；`reply` 可定向回复指定入站消息，`status` 只查本地请求回执，不能补拉完整聊天史或查询送达。小红书使用 `xhs-im list/groups/history/unread/listen`；TikTok 使用 `tiktok-im list/history/listen`；X 的 `twitter-im` 仅给最近20个会话首页及加密占位历史，不能当作可读正文。快手、微博、YouTube 没有已接入的私信工具。
+
+联络按 [Interaction](workflows/interaction.md) 执行。抖音与采集、创作者共用 `douyin-login` API 会话；小红书使用 `xhs-hunter` PC 会话；TikTok、X、微博、YouTube 及快手分别遵循对应采集技能的登录说明。TikTok 写操作还需同次 ticket-guard 材料；签名故障与平台登录失效分别处理，Relay 不提供验证码求解。
 
 ## 数据与边界
 
