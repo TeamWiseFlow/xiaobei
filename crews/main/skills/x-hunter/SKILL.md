@@ -9,6 +9,8 @@ metadata:
         - node
 ---
 
+请求签名由 Relay 计算，使用 `OFB_KEY` 与可选 `RELAY_BASE_URL`。平台 HTTP、登录和 Cookie 更新仍在客户端；签名服务失败或配额不足时停止，不回退本地签名，不自动重登或解验证码。
+
 
 # X/Twitter内容采集
 

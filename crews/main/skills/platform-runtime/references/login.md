@@ -1,6 +1,8 @@
 # 登录与会话管理
 
-X、TikTok、微博使用 Camoufox 有头持久 profile，登录态导出和在线验证由运行库统一完成。入口使用各自 hunter，发布、本人数据与 BD 工具复用同一账号会话。快手使用 `kuaishou-hunter login/login-confirm` 的 QR/SMS 流程，具体见其技能说明。
+签名调用 Relay，使用 `OFB_KEY` 与可选 `RELAY_BASE_URL`；平台请求与会话保存在客户端。签名失败、材料缺失或配额错误先处理 Relay，不判为账号登出，不回退本地计算。滑块/图片/BotGuard 等验证码不自动求解；遇到平台验证码停止，由用户在平台处理。短信登录仍由用户提供真实验证码，脚本不代解。
+
+X、TikTok、微博、YouTube 使用 Camoufox 有头持久 profile，登录态导出和在线验证由运行库统一完成。入口使用各自 hunter，发布、本人数据与 BD 工具复用同一账号会话。YouTube 的公开读取免登录，不先执行 check。快手使用 `kuaishou-hunter login/login-confirm` 的 QR/SMS 流程，具体见其技能说明。
 
 **登录必须发生在对应平台的专属窗口。禁止用通用 browser 工具或其他 session 打开登录页；其他窗口的登录态不会被这里的 export 读取。**
 
@@ -9,6 +11,7 @@ X、TikTok、微博使用 Camoufox 有头持久 profile，登录态导出和在�
 | X/Twitter | `x-hunter` | `twitter` |
 | TikTok | `tiktok-hunter` | `tiktok` |
 | 微博 | `weibo-hunter` | `weibo` |
+| YouTube | `youtube-hunter` | `youtube` |
 
 ```bash
 x-hunter login --account default
@@ -21,7 +24,7 @@ x-hunter export --account default
 x-hunter check --account default
 ```
 
-TikTok、微博分别将命令替换为 `tiktok-hunter`、`weibo-hunter`。`login-confirm` 是 `export` 的别名；不自动轮询、不在用户确认前尝试导出。
+TikTok、微博、YouTube 分别将命令替换为 `tiktok-hunter`、`weibo-hunter`、`youtube-hunter`。`login-confirm` 是 `export` 的别名；不自动轮询、不在用户确认前尝试导出。
 
 窗口不清晰时调用对应 hunter 的 `login-status --account <alias>`。它只检查专属窗口，不导航、不导出、不关闭窗口；窗口检查与 API `check` 分别使用。`not_running` / `unavailable` 时检查显示环境和浏览器依赖后重新 login；`not_headed` 时重新 login 会恢复有头模式；`wrong_profile` 时先结束该 session 的其他操作，再关闭它并重新 login。不要改用其他会话绕过失败。如必须直接排查 Camoufox，后续命令始终带 `--session <专属名称> --persistent --headed`；漏带 `--headed` 会重启有头 daemon，使已打开的窗口消失。
 

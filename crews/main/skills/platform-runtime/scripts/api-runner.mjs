@@ -9,6 +9,8 @@ import { publicationObserver, publicationResult } from './publication.mjs';
 import { qrObserver } from './kuaishou-qr.mjs';
 import { processIdentity } from './login-job.mjs';
 import { xPublicationObserver } from './x-publication.mjs';
+import { checkXResponse, xArticleRequest } from './x-response.mjs';
+import { checkYoutubeMediaResponse } from './youtube-response.mjs';
 
 const [platform, ...args] = process.argv.slice(2);
 const root = packageRoot();
@@ -62,9 +64,11 @@ const xPublication = platform === 'x' && ['item', 'article'].includes(args[0]) &
 const qr = platform === 'kuaishou' && process.env.PLATFORM_API_LOGIN_JOB && args[0] === 'auth' && args[1] === 'login'
   ? qrObserver(stateHome, parseJson, RuntimeError) : undefined;
 const converters = platform === 'weibo' && publishing ? await import(pathToFileURL(join(root, 'dist/platforms/weibo/web/sign.js'))) : {};
-const requests = instrumentRequests(HttpClient, { platform, identity, requestPolicy: qr?.policy || requestPolicy,
+const requests = instrumentRequests(HttpClient, { platform, identity: platform === 'youtube' ? undefined : identity,
+  requestPolicy: platform === 'x' ? xArticleRequest : qr?.policy || requestPolicy,
   observeRequest: xPublication?.request,
-  observeResponse: qr?.response || observer?.response });
+  observeResponse: platform === 'x' ? (input, response) => checkXResponse(input, response, RuntimeError)
+    : platform === 'youtube' ? (input, response) => checkYoutubeMediaResponse(input, response, RuntimeError) : qr?.response || observer?.response });
 const outputResult = Output.prototype.result;
 Output.prototype.result = function (data, options) {
   if (observer?.state.accepted) data = publicationResult(platform, data, { state: observer.state, raw: data?.[Symbol.for(contract.rawSymbol)], user, ...converters });

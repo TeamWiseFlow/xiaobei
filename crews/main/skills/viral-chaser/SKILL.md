@@ -27,12 +27,12 @@ metadata:
 # Viral Chaser（追爆分析 — 报告产出）
 
 Use this skill when:
-- 用户提供抖音 / 小红书 / 快手 / TikTok / X / 微博视频链接，或本地视频，希望拆解分析
+- 用户提供抖音 / 小红书 / 快手 / TikTok / X / 微博 / YouTube 视频链接，或本地视频，希望拆解分析
 - 需要分析爆款视频的结构和公式
 
 **本技能仅产出追爆报告**，不生成脚本，不制作视频。如需据此生成视频，需另行委托 `content-producer` （spawn subagent）执行。
 
-**采集路由：** 抖音、小红书、快手、TikTok、X、微博分别用 `douyin-hunter`、`xhs-hunter`、`kuaishou-hunter`、`tiktok-hunter`、`x-hunter`、`weibo-hunter`。其他平台暂不支持，需要使用用户已提供的本地视频，不在本技能恢复下载逻辑。analyzer 不依赖来源平台，只接受本地视频与可选独立音轨。
+**采集路由：** 抖音、小红书、快手、TikTok、X、微博、YouTube 分别用 `douyin-hunter`、`xhs-hunter`、`kuaishou-hunter`、`tiktok-hunter`、`x-hunter`、`weibo-hunter`、`youtube-hunter`。其他平台暂不支持，需要使用用户已提供的本地视频，不在本技能恢复下载逻辑。analyzer 不依赖来源平台，只接受本地视频与可选独立音轨。
 
 **视频限定：** 图文内容的分析不在本技能范围内。
 
@@ -50,7 +50,7 @@ Use this skill when:
 
 ### Step 1 — Create workspace
 
-将工作目录建在来源平台的运营文件夹 `<platform>/ref/`（平台代号 douyin / xhs / kuaishou / tiktok / twitter / weibo）下：
+将工作目录建在来源平台的运营文件夹 `<platform>/ref/`（平台代号 douyin / xhs / kuaishou / tiktok / twitter / weibo / youtube）下：
 
 ```bash
 mkdir -p "<platform>/ref/<slug>/references"
@@ -72,6 +72,7 @@ mkdir -p "<platform>/ref/<slug>/references"
 | TikTok | `tiktok-hunter` | 本地视频与作品资料 |
 | X/Twitter | `x-hunter` | 本地视频与推文资料 |
 | 微博 | `weibo-hunter` | 本地视频与微博资料 |
+| YouTube | `youtube-hunter` | video_paths 中的视频轨、audio_paths 中的同步音轨与视频资料 |
 
 抖音和小红书的独立采集命令示例：
 
@@ -93,6 +94,8 @@ viral-chaser --video '<工作目录>/references/video.mp4' --output-dir '<工作
 ```
 
 若 hunter 提供独立音轨（与视频同步的独立音轨），用 `--audio '<本地音轨路径>'` 指定同一视频的同步音轨；不下载音轨 URL。`--no-frames` 跳过抽帧，只用于用户明确只需转写时。`--output-dir` 优先于已有 `OUTPUT_DIR` 环境变量，未指定则写入视频所在目录。
+
+YouTube 下载返回分轨：对本次 video_paths[0] 和 audio_paths[0] 同时传 `--video` 与 `--audio`，不能只交静音视频轨。采集失败时停止，不在 analyzer 中补下载或换来源。
 
 The script outputs a **JSON object to stdout**. Read it and proceed with analysis.
 

@@ -21,8 +21,11 @@
 | TikTok 创作、发布与本人作品复盘 | `expert-tiktok` |
 | 快手创作、发布与本人作品复盘 | `expert-kuaishou` |
 | X/Twitter 创作、发布与本人作品复盘 | `expert-twitter` |
+| YouTube 频道定位、内容 Brief、本人作品复盘与频道创建 | `expert-youtube`；自动视频发布/删除未接入 |
 | TikTok/快手/X/微博内容搜索、账号、作品、评论与下载 | 一级 `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` |
 | 微博发布 | `weibo-publish` |
+| YouTube 视频、频道、评论、播放列表、下载与直播读取 | `youtube-hunter`；公开读取免登录 |
+| YouTube 评论、点赞、稍后观看、订阅与直播发言 | `expert-bd` 的 youtube-interact / youtube-live |
 | TikTok/快手/X互动与联络 | `expert-bd`，按能力表执行已有接口 |
 | 商业情报、竞对动向、公开直播调研、市场/基金/技术研究 | `expert-osbi`，按其工具表获取原始资料 |
 | 潜客探索/筛选、评论、私信、邮件、点赞收藏关注与客户联络 | `expert-bd` |
@@ -30,7 +33,7 @@
 | sales-cs crew 的启用、复盘升级与定时主动跟进 | `sales-cs-manager` |
 | DNA 表现评估、开启/调整定时取数复盘 | `content-calibrator` |
 
-- 专家包按任务路由，互不越界：公开商业信息分析走 `expert-osbi`，潜客探索/筛选、评论区回复、私信与邮件联络走 `expert-bd`；原始资料获取按平台使用 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `wx-mp-hunter` 或公共 `smart-search`。
+- 专家包按任务路由，互不越界：公开商业信息分析走 `expert-osbi`，潜客探索/筛选、评论区回复、私信与邮件联络走 `expert-bd`；原始资料获取按平台使用 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `youtube-hunter` / `wx-mp-hunter` 或公共 `smart-search`。
 - 商业模式打磨（接触投资人前的前置环节）不属于任何专家包：结合 `business_knowledge/business_knowledge.md` 直接与用户对话完成（多路径权衡用 `council`），结论落 `MEMORY.md`。
 - **零星工作兜底**：未被专家包覆盖的任务，可直接调用手头的工具完成（skill 清单会话时会自动加载，此处不列出）；更适合其他 crew 承担的工作，以 spawn subagent 的方式委托（如视频全案出具brief后交 content-producer，技术问题、系统排障与环境配置交 IT engineer）。找不到匹配的专家包或工具时，先询问用户或保守处理，不猜测平台规则与 DNA。
 - crew 生命周期管理（启用/停用/调整其他 crew）是你的固有职责，不经专家包路由，见下文「crew 管理」段。
@@ -51,6 +54,7 @@
 | OSBI 报告与证据、BD 联络产物 | `osbi/`、`bd/` | 分别由 expert-osbi / expert-bd 管理 |
 | IR 投资人档案/接触记录/项目申报 | `db/ir_record.db` | `expert-ir` 包内工具 `ir-record` |
 | X/TikTok/微博 API 会话与浏览器身份 | `~/.openclaw/logins/platform-api/` | 对应 hunter 的 `login/export`，内部由 platform-runtime 有头登录与隔离验证导入 |
+| YouTube API 会话 | `~/.openclaw/logins/platform-api/` | `youtube-hunter login/export`，专属 youtube profile；公开读取免登录 |
 | 快手独立主站/创作者/直播会话 | `~/.openclaw/logins/platform-api/` | `kuaishou-hunter login/login-confirm` |
 | 抖音采集/发布/本人取数/互动登录态 | 统一 API 会话（路径由 `douyin-login status` 返回） | 登录用 `douyin-login`，创作者检查用 `douyin-publish check` |
 | 小红书 PC / Creator 登录态 | 各工具管理的独立会话 | `xhs-hunter login` / `xhs-publish login` |
@@ -58,7 +62,7 @@
 `published-track` 只负责记录、查询及指标写库；具体取数由各平台专家包的 engagement tool 执行。抖音发布和 engagement 均走 HTTP，与采集共用 douyin-login 的 API 会话，不读取浏览器 profile 或另存一套登录态。
 
 - `<platform>` 为平台代号，对照如下：
-> `微信公众号` → `wx_mp`；`微信视频号` → `wx_channel`；`小红书` → `xhs`; `抖音` → `douyin`；`TikTok` → `tiktok`；`bilibili（b站）` → `bilibili`；`快手` → `kuaishou`；`知乎` → `zhihu`; `twitter/推特/X` → `twitter`；`微博` → `weibo`.
+> `微信公众号` → `wx_mp`；`微信视频号` → `wx_channel`；`小红书` → `xhs`; `抖音` → `douyin`；`TikTok` → `tiktok`；`bilibili（b站）` → `bilibili`；`快手` → `kuaishou`；`知乎` → `zhihu`; `twitter/推特/X` → `twitter`；`微博` → `weibo`；`YouTube` → `youtube`.
 - 发布记录义务：除用户明确要求或特殊说明不记录外，发布成功后一律调 `published-track record` 记录。
 
 **平台运营文件夹**：对于每一个启动运营的平台，在 Workspace 根按平台代号单独建一个文件夹（如 `wx_mp/`、`xhs/`、`douyin/`），该平台的运营数据全部收纳其中：`ref/` 参考材料、`outputs/` 成片与素材等产出物，以及上表的结构化数据子目录（`dna/`、`calibration/`）。各子目录专款专用，不混放。

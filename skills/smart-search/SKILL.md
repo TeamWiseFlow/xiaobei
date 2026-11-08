@@ -1,6 +1,6 @@
 ---
 name: smart-search
-description: 通过xiaobei受管浏览器搜索和阅读网页：选择站点、构造搜索 URL、使用默认或平台专用的持久化 session 并提取真实结果。如果已有 douyin-hunter、xhs-hunter、tiktok-hunter、kuaishou-hunter、x-hunter、weibo-hunter 或 wx-mp-hunter 技能，对应平台的内容搜索应该优先调用上面这些技能。
+description: 通过xiaobei受管浏览器搜索和阅读网页：选择站点、构造搜索 URL、使用默认或平台专用的持久化 session 并提取真实结果。如果已有 douyin-hunter、xhs-hunter、tiktok-hunter、kuaishou-hunter、x-hunter、weibo-hunter、youtube-hunter 或 wx-mp-hunter 技能，对应平台的内容搜索应该优先调用上面这些技能。
 metadata:
   openclaw:
     emoji: 🔍
@@ -25,6 +25,7 @@ metadata:
 | 快手 | `kuaishou-hunter` | 使用其独立 QR/SMS 登录；不要求从浏览器导出会话 |
 | X/Twitter | `x-hunter` | login/export 使用固定 Camoufox session/profile `twitter`，不是 x |
 | 微博 | `weibo-hunter` | login/export 使用固定 Camoufox session/profile `weibo` |
+| YouTube | `youtube-hunter` | 公开读取免登录；账号操作 login/export 使用专属 `youtube` profile |
 | 微信公众号 | `wx-mp-hunter` | fetch 为文章读取，posts-list 依赖微信客户端，homepage 自管临时会话；不代表支持全网关键词搜索 |
 
 - 当前 crew 可用且任务命中接口能力时，先读该技能 SKILL.md，再按其命令执行。不要给 API 命令拼入 `--session` / `--persistent`，也不要自行导出 Cookie。
@@ -68,7 +69,7 @@ camoufox-cli --persistent --json open '<按 sites/zhihu.md 生成的完整搜索
 | 通用网页、新闻/图片搜索 | [Bing / 百度 / 夸克](sites/general.md) |
 | 中文问答 | [知乎](sites/zhihu.md) |
 | 视频、UP 主 | [B站](sites/bilibili.md) |
-| 视频、Shorts、频道、播放列表 | [YouTube](sites/youtube.md) |
+| 视频、Shorts、频道、播放列表（先检查 youtube-hunter） | [YouTube](sites/youtube.md) |
 | 社区讨论 | [Reddit](sites/reddit.md) |
 | 仓库、代码、issues、用户 | [GitHub](sites/github.md) |
 | 职位、人员、公司 | [LinkedIn](sites/linkedin.md) |

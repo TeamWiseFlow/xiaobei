@@ -34,6 +34,8 @@ metadata:
 | [xhs-live](tools/xhs-live/SKILL.md) | 小红书直播文字评论与文字帧发送 |
 | [twitter-interact](tools/twitter-interact/SKILL.md) | X 评论回复、点赞、转发、收藏与关注 |
 | [twitter-im](tools/twitter-im/SKILL.md) | X 首页会话与加密占位历史查询；不支持发送 |
+| [youtube-interact](tools/youtube-interact/SKILL.md) | YouTube 评论/回复、点赞、稍后观看和频道订阅 |
+| [youtube-live](tools/youtube-live/SKILL.md) | YouTube 直播文字聊天；公开观察使用 youtube-hunter live |
 | [tiktok-interact](tools/tiktok-interact/SKILL.md) | TikTok 已支持的作品、评论、关注和收藏夹操作 |
 | [tiktok-im](tools/tiktok-im/SKILL.md) | TikTok 已有会话文本私信、历史和监听 |
 | [tiktok-live](tools/tiktok-live/SKILL.md) | TikTok 直播文字与点赞 |

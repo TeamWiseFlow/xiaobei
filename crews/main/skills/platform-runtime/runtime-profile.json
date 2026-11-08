@@ -1,22 +1,23 @@
 {
   "package": "xiaobei-platform-backend",
-  "version": "0.1.0",
-  "integrity": "sha512-VLeiQ0SMgtLYT0TNQZ7s244/fllji3hjvH2gi3T236YHNUxxRboCxGyYmAYncPOaah0CuoE1FWMqhzdU1HHgrw==",
-  "registrySha256": "1504cb728c9f7f44478265372c76889255958058e49009b691cc508e468aa12a",
+  "version": "0.3.1",
+  "integrity": "sha512-ntjcSA/2M0cDEXW00HQLTMH5vICDpLAJc7yHbhEBC2HrF9mgy5+DKaiqwmfOWcLAcqJjuh/kObk3MIS4d4W6ZA==",
+  "registrySha256": "6e1e2e706cb9bbcb4119991b0a725b6ea30a8a94dfd8de57bf885465f8bff6d6",
   "platforms": [
     "tiktok",
     "kuaishou",
     "weibo",
-    "x"
+    "x",
+    "youtube"
   ],
   "excludeDependencies": [
-    "onnxruntime-web"
+    "onnxruntime-web",
+    "@napi-rs/canvas",
+    "@techstark/opencv-js",
+    "crypto-js",
+    "jsdom"
   ],
   "dependencies": {
-    "@napi-rs/canvas": "1.0.10",
-    "@techstark/opencv-js": "5.0.0-release.1",
-    "crypto-js": "4.2.0",
-    "jsdom": "30.1.2",
     "protobufjs": "8.8.0",
     "qrcode": "1.5.4",
     "smol-toml": "1.9.0",
@@ -24,7 +25,13 @@
     "zod": "4.6.5"
   },
   "artifact": {
-    "filename": "xiaobei-platform-backend-0.1.0.tgz",
-    "url": "https://github.com/TeamWiseFlow/xiaobei/releases/download/platform-runtime-0.1.0/xiaobei-platform-backend-0.1.0.tgz"
+    "filename": "xiaobei-platform-backend-0.3.1.tgz",
+    "url": "https://github.com/TeamWiseFlow/xiaobei/releases/download/platform-runtime-0.3.1/xiaobei-platform-backend-0.3.1.tgz"
+  },
+  "businessAssets": {
+    "static/kuaishou/fixtures/live_ws_maps.json": "c6fe4a11a3933bbb96fa554495d05a03efbc04b38744b5b92fdfa5cb48afa05f",
+    "static/kuaishou/fixtures/live_ws_proto.json": "f8e034d13ca9f69f7881d22854217b97e646aad4e0dfef36366cf9e4d63c1c0c",
+    "static/tiktok/Tiktok_Request.json": "4bb03b298fb5d3103abf9e44307dabc3b46b89d47ff767788a4c809d83ac56e9",
+    "static/x/graphql.json": "b947aac9c7120387db37a04df8b0ba307da9c3283e9914c8a987e56a30c7c624"
   }
 }

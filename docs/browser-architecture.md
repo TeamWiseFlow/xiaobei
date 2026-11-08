@@ -85,7 +85,7 @@ SDK 启动显式传 `executable_path` 和 UBO 路径，关闭默认扩展下载�
 
 真正切换时：盘点任务和人工等待 → 停止准入并结束已确认可关闭的 session → 归档旧 profiles/配置 → 创建新 profile → 按平台重新登录 → 校验预期账号。此流程应脚本化，保留归档位置与结果；本轮开发不自动对运行态执行。不要删原生锁或按 PID/文件年龄批量杀浏览器。
 
-新指纹不能靠导入旧 Cookie 造会话。抖音采集、发布、本人取数和互动共用 API 会话，不再依赖 `douyin` profile；旧浏览器提交收据保留用于历史核查。浏览器重建不意味着删除四平台 API 会话或中央凭据。具体恢复流程见 [profile 操作说明](./profile-loss-handling.md)。
+新指纹不能靠导入旧 Cookie 造会话。抖音采集、发布、本人取数和互动共用 API 会话，不再依赖 `douyin` profile；旧浏览器提交收据保留用于历史核查。浏览器重建不意味着删除平台 API 会话或中央凭据。具体恢复流程见 [profile 操作说明](./profile-loss-handling.md)。
 
 回退先停止新 daemon，再恢复旧程序及其完整旧 profile；不能让旧 Firefox 直接打开新内核写过的 profile。
 
@@ -122,7 +122,7 @@ OpenClaw 2026.10.4 通过独立 `xiaobei-browser` 插件接入共享 client，�
 |---|---|---|
 | 通用搜索/浏览 | `skills/browser-guide/`、`smart-search/` | 普通 default、lease、模式与错误指导一致；两个技能继续保留，不因文档合并而合并技能 |
 | 抖音发布 | `expert-douyin/tools/_shared/publish_browser.py`、公共 `browser_publish_text.py` | 多行正文、contenteditable、上传、发布中间态、短信/未知结果不重发；多步 lease 与 Windows 文件锁 |
-| 四平台登录 | `platform-runtime/scripts/login.mjs` | 专用 profile、cookie/identity 导出、临时材料先验证后替换 API 会话；人工等待不回收 |
+| 五平台登录 | `platform-runtime/scripts/login.mjs` | 专用 profile、cookie/identity 导出、临时材料先验证后替换 API 会话；人工等待不回收 |
 | 公众号/视频号 | `wx-mp-hunter`、`expert-wx-mp`、`expert-wx-channel` | 临时任务显式 ephemeral，分页有界；不扩充当前不支持的视频号搜索/取内容 |
 | 本地渲染/录屏 | `native-ui-card`、`ui-demo` | 受控 file URL、只清理自己资源、录制 viewport 和视频依赖；不另留 Apify SDK 绕过统一资产；独立录制身份重新登录，不导入演习/旧身份 Cookie |
 | 运维 | `camoufox-guard` | 用登记、状态、lease 证明归属；移除仅按年龄/数量杀进程的行为，保护人工等待 |

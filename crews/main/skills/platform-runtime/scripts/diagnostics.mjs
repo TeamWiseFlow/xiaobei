@@ -1,6 +1,6 @@
 // 错误诊断只保留定位所需字段；不转发请求体、响应正文、请求头或 stderr。
 import { isVideoSubmit } from './weibo-video.mjs';
-const ERROR_CODES = new Set(['ERROR', 'USAGE', 'UNSUPPORTED', 'CONFIRM_REQUIRED', 'AUTH_REQUIRED', 'AUTH_EXPIRED', 'NOT_IMPLEMENTED', 'RISK_CONTROL', 'NETWORK', 'UPSTREAM']);
+const ERROR_CODES = new Set(['ERROR', 'USAGE', 'UNSUPPORTED', 'CONFIRM_REQUIRED', 'AUTH_REQUIRED', 'AUTH_EXPIRED', 'NOT_IMPLEMENTED', 'RISK_CONTROL', 'NETWORK', 'UPSTREAM', 'SIGN_UNAVAILABLE', 'OFB_KEY_MISSING', 'OFB_KEY_INVALID', 'RELAY_URL_INVALID', 'RELAY_RATE_LIMITED', 'INVALID_INPUT', 'MATERIAL_UNAVAILABLE']);
 const SENSITIVE = /cookie|token|authorization|password|secret|ticket|private.?key|api_[sp][ht]|web_[sp][ht]|kw[fwcs]|ts.?sign/i;
 const PAIR = /\b(authorization|[\w.-]*token|[\w.-]*secret|password|ticket[\w.-]*|private[_-]?key|[\w.-]*api_[sp][ht]|[\w.-]*web_[sp][ht]|kwscode|kwssectoken|kwfv1|kwfcv1|kww|__NS_[\w]+)(["']?\s*[:=]\s*)((?:bearer|basic)\s+)?("[^"]*"|'[^']*'|[^\s,;&]+)/gi;
 const STAGES = {

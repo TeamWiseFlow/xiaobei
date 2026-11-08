@@ -140,8 +140,7 @@ def update_metrics_row(row_id: int, metrics: dict) -> dict:
 
 # ── wx-mp-engagement 自管 wx_mp session ────────────────────────────────────
 #
-# wx-mp-engagement 自管 camoufox 持久化 session `wx_mp`（类似 zhihu-publish /
-# weibo-publish 自管各自平台 session）：
+# wx-mp-engagement 自管 camoufox 持久化 session `wx_mp`：
 # - 本技能自己负责 wx_mp session 的探活 + 登录 + 重登
 # - 登录态在 wx_mp session profile 里就位即可，不导出 cookie/UA/token
 # - 失效时 exit 2，由调用方（agent / HEARTBEAT）触发本技能自己的重登流程
@@ -216,7 +215,7 @@ def camoufox_close(session: str) -> None:
 #
 # 本技能自己负责 wx_mp session 的扫码登录 + 验登录就位。
 # 登录态在 wx_mp session profile 里就位即可，不导出 cookie/UA/token。
-# 类似 zhihu-publish / weibo-publish 自管各自平台 session。
+# 本工具使用自己管理的 wx_mp session。
 
 def cmd_login(args) -> None:
     """camoufox 无头打开公众号首页 → 截 QR PNG。

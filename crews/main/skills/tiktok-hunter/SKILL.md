@@ -9,6 +9,8 @@ metadata:
         - node
 ---
 
+请求、票据、直播/私信连接与上传签名统一由 Relay 计算，使用 `OFB_KEY` 与可选 `RELAY_BASE_URL`。平台请求仍在客户端；Relay 失败或配额不足时停止，不改成本地计算，不把签名服务错误当作账号登出。验证码不自动求解。
+
 
 # TikTok内容采集
 
@@ -37,6 +39,8 @@ tiktok-hunter call <resource> <action> [平台选项]
 普通查询返回 JSON 信封，`data` 是数组或对象，`page` 保留游标；fetch 返回 `note`、`media_paths`，保存 `note.json` 和有序媒体文件。保留真实来源、完整字符串 ID 与原始计数，缺项为 null，不补零。终端缩略 ID 不能用于下一步。核对账号作品的作者身份；数字 uid、用户名与 secUid 不能互换。
 
 列表默认 20 条，`--limit` 范围 1–100；按实际 `page` 游标有界续读，不使用 --all。`call` 只允许 methods 列出的读取接口，不能借此发评论、私信、点赞或关注。会话缺失/明确过期返回 2，风控和网络故障保留独立错误，不触发盲重登。
+
+搜索接口可能同时返回非零业务状态码与有效结果，或以203表示空结果；以工具解析的 data/page 为准，不仅凭 status_code 判断登录失效。HTTP 403、明确登录过期和风控仍按独立错误处理。会话中的 msToken 随响应 Cookie 轮换，不用导出时的旧存储值覆盖它。
 
 读取与写入均需真实账号验收。用户搜索未实现；user get 仅给 secUid 时不能取得完整资料。notice list/count、收藏夹、合集、推荐与关注流可读。本人已发作品指标通过专家 engagement 获取。写操作需要同次 ticket-guard 材料。
 

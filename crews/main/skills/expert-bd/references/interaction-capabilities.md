@@ -1,6 +1,6 @@
 # 平台互动能力
 
-内容搜索、用户资料、作品与评论采集、评论/@提醒、点赞收藏提醒及新增关注通知按平台调用 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `wx-mp-hunter`；私信和互动写操作在 expert-bd 内执行。创作、发布、本人已发作品数据和创作者服务仍转平台专家包。表内尚不支持的能力保留为空缺。
+内容搜索、用户资料、作品与评论采集、评论/@提醒、点赞收藏提醒及新增关注通知按平台调用 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `youtube-hunter` / `wx-mp-hunter`；私信和互动写操作在 expert-bd 内执行。创作、发布、本人已发作品数据和创作者服务仍转平台专家包。表内尚不支持的能力保留为空缺。
 
 | 能力 | 抖音 | 小红书 |
 |---|---|---|
@@ -46,3 +46,7 @@
 | 公开直播观察（采集技能读取） | tiktok-hunter live | kuaishou-hunter live；回放使用主页ID | 未实现 |
 | 直播发言/点赞 | tiktok-live send/like；需同次写材料 | 未实现 | 未实现 |
 | 送礼支付、主播后台 | 不提供 | 不提供 | 不提供 |
+
+## YouTube
+
+`youtube-interact` 提供视频点赞/取消、稍后观看/移出、频道订阅/取消、评论发布/回复/删除与评论点赞/取消；`youtube-live send` 只发直播文字。登录由 `youtube-hunter login/export` 管理，发评论和直播聊天需要频道。写操作默认预览，已有授权时 --confirm；超时先核查结果，不直接重发。公开读取、下载、通知和直播观察用 `youtube-hunter`，本人作品指标与频道创建用 `expert-youtube`。私信、送礼支付、自动视频发布/删除均未接入。

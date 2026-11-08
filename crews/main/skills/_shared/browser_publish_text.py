@@ -57,33 +57,17 @@ def channels_script(body):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('platform', choices=('zhihu', 'wechat-channel'))
+    parser.add_argument('platform', choices=('wechat-channel',))
     parser.add_argument('command', choices=('fill',))
     parser.add_argument('--body', required=True, help='纯正文文字或 @UTF-8正文文件路径')
-    parser.add_argument('--ref', help='知乎正文编辑器的 snapshot ref')
     args = parser.parse_args(argv)
     try:
         body = read_publish_text(args.body)
         if not body.strip():
             raise ValueError('BODY_EMPTY')
-        if args.platform == 'zhihu':
-            if not args.ref:
-                raise ValueError('EDITOR_REF_REQUIRED')
-            browser('zhihu', 'click', args.ref)
-            cleared = browser('zhihu', 'eval', "(() => {const e=document.activeElement; if(!e?.isContentEditable) return false; return document.execCommand('selectAll') && document.execCommand('delete');})()")
-            if cleared is not True:
-                raise ValueError('EDITOR_CLEAR_FAILED')
-            browser('zhihu', 'fill', args.ref, body)
-            actual = browser('zhihu', 'eval', "(() => {const e=document.activeElement; return e?.isContentEditable ? e.innerText : null;})()")
-            if not isinstance(actual, str) or actual.replace('\u00a0', ' ').rstrip() != body.replace('\u00a0', ' ').rstrip():
-                raise ValueError('BODY_MISMATCH')
-            result = {'ok': True, 'length': len(actual)}
-        else:
-            if args.ref:
-                raise ValueError('REF_NOT_SUPPORTED_FOR_WECHAT_CHANNEL')
-            result = browser('wechat-channel', 'eval', channels_script(body))
-            if not isinstance(result, dict):
-                raise RuntimeError('INVALID_BROWSER_RESPONSE')
+        result = browser('wechat-channel', 'eval', channels_script(body))
+        if not isinstance(result, dict):
+            raise RuntimeError('INVALID_BROWSER_RESPONSE')
         print(json.dumps(result, ensure_ascii=False))
         return 0 if result.get('ok') else 1
     except PublishTextError as exc:

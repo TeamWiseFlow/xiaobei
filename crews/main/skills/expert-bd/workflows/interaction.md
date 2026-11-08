@@ -18,6 +18,8 @@
 
 TikTok 互动通过 tiktok-interact/tiktok-im/tiktok-live，写操作需要同次 ticket-guard 材料。X 评论、回复、点赞、转发、收藏与关注使用 twitter-interact；twitter-im 只查询首页会话及加密占位历史。所有写操作先预览，已有授权时 --confirm；快手只支持直播观察，没有评论、点赞、关注、私信或直播发言接口。
 
+YouTube 评论/回复、点赞、稍后观看和订阅使用 youtube-interact；直播文字聊天使用 youtube-live。登录由 youtube-hunter 管理，评论与直播发言需有频道；公开读取走 youtube-hunter。未知结果先核查，不重发；无私信或送礼支付能力。
+
 ## 企业背景核验（按需）
 
 使用天眼查 `tyc` 前，遵循本包 [SKILL.md 的安装与授权规则](../SKILL.md#安装与授权规则)：先检查本机；已安装直接复用，不重复提示；未安装时先展示免费额度与计费规则，再询问是否同意安装，得到同意后才安装。

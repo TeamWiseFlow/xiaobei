@@ -62,8 +62,13 @@ export async function prunePackage(directory) {
   for (const entry of await fs.readdir(join(directory, 'static'), { withFileTypes: true })) {
     if (entry.isDirectory() && !entry.name.startsWith('_') && !profile.platforms.includes(entry.name)) throw new Error('Unexpected platform assets');
   }
+  if (!profile.businessAssets || Object.keys(profile.businessAssets).length !== 4) throw new Error('Missing business asset profile');
+  for (const [name, digest] of Object.entries(profile.businessAssets)) {
+    if (!/^static\/(?:x|tiktok|kuaishou)\/[\w/.-]+\.json$/.test(name) || name.split('/').includes('..') || !/^[a-f0-9]{64}$/.test(digest)) throw new Error('Invalid business asset profile');
+    if (hash(await fs.readFile(join(directory, name))) !== digest) throw new Error('Business asset changed: ' + name);
+  }
   const contract = await readJson(join(directory, 'runtime-contract.json'));
-  if (contract.version !== 1 || !/^[A-Z][A-Z0-9_]{1,63}$/.test(contract.stateEnvironment || '')
+  if (contract.version !== 1 || contract.signingMode !== 'relay' || !/^[A-Z][A-Z0-9_]{1,63}$/.test(contract.stateEnvironment || '')
       || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(contract.errorExport || '')
       || !/^[A-Za-z0-9_.-]{1,128}$/.test(contract.rawSymbol || '')) throw new Error('Invalid runtime adapter contract');
 }
@@ -117,7 +122,7 @@ async function validate(directory, marker, archivePath) {
   if (hash(await fs.readFile(archivePath)) !== marker.archiveSha256) throw new Error('Prepared runtime archive missing or changed');
   const pkgRoot = join(directory, profile.package);
   const pkg = await readJson(join(pkgRoot, 'package.json'));
-  if (pkg.version !== profile.version || JSON.stringify(pkg.dependencies) !== JSON.stringify(profile.dependencies)) throw new Error('Runtime package does not match the four-platform profile');
+  if (pkg.version !== profile.version || JSON.stringify(pkg.dependencies) !== JSON.stringify(profile.dependencies)) throw new Error('Runtime package does not match the platform profile');
   if (JSON.stringify(await fileHashes(pkgRoot)) !== JSON.stringify(marker.files)) throw new Error('Runtime package files are incomplete or changed');
   for (const excluded of profile.excludeDependencies) {
     try { await fs.access(join(directory, excluded)); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
@@ -137,7 +142,7 @@ async function validate(directory, marker, archivePath) {
 function probeRuntime(directory) {
   // Also catches missing transitive/native modules when a matching installer
   // hash would otherwise skip a damaged installation. This makes no requests.
-  const probe = profile.platforms.map(id => `await import(${JSON.stringify(join(directory, profile.package, 'dist/platforms', id, 'web/commands.js'))});`).join('\n') + `\nconst require = (await import('node:module')).createRequire(${JSON.stringify(join(directory, profile.package, 'package.json'))}); const {createCanvas}=require('@napi-rs/canvas'); if(!createCanvas(2,2).toBuffer('image/png').length) throw new Error('Canvas unavailable'); const cv=await require('@techstark/opencv-js'); const mat=new cv.Mat(); mat.delete(); const {createTransport}=await import(require.resolve('wreq-js')); const transport=await createTransport({browser:'chrome_131'}); await transport.close();`;
+  const probe = profile.platforms.map(id => `await import(${JSON.stringify(join(directory, profile.package, 'dist/platforms', id, 'web/commands.js'))});`).join('\n') + `\nconst require = (await import('node:module')).createRequire(${JSON.stringify(join(directory, profile.package, 'package.json'))}); if(!(await require('qrcode').toDataURL('runtime-install-check')).startsWith('data:image/png;')) throw new Error('QR encoder unavailable'); const {createTransport}=await import(require.resolve('wreq-js')); const transport=await createTransport({browser:'chrome_131'}); await transport.close();`;
   const contract = JSON.parse(readFileSync(join(directory, profile.package, 'runtime-contract.json'), 'utf8'));
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', probe], { cwd: dirname(directory), env: { ...process.env, [contract.stateEnvironment]: join(dirname(directory), '.runtime/probe-state') }, encoding: 'utf8', timeout: 60000 });
   if (result.error || result.status !== 0) throw new Error('Prepared platform runtime cannot load on this machine: ' + (result.error?.message || result.stderr));
@@ -187,7 +192,7 @@ async function install(options) {
       }
       throw error;
     }
-    console.log('Four-platform runtime installed and verified: ' + profile.platforms.join(', '));
+    console.log('Platform runtime installed and verified: ' + profile.platforms.join(', '));
   } finally {
     if (stage && !preserveStage) await fs.rm(stage, { recursive: true, force: true });
     await fs.rm(lock, { recursive: true, force: true });
