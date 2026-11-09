@@ -143,6 +143,14 @@ render_awk_api_key() {
     let updated = false;
     // Preserve explicit settings in existing volumes when retiring the env patch.
     const template = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    // Existing persistent volumes must follow the pinned distribution policy too.
+    if (config.update?.checkOnStart !== false || config.update?.auto?.enabled !== false) {
+      config.update ??= {};
+      config.update.checkOnStart = false;
+      config.update.auto ??= {};
+      config.update.auto.enabled = false;
+      updated = true;
+    }
     const searchEnabled = template.tools?.web?.search?.enabled;
     if (typeof searchEnabled === "boolean" && config.tools?.web?.search?.enabled === undefined) {
       config.tools ??= {};

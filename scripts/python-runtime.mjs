@@ -73,15 +73,23 @@ export async function bundlePython(root, output, platform) {
   return target;
 }
 
+export function normalizeRequirements(text, file = 'requirements.txt') {
+  const lines = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    // pip treats a whitespace-prefixed # as a comment; URL hash fragments remain.
+    const requirement = line.replace(/\s+#.*$/, '').trim();
+    if (!requirement || requirement.startsWith('#')) continue;
+    if (requirement.startsWith('-')) throw new Error(`Unsupported requirements directive in ${file}: ${requirement}`);
+    lines.add(requirement);
+  }
+  return [...lines].sort().join('\n') + '\n';
+}
+
 export function collectRequirements(root) {
   const lines = new Set();
   function add(file) {
-    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      // All dependencies are repository declarations, not per-invocation pip options/files.
-      if (trimmed.startsWith('-')) throw new Error(`Unsupported requirements directive in ${file}: ${trimmed}`);
-      lines.add(trimmed);
+    for (const line of normalizeRequirements(fs.readFileSync(file, 'utf8'), file).split('\n')) {
+      if (line) lines.add(line);
     }
   }
   function scan(dir) {
@@ -137,6 +145,7 @@ async function installUnlocked(root) {
   if (inspectPython(basePython, env).version !== pin.version) throw new Error('Bundled Python version does not match the release pin.');
   if (fs.existsSync(venv) && !fs.existsSync(path.join(venv, 'pyvenv.cfg'))) throw new Error(`Python runtime directory is not a venv; preserved: ${venv}`);
   let reusable = false;
+  let legacyFingerprint = false;
   if (fs.existsSync(python)) {
     try {
       const info = inspectPython(python, env);
@@ -144,9 +153,19 @@ async function installUnlocked(root) {
       if (reusable) {
         const stamp = readJSON(path.join(venv, '.xiaobei-dependencies.json'));
         const installed = run(python, ['-m', 'pip', 'list', '--format=json', '--disable-pip-version-check'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-        reusable = stamp?.hash === hash && stamp?.installed === installed;
+        const previousFile = path.join(venv, '.xiaobei-requirements.txt');
+        const previous = fs.existsSync(previousFile) ? fs.readFileSync(previousFile, 'utf8') : null;
+        const verifiedLegacy = stamp?.key === pin.key && previous !== null &&
+          stamp.hash === createHash('sha256').update(pin.sha256).update(previous).digest('hex') &&
+          normalizeRequirements(previous, previousFile) === requirements;
+        reusable = (stamp?.hash === hash || verifiedLegacy) && stamp?.installed === installed;
+        legacyFingerprint = reusable && stamp.hash !== hash;
       }
-    } catch { /* A broken or old owned venv is backed up and rebuilt below. */ }
+    } catch {
+      // Never repair an unverified environment in place.
+      reusable = false;
+      legacyFingerprint = false;
+    }
   }
   let backup;
   try {
@@ -171,7 +190,14 @@ async function installUnlocked(root) {
     const stampFile = path.join(venv, '.xiaobei-dependencies.json');
     const stamp = readJSON(stampFile);
     const installed = () => run(python, ['-m', 'pip', 'list', '--format=json', '--disable-pip-version-check'], { env, stdio: ['ignore', 'pipe', 'inherit'] });
-    if (stamp?.hash !== hash || stamp?.installed !== installed()) {
+    const currentInventory = installed();
+    if (legacyFingerprint) {
+      if (stamp.installed !== currentInventory) throw new Error('Python packages changed during fingerprint migration; retry installation.');
+      run(python, ['-m', 'pip', 'check'], { env });
+      writeJSON(stampFile, { hash, installed: currentInventory, key: pin.key });
+      fs.writeFileSync(path.join(venv, '.xiaobei-requirements.txt'), requirements);
+      console.log('Python dependency fingerprint migrated; existing environment reused without reinstalling');
+    } else if (stamp?.hash !== hash || stamp?.installed !== currentInventory) {
       const reqFile = path.join(venv, '.xiaobei-requirements.txt');
       fs.writeFileSync(reqFile, requirements);
       if (requirements.trim()) run(python, ['-m', 'pip', 'install', '--disable-pip-version-check', '--no-warn-script-location', '--index-url', process.env.XIAOBEI_PYPI_INDEX_URL || process.env.PIP_INDEX_URL || 'https://mirrors.aliyun.com/pypi/simple/', '-r', reqFile], { env });
