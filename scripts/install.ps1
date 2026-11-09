@@ -771,6 +771,15 @@ function Bind-WeixinChannel {
 }
 
 # --- main ---
+function Migrate-AutomationInference {
+    $automationMigration = Join-Path $Root "scripts\repair-automation-inference.mjs"
+    if (Test-Path $automationMigration) {
+        Write-Stage "Migrating automation inference accounts"
+        & $NodeExe $automationMigration --config (Join-Path $OpenclawHome "openclaw.json") --auto --apply
+        if ($LASTEXITCODE -ne 0) { throw "Automation inference account migration failed; upgrade is incomplete" }
+    }
+}
+
 function Main {
     Get-GitHubDownloadUrl 'https://github.com/' | Out-Null
     Write-Host "wiseflow installer (Windows, GitHub) - prebuilt tarball route" -ForegroundColor Magenta
@@ -788,7 +797,7 @@ function Main {
         # gateway's file locks ("Can't unlink already-existing object: Permission denied", observed
         # in practice).
         Write-Stage "Stopping gateway before update"
-        if (Test-Path $ClawCmd) { Invoke-Streamed { & $ClawCmd gateway stop } }
+        if (Test-Path $ClawCmd) { Invoke-Streamed { & $ClawCmd gateway stop --force } }
         Get-Process node -ErrorAction SilentlyContinue |
             Where-Object { $_.Path -like "$Root*" } |
             Stop-Process -Force -ErrorAction SilentlyContinue
@@ -867,6 +876,8 @@ function Main {
         Install-GatewayAndEnv
         Bind-WeixinChannel
     }
+
+    Migrate-AutomationInference
 
     Write-Host ""
     if ($isUpdate) {

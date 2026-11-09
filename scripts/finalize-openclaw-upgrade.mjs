@@ -5,6 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { inspectLegacyAccounts } from "./lib/automation-inference-check.mjs";
 
 export function finalizeOpenClawUpgrade({ root, config, skipCrew = false, stopGateway = false }, run = spawnSync) {
   root = path.resolve(root);
@@ -25,14 +26,30 @@ export function finalizeOpenClawUpgrade({ root, config, skipCrew = false, stopGa
   }
   // Native stop is idempotent when no service is loaded. Let the service owner
   // release the old state worker before the new Doctor performs maintenance.
-  if (stopGateway) step(process.execPath, [path.join(dist, "index.js"), "daemon", "stop"]);
+  if (stopGateway) step(process.execPath, [path.join(dist, "index.js"), "daemon", "stop", "--force"]);
   step(process.execPath, [path.join(root, "scripts/migrate-openclaw-config.mjs"), "--config", config, "--write"]);
   step(process.execPath, [path.join(root, "scripts/configure-browser-plugin.mjs"), "--root", root, "--config", config, "--write"]);
   step(process.execPath, [path.join(dist, "index.js"), "doctor", "--fix", "--non-interactive", "--no-workspace-suggestions"], { OPENCLAW_UPDATE_IN_PROGRESS: "1" });
+  const runtimeConfig = JSON.parse(fs.readFileSync(config, "utf8"));
+  let pendingAccounts = [];
+  let accountCheck = "skipped-no-profiles";
+  if (Object.values(runtimeConfig.auth?.profiles ?? {}).some(profile => profile?.provider)) {
+    try {
+      pendingAccounts = inspectLegacyAccounts(runtimeConfig, config);
+      accountCheck = "completed";
+    } catch (error) {
+      pendingAccounts = null;
+      accountCheck = "unavailable";
+      console.warn(`⚠️  Pre-start automation account inspection was unavailable; it will be retried during required post-start migration: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (pendingAccounts?.length) {
+    console.log(`ℹ️  ${pendingAccounts.length} legacy automations need account migration; the installer will adopt their configured accounts after Gateway starts. Ambiguous account selections will be reported before any job changes.`);
+  }
   if (!skipCrew) {
     step("bash", ["-c", 'set -e; source "$1/scripts/lib/agent-skills.sh"; source "$1/scripts/lib/exec-tiers.sh"; apply_exec_tiers "$2" "$1/crews" "$1"', "xiaobei-finalize", root, config]);
   }
-  return { version, skipped: false, finalized: true, approvalsSynchronized: !skipCrew };
+  return { version, skipped: false, finalized: true, approvalsSynchronized: !skipCrew, automationAccountCheck: accountCheck, pendingAutomationAccountAdoptions: pendingAccounts?.length ?? null };
 }
 
 function main() {

@@ -121,7 +121,8 @@ stop_gateway_for_upgrade() {
   [ "$GATEWAY_STOPPED" != "true" ] || return 0
   if [ -f "$OPENCLAW_DIR/dist/index.js" ] && [ -f "$OPENCLAW_CONFIG_PATH" ]; then
     echo "⏸️  Stopping Gateway before replacing its dependencies/build..."
-    OPENCLAW_CONFIG_PATH="$OPENCLAW_CONFIG_PATH" node "$OPENCLAW_DIR/dist/index.js" daemon stop
+    # Invoking the updater authorizes this maintenance stop, including without a TTY.
+    OPENCLAW_CONFIG_PATH="$OPENCLAW_CONFIG_PATH" node "$OPENCLAW_DIR/dist/index.js" daemon stop --force
   fi
   GATEWAY_STOPPED=true
 }
@@ -321,17 +322,16 @@ if [ "$CURRENT_COMMIT" = "$OPENCLAW_COMMIT" ]; then
 else
   echo "  Current commit: ${CURRENT_COMMIT:-"(unknown)"}"
   echo "  Checking out target commit..."
-  git -C "$OPENCLAW_DIR" reset --hard HEAD 2>/dev/null || true
   if ! git -C "$OPENCLAW_DIR" cat-file -e "${OPENCLAW_COMMIT}^{tree}" 2>/dev/null; then
-    echo "  📥 Fetching openclaw target commit..."
-    git -C "$OPENCLAW_DIR" fetch origin --tags || \
-      echo "  ⚠️  Failed to fetch openclaw tags from origin."
-  fi
-  if ! git -C "$OPENCLAW_DIR" cat-file -e "${OPENCLAW_COMMIT}^{tree}" 2>/dev/null; then
-    echo "  ⚠️  Target commit not found locally; trying shallow-clone recovery..."
-    git -C "$OPENCLAW_DIR" fetch --unshallow origin 2>/dev/null || \
-      git -C "$OPENCLAW_DIR" fetch --deepen=200 origin || \
-      echo "  ⚠️  Failed to deepen openclaw history from origin."
+    # An explicit ref overrides origin's all-branches fetch configuration.
+    # Keep existing history without fetching unrelated branches/tags or submodules.
+    echo "  📥 Fetching only openclaw pinned commit $OPENCLAW_COMMIT..."
+    if ! git -C "$OPENCLAW_DIR" fetch --no-tags --no-recurse-submodules origin "$OPENCLAW_COMMIT"; then
+      # Some mirrors reject SHA requests; keep the fallback scoped to this release.
+      echo "  ⚠️  Commit fetch failed; trying only release tag v$OPENCLAW_VERSION..."
+      git -C "$OPENCLAW_DIR" fetch --no-tags --no-recurse-submodules origin "refs/tags/v$OPENCLAW_VERSION" || \
+        echo "  ⚠️  Failed to fetch the pinned release tag from origin."
+    fi
   fi
   if ! git -C "$OPENCLAW_DIR" cat-file -e "${OPENCLAW_COMMIT}^{tree}" 2>/dev/null; then
     echo "❌ Local openclaw commit (${CURRENT_COMMIT:-unknown}) does not match required openclaw.version ($OPENCLAW_COMMIT)."
@@ -340,6 +340,7 @@ else
   fi
   # Stop through the still-installed CLI before changing its source/dependencies.
   stop_gateway_for_upgrade
+  git -C "$OPENCLAW_DIR" reset --hard HEAD 2>/dev/null || true
   if ! git -C "$OPENCLAW_DIR" checkout "$OPENCLAW_COMMIT"; then
     echo "❌ Unable to checkout required openclaw commit from openclaw.version: $OPENCLAW_COMMIT"
     exit 1
@@ -645,6 +646,9 @@ elif [ "$(uname -s)" = "Darwin" ]; then
   fi
 fi
 
+echo ""
+echo "🕒 Migrating legacy automation inference accounts..."
+node "$PROJECT_ROOT/scripts/repair-automation-inference.mjs" --config "$OPENCLAW_CONFIG_PATH" --auto --apply
 echo ""
 echo "✅ Installation complete!"
 echo "   Access: http://127.0.0.1:18789"

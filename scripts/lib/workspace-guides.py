@@ -69,6 +69,8 @@ def updated_text(content: str) -> str:
 def python_runtime_text(content: str, runtime: str) -> str:
     """Rebuild the owned Python section under Tools, including unmarked legacy copies."""
     newline = "\r\n" if "\r\n" in content else "\n"
+    # Both setup-crew and tarball upgrades use this internal-only guidance path.
+    content = remove_sections(content, {(2, '工作区文件约定')})
     block = f"""### Python 环境
 
 - `python` / `python3` 默认使用：`{runtime}`；临时脚本直接用 `python3 /绝对路径/script.py`，无需激活环境。

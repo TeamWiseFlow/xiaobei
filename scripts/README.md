@@ -168,7 +168,35 @@ Windows 缺少 FFmpeg/FFprobe 时安装器通过 winget 安装 `Gyan.FFmpeg`。W
 
 `update.sh` 的引擎构建与 Control UI 构建成功后才运行配置/状态收尾，避免新 pin 配合旧 dist 迁移。脚本在替换依赖前通过原生 `daemon stop` 释放正在使用的引擎；收尾失败会中止，排除错误后重跑即可。`install-browser.mjs --defer-config` 用于这些统一升级流程，独立调用默认仍会同步插件配置。
 
+安装/升级流程的原生停服命令显式传入 `--force`，表示授权维护时停服，兼容非交互终端。该参数只传给 OpenClaw 的服务命令，与安装/升级脚本用于覆盖工作区文件的 `--force` 分开。
+
+引擎同步只请求 `openclaw.version` 锁定的 commit；若远端拒绝按 SHA 拉取，只尝试该版本的发布标签，并再次核对锁定 commit 是否可用。禁用自动拉取标签和子模块，不同步所有分支/标签，也不执行全量历史补齐；已有本地历史保留。目标获取失败时，在重置源码、停止服务前退出。目标提交所需且本地缺失的历史对象仍会下载，已有 `.git` 不会因此自动缩小。
+
 源码升级使用上游支持的运行时构建模式（`OPENCLAW_RUN_NODE_SKIP_DTS_BUILD=1`），不生成开发用类型声明；发布 CI 保留完整构建检查。
+
+旧定时任务使用存储的推理账号（如 OAuth）时，新宿主要求任务持有账号绑定。安装/update 在 Gateway 启动后、成功提示前自动运行账号迁移；默认重启服务的 apply-addons 也会执行。没有配置存储账号时直接跳过，不要求普通 provider API Key 用户设置账号参数。启动前的检查不可用时，启动后的迁移会重新检查；迁移失败会明确报错，不把未完成的升级报告为成功。仅显示 `enabled=true` 或下一次时间不代表任务能运行。
+
+自动迁移优先保留模型中明确指定的账号，其次采用对应供应商的 `auth.order` 首选账号，未配置顺序时使用该供应商唯一的配置账号。多个账号仍无法确定时，在修改任何任务前报出任务 ID 和所需选择；不改已有账号绑定、停用任务或系统任务。重复升级会跳过已完成的任务。
+
+同一供应商已经明确配置 provider API Key、且任务模型未指定 profile 时，保留现有认证路线，不因另有已登录账号就切换账号或计费来源。
+
+也可以在 Gateway 启动后单独预览或运行自动迁移：
+
+```bash
+node scripts/repair-automation-inference.mjs --auto
+node scripts/repair-automation-inference.mjs --auto --apply
+```
+
+需要人工指定账号时，使用 `--profile <账号ID>`，可重复传入 `--job <任务ID>` 限定任务；本机只有一个配置账号时也支持：
+
+```bash
+node scripts/repair-automation-inference.mjs --use-current-account
+node scripts/repair-automation-inference.mjs --use-current-account --apply
+```
+
+迁移通过原生 RPC 和配置 revision 检查收纳账号，保留原模型继承、任务正文、时间表和投递设置，不手写数据库、不手动补跑任务。执行前的快照和逐项结果写在 state 目录的 `backups/automation-inference/`；脚本不伪造成功运行记录。
+
+任务不必固定模型：没有任务级 `model` / `fallbacks` 覆盖时，继续读取对应 crew 在 `openclaw.json` 中的模型配置。账号归属与模型选择分开记录；当前锁定宿主只允许已绑定任务使用同一供应商且与该账号兼容的候选模型，因此跨供应商 fallback 不会因继承配置自动获得授权，不能把“配置已继承”当成“整条回退链可执行”。
 
 ---
 

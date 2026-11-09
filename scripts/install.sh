@@ -1253,6 +1253,12 @@ main() {
         bind_weixin_channel
     fi
 
+    # Use the packaged migration when available; older release archives may predate it.
+    local automation_migration="$WISEFLOW_ROOT/scripts/repair-automation-inference.mjs"
+    if [[ -f "$automation_migration" ]]; then
+        run_required_step "Migrating automation inference accounts" "$WISEFLOW_ROOT/$PORTABLE_NODE" "$automation_migration" --config "$OPENCLAW_HOME/openclaw.json" --auto --apply
+    fi
+
     # ─── 完成 ────────────────────────────────────────────────
     echo ""
     if [[ "$is_update" == "true" ]]; then
@@ -1449,7 +1455,7 @@ stop_gateway_if_running() {
     if [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
         systemctl --user stop "openclaw-gateway.service" 2>/dev/null && ui_info "Stopped gateway before update" || true
     elif [ "$(uname -s)" = "Darwin" ] && [ -x "$claw_cmd" ]; then
-        "$claw_cmd" gateway stop 2>/dev/null && ui_info "Stopped gateway before update" || true
+        "$claw_cmd" gateway stop --force 2>/dev/null && ui_info "Stopped gateway before update" || true
     fi
 }
 

@@ -429,23 +429,10 @@ inject_internal_workspace_guides() {
 }
 
 # 以下生成函数只由 internal workspace 入口调用。
-# 1. Technical Issue Dispatch Protocol
-# 2. sessions_spawn 规范
+# Technical Issue Dispatch Protocol 与 sessions_spawn 规范。
 inject_agents_md_sections() {
   local agents_md="$1"
   [ -f "$agents_md" ] || return 0
-
-  if ! grep -qF "## 工作区文件约定" "$agents_md"; then
-    cat >> "$agents_md" << 'BOOTSTRAP_GUIDE'
-
-## 工作区文件约定
-
-- OpenClaw 2026.10.4 不自动加载独立的 `TOOLS.md`。本机路径、环境变量名称和工具别名写在本文件的 `## Tools` 节；工具操作手册仍由对应 `SKILL.md` 维护，不在备忘中保存密钥值。
-- 子 agent 只自动注入 `AGENTS.md`；必须随派工生效的流程和约束写在本文件。需要角色信息或其他资料时，在任务授权范围内按需读取，不假设 `SOUL.md`、`USER.md` 或 `MEMORY.md` 已加载。
-- Cron 自动加载 `AGENTS.md`、`SOUL.md`、`IDENTITY.md`、`USER.md`。`MEMORY.md` 只在本 agent 的私密主会话自动注入；不将其他 crew 的私人记忆当作默认输入。
-- 不新建 `TOOLS.md` 或 `HEARTBEAT.md`；周期任务以当前 Automation / 心跳 scratch 为准。旧版本遗留的这两个文件由用户升级后手动删除，setup 不负责迁移或清理。
-BOOTSTRAP_GUIDE
-  fi
 
   if ! grep -qF "## Technical Issue Dispatch Protocol" "$agents_md"; then
     cat >> "$agents_md" << 'TIDP'
@@ -470,6 +457,7 @@ TIDP
 > ⚠️ **禁止传入 `streamTo` 参数** — `streamTo` 仅支持 `runtime=acp`，在 subagent 模式下会报错（`streamTo is only supported for runtime=acp`）。spawn 时只传 agentId 和 task 内容即可。
 SSP
   fi
+
 }
 
 inject_file_edit_guide() {

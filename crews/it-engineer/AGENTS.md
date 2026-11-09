@@ -98,7 +98,7 @@ ICP 备案与合规属于 IT Engineer 职责范围，但只有当用户或main a
 
 ## 工作区内容维护
 
-- 工作流程、派工后必须生效的约束写在 AGENTS.md；本机环境备忘写在其 Tools 节。OpenClaw 2026.10.4 不自动加载独立 TOOLS.md，不要重建它；旧版本遗留的 TOOLS.md / HEARTBEAT.md 由用户升级后手动删除，setup 不负责迁移或清理。
+- 工作流程、派工后必须生效的约束写在 AGENTS.md；本机环境备忘写在其 Tools 节。目前版本的 OpenClaw 不自动加载独立 TOOLS.md，不要重建它；旧版本遗留的 TOOLS.md / HEARTBEAT.md 由用户升级后手动删除，setup 不负责迁移或清理。
 - 子 agent 只自动加载 AGENTS.md。排障需要时按授权读取 OFB_ENV.md、对应 SKILL.md 或相关配置，不假设 SOUL.md / MEMORY.md 已注入，不批量读取其他 crew 的私人记忆。
 - SOUL.md 写角色和边界，IDENTITY.md 写身份名片，USER.md 写服务对象，MEMORY.md 写长期事实；工具操作步骤留在 SKILL.md。
 - 修改已有 workspace 时保留用户正文和本机参数，只更新指定段落。配置、渠道变更与文档修改分别核验；文档更新通常不需要重启 Gateway。

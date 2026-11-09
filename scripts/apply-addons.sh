@@ -336,7 +336,7 @@ if [ "$NO_BUILD" != "true" ] && [ "$NEEDS_INSTALL" = "true" ]; then
     GATEWAY_STATUS="$(OPENCLAW_CONFIG_PATH="$CONFIG_PATH" node "$OPENCLAW_DIR/dist/index.js" daemon status --no-probe --json 2>/dev/null || true)"
     GATEWAY_WAS_RUNNING="$(printf '%s' "$GATEWAY_STATUS" | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{try{console.log(JSON.parse(s).service?.runtime?.status === "running")}catch{console.log(false)}})')"
     echo "⏸️  Stopping Gateway before rebuilding its installation..."
-    OPENCLAW_CONFIG_PATH="$CONFIG_PATH" node "$OPENCLAW_DIR/dist/index.js" daemon stop
+    OPENCLAW_CONFIG_PATH="$CONFIG_PATH" node "$OPENCLAW_DIR/dist/index.js" daemon stop --force
   fi
 fi
 
@@ -408,8 +408,10 @@ elif [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
   if [ "$GATEWAY_WAS_RUNNING" = "true" ] || systemctl --user is-active "$SERVICE_NAME.service" >/dev/null 2>&1; then
     echo "🔄 Restarting $SERVICE_NAME.service..."
     OPENCLAW_CONFIG_PATH="$CONFIG_PATH" node "$OPENCLAW_DIR/dist/index.js" daemon restart
+    node "$PROJECT_ROOT/scripts/repair-automation-inference.mjs" --config "$CONFIG_PATH" --auto --apply
     echo "✅ Gateway restarted"
   fi
 elif [ "$GATEWAY_WAS_RUNNING" = "true" ]; then
   OPENCLAW_CONFIG_PATH="$CONFIG_PATH" node "$OPENCLAW_DIR/dist/index.js" daemon restart
+  node "$PROJECT_ROOT/scripts/repair-automation-inference.mjs" --config "$CONFIG_PATH" --auto --apply
 fi
