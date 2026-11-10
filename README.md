@@ -2,18 +2,15 @@
 
 小贝（xiaobei）是为OPC/中小微企业量身打造的自媒体获客智能体，底层架构基于 [openclaw](https://github.com/openclaw/openclaw)，目前它能帮你：
 
-- 微信公众号文章写作、排版与推送
-- 小红书/小绿书图文创作与发布
-- 抖音图文音乐发布，支持多图上传与推荐配乐
-- 图文海报与原创配乐生成
-- 视频生成与多平台分发（支持视频号、抖音、小红书、快手、TikTok、微博……）
+- 视频生成与多平台分发（支持视频号、抖音、小红书、快手、TikTok、微博、twitter／X……）
 - 低成本口播视频制作：幻灯片、剪纸动画、操作录屏 B-roll，支持自定义音色与数字人小窗
-- Twitter/X、微博、知乎等平台发文
+- 支持douyin/xhs/youtube/tiktok/x 五平台互动(评论、私信）
 - 微信朋友圈内容发布（通过企业微信接口）
 - 爆款视频下载分析、仿写与再创作（支持抖音、快手、小红书等平台视频链接）
-- 赛道头部账号DNA级复刻（目前支持小红书、微信视频号、抖音、微信公众号四个平台）
+- 微信公众号文章写作、排版与推送
+- 小红书/小绿书图文创作与发布
+- 图文海报与原创配乐生成
 - 已发布作品数据监控与每日定时复盘
-- 自媒体评论区获客与站内私信联络（支持小红书、抖音等平台）
 - 7*24 小时智能客服（售前接待）
 - 通过社交媒体寻找潜在客户，查询小红书蒲公英达人合作与千帆分销商资料
 - 信息搜集、竞对监控与市场调研：支持小红书、抖音、微博、知乎、快手、TikTok、B站、Twitter/X、YouTube、微信公众号、LinkedIn、Reddit、新闻、政务、财经、学术、购物、GitHub 等信源，扩展商业、技术/AI、学术、招聘、口碑和设计六类站点
@@ -34,17 +31,18 @@ xiaobei 由Wiseflow (原AI首席情报官）作者 bigbrother666sh 开发。
 
 ---
 
-## 🚀 **V5.8.0 更新**
+## 🚀 **V5.8.1 更新**
 
-- **OpenClaw 基座升级至 2026.10.4**，同步更新插件接入、配置与安装升级流程；
-- **全新小贝浏览器**：基于 Camoufox 构建独立的 `xiaobei-browser` 插件，接入 OpenClaw 原生插件体系，统一管理浏览器身份与持久会话；扫码、验证码等待期间保留窗口，大幅提升登录与自动化操作体验；
-- **更聪明的 IT Engineer 帮你保驾护航**：优化预置记忆与工作指南，将日常使用中的运维经验沉淀为技能，完善日志巡检、定时任务、插件与会话维护，让系统排障和日常运维更省心；
-- **视频制作与验收升级**：数字人改用 Wan S2V，支持按原声分段生成与口型审查；百炼业务空间 TTS 默认升级到 3.1 Plus。补齐画面方案校验、剪辑节奏与素材复用检查、字幕和尾帧检查，支持保留已认可的原音轨；
-- **多平台发布更稳**：优化抖音双封面、草稿续编与发布结果核对，小红书话题校验、转码状态与提交结果追踪；发布结果未知时先核查，防止重复提交；
-- **获客与客服完善**：小红书私信增加已读状态校验与自动回复去重；Awada Channel 增强语音转写、网盘文件发送与客户资料联动，过滤框架故障和模型回退提示，减少对客户的干扰；
-- **安装升级体验优化**：完善 AtomGit 国内线路、GitHub 下载代理、资源断点续传与失败重试，补齐 Windows 安装和日志排障指引；幻灯片、卡片、PPT 等工具共用一套 Playwright/Chromium 渲染环境，统一预装依赖。
+- **OpenClaw 基座升级至 2026.10.10**，同步更新插件接入、配置与安装升级流程；
+- **xiaobei浏览器插件**：基于 Camoufox 构建独立的 `xiaobei-browser` 插件，接入 OpenClaw 原生插件体系，统一管理浏览器身份与持久会话；扫码、验证码等待期间保留窗口，大幅提升登录与自动化操作体验；
+- **expert-bd 能力完善与增强**：支持douyin/xhs/youtube/tiktok/x 五平台互动，并支持天眼查扩展；
+- **更聪明的 IT Engineer**：优化预置记忆与工作指南，将日常使用中的运维经验沉淀为技能，完善日志巡检、定时任务、插件与会话维护，让系统排障和日常运维更省心；
+- **优化与升级**：douyin、xhs接口；
+- **新增平台支持**：tiktok、youtube，出海业务xiaobei也能够助一臂之力了；
+- **安全性升级**：28个依赖升级，解决安全报警；
+- **安装／升级体验优化**：完善 AtomGit 国内线路、GitHub 下载代理、资源断点续传与失败重试，补齐 Windows 安装和日志排障指引，统一预装 Python／Playwright/Chromium，简化提示注入。
 
-> **升级提示**：5.8.0 相对于 5.7.x、5.6.x 均为**破坏性升级**。建议老用户先将个性化配置和记忆数据备份到 `~/.openclaw` 目录之外，再删除本机的 `~/.openclaw` 目录并全新安装；也可在完成备份后，为安装脚本添加 `--force` 参数，强制覆盖原有配置（Windows PowerShell 安装请先设置 `$env:XIAOBEI_FORCE="1"`）。
+> **升级提示**：5.8.x 相对于 5.7.x、5.6.x 均为**破坏性升级**。建议老用户先将个性化配置和记忆数据备份到 `~/.openclaw` 目录之外，再删除本机的 `~/.openclaw` 目录并全新安装；也可在完成备份后，为安装脚本添加 `--force` 参数，强制覆盖原有配置（Windows PowerShell 安装请先设置 `$env:XIAOBEI_FORCE="1"`）。
 
 **成品展示见小贝的微信视频号和小红书号**：[查看作品](https://openclaw-for-business.com/media)
 
@@ -91,7 +89,7 @@ irm https://raw.atomgit.com/wiseflow/xiaobei/raw/master/scripts/install-atomgit.
 
 > `XIAOBEI_GITHUB_PROXY` 可设为其他 HTTPS URL 前缀；不设置时 GitHub 下载保持直连。它覆盖浏览器、指纹模型、Matrix 原生库及安装期间的 GitHub Git 拉取；代理模式还为未自定义的 npm/pnpm、Node headers 和 Playwright 下载配置国内镜像。正式 tarball 已内置 uBlock 和 GeoIP，安装时无需从 Mozilla 或 GeoIP 上游下载；源码或旧包的回退下载、系统包管理器及非 GitHub 的可选依赖仍按各自来源访问。完整范围与覆盖配置见 [安装脚本说明](scripts/README.md#github-下载代理)。升级时也需要设置该变量，并使用包含此功能的新安装包。
 
-> install 脚本默认拉最新 release tag + 下载 tarball。指定版本：`export XIAOBEI_TAG=v5.6.3`（PowerShell：`$env:XIAOBEI_TAG="v5.6.3"`）。
+> install 脚本默认拉最新 release tag + 下载 tarball。指定版本：`export XIAOBEI_TAG=v5.8.1`（PowerShell：`$env:XIAOBEI_TAG="v5.8.1"`）。
 
 > 💡 **下载中断 / 安装失败？** 主程序 tarball 有版本缓存；浏览器资源会自动尝试最多 5 次，中断后优先续传，连续 2 分钟没有新数据才超时。当前 Camoufox 156.0.1-beta.36 Linux x64 压缩包约 1.29 GB。五次都失败后临时文件会清理；可将预下载的 Camoufox、uBlock 或 GeoIP 文件保留原名放进 `~/.xiaobei/cache/`，直接重跑安装脚本，校验通过后使用。见[资源下载缓存](scripts/README.md#浏览器资源下载缓存)。
 
@@ -105,7 +103,7 @@ irm https://raw.atomgit.com/wiseflow/xiaobei/raw/master/scripts/install-atomgit.
 
 > **目录职责**：`~/xiaobei/` = 程序（引擎 + 模板 + 脚本 + 工具 + wrapper）；`~/.openclaw/` = 运行数据（openclaw.json + daemon.env + workspaces + logs）。两者分开，升级只换 `~/xiaobei/`，用户数据不动。可用 `XIAOBEI_HOME` / `OPENCLAW_HOME` env 覆盖。
 
-> **系统要求**：推荐 Ubuntu 22.04；支持 WSL2 / macOS（arm64 + x64）；Windows 10 1803+（x64，需 Git Bash 或 WSL）。WSL2 下脚本自动注入 GUI 显示变量。
+> **系统要求**：推荐 Ubuntu 24.04；支持 WSL2 / macOS（arm64 + x64）；Windows 10 1803+（x64，需 Git Bash 或 WSL）。WSL2 下脚本自动注入 GUI 显示变量。
 
 > 🖥️ **部署机器建议**：推荐用一台 **7×24 小时常开**的电脑部署，上面**不要放置个人隐私 / 机密文件**。若你希望在日常办公电脑上安装、且只在用时启动,可以使用docker部署。
 
@@ -277,7 +275,7 @@ Crew 遇到自己不能解决的问题：
 
 ## 🦊 全新的浏览器栈
 
-5.8.0 版本中我们基于[camoufox](https://github.com/daijro/camoufox) 构建了原生的小贝浏览器（`xiaobei-browser`），以独立插件形式接入 OpenClaw。
+5.8.x 版本中我们基于[camoufox](https://github.com/daijro/camoufox) 构建了原生的小贝浏览器（`xiaobei-browser`），以独立插件形式接入 OpenClaw。
 
 - **融入官方插件生态**：遵循 OpenClaw 官方插件管理体系，支持配置、启停与热重载，浏览器接入无需修改引擎源码。
 - **强化反侦测能力**：相较openclaw自带的 Chrome/Chromium 自动化方案，提供内核级指纹保护与持久身份管理，更适合自媒体站点的自动化操作。
