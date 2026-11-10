@@ -53,6 +53,11 @@ jobs:
             skills/**/requirements.txt
             crews/**/requirements.txt
 
+      - name: Install managed Python runtime
+        # setup-python provides the runner toolchain and pip cache, not tools/python.
+        # Initialize the same pinned venv as the installer before crew setup.
+        run: node scripts/python-runtime.mjs install --root "$GITHUB_WORKSPACE"
+
       - name: Read pinned openclaw version
         id: pin
         run: |
