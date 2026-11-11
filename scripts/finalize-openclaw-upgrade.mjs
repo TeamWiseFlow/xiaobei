@@ -6,6 +6,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { inspectLegacyAccounts } from "./lib/automation-inference-check.mjs";
+import { restoreOpenClawPluginRuntime } from "./lib/openclaw-plugin-runtime.mjs";
 
 export function finalizeOpenClawUpgrade({ root, config, skipCrew = false, stopGateway = false }, run = spawnSync) {
   root = path.resolve(root);
@@ -27,6 +28,8 @@ export function finalizeOpenClawUpgrade({ root, config, skipCrew = false, stopGa
   // Native stop is idempotent when no service is loaded. Let the service owner
   // release the old state worker before the new Doctor performs maintenance.
   if (stopGateway) step(process.execPath, [path.join(dist, "index.js"), "daemon", "stop", "--force"]);
+  const restoredPlugins = restoreOpenClawPluginRuntime(root);
+  if (restoredPlugins.length) console.log(`Restored compiled plugin dependency links: ${restoredPlugins.join(", ")}`);
   step(process.execPath, [path.join(root, "scripts/migrate-openclaw-config.mjs"), "--config", config, "--write"]);
   step(process.execPath, [path.join(root, "scripts/configure-browser-plugin.mjs"), "--root", root, "--config", config, "--write"]);
   step(process.execPath, [path.join(dist, "index.js"), "doctor", "--fix", "--non-interactive", "--no-workspace-suggestions"], { OPENCLAW_UPDATE_IN_PROGRESS: "1" });

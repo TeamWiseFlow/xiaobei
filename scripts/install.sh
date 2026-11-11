@@ -20,7 +20,7 @@
 #   8. 放置 config-templates/openclaw.json → ~/.openclaw/openclaw.json（运行数据目录 OPENCLAW_HOME）+ 预填微信 channel binding
 #   9. setup-crew.sh（裸跑，无 --force；--force 只用户手动修复用；crew 模板来自 WISEFLOW_ROOT/crews，workspace 落 OPENCLAW_HOME）
 #   10. camoufox-cli：npm install -g 本地 fork（ship 的 portable node）+ camoufox-cli install 下 Firefox
-#   11. openclaw-weixin 插件：openclaw plugins install @tencent-weixin/openclaw-weixin@<pin> --pin（npmmirror）
+#   11. openclaw-weixin 插件：openclaw plugins install @tencent-weixin/openclaw-weixin@<pin> --pin（默认 npmmirror，可配置 NPM_REGISTRY）
 #       幂等按**版本**判定：已装版本 == pin 才跳过，不等则 --force 升级到 pin
 #   12. 交互问 AWK_API_KEY → 写 gateway env（Linux daemon.env / Darwin service-env/ai.openclaw.gateway.env，均落 OPENCLAW_HOME）
 #       → openclaw daemon install + restart（不走 onboard，小白友好）
@@ -529,11 +529,17 @@ download_and_extract_tarball() {
     [[ -f "$WISEFLOW_ROOT/openclaw/openclaw.mjs" ]] || { ui_error "openclaw.mjs 缺失"; exit 1; }
 }
 
+# 显式 npm 源配置优先；默认沿用国内安装源。
+npm_registry() {
+    printf '%s\n' "${NPM_REGISTRY:-${npm_config_registry:-${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}}}"
+}
+
 # 用户侧装依赖：pnpm install --prod --frozen-lockfile（只拉依赖不编译，无 OOM）
 pnpm_install_prod() {
     local openclaw_dir="$WISEFLOW_ROOT/openclaw"
     local node="$WISEFLOW_ROOT/$PORTABLE_NODE"
     local pnpm="$WISEFLOW_ROOT/$PORTABLE_PNPM"
+    local registry; registry="$(npm_registry)"
     local node_bin_dir; node_bin_dir="$(dirname "$node")"
     ui_info "pnpm install --prod --frozen-lockfile（拉依赖 + native prebuilt，~30s-2min）"
     # 把 portable node bin 前置到 PATH：esbuild/protobufjs/tlon-skill 等 postinstall
@@ -543,7 +549,7 @@ pnpm_install_prod() {
     run_required_step "pnpm install --prod" \
         env PATH="$node_bin_dir:$PATH" NODE_OPTIONS="--max-old-space-size=4096" PNPM_CONFIG_FETCH_RETRIES=5 \
         "$node" "$pnpm" -C "$openclaw_dir" install --prod --frozen-lockfile \
-        --registry=https://registry.npmmirror.com --fetch-timeout=600000 --network-concurrency=8
+        --registry="$registry" --fetch-timeout=600000 --network-concurrency=8
     ui_success "Dependencies installed"
 }
 
@@ -558,7 +564,7 @@ install_deck_render() {
     local args=()
     [[ "$SKIP_BROWSER" == "true" ]] && args+=(--skip-browser)
     run_required_step "Installing deck-render runtime" \
-        env PATH="$node_bin_dir:$PATH" \
+        env PATH="$node_bin_dir:$PATH" NPM_CONFIG_REGISTRY="$(npm_registry)" \
         bash "$WISEFLOW_ROOT/scripts/install-deck-render.sh" "${args[@]}"
 }
 
@@ -795,7 +801,7 @@ for p in d.get('plugins', []):
 }
 
 # 装 openclaw-weixin 插件（config template 已预置 channel，但插件本体要 openclaw plugins install）
-# 读 tarball 内 openclaw-weixin.version.json 的 pin，走国内 npmmirror。
+# 读 tarball 内 openclaw-weixin.version.json 的 pin，使用安装器配置的 npm registry。
 # 幂等：**已装版本 == pin 版本**才跳过；已装版本 ≠ pin 则 `--force` 升级到 pin。
 # （旧逻辑只 grep 插件名就 return，导致 bump pin 后已装实例永远停在旧版；
 #   `plugins install --force` = "Overwrite an existing installed plugin"，7.1-2 起就有该 flag。
@@ -804,6 +810,7 @@ for p in d.get('plugins', []):
 install_weixin_plugin() {
     local claw_cmd="$WISEFLOW_ROOT/bin/openclaw"
     local pin_file="$WISEFLOW_ROOT/openclaw-weixin.version.json"
+    local registry; registry="$(npm_registry)"
     [[ -f "$claw_cmd" ]] || { ui_warn "openclaw wrapper 不在 ${claw_cmd}；跳过 weixin 插件"; return 0; }
     local pkg ver
     if [[ -f "$pin_file" ]]; then
@@ -827,11 +834,11 @@ install_weixin_plugin() {
         ui_warn "openclaw-weixin 已装但版本读不到；按 pin ${ver} 强制重装"
         force_flag="--force"
     fi
-    ui_info "Installing openclaw-weixin plugin (${pkg}@${ver}) via npmmirror"
-    if npm_config_registry=https://registry.npmmirror.com "$claw_cmd" plugins install "${pkg}@${ver}" --pin --accept-capabilities $force_flag 2>/dev/null; then
+    ui_info "Installing openclaw-weixin plugin (${pkg}@${ver}) via $registry"
+    if npm_config_registry="$registry" "$claw_cmd" plugins install "${pkg}@${ver}" --pin --accept-capabilities $force_flag 2>/dev/null; then
         ui_success "openclaw-weixin plugin installed (${ver})"
     else
-        ui_warn "openclaw-weixin 插件安装失败；可后续手动：npm_config_registry=https://registry.npmmirror.com $claw_cmd plugins install ${pkg}@${ver} --pin --accept-capabilities $force_flag"
+        ui_warn "openclaw-weixin 插件安装失败；可后续手动：npm_config_registry=$registry $claw_cmd plugins install ${pkg}@${ver} --pin --accept-capabilities $force_flag"
     fi
 }
 
@@ -845,19 +852,20 @@ install_awada_plugin() {
     local node_bin_dir; node_bin_dir="$(dirname "$node")"
     local npm_cli="$WISEFLOW_ROOT/tools/node/lib/node_modules/npm/bin/npm-cli.js"
     local awada_dir="$WISEFLOW_ROOT/awada"
+    local registry; registry="$(npm_registry)"
     [[ -d "$awada_dir" ]] || { ui_warn "awada 不在 tarball 内：${awada_dir}；跳过"; return 0; }
     if [ -d "$awada_dir/node_modules/silk-wasm" ] && [ -d "$awada_dir/node_modules/typebox" ] && [ -d "$awada_dir/node_modules/ws" ] && [ -d "$awada_dir/node_modules/zod" ]; then
         ui_success "awada deps already installed"
         return 0
     fi
-    ui_info "Installing awada plugin deps (silk-wasm + typebox + ws + zod) via npmmirror"
+    ui_info "Installing awada plugin deps (silk-wasm + typebox + ws + zod) via $registry"
     # npm 的 shebang 和依赖生命周期脚本都需要 node；显式使用自带运行时。
-    if env PATH="$node_bin_dir:$PATH" "$node" "$npm_cli" --prefix "$awada_dir" install --omit=dev --registry=https://registry.npmmirror.com; then
+    if env PATH="$node_bin_dir:$PATH" "$node" "$npm_cli" --prefix "$awada_dir" install --omit=dev --registry="$registry"; then
         ui_success "awada deps installed"
     else
         local retry_command
-        printf -v retry_command 'env PATH=%q:"$PATH" %q %q --prefix %q install --omit=dev --registry=https://registry.npmmirror.com' \
-            "$node_bin_dir" "$node" "$npm_cli" "$awada_dir"
+        printf -v retry_command 'env PATH=%q:"$PATH" %q %q --prefix %q install --omit=dev --registry=%q' \
+            "$node_bin_dir" "$node" "$npm_cli" "$awada_dir" "$registry"
         ui_warn "awada deps install 失败；可后续手动：${retry_command}"
     fi
 }
