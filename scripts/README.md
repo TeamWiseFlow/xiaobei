@@ -15,6 +15,12 @@
 
 ---
 
+## 构建 tarball 与维护重建
+
+正常发版从发布 tag 取源码。若修复已合入上游、需要重建现有版本，在 GitHub 的 **Build Dist Tarball → Run workflow** 中选择 `master`，`tag` 填目标版本（例如 `v5.8.1`），`source_ref` 填 `master` 或修复后的 commit。留空 `source_ref` 时仍从发布 tag 构建。
+
+维护重建要求所选源码的 `version` 与目标 `tag` 完全一致；它不会修改版本号或移动 tag。tarball 根目录的 `xiaobei.commit` 记录实际源码提交。要使用新 workflow 和已合并的修复，请从 workflow 页面新建任务；旧任务的 Re-run 仍沿用原执行版本。
+
 ## install.sh / install-atomgit.sh / install.ps1 / install-atomgit.ps1
 
 **一键首装 / 升级**（预构建 tarball 路线）。新用户首装和老用户升级都跑这一个脚本，重跑即升级、保留运行数据。

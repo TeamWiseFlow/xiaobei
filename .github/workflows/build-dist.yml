@@ -14,6 +14,11 @@ on:
         description: 'Release tag to build + attach (e.g. v5.6.0)；由 release.yml 推 tag 后触发'
         required: true
         type: string
+      source_ref:
+        description: 'Optional maintenance rebuild source (e.g. master or commit); empty uses the release tag'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: write
@@ -36,7 +41,19 @@ jobs:
         uses: actions/checkout@v5
         with:
           # A dispatch may run after master has advanced beyond this release.
-          ref: ${{ inputs.tag || github.ref }}
+          # Maintenance rebuilds may explicitly select merged fixes for the same version.
+          ref: ${{ inputs.source_ref || inputs.tag || github.ref }}
+
+      - name: Verify maintenance rebuild version
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref != '' }}
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          SOURCE_VERSION="$(tr -d '[:space:]' < version)"
+          if [ "$SOURCE_VERSION" != "$RELEASE_TAG" ]; then
+            echo "::error::Maintenance source version $SOURCE_VERSION does not match release tag $RELEASE_TAG"
+            exit 1
+          fi
 
       - name: Read pinned openclaw version
         id: pin
@@ -102,6 +119,7 @@ jobs:
           STAGE="$RUNNER_TEMP/engine"
           rm -rf "$STAGE"
           mkdir -p "$STAGE/bin" "$STAGE/tools"
+          git -C "$REPO" rev-parse HEAD > "$STAGE/xiaobei.commit"
 
           # 1. openclaw 引擎：dist + 源码 + lockfile + package.jsons，排除 node_modules / .git / 缓存
           #    用户侧 pnpm install --prod 按 lockfile 重建 node_modules
