@@ -1,7 +1,5 @@
-# 共用创作者登录
+# 共用抖音 API 登录
 
-发布使用 Camoufox 持久化 session `douyin`，本人作品指标由 engagement 经 HTTP 取数并临时读取同一 profile 的 cookie/UA。执行 `douyin-publish login` 打开有头创作者中心，由用户完成扫码或页面验证，然后用 `douyin-publish check` 验证。关闭进程保留 profile，下次操作自动复用。
+采集、创作者发布与本人取数共用 `douyin-login` 管理的 API 会话。先用 `douyin-publish check` 验证原账号和创作者通道；已有有效登录不重新扫码。明确未登录或用户要求重新登录时，`douyin-publish login` 生成二维码，交用户扫码后用 `douyin-login poll --timeout 120` 确认 UID。登录 MFA 按 douyin-login 手册续接。
 
-不要调用 login-manager，不导出或导入 cookie，不拿 hunter 的独立 API 会话覆盖浏览器 profile。hunter 与 expert-bd 互动的登录另走 `douyin-login`，两条会话独立。
-
-发布和取数串行执行；点击发布后结果不明先核实管理页，不能重新登录后直接重发。
+主站与创作者分别维护 token 和证书，工具自动处理，不从浏览器 profile 或其他账号拼接材料，不使用 login-manager。未知提交保留原收据，恢复原账号后只核查，不重新发布。

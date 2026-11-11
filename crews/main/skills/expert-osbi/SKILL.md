@@ -24,8 +24,9 @@ metadata:
 ## 原始资料获取
 
 - 平台搜索、账号、作品、评论、提醒和下载按平台调用：抖音 `douyin-hunter`、小红书 `xhs-hunter`、TikTok `tiktok-hunter`、快手 `kuaishou-hunter`、X `x-hunter`、微博 `weibo-hunter`、微信公众号 `wx-mp-hunter`。以各技能实际能力为准；不在本包重复实现平台请求或浏览器回退。
+- YouTube 公开视频、频道、评论、播放列表、媒体下载和直播聊天用 `youtube-hunter`，公开读取免登录；通知与个人列表按其登录说明执行。
 - 其他网页与站点搜索调用公共 `smart-search`，页面操作遵循 `browser-guide`。微信视频号目前没有搜索与内容获取方案。
-- 公开直播读取与有界监听使用 `douyin-hunter live` / `xhs-hunter live` / `tiktok-hunter live` / `kuaishou-hunter live`。事件样本不等于口播转写或完整直播历史。
+- 公开直播读取与有界监听使用 `douyin-hunter live` / `xhs-hunter live` / `tiktok-hunter live` / `kuaishou-hunter live` / `youtube-hunter live`。事件样本不等于口播转写或完整直播历史。
 - 通用 RSS/Atom 订阅解析使用本包 `rss-reader`；它只处理公开 feed，不替代 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `wx-mp-hunter`，不向其拼入平台 Cookie。
 
 ## 工具与数据

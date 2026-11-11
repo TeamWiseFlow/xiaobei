@@ -83,6 +83,9 @@ load_runtime_environment() {
       *) export PATH="$OPENCLAW_HOME/bin:$PATH" ;;
     esac
   fi
+  source "$XIAOBEI_ROOT/scripts/lib/python-runtime.sh"
+  xiaobei_use_python_runtime "$XIAOBEI_ROOT"
+  node "$XIAOBEI_ROOT/scripts/python-runtime.mjs" configure --root "$XIAOBEI_ROOT" --config "$OPENCLAW_HOME/openclaw.json"
 }
 
 # ─── 3. 首启生成 gateway token ─────────────────────────────────────
@@ -140,6 +143,14 @@ render_awk_api_key() {
     let updated = false;
     // Preserve explicit settings in existing volumes when retiring the env patch.
     const template = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    // Existing persistent volumes must follow the pinned distribution policy too.
+    if (config.update?.checkOnStart !== false || config.update?.auto?.enabled !== false) {
+      config.update ??= {};
+      config.update.checkOnStart = false;
+      config.update.auto ??= {};
+      config.update.auto.enabled = false;
+      updated = true;
+    }
     const searchEnabled = template.tools?.web?.search?.enabled;
     if (typeof searchEnabled === "boolean" && config.tools?.web?.search?.enabled === undefined) {
       config.tools ??= {};

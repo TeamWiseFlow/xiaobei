@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check dry-narration gaps, repeated source windows and a signed preview review."""
+"""Check narration gaps, scene audio review, repeated sources and a signed preview."""
 from __future__ import annotations
 
 import argparse
@@ -103,7 +103,9 @@ def audit(project, plan_path, preview, review_path, decision=None):
     findings = []
     policy = plan.get('sound_policy')
     gaps = []
+    gap_check = 'not-applicable'
     if policy == 'narration':
+        gap_check = 'dry-narration-silencedetect'
         if plan.get('voice_kind') != 'dry-narration':
             raise ValueError('必须提供最终时间轴上的旁白干声，voice_kind=dry-narration；不得用 BGM 混音测停顿')
         voice, info = source(plan['voice'])
@@ -118,8 +120,16 @@ def audit(project, plan_path, preview, review_path, decision=None):
             if end - start + .001 >= maximum:
                 findings.append({'key': f'gap:{start:.3f}:{end:.3f}', 'kind': 'narration_gap',
                                  'start': start, 'end': end, 'seconds': end-start})
+    elif policy == 'audio-scene':
+        # Qwen Audio returns one complete mix, not an isolated narration stem.
+        # BGM masks pauses; require actual listening through the existing manual gate.
+        scene, info = source(plan['scene_audio'])
+        if (not info['has_audio'] or abs(info['duration'] - duration) > .12
+                or not any(s['codec_type'] == 'audio' for s in preview_info['streams'])):
+            raise ValueError('audio-scene 须提供对齐完整成片时间轴的场景音轨，preview 须含音轨')
+        gap_check = 'manual-scene-listening'
     elif policy not in ('silent', 'music-only'):
-        raise ValueError('sound_policy 须为 narration / silent / music-only')
+        raise ValueError('sound_policy 须为 narration / audio-scene / silent / music-only')
     if policy == 'silent' and any(s['codec_type'] == 'audio' for s in preview_info['streams']):
         raise ValueError('silent 计划的 preview 含音轨，先核对声音方案')
 
@@ -197,6 +207,7 @@ def audit(project, plan_path, preview, review_path, decision=None):
         write_json(review_path, manual)
     return {'status': status, 'fingerprint': fingerprint, **binding,
             'segments': inspected, 'narration_gaps': gaps, 'findings': findings,
+            'narration_gap_check': gap_check,
             'exceptions': exceptions, 'manual_review': manual,
             'review_scope': '听完整节奏、源动作是否重复、文案/画面对应、字形/安全区；不同 action 标签不证明画面不同'}
 

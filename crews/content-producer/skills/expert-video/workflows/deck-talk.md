@@ -12,6 +12,8 @@ type 类 workflow；`Brief.workflow=deck-talk`。本文指导 Stage 1–2 的逐
 | 2 · 数字人 | avatar | 已授权肖像 + 用户/main 音频；或明确批准的合成声音。用包内 avatar 工具检测并生成口型视频 | 数字人小窗 |
 | 3 · 音频讲解 | audio（兼容 none） | 用户/main 提供音频，CP 按句边界制作 B-roll / 幻灯画面，保留原声 | 无小窗 |
 
+audio 模式需要新生成带背景/环境的人声时，优先公共 `aigc-video-gen audio`；纯人声用 `awk-tts`，纯 BGM 用 `bgm-library`。完整声音场景不标作干声，用 `narration-align --audio <实际文件名> --asr --force` 对齐；`edit-audit` 使用 `audio-scene` 与 `scene_audio`，实际试听台词与留白。
+
 声音是三种模式的共同主线。不得仅因不露脸就重做声音；不得把复刻/设计生成的声音登记为真人原录音。main/用户交付的稿件、已录好的音频均锁定，CP 不改写。
 
 | Brief 字段 | 要求 |
@@ -46,8 +48,8 @@ Stage 3–10 仍逐阶段执行 `video-producer` 同名命令，生成对应脚�
 | 9 | `delivery-promise-lock` 逐页/段锁定时长、人物模式、音频来源、素材和真实动效，落 `slots/delivery-promise.json`；Stage 13b 按该承诺核验 |
 | GATE B | slides/mixed 的幻灯段执行 scaffold + check + preview；交逐页/逐段联系表、真人小窗取帧/位置方案、素材来源、成本估算。avatar 必须先交 5–10 秒样片再批准全量；audio 模式交声音与 B-roll 取帧，不索要露脸视频 |
 | 10 | `render-shot` 建立 `render/deck-render-plan.json`，再依计划实际渲染：slides 用 deck-render；broll/mixed 用 clip-trim + assemble 合成底画面；footage 沿用 main 已剪视频，avatar 用 avatar generate / resume。计划文件不代表渲染完成 |
-| 11 | `mix-audio` 建立 `audio/deck-audio-plan.json`，核对最终唯一干声、字幕时间戳和底画面时长；需要时在本阶段完成配音/对齐，不改变锁定原声；干声不含 BGM，空计划不算完成 |
-| 12 | deck-compose 按 footage/avatar/audio 合成 → burn-srt；需要 BGM 时在小窗合成后 ducking 混入，再做后续审片；有片头尾再 assemble，使用 hard 拼接，字幕与音频随主片一起平移 |
+| 11 | `mix-audio` 建立 `audio/deck-audio-plan.json`，核对最终唯一干声、字幕时间戳和底画面时长；需要时在本阶段完成配音/对齐，不改变锁定原声；纯人声用干声；audio 模式可用 aigc-video-gen audio 的完整声音场景，须注明混合音轨并走公共 ASR，空计划不算完成 |
+| 12 | deck-compose 按 footage/avatar/audio 合成 → burn-srt；纯人声需要 BGM 时在小窗合成后 ducking 混入，已有完整声音场景不重复叠加，再做后续审片；有片头尾再 assemble，使用 hard 拼接，字幕与音频随主片一起平移 |
 | 13a | 公共 video-review，verdict=pass 才可交付 |
 | 13b | 调 `motion-audit` 按 Stage 9 承诺，对幻灯段做 HTML 动效验收、对 B-roll 段核验真实画面动作与口播对应，落 `review/deck-motion-audit.json`；不用通用 motion_led 的素材占比口径 |
 | 13c | 新混音 normalize 至 -14 LUFS；甲方明确锁定音轨时用 `normalize <最终视频> --locked-audio <原音源>` 只测量与逐包验证，不重编码。最终声音处理后重跑技术审核与 `edit-audit`，检查干声留白和源动作复用并登记审片 |

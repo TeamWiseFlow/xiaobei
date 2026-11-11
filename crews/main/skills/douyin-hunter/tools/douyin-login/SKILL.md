@@ -5,7 +5,7 @@ description: 抖音独立 API 会话初始化与重新登录、扫码和短信�
 
 # 独立 API 登录
 
-使用 `~/.openclaw/douyin-api/session.json`，权限 0600；设置 `DOUYIN_API_SESSION` 时使用指定入口。重新登录后该入口保存新会话文件的位置，全部抖音工具自动读取同一新会话，实际路径由 `status.session_file` 返回。采集、发布、私信、互动和直播共用此会话。Relay 提供设备配置、协议配置与加密运行句柄；客户端直接请求平台并保存 Cookie，不启动浏览器。
+使用 `~/.openclaw/douyin-api/session.json`，权限 0600；设置 `DOUYIN_API_SESSION` 时使用指定入口。重新登录后该入口保存新会话文件的位置，全部抖音工具自动读取同一新会话，实际路径由 `status.session_file` 返回。采集、创作者发布、本人取数、私信、互动和直播共用此 API 会话；已有有效登录不为创作者侧重复扫码。Relay 提供设备配置、协议配置与加密运行句柄；客户端直接请求平台并保存 Cookie，不启动浏览器。
 
 ## 首次扫码登录
 
@@ -22,7 +22,7 @@ douyin-login qr --output /受控目录/douyin-qr.png
 douyin-login poll --timeout 120
 ```
 
-程序处理登录重定向并查询本人资料；返回 `logged_in: true` 和已确认 UID 后，才能使用平台业务工具。再执行 `douyin-hunter check` 和 `douyin-engagement check`。
+程序处理登录重定向并查询本人资料；返回 `logged_in: true` 和已确认 UID 后，才能使用平台业务工具。再执行 `douyin-hunter check`；发布和取数使用同一 API 会话，分别验证创作者通道，不跨账号替代。
 
 `status` 中的 `cookie_present` 只表示主站作用域内存在未过期会话 Cookie；`identity_verified` 表示有效会话已通过本人身份读取并缓存 UID，`logged_in` 与此一致。只有 Cookie 而没有 UID，且没有未完成验证、runtime 未过期时，执行 `douyin-hunter check` 验证现有会话；过期二维码不代表账号已登出，不要仅因此重新初始化。
 
@@ -77,7 +77,7 @@ douyin-login restart --confirm
 
 ## 短信登录
 
-`douyin-publish` 返回 `PLATFORM_VERIFICATION_REQUIRED` 时是创作者二次验证要求，不能用下面的短信登录命令替代。保留当前账号/API 会话和未知发布任务，交研发接入绑定原挑战的专门验证流程；App 验证不保证同步至该 API 会话，不因此重新初始化或重发作品。
+`douyin-publish` 返回 `PLATFORM_VERIFICATION_REQUIRED` 时是创作者二次验证要求，不能用下面的短信登录命令替代。保留当前账号/API 会话和未知发布任务，按 `douyin-publish` 的 HTTP 验证续接说明处理；App 验证不保证同步至该 API 会话，不因此重新初始化或重发作品。
 
 普通短信登录返回 2046 时，停止重复 `sms-send` / `sms-login`，保留同一有效会话。收到 `LOGIN_MFA_REQUIRED` 后执行 `douyin-login sms-mfa-prepare`，按实际 `verification.methods` 和用户选择处理；`scene: sms_login` 只表示本次短信入口，不推断平台内部场景。旧流程若保留完整原响应，`sms-mfa-prepare` 仅重交原计算，不重新请求平台；缺失原响应时不重发短信来补材料。
 
@@ -94,4 +94,8 @@ douyin-login sms-login --code-file /受控目录/code.txt
 
 短信发送默认预览；用户已要求发送后才加 `--confirm`。手机号、验证码、二维码 token、运行句柄、ticket 和 Cookie 不写入报告或聊天。完成后删除手机号、验证码及二维码文件。会话及其计算实现、来源信息均不得放进代码仓；不要导入旧浏览器 profile 或 Cookie 导出文件。
 
-本登录工具归 douyin-hunter 包，供采集和 expert-bd 互动复用；expert-douyin 发布与本人取数使用独立 Camoufox profile，不经本工具或 login-manager。
+本登录工具归 douyin-hunter 包，供采集和 expert-bd 互动复用；expert-douyin 发布与本人取数默认复用此 API 会话，不使用 login-manager。
+
+## 会话通道刷新
+
+`douyin-login refresh` 默认只刷新安全材料。`refresh --scope web` 刷新主站页面状态与设备 token；`refresh --scope creator` 刷新独立创作者 token 与对应站点证书；`refresh --scope all` 依次刷新全部通道。保持同一 UID、UA、Cookie 与加密 runtime，不复制其他账号材料。新通道要求配套 Relay 已部署；不支持时报告错误，不修改会话伪装成功。

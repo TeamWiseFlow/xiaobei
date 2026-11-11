@@ -1,7 +1,7 @@
 #!/bin/bash
 # setup-crew.sh - 多 Agent 系统安装脚本
 # 将 crews/ 中的内置模板、共享协议、模板库部署到 ~/.openclaw/
-# 幂等设计：已存在的 workspace 不会覆盖（除非 --force）
+# 已存在的 workspace 保留用户正文（--force 可整文件覆盖），生成提示按当前版本更新。
 # 仅部署当前版本模板；旧 TOOLS.md / HEARTBEAT.md 由用户升级后手动删除。
 set -e
 
@@ -10,8 +10,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CREWS_DIR="$PROJECT_ROOT/crews"
 ADDONS_DIR="$PROJECT_ROOT/addons"
 OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
-CONFIG_PATH="$OPENCLAW_HOME/openclaw.json"
+CONFIG_PATH="${OPENCLAW_CONFIG_PATH:-$OPENCLAW_HOME/openclaw.json}"
 FORCE=false
+source "$SCRIPT_DIR/lib/python-runtime.sh"
+xiaobei_use_python_runtime "$PROJECT_ROOT"
 
 # 内置 Crew（main / it-engineer）在 §4 中强制注册进 openclaw.json agents.entries；
 # content-producer 已在 config-templates/openclaw.json agents.entries 预注册（§4 仅规范化）；
@@ -267,7 +269,7 @@ echo "📦 Setting up Agent System (crews)..."
 
 # ─── 1. 部署所有 Crew workspace（扫 crews/ 顶层，幂等） ──────────
 # D8 扁平化后不再经 crew_templates/hrbp_templates 中转，直接把 crews/<id>/ 同步到
-# ~/.openclaw/workspace-<id>/。已存在则跳过（保留用户编辑），仅做幂等 guide 注入。
+# ~/.openclaw/workspace-<id>/。已存在则保留用户编辑，仅维护 internal crew 的运行指导。
 # main / it-engineer 在 §4 中额外强制注册进 openclaw.json；content-producer 已在模板
 # agents.entries 预注册（§4 仅规范化其 skills / allowAgents）；sales-cs 等对外 crew 的
 # workspace 在此预建，运行时由 main agent 招募时注册进 openclaw.json。
@@ -282,17 +284,13 @@ for agent_dir in "$CREWS_DIR"/*/; do
 
   if [ -d "$dest" ] && [ "$FORCE" != "true" ]; then
     echo "  ⚠️  workspace-$agent_id already exists, keeping user files (use --force to overwrite)"
-    # §2.3：已部署 workspace 仍同步 crew 专属 skill（覆盖），保留 AGENTS.md / MEMORY.md 等用户正文，只追加缺失的运行指导
+    # §2.3：已部署 workspace 仍同步 crew 专属 skill（覆盖），保留用户正文；internal 的换行、exec 和 Python 区块每次重建
     # 及部署实例自定义 skill（sync_crew_skills 只覆盖仓库里同名的 skill）
     sync_crew_skills "$agent_dir" "$dest"
     # skill 声明文件（BUILTIN_SKILLS / DENIED_SKILLS）跟仓库走：陈旧条目会让 openclaw.json
     # 的 skills allowlist 指向已改名 / 已收纳的技能，crew 直接失去这批能力。
     sync_skill_declaration_files "$agent_dir" "$dest" "$PROJECT_ROOT" "$OPENCLAW_HOME"
-    # 仅做幂等注入（有标记则跳过，不覆盖用户编辑的内容）
-    inject_file_edit_guide "$dest/AGENTS.md"
-    inject_exec_guide "$dest/AGENTS.md" "$dest"
-    inject_agents_md_sections "$dest/AGENTS.md"
-    inject_media_send_guide "$dest/AGENTS.md"
+    inject_internal_workspace_guides "$dest" "$VIRTUAL_ENV"
     continue
   fi
 
@@ -301,10 +299,7 @@ for agent_dir in "$CREWS_DIR"/*/; do
   # 已把 skills/ 拷过去，这里再刷一遍保证与仓库一致并装依赖）
   sync_crew_skills "$agent_dir" "$dest"
   echo "  ✅ workspace-$agent_id installed"
-  inject_file_edit_guide "$dest/AGENTS.md"
-  inject_exec_guide "$dest/AGENTS.md" "$dest"
-  inject_agents_md_sections "$dest/AGENTS.md"
-  inject_media_send_guide "$dest/AGENTS.md"
+  inject_internal_workspace_guides "$dest" "$VIRTUAL_ENV"
 done
 
 # ─── 1.5 共享业务知识目录：统一布局、迁移与目录软链 ───────────────────
@@ -320,8 +315,6 @@ done
 MAIN_WORKSPACE="$MAIN_WS" REPO_MAIN="$CREWS_DIR/main" python3 \
   "$CREWS_DIR/main/skills/sales-cs-manager/tools/sales-cs-enablement/scripts/symlink_business_knowledge.py" \
   "${knowledge_workspaces[@]}" --backup-dir "$OPENCLAW_HOME/backups"
-# D8 扁平化 + 去 hrbp 化后 crews/shared/ 不存在、无 agent 消费 crew_templates/，
-# 对外 crew 的 channel reply rules 注入改在 §4 对 workspace 直接做（见 inject_channel_reply_rules 调用）。
 
 # ─── 4. 更新 openclaw.json（合并内置 Crew + skills 过滤） ────────
 if [ -f "$CONFIG_PATH" ]; then
@@ -652,29 +645,14 @@ if [ -f "$CONFIG_PATH" ]; then
   # ─── 4c. 应用 Command Tier → exec-approvals + tools.exec ──────
   echo "  📝 Applying command tier exec policies..."
   apply_exec_tiers "$CONFIG_PATH" "$CREWS_DIR" "$PROJECT_ROOT"
-
-  # ─── 4d. 注入渠道回复规则到已部署的对外 crew workspaces ──────
-  while IFS=$'\t' read -r a_id a_ws; do
-    [ -n "$a_id" ] || continue
-    [ -f "$a_ws/SOUL.md" ] || continue
-    [ "$(resolve_crew_type "$a_ws/SOUL.md")" = "external" ] || continue
-    inject_channel_reply_rules "$a_ws/AGENTS.md"
-    inject_agents_md_sections "$a_ws/AGENTS.md"
-    inject_file_edit_guide "$a_ws/AGENTS.md"
-    inject_exec_guide "$a_ws/AGENTS.md" "$a_ws"
-  done < <(list_agent_workspaces)
-  echo "  ✅ Channel reply rules synced to deployed external crew workspaces"
+  node "$SCRIPT_DIR/python-runtime.mjs" configure --root "$PROJECT_ROOT" --config "$CONFIG_PATH"
 
   # ─── 4e. 注入标准 AGENTS.md sections 到已部署的对内 crew workspaces ──
   while IFS=$'\t' read -r a_id a_ws; do
     [ -n "$a_id" ] || continue
-    [ -f "$a_ws/AGENTS.md" ] || continue
-    inject_agents_md_sections "$a_ws/AGENTS.md"
-    inject_media_send_guide "$a_ws/AGENTS.md"
-    inject_file_edit_guide "$a_ws/AGENTS.md"
-    inject_exec_guide "$a_ws/AGENTS.md" "$a_ws"
+    inject_internal_workspace_guides "$a_ws" "$VIRTUAL_ENV"
   done < <(list_agent_workspaces)
-  echo "  ✅ Standard AGENTS.md sections synced to all deployed workspaces"
+  echo "  ✅ Standard AGENTS.md sections synced to deployed internal workspaces"
 
   # ─── 4f. 确保所有 skill 脚本有执行权限 ──────────────────────────
   while IFS=$'\t' read -r a_id a_ws; do

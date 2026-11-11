@@ -31,7 +31,7 @@ LIVE_ORIGIN = "https://live-room.xiaohongshu.com"
 PUSH_URL = "wss://apppush-rws.xiaohongshu.com/rwp"
 BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36"
+    "(KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
 )
 
 RSA_N = int(
@@ -908,7 +908,7 @@ class XHSLiveAPI:
         )
         headers["referer"] = referer
         target = origin + api
-        headers["user-agent"] = BROWSER_UA
+        headers["user-agent"] = context.get('userAgent', BROWSER_UA)
         if origin == self.base_url:
             headers = _insert_after(headers, "xy-common-params", "platform=web", "referer")
         for key, value in dict(extra_headers or {}).items():

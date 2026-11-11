@@ -6,11 +6,12 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { configureInstallationNetwork } from "../browser/scripts/download-network.mjs";
+import { verifyBrowserInstallation } from "./lib/browser-installation.mjs";
 
 const args = process.argv.slice(2);
 if (args.includes("--help")) {
   console.log(
-    "node scripts/install-browser.mjs [--root PATH] [--build] [--skip-assets] [--global]",
+    "node scripts/install-browser.mjs [--root PATH] [--build] [--skip-assets] [--global] [--defer-config]",
   );
   process.exit(0);
 }
@@ -18,12 +19,14 @@ configureInstallationNetwork();
 let root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 let build = false,
   assets = true,
-  global = false;
+  global = false,
+  deferConfig = false;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--root" && args[i + 1]) root = resolve(args[++i]);
   else if (args[i] === "--build") build = true;
   else if (args[i] === "--skip-assets") assets = false;
   else if (args[i] === "--global") global = true;
+  else if (args[i] === "--defer-config") deferConfig = true;
   else throw new Error(`Unknown/missing installer argument: ${args[i]}`);
 }
 const browser = join(root, "browser");
@@ -87,10 +90,13 @@ for (const [name, entry] of [
 if (global)
   run([npm, "install", "--global", "--ignore-scripts", "--no-audit", "--no-fund", browser]);
 if (assets) run([join(browser, "scripts", "install-assets.mjs")]);
+const verified = await verifyBrowserInstallation(root, { assets });
 const configuration = process.env.OPENCLAW_CONFIG_PATH ?? process.env.OPENCLAW_JSON ??
   join(process.env.OPENCLAW_STATE_DIR ?? join(homedir(), ".openclaw"), "openclaw.json");
 // Source/Docker bootstraps migrate later in apply-addons, after the host is built.
-if (existsSync(configuration) && existsSync(join(root, "scripts", "configure-browser-plugin.mjs")) &&
+if (!deferConfig && existsSync(configuration) && existsSync(join(root, "scripts", "configure-browser-plugin.mjs")) &&
     existsSync(join(root, "openclaw", "dist", "index.js")))
   run([join(root, "scripts", "configure-browser-plugin.mjs"), "--root", root, "--config", configuration, "--write"]);
+console.log(`Camoufox SDK ${verified.sdk} / browser ${verified.browser} / Playwright ${verified.playwright} verified${assets ? " with pinned assets" : " (asset installation skipped)"}`);
+console.log("Compatible v2 profiles keep their original identity and login state; no profile reset or browser launch is performed by installation.");
 console.log("xiaobei-browser and the camoufox-cli compatibility entry are ready");

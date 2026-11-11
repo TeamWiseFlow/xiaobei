@@ -17,7 +17,7 @@ from urllib.parse import urljoin
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "_shared"))
 from douyin_utils.api import call
 from douyin_utils.http import DouyinRequestError, _send, _url, session, require_runtime
-from douyin_utils.login import flow, initialize, security_fields, refresh_security, prepare_mfa, mfa_fields
+from douyin_utils.login import flow, initialize, security_fields, refresh_security, prepare_mfa, mfa_fields, refresh_channel
 from douyin_utils.session import DEFAULT_SESSION, SessionError, write_private
 from douyin_utils.verification import (SMS_METHODS, login_verification_status,
                                        public_login_verification, validate_login_verification)
@@ -147,7 +147,8 @@ def main():
     s = sub.add_parser("restart", help="Start a new private login session; never send SMS automatically")
     s.add_argument("--confirm", action="store_true")
     sub.add_parser("bootstrap")
-    sub.add_parser("refresh")
+    s = sub.add_parser("refresh")
+    s.add_argument("--scope", choices=("security", "web", "creator", "all"), default="security")
     sub.add_parser("status")
     sub.add_parser("relay-check")
     sub.add_parser("challenge")
@@ -197,10 +198,14 @@ def main():
         uid = str(user.get("uid", ""))
         if not uid.isdigit():
             raise DouyinRequestError("SELF_PROFILE_MISSING")
-        refresh_security(uid)
+        if a.scope in {"security", "all"}:
+            refresh_security(uid)
+        for channel in (("web", "creator") if a.scope == "all" else (a.scope,) if a.scope in {"web", "creator"} else ()):
+            refresh_channel(channel)
         state = session()
         return {"ok": True, "security_fields_present": sorted(security_fields(state)),
-                "expires_at": state.state.get("relay_security_expires_at")}
+                "expires_at": state.state.get("relay_security_expires_at"),
+                "session_channels": state.state.get("session_channels", {})}
     if a.command == "status":
         if not DEFAULT_SESSION.exists():
             return {

@@ -317,7 +317,11 @@ class XHSPcAuth(XHSAuth):
         # Resolve the authenticated user id immediately so every business
         # API can be used without a second manual bootstrap step.
         from .api import XHS_Apis
-        XHS_Apis(auth).bootstrap()
+        try:
+            XHS_Apis(auth).bootstrap()
+        except Exception:
+            auth.close()
+            raise
         return auth
 
     @classmethod

@@ -98,7 +98,7 @@ ICP 备案与合规属于 IT Engineer 职责范围，但只有当用户或main a
 
 ## 工作区内容维护
 
-- 工作流程、派工后必须生效的约束写在 AGENTS.md；本机环境备忘写在其 Tools 节。OpenClaw 2026.10.4 不自动加载独立 TOOLS.md，不要重建它；旧版本遗留的 TOOLS.md / HEARTBEAT.md 由用户升级后手动删除，setup 不负责迁移或清理。
+- 工作流程、派工后必须生效的约束写在 AGENTS.md；本机环境备忘写在其 Tools 节。目前版本的 OpenClaw 不自动加载独立 TOOLS.md，不要重建它；旧版本遗留的 TOOLS.md / HEARTBEAT.md 由用户升级后手动删除，setup 不负责迁移或清理。
 - 子 agent 只自动加载 AGENTS.md。排障需要时按授权读取 OFB_ENV.md、对应 SKILL.md 或相关配置，不假设 SOUL.md / MEMORY.md 已注入，不批量读取其他 crew 的私人记忆。
 - SOUL.md 写角色和边界，IDENTITY.md 写身份名片，USER.md 写服务对象，MEMORY.md 写长期事实；工具操作步骤留在 SKILL.md。
 - 修改已有 workspace 时保留用户正文和本机参数，只更新指定段落。配置、渠道变更与文档修改分别核验；文档更新通常不需要重启 Gateway。
@@ -117,6 +117,8 @@ ICP 备案与合规属于 IT Engineer 职责范围，但只有当用户或main a
 开启、调整、暂停任务先读 `openclaw-maintenance` 的 [Automations 手册](skills/openclaw-maintenance/references/automations.md)。收集业务范围、目标 agent/workspace、说明路径、时间/时区、结果去向与既有 jobId；固定业务使用独立 Automation，心跳频率用 heartbeat 配置、检查清单用 monitor scratch。不重建 HEARTBEAT.md，不因文件存在/删除或默认任务列表里看不到就推断任务已启停。
 
 报告的最终回复正文就是交付物；客户跟进与调度器投递保持单一路径，不重复发送。保存后回读任务与权限，实际执行和业务回执按既有授权核验，不为验收自动触达客户。main 的内容复盘/销售跟进参考路径由运维技能维护，IT 只读参考，不调用未配置的 main 技能。
+
+---
 
 ## Tools
 

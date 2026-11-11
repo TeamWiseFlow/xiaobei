@@ -59,10 +59,10 @@ async function loadNativeApi() {
   const named = (prefix, name) => load(prefix, (value) => typeof value === "function" && value.name === name);
   return {
     owner: await named("local-state-owner-", "runWithLocalStateOwner"),
-    read: await named("exec-approvals-store-", "readExecApprovalsSnapshot"),
+    read: await named("exec-approvals-store-", "readExecApprovalsSnapshotAsync"),
     update: await named("exec-approvals-store-", "updateExecApprovals"),
-    normalize: await named("exec-approvals-migration-gate-", "normalizeExecApprovalsInternal"),
-    mergeSocket: await named("exec-approvals-migration-gate-", "mergeExecApprovalsSocketDefaults"),
+    normalize: await named("exec-approvals-config-", "normalizeExecApprovalsInternal"),
+    close: await named("openclaw-state-db-cache-", "closeOpenClawStateDatabaseAsync"),
     caps: await load("server-capabilities-", (value) => value?.EXEC_APPROVALS_SET_OWNER),
   };
 }
@@ -75,7 +75,9 @@ export async function synchronize(plans, api) {
     recoveryCommand: "openclaw approvals get --json",
     runLocal: async ({ assertCurrent }) => {
       assertCurrent();
-      return api.read();
+      const snapshot = await api.read();
+      assertCurrent();
+      return snapshot;
     },
   });
   const file = api.normalize(mergeCrewApprovals(snapshot.file, plans));
@@ -92,7 +94,7 @@ export async function synchronize(plans, api) {
       assertCurrent();
       return api.update({
         baseHash, assertCurrent,
-        update: (current) => api.mergeSocket({ normalized: file, current }),
+        update: { kind: "replace", file, preserveSocket: true },
       });
     },
   });
@@ -120,7 +122,13 @@ async function main() {
         plan.allowlist.some((entry) => typeof entry?.pattern !== "string" || !entry.pattern.trim()))) {
     throw new Error("Invalid generated crew exec policies; no policy was written.");
   }
-  console.log(JSON.stringify(await synchronize(plans, await loadNativeApi())));
+  const api = await loadNativeApi();
+  try {
+    console.log(JSON.stringify(await synchronize(plans, api)));
+  } finally {
+    // This CLI owns its worker lifetime; drain it before returning to setup.
+    await api.close();
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -436,6 +436,7 @@ def validate_for_publish(md_text: str) -> None:
 
     1. 本地图片引用必须用纯文件名（basename），不得含目录前缀或绝对路径。
     2. frontmatter author 字段 ≤ 24 字节（8 个汉字）。
+    3. 可选的图文简介 digest 必须为字符串，随 Markdown 原样传给 relay。
     """
     # 1. 图片引用：正文 ![]() + frontmatter cover/image_list
     local_refs = [src for _, _, src in _image_tokens(md_text)]
@@ -463,8 +464,25 @@ def validate_for_publish(md_text: str) -> None:
                 f"当前 {n} 字节：{author!r}。请缩短 author 字段。"
             )
 
+    node, _, _ = _frontmatter(md_text)
+    for key, value in node.value if node else []:
+        if key.value == "digest" and (
+            not isinstance(value, yaml.ScalarNode) or value.tag != "tag:yaml.org,2002:str"
+        ):
+            die('frontmatter digest（图文简介）须为字符串；数字等内容请加引号，不需要简介时省略该字段。')
+
 
 # ── 主流程 ───────────────────────────────────────────────────────────────────
+
+def draft_result(data: dict, alias: str) -> dict:
+    media_id = data.get('media_id')
+    if not isinstance(media_id, str) or not media_id.strip():
+        raise ValueError('relay 未返回草稿 media_id，不能确认已入草稿箱；先核查后台，勿盲重推')
+    return {'ok': True, 'status': 'draft_created', 'draft_created': True, 'published': False,
+            'account': alias, 'media_id': media_id,
+            **({'article_url': data['article_url']} if data.get('article_url') else {}),
+            'next_step': '在公众号后台草稿箱核对正文、图片与官网 CTA，再正式发布'}
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="推送 Markdown 到微信公众号草稿箱（经 relay）")
@@ -531,12 +549,14 @@ def main() -> None:
         die(f"发布失败: {err}")
 
     data = payload.get("data") or {}
+    result = draft_result(data, alias)
     print("✓ 草稿已推送")
     if data.get("media_id"):
         print(f"  media_id: {data['media_id']}")
     if data.get("article_url"):
         print(f"  article_url: {data['article_url']}")
     print("  下一步：在公众号后台「草稿箱」中预览并正式发布。")
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

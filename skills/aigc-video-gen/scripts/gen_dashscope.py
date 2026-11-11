@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""阿里云百炼：业务空间 Wan3.0 视频 / Fun-Music；Token Plan Wan3.0 / legacy HappyHorse / Wan2.7。
+"""阿里云百炼：业务空间 Wan3.0 视频；Token Plan Wan3.0 / legacy HappyHorse / Wan2.7。
 
 直连百炼异步任务端点：
   - POST /services/aigc/video-generation/video-synthesis  → 创建任务，返回 task_id
@@ -50,8 +50,6 @@ DS_WS_BASE_TEMPLATE = "https://{wsid}.cn-beijing.maas.aliyuncs.com/api/v1"
 DS_AGENT_PLAN_BASE = "https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1"
 DS_CREATE_PATH = "/services/aigc/video-generation/video-synthesis"
 DS_QUERY_PATH = "/tasks/{task_id}"
-DS_MUSIC_PATH = "/services/audio/music/generation"
-DS_MUSIC_MODEL = "fun-music-v1"
 
 # 业务空间使用 Wan3.0 统一模型，不按 t2v/i2v/r2v 拼接模型 ID。
 DS_WS_MODEL_CHAIN = ["wan3.0-video-prime", "wan3.0-video"]
@@ -92,96 +90,6 @@ def ds_resolve() -> tuple[str, str, str]:
     if ws_key:
         return DS_DEFAULT_BASE, ws_key, "legacy"
     die("百炼视频生成凭据未配置：需 WORKSPACE_ID+MODELSTUDIO_API_KEY/DASHSCOPE_API_KEY（业务空间）或 AWK_API_KEY（agent plan）")
-
-# ---- 百炼业务空间音乐生成 -----------------------------------------------------
-
-def ds_music_resolve() -> tuple[str, str]:
-    """音乐仅使用完整业务空间凭据，不采用视频的 Plan / legacy 端点。"""
-    wsid = os.environ.get("WORKSPACE_ID", "").strip()
-    key = (os.environ.get("MODELSTUDIO_API_KEY", "").strip()
-           or os.environ.get("DASHSCOPE_API_KEY", "").strip())
-    if not wsid or not key:
-        die("百炼音乐生成需要 WORKSPACE_ID + MODELSTUDIO_API_KEY/DASHSCOPE_API_KEY（业务空间）")
-    return DS_WS_BASE_TEMPLATE.format(wsid=wsid), key
-
-
-def ds_music_build_payload(args: argparse.Namespace) -> dict:
-    """构造 Fun-Music 非流式请求；音频参数属于 input，无时长参数。"""
-    prompt = (args.prompt or "").strip()
-    lyrics = (args.lyrics or "").strip()
-    if not prompt and not lyrics:
-        die("音乐生成至少提供 --prompt 或 --lyrics 其中之一")
-    if args.prompt is not None and not 1 <= len(prompt) <= 2000:
-        die("--prompt 必须为1–2000字符")
-    if lyrics:
-        has_chinese = any("\u3400" <= char <= "\u9fff" for char in lyrics)
-        max_chars = 350 if has_chinese else 2000
-        if not 5 <= len(lyrics) <= max_chars:
-            die(f"--lyrics 必须为5–{max_chars}字符（中文最多350，英文最多2000）")
-    elif args.lyrics is not None:
-        die("--lyrics 不能为空")
-    if args.instrumental and not prompt:
-        die("纯音乐模式需要 --prompt；--lyrics 在纯音乐模式下不生效")
-    inp = {"is_instrumental": args.instrumental, "format": args.format}
-    if prompt:
-        inp["prompt"] = prompt
-    if args.instrumental:
-        if lyrics or args.gender:
-            log("纯音乐模式忽略 --lyrics / --gender")
-    else:
-        if lyrics:
-            inp["lyrics"] = lyrics
-        if args.gender:
-            inp["gender"] = args.gender
-    return {"model": args.model, "input": inp}
-
-
-def cmd_music(args: argparse.Namespace) -> None:
-    """同步生成完整音乐 → 下载音频 → 保存实际响应与模型 metadata。"""
-    base, key = ds_music_resolve()
-    output_path = ensure_safe_output(args.output)
-    extension = output_path.suffix.lower().lstrip(".")
-    if extension not in ("mp3", "wav"):
-        die("百炼音乐 --output 必须使用 .mp3 或 .wav 后缀")
-    args.format = args.format or extension
-    if args.format != extension:
-        die("--format 必须与 --output 文件后缀一致")
-    payload = ds_music_build_payload(args)
-    log(f"platform=dashscope provider=workspace capability=music model={args.model} format={args.format}")
-    try:
-        data = post_json(base + DS_MUSIC_PATH, payload, {
-            "Authorization": f"Bearer {key}", "Content-Type": "application/json",
-            "X-DashScope-SSE": "disable",
-        }, timeout=300)
-    except HttpError as exc:
-        die(f"百炼音乐生成失败：{exc}")
-    if data.get("code") not in (None, "", 0, "0", "Success"):
-        die(f"百炼音乐生成失败：code={data.get('code')} message={data.get('message', '')}")
-    output = data.get("output") or {}
-    audio = output.get("audio") or {}
-    audio_url = audio.get("url") or ""
-    if not audio_url.startswith(("https://", "http://")):
-        die("百炼音乐响应缺少有效的 output.audio.url")
-    if output.get("finish_reason") not in (None, "stop"):
-        die(f"百炼音乐未完成：finish_reason={output.get('finish_reason')}")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    download(audio_url, output_path)
-    if not output_path.is_file() or not output_path.stat().st_size:
-        die("百炼音乐下载返回空音频")
-    meta = output_path.with_suffix(".json")
-    meta.write_text(json.dumps({
-        "platform": "dashscope", "provider_mode": "workspace", "capability": "music",
-        "model": args.model, "prompt": payload["input"].get("prompt"),
-        "lyrics": payload["input"].get("lyrics"), "is_instrumental": args.instrumental,
-        "gender": payload["input"].get("gender"), "format": args.format,
-        "audio_url": audio_url, "audio_id": audio.get("id"), "expires_at": audio.get("expires_at"),
-        "request_id": data.get("request_id"), "extra_info": output.get("extra_info") or {},
-        "duration": (data.get("usage") or {}).get("duration"),
-        "file": str(output_path), "bytes": output_path.stat().st_size,
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[done] music saved: {output_path}")
-    print(f"[done] metadata:    {meta}")
-
 
 # ---- 百炼视频生成 -------------------------------------------------------------
 
@@ -398,7 +306,7 @@ def cmd_video(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Aliyun workspace / Token Plan Wan3.0 video; workspace Fun-Music."
+        description="Aliyun workspace / Token Plan Wan3.0 video."
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -419,15 +327,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_video.add_argument("--model", default=None, help="指定模型 id（关闭候选链 fallback）")
     p_video.add_argument("--output", required=True, help="输出 MP4 路径（相对工作区，须在 output_videos/tmp/fragments/artifacts 或 <platform>/outputs/ 下）")
 
-    p_music = sub.add_parser("music", help="百炼业务空间 Fun-Music 音乐生成")
-    p_music.add_argument("--prompt", default=None, help="音乐风格/场景描述，1–2000字符；与歌词至少提供一项")
-    p_music.add_argument("--lyrics", default=None, help="歌词：中文5–350字符，英文5–2000字符；提供时优先于 prompt")
-    p_music.add_argument("--instrumental", action="store_true", help="生成纯音乐（无人声），需要 prompt")
-    p_music.add_argument("--gender", choices=["male", "female"], default=None, help="演唱性别，API 默认女声；纯音乐时忽略")
-    p_music.add_argument("--format", choices=["mp3", "wav"], default=None, help="音频格式，默认按输出文件后缀选择")
-    p_music.add_argument("--model", choices=[DS_MUSIC_MODEL], default=DS_MUSIC_MODEL, help="音乐模型，默认 fun-music-v1")
-    p_music.add_argument("--output", required=True, help="输出 MP3/WAV 路径（相对工作区，沿用视频输出目录约束）")
-
     return parser
 
 
@@ -439,16 +338,8 @@ def main() -> None:
     if not argv or argv[0].startswith("-"):
         argv = ["video"] + argv
 
-    # video 子命令可省略：如果第一个 token 不是已知子命令，默认走 video
-    known_subcommands = {"video", "music"}
-    if argv and argv[0] not in known_subcommands:
-        argv = ["video"] + argv
-
     args = parser.parse_args(argv)
-    if args.command == "music":
-        cmd_music(args)
-    else:
-        cmd_video(args)
+    cmd_video(args)
 
 
 if __name__ == "__main__":

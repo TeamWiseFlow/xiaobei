@@ -1,5 +1,7 @@
 # YouTube
 
+当前 crew 可调用 `youtube-hunter` 且任务命中其搜索、频道、播放列表、视频/评论读取能力时，优先读取其 SKILL.md。以下浏览器规则只供未配置该技能的 crew 使用，不因采集技能失败自动切换；这里的 default profile 不替代 youtube-hunter 的专属登录 profile。
+
 > 时间/类型/排序规则参考 [OpenCLI](https://github.com/jackwener/OpenCLI/blob/b06ab7780e73d3021e12e0f170086c2d55675776/clis/youtube/search.js)。固定 session/profile `default`，带 --persistent。
 
 ## 搜索

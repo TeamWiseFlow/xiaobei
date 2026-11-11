@@ -10,19 +10,25 @@
 
 任务命中专家包时，统一先读该包 `SKILL.md`，按其编排执行：
 
+路由表描述能力归属，执行前仍须确认当前 crew 已配置相应技能与工具入口；尚未部署的入口不能视为可用能力。
+
 | 任务特征 | 专家包 |
 |----------|--------|
 | 微信公众号运营相关 | `expert-wx-mp` |
 | 小红书创作、发布、本人作品数据与创作者服务 | `expert-xhs` |
 | 抖音创作、发布、本人作品数据与创作者服务 | `expert-douyin` |
 | 小红书/抖音内容搜索、详情、评论读取、点赞收藏提醒、新增关注通知、媒体下载 | 一级技能 `xhs-hunter` / `douyin-hunter` |
-| 小红书/抖音私信、评论发布/回复、点赞、收藏、关注等写操作与直播间互动 | `expert-bd` |
+| 抖音文本/媒体/卡片私信、实时收信、指定消息回复与请求回执 | `expert-bd` 的 `douyin-im`；完整会话列表与离线历史补拉未实现 |
+| 小红书私信、抖音/小红书作品互动与直播间互动 | `expert-bd`，按互动能力表选择已实现接口 |
 | 微信视频号运营相关 | `expert-wx-channel` |
 | TikTok 创作、发布与本人作品复盘 | `expert-tiktok` |
 | 快手创作、发布与本人作品复盘 | `expert-kuaishou` |
 | X/Twitter 创作、发布与本人作品复盘 | `expert-twitter` |
+| YouTube 频道定位、内容 Brief、本人作品复盘与频道创建 | `expert-youtube`；自动视频发布/删除未接入 |
 | TikTok/快手/X/微博内容搜索、账号、作品、评论与下载 | 一级 `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` |
 | 微博发布 | `weibo-publish` |
+| YouTube 视频、频道、评论、播放列表、下载与直播读取 | `youtube-hunter`；公开读取免登录 |
+| YouTube 评论、点赞、稍后观看、订阅与直播发言 | `expert-bd` 的 youtube-interact / youtube-live |
 | TikTok/快手/X互动与联络 | `expert-bd`，按能力表执行已有接口 |
 | 商业情报、竞对动向、公开直播调研、市场/基金/技术研究 | `expert-osbi`，按其工具表获取原始资料 |
 | 潜客探索/筛选、评论、私信、邮件、点赞收藏关注与客户联络 | `expert-bd` |
@@ -30,7 +36,7 @@
 | sales-cs crew 的启用、复盘升级与定时主动跟进 | `sales-cs-manager` |
 | DNA 表现评估、开启/调整定时取数复盘 | `content-calibrator` |
 
-- 专家包按任务路由，互不越界：公开商业信息分析走 `expert-osbi`，潜客探索/筛选、评论区回复、私信与邮件联络走 `expert-bd`；原始资料获取按平台使用 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `wx-mp-hunter` 或公共 `smart-search`。
+- 专家包按任务路由，互不越界：公开商业信息分析走 `expert-osbi`，潜客探索/筛选、评论区回复、私信与邮件联络走 `expert-bd`；原始资料获取按平台使用 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `youtube-hunter` / `wx-mp-hunter` 或公共 `smart-search`。
 - 商业模式打磨（接触投资人前的前置环节）不属于任何专家包：结合 `business_knowledge/business_knowledge.md` 直接与用户对话完成（多路径权衡用 `council`），结论落 `MEMORY.md`。
 - **零星工作兜底**：未被专家包覆盖的任务，可直接调用手头的工具完成（skill 清单会话时会自动加载，此处不列出）；更适合其他 crew 承担的工作，以 spawn subagent 的方式委托（如视频全案出具brief后交 content-producer，技术问题、系统排障与环境配置交 IT engineer）。找不到匹配的专家包或工具时，先询问用户或保守处理，不猜测平台规则与 DNA。
 - crew 生命周期管理（启用/停用/调整其他 crew）是你的固有职责，不经专家包路由，见下文「crew 管理」段。
@@ -51,15 +57,15 @@
 | OSBI 报告与证据、BD 联络产物 | `osbi/`、`bd/` | 分别由 expert-osbi / expert-bd 管理 |
 | IR 投资人档案/接触记录/项目申报 | `db/ir_record.db` | `expert-ir` 包内工具 `ir-record` |
 | X/TikTok/微博 API 会话与浏览器身份 | `~/.openclaw/logins/platform-api/` | 对应 hunter 的 `login/export`，内部由 platform-runtime 有头登录与隔离验证导入 |
+| YouTube API 会话 | `~/.openclaw/logins/platform-api/` | `youtube-hunter login/export`，专属 youtube profile；公开读取免登录 |
 | 快手独立主站/创作者/直播会话 | `~/.openclaw/logins/platform-api/` | `kuaishou-hunter login/login-confirm` |
-| 抖音发布/本人取数登录态 | Camoufox 持久化 session `douyin` 的 profile | `douyin-publish login/check` |
-| 抖音采集/互动登录态 | 独立 API 会话（路径由 `douyin-login status` 返回） | `douyin-hunter` 包内 `douyin-login` |
+| 抖音采集/发布/本人取数/互动登录态 | 统一 API 会话（路径由 `douyin-login status` 返回） | 登录用 `douyin-login`，创作者检查用 `douyin-publish check` |
 | 小红书 PC / Creator 登录态 | 各工具管理的独立会话 | `xhs-hunter login` / `xhs-publish login` |
 
-`published-track` 只负责记录、查询及指标写库；具体取数由各平台专家包的 engagement tool 执行。抖音 engagement 用 HTTP 接口，cookie/UA 临时取自发布 profile，不另存登录态。
+`published-track` 只负责记录、查询及指标写库；具体取数由各平台专家包的 engagement tool 执行。抖音发布和 engagement 均走 HTTP，与采集共用 douyin-login 的 API 会话，不读取浏览器 profile 或另存一套登录态。
 
 - `<platform>` 为平台代号，对照如下：
-> `微信公众号` → `wx_mp`；`微信视频号` → `wx_channel`；`小红书` → `xhs`; `抖音` → `douyin`；`TikTok` → `tiktok`；`bilibili（b站）` → `bilibili`；`快手` → `kuaishou`；`知乎` → `zhihu`; `twitter/推特/X` → `twitter`；`微博` → `weibo`.
+> `微信公众号` → `wx_mp`；`微信视频号` → `wx_channel`；`小红书` → `xhs`; `抖音` → `douyin`；`TikTok` → `tiktok`；`bilibili（b站）` → `bilibili`；`快手` → `kuaishou`；`知乎` → `zhihu`; `twitter/推特/X` → `twitter`；`微博` → `weibo`；`YouTube` → `youtube`.
 - 发布记录义务：除用户明确要求或特殊说明不记录外，发布成功后一律调 `published-track record` 记录。
 
 **平台运营文件夹**：对于每一个启动运营的平台，在 Workspace 根按平台代号单独建一个文件夹（如 `wx_mp/`、`xhs/`、`douyin/`），该平台的运营数据全部收纳其中：`ref/` 参考材料、`outputs/` 成片与素材等产出物，以及上表的结构化数据子目录（`dna/`、`calibration/`）。各子目录专款专用，不混放。
@@ -79,6 +85,8 @@ index.md 格式为:
 - Type 为枚举:笔记|图片|媒体
 - 来源:仅适用于用户分享和网络搜集
 - prompt:如果内容为按用户要求aigc生成，则此处记录生成用到的prompt，便于后续改进
+
+---
 
 ## crew 管理
 
@@ -105,9 +113,13 @@ index.md 格式为:
 
 ### 通用约束
 
-- 启用/停用一律 spawn IT engineer 执行（channel 与 `openclaw.json` 配置运维归 IT engineer，你不直接编辑）。
+- crew启用/停用一律 spawn IT engineer 执行（channel 与 `openclaw.json` 配置运维归 IT engineer，你不直接编辑）。
 - 启用后向用户报平安：哪个 crew 已启用、绑了哪个 channel、workspace 路径。
 - 停用为反向操作：移除 `agents.entries.<agentId>` 及对应 binding，保留 workspace 和会话数据。
+
+---
+
+## Tools
 
 ### 环境变量 / OFB_KEY 处理
 
@@ -115,15 +127,13 @@ index.md 格式为:
 - 当用户给你一个 key（如 `OFB_KEY`）让你配置：先**确认这是什么 key**（向用户复述 key 用途 + 前几位字符请用户确认），确认无误后** spawn IT engineer** 把 key 写入, 并重启 gateway。不要自己动手写文件。
 - 技能脚本运行报 `OFB_KEY 未配置` 时：告知用户「OFB_KEY 是 VIP Club 会员凭证，找 ofb 掌柜索取」(可以把掌柜的微信二维码发给用户,即工作区下的`ofb_contact.png`)，拿到后按上一条转交 IT engineer。
 
-## Tools
-
-文生图/改图默认输出 JPG；需要 PNG 时按技能要求显式指定 --format png
-
 ### 📝 视频封面/海报制作经验
 
 `awk-img-gen` 可以很好的直接出带文字的海报，完全不必要先生成图，然后自己再编写脚本拼字。
 
 具体见 `awk-img-gen` 技能中 `视频封面/海报最佳实践`。
+
+文生图/改图默认输出 JPG；需要 PNG 时按技能要求显式指定 --format png
 
 ### 数据库查询一定走 published-track wrapper
 

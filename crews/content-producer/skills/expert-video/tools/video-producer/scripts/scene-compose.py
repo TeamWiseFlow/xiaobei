@@ -110,7 +110,7 @@ def main() -> None:
 
         clip_dst = work_dir / f"clip-{i:02d}.mp4"
         cmd = [
-            "python3", str(SCRIPT_DIR / "clip-trim.py"),
+            sys.executable, str(SCRIPT_DIR / "clip-trim.py"),
             "--input", str(src),
             "--output", str(clip_dst),
         ]
@@ -139,7 +139,7 @@ def main() -> None:
     # 实际上 assemble 的 --source-dir 指向 clips_dir，里面是 clip-NN.mp4
     print(f"[compose] 拼接 {len(clips)} 片段")
     cmd = [
-        "python3", str(SCRIPT_DIR / "assemble.py"),
+        sys.executable, str(SCRIPT_DIR / "assemble.py"),
         str(project),
         "--source-dir", str(clips_dir.relative_to(project)),
         "--output", out_name,
@@ -165,7 +165,7 @@ def main() -> None:
         # 旁白切段：start~end 秒
         narr_clip = work_dir / "narration-clip.mp3"
         narr_cmd = [
-            "python3", str(SCRIPT_DIR / "clip-trim.py"),
+            sys.executable, str(SCRIPT_DIR / "clip-trim.py"),
             "--input", str(narr_src),
             "--output", str(narr_clip),
         ]
@@ -196,7 +196,7 @@ def main() -> None:
     if extra_tracks:
         # 把成片 + 旁白 + 对白混音，输出到临时文件再覆盖
         mixed = work_dir / "scene-mixed.mp4"
-        mix_cmd = ["python3", str(SCRIPT_DIR / "audio-mix.py")]
+        mix_cmd = [sys.executable, str(SCRIPT_DIR / "audio-mix.py")]
         mix_cmd.extend(["--track", str(out_path), "--delay", "0", "--volume", "1.0"])
         for tr in extra_tracks:
             mix_cmd.extend(["--track", tr["source"]])

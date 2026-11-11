@@ -20,7 +20,7 @@
 #   3. git fetch + reset --hard 拉取最新 wiseflow 代码
 #   4. 读取 openclaw.version，按锚定版本检出 openclaw 子目录
 #      - 若已是目标 commit，跳过耗时的 install
-#   5. apply-addons.sh（patches + skills + crew 模板，先升级 pip，再按需安装 Python 依赖；内含 setup-crew.sh）
+#   5. apply-addons.sh（patches + skills + crew 模板、自管 Python 与依赖；内含 setup-crew.sh）
 #   6. pnpm build（编译 openclaw dist）
 #   7. daemon 升级（已装只 reload + restart 不卸装，避免掐断正在跑的会话）
 #   8. 微信 channel 插件同步 + meta 回正
@@ -43,6 +43,7 @@ FORCE=false
 SKIP_SYNC=false
 SKIP_CREW=false
 SKIP_WEIXIN=false
+GATEWAY_STOPPED=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -115,6 +116,16 @@ if [ "${INSTALLED_PNPM_MAJOR:-0}" -lt "$REQUIRED_PNPM_MAJOR" ]; then
   echo "   升级：npm install -g pnpm@${REQUIRED_PNPM_MAJOR} --registry=https://registry.npmmirror.com"
   exit 1
 fi
+
+stop_gateway_for_upgrade() {
+  [ "$GATEWAY_STOPPED" != "true" ] || return 0
+  if [ -f "$OPENCLAW_DIR/dist/index.js" ] && [ -f "$OPENCLAW_CONFIG_PATH" ]; then
+    echo "⏸️  Stopping Gateway before replacing its dependencies/build..."
+    # Invoking the updater authorizes this maintenance stop, including without a TTY.
+    OPENCLAW_CONFIG_PATH="$OPENCLAW_CONFIG_PATH" node "$OPENCLAW_DIR/dist/index.js" daemon stop --force
+  fi
+  GATEWAY_STOPPED=true
+}
 
 ensure_openclaw_config() {
   if [ ! -f "$OPENCLAW_CONFIG_PATH" ]; then
@@ -199,7 +210,7 @@ install_weixin_channel() {
     # --force = "Overwrite an existing installed plugin"（7.1-2 起就有该 flag）。
     # bundled 路径本来就每次都装（不像 install.sh 有幂等跳过），缺这个 flag 时
     # 在已装过该插件的实例上会失败，进而触发下面的 exit 1，把整次 update 打断。
-    if (cd "$OPENCLAW_DIR" && pnpm openclaw plugins install "$plugin_tgz" --force); then
+    if (cd "$OPENCLAW_DIR" && pnpm openclaw plugins install "$plugin_tgz" --force --accept-capabilities); then
       echo "  ✅ bundled openclaw-weixin installed (${plugin_version})"
     else
       echo "❌ Bundled openclaw-weixin install failed"
@@ -208,7 +219,7 @@ install_weixin_channel() {
     fi
   else
     # 直接安装插件 pin；weixin-cli 自身的版本锁不会锁住它内部安装的插件版本。
-    if ! (cd "$OPENCLAW_DIR" && pnpm openclaw plugins install "${plugin_pkg}@${plugin_version}" --pin --force); then
+    if ! (cd "$OPENCLAW_DIR" && pnpm openclaw plugins install "${plugin_pkg}@${plugin_version}" --pin --force --accept-capabilities); then
       echo "❌ openclaw-weixin online install failed"
       echo "   Fix network/npm access or re-run with --skip-weixin to configure the onboarding channel later."
       exit 1
@@ -311,23 +322,25 @@ if [ "$CURRENT_COMMIT" = "$OPENCLAW_COMMIT" ]; then
 else
   echo "  Current commit: ${CURRENT_COMMIT:-"(unknown)"}"
   echo "  Checking out target commit..."
-  git -C "$OPENCLAW_DIR" reset --hard HEAD 2>/dev/null || true
   if ! git -C "$OPENCLAW_DIR" cat-file -e "${OPENCLAW_COMMIT}^{tree}" 2>/dev/null; then
-    echo "  📥 Fetching openclaw target commit..."
-    git -C "$OPENCLAW_DIR" fetch origin --tags || \
-      echo "  ⚠️  Failed to fetch openclaw tags from origin."
-  fi
-  if ! git -C "$OPENCLAW_DIR" cat-file -e "${OPENCLAW_COMMIT}^{tree}" 2>/dev/null; then
-    echo "  ⚠️  Target commit not found locally; trying shallow-clone recovery..."
-    git -C "$OPENCLAW_DIR" fetch --unshallow origin 2>/dev/null || \
-      git -C "$OPENCLAW_DIR" fetch --deepen=200 origin || \
-      echo "  ⚠️  Failed to deepen openclaw history from origin."
+    # An explicit ref overrides origin's all-branches fetch configuration.
+    # Keep existing history without fetching unrelated branches/tags or submodules.
+    echo "  📥 Fetching only openclaw pinned commit $OPENCLAW_COMMIT..."
+    if ! git -C "$OPENCLAW_DIR" fetch --no-tags --no-recurse-submodules origin "$OPENCLAW_COMMIT"; then
+      # Some mirrors reject SHA requests; keep the fallback scoped to this release.
+      echo "  ⚠️  Commit fetch failed; trying only release tag v$OPENCLAW_VERSION..."
+      git -C "$OPENCLAW_DIR" fetch --no-tags --no-recurse-submodules origin "refs/tags/v$OPENCLAW_VERSION" || \
+        echo "  ⚠️  Failed to fetch the pinned release tag from origin."
+    fi
   fi
   if ! git -C "$OPENCLAW_DIR" cat-file -e "${OPENCLAW_COMMIT}^{tree}" 2>/dev/null; then
     echo "❌ Local openclaw commit (${CURRENT_COMMIT:-unknown}) does not match required openclaw.version ($OPENCLAW_COMMIT)."
     echo "   Network update failed or target commit is not available locally; aborting install."
     exit 1
   fi
+  # Stop through the still-installed CLI before changing its source/dependencies.
+  stop_gateway_for_upgrade
+  git -C "$OPENCLAW_DIR" reset --hard HEAD 2>/dev/null || true
   if ! git -C "$OPENCLAW_DIR" checkout "$OPENCLAW_COMMIT"; then
     echo "❌ Unable to checkout required openclaw commit from openclaw.version: $OPENCLAW_COMMIT"
     exit 1
@@ -335,7 +348,7 @@ else
   echo "  ✅ openclaw checked out at $OPENCLAW_VERSION"
 
   echo "  📦 Installing dependencies..."
-  (cd "$OPENCLAW_DIR" && pnpm install)
+  (cd "$OPENCLAW_DIR" && pnpm install --frozen-lockfile)
   OPENCLAW_UPDATED=true
 fi
 echo ""
@@ -349,15 +362,20 @@ echo ""
 
 # ─── 6. 应用 addons（patches + skills + crew 模板）──────────────
 # apply-addons 不 build、不 restart（由本脚本统一处理）
+stop_gateway_for_upgrade
 echo "🔄 Applying addons..."
 ADDON_ARGS=(--no-build --no-restart)
 [ "$FORCE" = "true" ] && ADDON_ARGS+=(--force)
 [ "$SKIP_CREW" = "true" ] && ADDON_ARGS+=(--skip-crew)
 "$PROJECT_ROOT/scripts/apply-addons.sh" "${ADDON_ARGS[@]}"
+source "$PROJECT_ROOT/scripts/lib/python-runtime.sh"
+xiaobei_use_python_runtime "$PROJECT_ROOT"
 echo ""
 
-# Build/provision the shared driver and browser before renderer checks.
-node "$PROJECT_ROOT/scripts/install-browser.mjs" --root "$PROJECT_ROOT" --build --global
+# The shared installer updates locked SDK/assets, verifies the built driver and
+# preserves compatible v2 identities. Do not replace binaries or relabel profiles here.
+echo "🌐 Updating and verifying the managed Camoufox runtime..."
+node "$PROJECT_ROOT/scripts/install-browser.mjs" --root "$PROJECT_ROOT" --build --global --defer-config
 
 echo "🎞️  Ensuring deck-render runtime..."
 "$PROJECT_ROOT/scripts/install-deck-render.sh"
@@ -365,12 +383,23 @@ echo ""
 
 # ─── 7. 编译 openclaw dist ──────────────────────────────────────
 echo "🔨 Building openclaw..."
-(cd "$OPENCLAW_DIR" && pnpm build)
+# Source upgrades need runtime artifacts; declaration/package checks stay in CI.
+(cd "$OPENCLAW_DIR" && OPENCLAW_RUN_NODE_SKIP_DTS_BUILD=1 pnpm build)
 echo "  ✅ Build complete"
 
 echo "🎨 Building Control UI assets..."
 (cd "$OPENCLAW_DIR" && pnpm ui:build)
 echo "  ✅ UI build complete"
+
+# Converge the pinned channel and its native capability consent before Doctor
+# and daemon activation; an old installation may predate this host contract.
+install_weixin_channel
+
+# Finalize with the new host; pre-build apply-addons deliberately defers this.
+echo "🧭 Migrating and validating configuration with OpenClaw $OPENCLAW_VERSION..."
+FINALIZE_ARGS=(--root "$PROJECT_ROOT" --config "$OPENCLAW_CONFIG_PATH")
+[ "$SKIP_CREW" = "true" ] && FINALIZE_ARGS+=(--skip-crew)
+node "$PROJECT_ROOT/scripts/finalize-openclaw-upgrade.mjs" "${FINALIZE_ARGS[@]}"
 echo ""
 
 # ─── 8. 环境变量收集 + daemon 安装 ─────────────────────────
@@ -476,7 +505,7 @@ if [ "$(uname -s)" = "Linux" ]; then
   _wrapper_bin="$OPENCLAW_HOME/bin"
   _cur_path="$(grep -E '^PATH=' "$SYSTEMD_ENV_FILE" | tail -n1 | sed -E 's/^PATH=//' || true)"
   _prefix=""
-  for _d in "$_node_dir" "$_program_bin" "$_wrapper_bin"; do
+  for _d in "$VIRTUAL_ENV/bin" "$_node_dir" "$_program_bin" "$_wrapper_bin"; do
     [ -n "$_d" ] || continue
     case ":$_cur_path:" in *":$_d:"*) ;; *) _prefix="${_prefix:+$_prefix:}$_d" ;; esac
   done
@@ -492,6 +521,8 @@ if [ "$(uname -s)" = "Linux" ]; then
     mv "${SYSTEMD_ENV_FILE}.new" "$SYSTEMD_ENV_FILE"
     chmod 600 "$SYSTEMD_ENV_FILE"
   fi
+
+  node "$PROJECT_ROOT/scripts/python-runtime.mjs" service-env --root "$PROJECT_ROOT" --env-file "$SYSTEMD_ENV_FILE"
 
   # --- WSL2 环境：注入 GUI 显示变量 ---
   if grep -qi microsoft /proc/version 2>/dev/null; then
@@ -580,8 +611,7 @@ if [ -e "$OPENCLAW_DIR/node_modules/openclaw" ] && [ ! -L "$OPENCLAW_DIR/node_mo
   echo "  🔗 redirected node_modules/openclaw -> local build ($OPENCLAW_VERSION)"
 fi
 
-# ─── 9.5 安装微信渠道插件（需要 openclaw CLI 已就绪）────────
-install_weixin_channel
+# 微信插件已在构建后、Doctor 和服务启动前完成同步。
 
 # weixin-cli 若仍绕过 symlink 写脏 meta，强制回正为本次安装版本（保险）
 node -e '
@@ -605,6 +635,7 @@ elif [ "$(uname -s)" = "Darwin" ]; then
   if [ -f "$MACOS_GATEWAY_ENV" ]; then
     _write_missing_env "$MACOS_GATEWAY_ENV" export
     chmod 600 "$MACOS_GATEWAY_ENV"
+    node "$PROJECT_ROOT/scripts/python-runtime.mjs" service-env --root "$PROJECT_ROOT" --env-file "$MACOS_GATEWAY_ENV"
 
     # 重启 gateway 使新环境变量生效
     cd "$OPENCLAW_DIR"
@@ -615,6 +646,9 @@ elif [ "$(uname -s)" = "Darwin" ]; then
   fi
 fi
 
+echo ""
+echo "🕒 Migrating legacy automation inference accounts..."
+node "$PROJECT_ROOT/scripts/repair-automation-inference.mjs" --config "$OPENCLAW_CONFIG_PATH" --auto --apply
 echo ""
 echo "✅ Installation complete!"
 echo "   Access: http://127.0.0.1:18789"

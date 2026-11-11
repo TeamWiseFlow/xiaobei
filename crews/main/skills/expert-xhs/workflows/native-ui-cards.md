@@ -25,7 +25,7 @@
 
 ## 4. 小红书发布与记录
 
-按 `xhs-publish` 工具文档先 `xhs-publish check`；需重登时运行 `xhs-publish login`，把返回的二维码图片通过当前渠道发给用户；等用户确认后运行 `xhs-publish login-confirm`。核对生成器输出的纯正文 `body.txt`，用 `--body @/绝对路径/body.txt` 由脚本读取，把图片按顺序传给 `--images`。`note.md` 含标题，不整份传入；旧作品没有 `body.txt` 时，先把已确认的正文和话题写入该文件，不把多行文案拼进命令：
+按 `xhs-publish` 工具文档先 `xhs-publish check`；需重登时按手册以原生后台 `exec` 运行 `xhs-publish login`，从执行会话输出读取二维码图片并通过当前渠道发给用户；等待用户时保留登录执行会话，用户确认后另行运行 `xhs-publish login-confirm`。核对生成器输出的纯正文 `body.txt`，用 `--body @/绝对路径/body.txt` 由脚本读取，把图片按顺序传给 `--images`。`note.md` 含标题，不整份传入；旧作品没有 `body.txt` 时，先把已确认的正文和话题写入该文件，不把多行文案拼进命令：
 
 ```bash
 xhs-publish --mode image --title "已确认标题" --body @/绝对路径/body.txt --images /绝对路径/page-01.png /绝对路径/page-02.png /绝对路径/page-03.png

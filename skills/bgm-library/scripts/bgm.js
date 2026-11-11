@@ -7,9 +7,8 @@
  * 纯文本输出（无 chalk/ora），agent 友好，无 ANSI 转义码污染 stdout。
  */
 
-import { program } from 'commander';
-import axios from 'axios';
-import https from 'https';
+import { program, Option } from 'commander';
+import { queryApi, termsFor, rankTracks } from './search.js';
 import {
   downloadTrack,
   updateManifest,
@@ -18,14 +17,6 @@ import {
 } from './downloader.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-
-// ccMixter's SSL certificate chain is incomplete, causing "unable to verify
-// the first certificate" errors with Node.js default TLS settings.
-// We create a custom HTTPS agent that tolerates this (scoped to ccMixter only).
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
-const api = axios.create({ httpsAgent, timeout: 15000 });
-
-const API_BASE = 'https://ccmixter.org/api/query';
 
 /**
  * Predefined tag presets for common video scenarios.
@@ -69,27 +60,6 @@ const BLOCKED_LICENSES = ['noncommercial', 'noderivs', 'no-deriv', 'nc', 'nd'];
 function isCommercialSafe(licenseName) {
   const lower = licenseName.toLowerCase();
   return !BLOCKED_LICENSES.some((kw) => lower.includes(kw));
-}
-
-/**
- * Query ccMixter API.
- * @param {Object} params - Query parameters
- * @returns {Array} Track list
- */
-async function queryApi(params) {
-  const queryParams = new URLSearchParams({
-    f: 'json',
-    ...params,
-  });
-
-  const url = `${API_BASE}?${queryParams.toString()}`;
-  const response = await api.get(url);
-
-  if (!Array.isArray(response.data)) {
-    throw new Error('Unexpected API response format');
-  }
-
-  return response.data;
 }
 
 /**
@@ -157,6 +127,7 @@ program
   .option('--commercial-only', 'Only show commercially safe licenses (CC BY / CC BY-SA)', true)
   .option('--no-commercial-only', 'Include all licenses')
   .option('--sort <field>', 'Sort by: date, name, score', 'score')
+  .addOption(new Option('--match <mode>', 'Tag matching: any or all').choices(['any', 'all']).default('any'))
   .action(async (keywords, opts) => {
     try {
       let tags;
@@ -170,14 +141,14 @@ program
         tags = preset.tags;
         console.log(`Searching with preset "${opts.preset}" (${preset.name})...`);
       } else if (keywords.length > 0) {
-        tags = keywords.join(',');
+        tags = termsFor(keywords.join(' ')).join(' ');
         console.log('Searching ccMixter...');
       } else {
         console.error('✗ Provide keywords or --preset');
         process.exit(1);
       }
 
-      const params = { tags, limit: opts.limit, sort: opts.sort };
+      const params = { tags, type: opts.match, limit: opts.limit, sort: opts.sort };
       if (opts.commercialOnly) params.lic = 'open';
 
       const tracks = await queryApi(params);
@@ -186,7 +157,7 @@ program
         : tracks;
 
       if (filtered.length === 0) {
-        console.log('No tracks found matching your query.');
+        console.log('No tracks found matching your query. Try English tags, --match any, or --preset.');
         return;
       }
 
@@ -274,46 +245,31 @@ program
 
 program
   .command('pick <theme>')
-  .description('Auto-pick and download the best match for a video theme')
+  .description('Download a tag-matched candidate; audition before mixing')
   .option('-o, --output <dir>', 'Output directory', './public')
   .option('-l, --limit <n>', 'Number of candidates to evaluate', '5')
   .option('--force', 'Overwrite existing files', false)
+  .addOption(new Option('--match <mode>', 'Tag matching: any or all').choices(['any', 'all']).default('any'))
   .action(async (theme, opts) => {
     try {
-      console.log(`Finding best BGM for "${theme}"...`);
+      console.log(`Finding BGM candidates for "${theme}"...`);
 
-      const tags = theme
-        .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, '')
-        .split(/\s+/)
-        .filter(Boolean)
-        .join(',');
+      const terms = termsFor(theme);
+      const tags = terms.join(' ');
 
       const tracks = await queryApi({
         tags,
+        type: opts.match,
         lic: 'open',
         limit: opts.limit,
         sort: 'score',
       });
 
-      let safe = tracks.filter((t) => isCommercialSafe(t.license_name));
+      const safe = rankTracks(tracks.filter((t) => isCommercialSafe(t.license_name) && getBestFile(t)), terms);
 
       if (safe.length === 0) {
-        const fallbackTags = tags.split(',')[0];
-        console.log(`No exact match, trying broader search: "${fallbackTags}"...`);
-
-        const fallback = await queryApi({
-          tags: fallbackTags,
-          lic: 'open',
-          limit: opts.limit,
-          sort: 'score',
-        });
-        safe = fallback.filter((t) => isCommercialSafe(t.license_name));
-
-        if (safe.length === 0) {
-          console.error('✗ No commercially safe tracks found for this theme.');
-          process.exit(1);
-        }
+        console.error('✗ No commercially safe tracks found for this theme. Try English tags or search --preset; no unrelated fallback was downloaded.');
+        process.exit(1);
       }
 
       const picked = safe[0];

@@ -101,7 +101,7 @@ export async function main(argv = process.argv.slice(2), compatibility = false):
     else if (action === "doctor") {
       const { assetStatus } = await import("./driver/runtime.js");
       response = local({ node: process.version, platform: process.platform, runtime: await client.status(),
-        assets: assetStatus(), dependencies: { camoufox: "0.5.8", playwright: "1.62.1" },
+        assets: assetStatus(), dependencies: { camoufox: "0.5.9", playwright: "1.62.1" },
         windowsNativeVerified: false });
     } else if (action === "install") {
       // The installer is shipped JS, intentionally outside the daemon/driver.

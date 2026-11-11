@@ -59,7 +59,7 @@ ls ~/.camoufox-cli/profiles/<platform>/
 |---|---|
 | X / TikTok / 微博 | 对应 `x-hunter` / `tiktok-hunter` / `weibo-hunter` 的 `login --account <alias>`；用户确认后 `export --account <alias>` |
 | 快手 | `kuaishou-hunter login/login-confirm` 的 QR/SMS 流程，不使用浏览器 profile |
-| 抖音发布/本人取数 | `douyin-publish login`，同一持久 profile，不导出中央 Cookie |
+| 抖音发布/本人取数 | 统一 douyin-login API 会话；不依赖浏览器 profile，不因 profile 重建而重新登录 |
 | 抖音采集/互动 | `douyin-login` 的独立 API 登录流程 |
 | 小红书 PC / Creator | `xhs-hunter login` / `xhs-publish login` 各自管理的 API 会话 |
 | 其他平台 | 阅读该平台技能，使用其现有登录流程 |

@@ -53,6 +53,11 @@ class PublishPayload:
                     }
                 )
             text += desc
+        elif title:
+            start = _js_string_length(text)
+            text += " "
+            text_extra.append({"start": start, "end": start + 1,
+                               "hashtag_id": 0, "hashtag_name": "", "type": 8})
         return (text, text_extra)
 
     @staticmethod

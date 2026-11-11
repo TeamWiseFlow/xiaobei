@@ -59,6 +59,6 @@
 
 用户要求改完后发布 / 重新发布时，走 `content-production.md` 的初稿后流程（Step 7-10）：
 
-1. **Frontmatter**：按 `wx-mp-publisher` 规范更新 `article.md` 的 frontmatter（至少核对 `title`、`cover` / `image_list`、`author`、`source_url` 与改后内容同步）；frontmatter 在 workflow 中直接写入，`wx-mp-publisher` 只校验。
+1. **Frontmatter**：按 `wx-mp-publisher` 规范更新 `article.md` 的 frontmatter（至少核对 `title`、`digest`、`cover` / `image_list`、`author`、`source_url` 与改后内容同步）；普通图文已写 `digest` 时，核对简介仍准确反映改后内容。frontmatter 在 workflow 中直接写入，`wx-mp-publisher` 只校验。
 2. **存文件**：文章与图片归位 `wx_mp/outputs/<article-name>/`，图片与 `article.md` 同目录、纯文件名引用。
 3. **发布 + 记录**：调 `wx-mp-publisher` 发布（排版由用户指定或 Agent 按内容自主选择；自定义主题传登记的 `theme-id`），再按 `content-production.md` Step 9 的公众号特例入库——`media_id` 占位先调 `published-track record`，用户正式发布后提供正式 URL 时重跑升级记录。

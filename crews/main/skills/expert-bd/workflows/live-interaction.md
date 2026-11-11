@@ -1,6 +1,6 @@
 # Live Interaction（直播间互动）
 
-适用：用户要求在指定抖音/小红书公开直播间参与讨论、提问、答疑或拓展合作。目标可以是他人的直播间，也可以是自己的直播间；主要使用观众侧互动能力。竞争对手调研交 `expert-osbi` 的 Live Research workflow。
+适用：用户要求在指定抖音、小红书、TikTok 或 YouTube 公开直播间参与讨论、提问、答疑或拓展合作。目标可以是他人的直播间，也可以是自己的直播间；按当前 crew 已配置工具使用观众侧互动能力。竞争对手调研交 `expert-osbi` 的 Live Research workflow。
 
 ## 1. 明确目标与授权
 
@@ -10,7 +10,7 @@
 
 ## 2. 观察房间语境
 
-读取 `references/interaction-capabilities.md` 与对应 live 工具说明，按其要求检查登录态、核对房间状态与真实目标信息。内容和账号资料使用 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter`；房间资料与事件监听使用 `douyin-hunter live` / `xhs-hunter live` / `tiktok-hunter live` / `kuaishou-hunter live`；发送与点赞使用本包 live 工具，不混用创作者 profile 登录态。
+读取[互动能力表](../references/interaction-capabilities.md)与对应 live 工具说明，按其要求检查登录态、核对房间状态与真实目标信息。内容和账号资料使用 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `youtube-hunter`；房间资料与事件监听使用 `douyin-hunter live` / `xhs-hunter live` / `tiktok-hunter live` / `kuaishou-hunter live` / `youtube-hunter live`；发送与点赞使用本包 live 工具，不混用创作者登录态。
 
 在约定窗口内观察实际评论、话题与房间返回的信息，选择与讨论相关的提问或回复；无依据的价格、库存、优惠和产品事实先核实。直播有访问或发言限制时停止对应动作并报告，不自动换账号或不断重试。
 
@@ -18,6 +18,8 @@
 
 - **抖音**：使用 `douyin-live chat` 发弹幕；明确授权点赞时使用 `douyin-live like`。目标参数、文本长度与点赞次数遵循工具说明，先预览，实际执行加 `--confirm`。
 - **小红书**：使用 `xhs-live send` 发直播文字评论，带实际目标 room_id 和主播 host_id；先预览，实际执行加 `--confirm`。直播点赞尚未实现，不调用笔记互动或赠礼接口代替。
+- **TikTok**：使用 `tiktok-live send/like` 发文字或点赞；按 `tiktok-hunter` 说明准备同次 ticket-guard 材料，目标与次数遵守工具 schema，已有动作授权时加 `--confirm`。
+- **YouTube**：使用 `youtube-live send` 发文字，目标为真实直播视频 ID 或链接；账号须有频道，遵守平台慢速模式和会员限制，已有授权时加 `--confirm`。不提供直播点赞、Super Chat 或其他支付。
 - 每个动作依据本次讨论与授权执行。监听本身不触发自动回复、刷屏或自动私信；仅在用户明确要求自有房间答疑时，按授权的事实与答复范围协助回复。
 - 不执行赠礼、充值或其他支付操作。提交成功只记“已提交”；实际出现或送达需另有房间证据。超时、异常或结果不明时先核对，不能自动重发或换通道补发。
 
@@ -29,4 +31,4 @@
 
 向用户交付实际参与情况、对方回应、合作机会与待跟进事项，区分已提交、已核实和未知结果。不要将预览、无事件输出或尚未真实账号验收的接口当作成功互动。
 
-TikTok 互动通过 tiktok-interact/tiktok-im/tiktok-live，写操作需要同次 ticket-guard 材料。X 评论、回复、点赞、转发、收藏与关注使用 twitter-interact；twitter-im 只查询首页会话及加密占位历史。所有写操作先预览，已有授权时 --confirm；快手只支持直播观察，没有评论、点赞、关注、私信或直播发言接口。
+快手仅能通过 `kuaishou-hunter live` 观察，不支持直播写操作；X、微博没有已接入的直播接口。普通评论、私信或邮件联络按 [Interaction](interaction.md) 选择工具，不借直播权限扩大联络范围。

@@ -2,9 +2,9 @@
 """Stage 11 — narration-align：旁白时间戳对齐。
 
 Usage:
-  python3 scripts/narration-align.py <project_dir>
+  video-producer narration-align <project_dir>
 
-入：project_dir/audio/narration.mp3（Stage 11 场景 B 一次性 TTS 生成的整段旁白）
+入：project_dir/audio/narration.mp3（整段纯旁白或带人声的声音场景；其他文件用 --audio）
     + project_dir/audio/narration.subtitle.json（awk-tts --enable-subtitle 落盘的 TTS 原生字级时间戳，优先复用）
 出：project_dir/audio/narration-segments.json
     {
@@ -14,6 +14,7 @@ Usage:
     }
 
 路径优先级：
+  0. --asr 显式转写：声音场景不复用同名旧 TTS 时间戳
   1. TTS 原生字级时间戳（narration.subtitle.json 存在时直接复用，零额外调用）
   2. 公共 ASR 路由回退（narration.subtitle.json 缺失时，base64 直传 narration.mp3，
      拿 utterance/word 级真实时间戳）
@@ -111,7 +112,7 @@ def fallback_asr(narration: Path, out_path: Path) -> None:
     统一走公共 skills/_shared/asr.py，与 talking-head-cut / viral-chaser / awk-tts 共一份逻辑。
     原先本函数只拿 utterance 级，现统一拿 word 级（更精细对齐）。
     """
-    print(f"[info] {narration.stem}.subtitle.json 缺失，调公共 ASR 路由转写 {narration.name} ...")
+    print(f"[info] 调公共 ASR 路由转写 {narration.name} ...")
     result = asr(str(narration))
     if not result.get("ok"):
         die(f"ASR 失败: {result.get('error', '未知错误')}")
@@ -165,6 +166,8 @@ def main() -> None:
         action="store_true",
         help="覆盖已存在的输出文件（默认跳过已存在的）",
     )
+    parser.add_argument("--asr", action="store_true",
+                        help="显式用公共 ASR 转写，不复用 TTS 时间戳；声音场景音轨使用此项")
     args = parser.parse_args()
 
     project = Path(args.project_dir).resolve()
@@ -185,7 +188,7 @@ def main() -> None:
         return
 
     # 优先路径：TTS 原生字级时间戳
-    if try_tts_native(narration, args.subtitle, out_path):
+    if not args.asr and try_tts_native(narration, args.subtitle, out_path):
         print(f"[done] {out_path.name} 已落（TTS 原生字级时间戳）：{out_path}")
     else:
         # 回退路径：公共 ASR 路由（火山 → 百炼）

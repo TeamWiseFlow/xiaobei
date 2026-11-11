@@ -2,7 +2,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "catbus-cli": "file:.runtime/catbus-cli.tgz",
+    "xiaobei-platform-backend": "file:.runtime/platform-backend.tgz",
     "wreq-js": "3.2.0"
   },
   "xiaobei": {

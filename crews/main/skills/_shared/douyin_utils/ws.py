@@ -11,6 +11,16 @@ from .proto import Live_pb2, Response_pb2
 from .pk import PKMessageHandler, PK_MESSAGES
 from .http import DouyinRequestError, _merge_query, prepare, session
 
+
+def live_continuation(room_id, user_unique_id):
+    from .api import call
+    data = call("live_fetch", {"room_id": str(room_id), "user_unique_id": str(user_unique_id)})
+    value = data.get("data")
+    internal_ext = value.get("internalExt", value.get("internal_ext")) if isinstance(value, dict) else None
+    if not isinstance(internal_ext, str):
+        raise DouyinRequestError("LIVE_CONTINUATION_MISSING")
+    return str(value.get("cursor", "")), internal_ext
+
 MAX_FRAME = 4 * 1024 * 1024
 
 
@@ -41,7 +51,8 @@ def live_decode(data, pk_handler):
                 if event:
                     events.append(event)
                 continue
-            cls = getattr(Live_pb2, canonical, None)
+            from .proto import live_events_pb2
+            cls = getattr(live_events_pb2, canonical, None) or getattr(Live_pb2, canonical, None)
             if cls is None:
                 events.append(
                     {
@@ -82,6 +93,8 @@ def im_decode(data):
                 "type": "im_message",
                 "sender": str(msg.sender),
                 "conversation_id": msg.conversation_id,
+                "conversation_short_id": str(msg.conversation_short_id),
+                "server_message_id": str(msg.server_message_id),
                 "index": str(msg.index_in_conversation),
                 "message_type": msg.message_type,
                 "content": content,
@@ -102,6 +115,7 @@ def listen(
     max_events=100,
     output=None,
     reconnect=2,
+    expected_uid=None,
 ):
     if (
         not 1 <= duration <= 3600
@@ -110,6 +124,18 @@ def listen(
     ):
         raise ValueError("INVALID_LISTENER_LIMIT")
     from websocket import create_connection, WebSocketTimeoutException
+    owner = fingerprint = None
+    if profile == "im":
+        from .im_client import binding, cookie_values, numeric
+        initial = session()
+        owner = str(numeric(initial.state.get("uid", "")))
+        if expected_uid is not None and owner != str(expected_uid):
+            raise DouyinRequestError("API_ACCOUNT_MISMATCH")
+        fingerprint = binding(initial)
+
+    def check_owner():
+        if profile == "im" and binding() != fingerprint:
+            raise DouyinRequestError("API_ACCOUNT_MISMATCH")
 
     deadline = time.monotonic() + duration
     count = 0
@@ -137,18 +163,25 @@ def listen(
 
     try:
         for attempt in range(reconnect + 1):
+            if attempt:
+                time.sleep(min(2 ** (attempt - 1), max(0, deadline - time.monotonic())))
             if time.monotonic() >= deadline or count >= max_events:
                 break
             state = session()
+            check_owner()
             if profile == "live":
+                cursor, internal_ext = live_continuation(room_id, user_unique_id)
+                state = session()
                 query = {
                     "app_name": "douyin_web",
                     "version_code": "180800",
-                    "webcast_sdk_version": "1.0.14-beta.0",
-                    "update_version_code": "1.0.14-beta.0",
+                    "webcast_sdk_version": "1.0.15",
+                    "update_version_code": "1.0.15",
                     "compress": "gzip",
                     "device_platform": "web",
                     "cookie_enabled": "true",
+                    "screen_width": "1707",
+                    "screen_height": "960",
                     "browser_language": "zh-CN",
                     "browser_platform": state.state.get("device", {}).get(
                         "browser_platform", "Win32"
@@ -156,7 +189,9 @@ def listen(
                     "browser_name": "Mozilla",
                     "browser_version": state.ua.removeprefix("Mozilla/"),
                     "browser_online": "true",
-                    "tz_name": "Asia/Shanghai",
+                    "tz_name": "Etc/GMT-8",
+                    "cursor": cursor,
+                    "internal_ext": internal_ext,
                     "host": "https://live.douyin.com",
                     "aid": "6383",
                     "live_id": "1",
@@ -164,6 +199,7 @@ def listen(
                     "endpoint": "live_pc",
                     "support_wrds": "1",
                     "user_unique_id": user_unique_id,
+                    "im_path": "/webcast/im/fetch/",
                     "identity": "audience",
                     "need_persist_msg_count": "15",
                     "insert_task_id": "",
@@ -181,14 +217,7 @@ def listen(
                 }
                 host = "live.douyin.com"
             else:
-                token = next(
-                    (
-                        c["value"]
-                        for c in state.state["cookies"]
-                        if c.get("name") == "sessionid"
-                    ),
-                    None,
-                )
+                token = cookie_values(state, "https://frontier-im.douyin.com/").get("sessionid")
                 if not token:
                     raise DouyinRequestError("API_SESSION_EXPIRED")
                 config = state.state.get("im_ws", {})
@@ -203,8 +232,10 @@ def listen(
                 }
                 url = "wss://frontier-im.douyin.com/ws/v2?" + urlencode(query)
                 fields = {"device_id": str(device_id)}
-                host = "www.douyin.com"
-            dynamic = prepare(profile, "websocket", url, method="GET", fields=fields)
+                host = "frontier-im.douyin.com"
+            dynamic = prepare(profile, "websocket", url, method="GET", fields=fields,
+                              **({"expected_uid": owner} if profile == "im" else {}))
+            check_owner()
             headers = dynamic.get("headers", {})
             if any(
                 k.lower() in ("cookie", "host", "user-agent", "content-length")
@@ -212,12 +243,16 @@ def listen(
             ):
                 raise DouyinRequestError("INVALID_RELAY_RESPONSE")
             connection = None
+            phase = "handshake"
             try:
                 connection = create_connection(
                     _merge_query(url, dynamic["query"]),
-                    header={"User-Agent": state.ua, **headers},
+                    header={"User-Agent": state.ua,
+                            **({"Pragma": "no-cache", "Cache-Control": "no-cache",
+                                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6"}
+                               if profile == "live" else {}), **headers},
                     cookie=state.cookies("https://" + host + "/"),
-                    origin="https://" + host,
+                    origin="https://www.douyin.com" if profile == "im" else "https://" + host,
                     timeout=min(10, max(1, deadline - time.monotonic())),
                     enable_multithread=True,
                     subprotocols=["binary", "base64", "pbbp2"]
@@ -225,9 +260,11 @@ def listen(
                     else None,
                 )
                 connected = True
+                phase = "receive"
                 pk = PKMessageHandler()
                 next_heartbeat = time.monotonic() + 5
                 while time.monotonic() < deadline and count < max_events:
+                    check_owner()
                     if profile == "live" and time.monotonic() >= next_heartbeat:
                         connection.send_binary(
                             Live_pb2.PushFrame(payloadType="hb").SerializeToString()
@@ -248,15 +285,20 @@ def listen(
                     else:
                         events = im_decode(data)
                         ack = None
-                        verified = True
+                        verified = verified or bool(events)
+                        check_owner()
+                        for event in events:
+                            event.update(account_uid=owner)
+                            if event.get("type") == "im_message":
+                                event["direction"] = "outgoing" if event.get("sender") == owner else "incoming"
                     if ack:
                         connection.send_binary(ack)
                     for event in events:
                         key = event.get("msg_id") or (
                             str(event.get("conversation_id"))
                             + ":"
-                            + str(event.get("index"))
-                            if event.get("index")
+                            + str(event.get("server_message_id") or event.get("index"))
+                            if event.get("server_message_id") not in (None, "0", "") or event.get("index")
                             else None
                         )
                         if key and key in seen:
@@ -269,10 +311,14 @@ def listen(
                             break
             except (DouyinRequestError, ValueError):
                 raise
-            except Exception:
+            except Exception as exc:
                 if attempt == reconnect:
-                    raise DouyinRequestError("WEBSOCKET_DISCONNECTED")
-                time.sleep(min(2**attempt, max(0, deadline - time.monotonic())))
+                    status = getattr(exc, "status_code", None)
+                    raise DouyinRequestError("WEBSOCKET_DISCONNECTED", response_info={
+                        "transport": "websocket", "profile": profile, "stage": phase,
+                        "attempt": attempt + 1, "exception_type": type(exc).__name__,
+                        **({"http_status": status} if type(status) is int and 100 <= status <= 599 else {}),
+                    }) from exc
             finally:
                 if connection:
                     connection.close()

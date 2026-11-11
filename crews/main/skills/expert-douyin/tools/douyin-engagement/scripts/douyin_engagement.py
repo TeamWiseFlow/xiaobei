@@ -4,6 +4,7 @@ import argparse
 from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -15,6 +16,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
 from publish_browser import Browser, PublicationPending, publish_lock
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / '_shared'))
 
 SOURCE = 'douyin:creator_item_list'
 BASIC_FIELDS = {'view_count': 'plays', 'like_count': 'likes', 'comment_count': 'comments',
@@ -112,6 +114,19 @@ def profile_http_session():
     """Read credentials in memory; close the browser before HTTP reads."""
     records, ua = profile_snapshot()
     client = requests.Session()
+    from douyin_utils.transport import send
+    def local_send(prepared, **options):
+        from curl_cffi.requests import exceptions
+        try:
+            return send(prepared.method, prepared.url, headers=prepared.headers, data=prepared.body,
+                        timeout=options.get('timeout', 30), scope='douyin-creator-profile')
+        except exceptions.Timeout as exc:
+            raise requests.Timeout('CREATOR_TIMEOUT') from exc
+        except exceptions.RequestException as exc:
+            raise requests.RequestException('CREATOR_REQUEST_FAILED') from exc
+        except ValueError as exc:
+            raise CreatorError('CREATOR_REQUEST_INVALID', stage='transport', reason='INVALID_HTTP_HEADERS') from exc
+    client.send = local_send
     client.headers.update({'User-Agent': ua, 'Accept': 'application/json, text/plain, */*',
                            'Accept-Language': 'zh-CN,zh;q=0.9'})
     try:
@@ -134,6 +149,37 @@ def profile_http_session():
         yield client
     finally:
         client.close()
+
+
+class ApiMetricsClient:
+    def __init__(self):
+        from douyin_utils.creator import owner, ensure_session
+        self.uid = owner()
+        ensure_session(self.uid)
+
+    def get(self, url, *, params, **options):
+        from douyin_utils.api import call
+        from types import SimpleNamespace
+        if url != CREATOR_URL:
+            raise CreatorError('CREATOR_URL_INVALID')
+        from douyin_utils.http import DouyinRequestError
+        try:
+            result = call('creator_items', params, expected_uid=self.uid)
+        except DouyinRequestError as exc:
+            raise CreatorError(exc.code, stage='creator') from exc
+        return SimpleNamespace(status_code=200, text=json.dumps(result), headers={})
+
+
+@contextmanager
+def metrics_session():
+    mode = os.environ.get('DOUYIN_ENGAGEMENT_SESSION', 'api')
+    if mode == 'api':
+        yield ApiMetricsClient()
+    elif mode == 'profile':
+        with profile_http_session() as client:
+            yield client
+    else:
+        raise CreatorError('INVALID_METRICS_SESSION')
 
 
 def track(*args):
@@ -173,7 +219,11 @@ def _creator_page(client, cursor=None):
         raise CreatorError('CREATOR_TIMEOUT') from exc
     except requests.RequestException as exc:
         raise CreatorError('CREATOR_REQUEST_FAILED') from exc
-    if response.status_code in (401, 403) or (300 <= response.status_code < 400 and
+    if response.status_code == 403:
+        raise CreatorError('CREATOR_RISK_CONTROL')
+    if response.status_code == 429:
+        raise CreatorError('CREATOR_RATE_LIMITED')
+    if response.status_code == 401 or (300 <= response.status_code < 400 and
             'login' in response.headers.get('Location', '').lower()):
         raise CreatorError('SESSION_EXPIRED', stage='creator', reason='AUTH_REJECTED')
     if response.status_code != 200:
@@ -271,6 +321,20 @@ def creator_items(client, identifiers):
 def public_metrics(client, identifiers):
     if not identifiers:
         return {}
+    if isinstance(client, ApiMetricsClient):
+        from douyin_utils.api import call
+        from douyin_utils.http import DouyinRequestError
+        results = {}
+        for ident in identifiers:
+            try:
+                item = call('detail', {'aweme_id': ident}, expected_uid=client.uid).get('aweme_detail') or {}
+                raw = item.get('statistics') or {}
+                results[ident] = {'ok': True, 'stats': {out: raw[src] for src, out in {
+                    'digg_count': 'likeCount', 'comment_count': 'commentCount',
+                    'share_count': 'shareCount', 'collect_count': 'collectCount'}.items() if src in raw}}
+            except DouyinRequestError as exc:
+                results[ident] = {'ok': False, 'error': exc.code}
+        return results
     prepared = client.prepare_request(requests.Request('GET', 'https://www.douyin.com/'))
     payload = {'identifiers': sorted(set(identifiers)),
                'cookieStr': prepared.headers.get('Cookie', ''), 'ua': client.headers['User-Agent']}
@@ -291,7 +355,8 @@ def fetch_metrics(client, identifiers):
     try:
         found, missing = creator_items(client, identifiers)
     except CreatorError as exc:
-        if str(exc) in {'SESSION_EXPIRED', 'CREATOR_TIMEOUT', 'CREATOR_HTTP_ERROR'}:
+        if str(exc) in {'SESSION_EXPIRED', 'CREATOR_TIMEOUT', 'CREATOR_HTTP_ERROR', 'CREATOR_RISK_CONTROL',
+                        'CREATOR_RATE_LIMITED', 'PLATFORM_RATE_LIMITED', 'PLATFORM_RISK_CONTROL'}:
             raise
         found, missing = {}, {ident: str(exc) for ident in identifiers}
     # Creator values take priority. Public detail fills only its four counters.
@@ -358,11 +423,11 @@ def main():
             outcomes.append({'row_id': row['id'], 'ok': False, 'error': str(exc)})
     if selected or a.command == 'check':
         with publish_lock():
-            with profile_http_session() as client:
+            with metrics_session() as client:
                 if a.command == 'check':
                     creator_page(client)
                     return {'ok': True, 'creator': True, 'session': 'douyin',
-                            'transport': 'http', 'session_source': 'camoufox_profile'}
+                            'transport': 'http', 'session_source': 'api' if isinstance(client, ApiMetricsClient) else 'camoufox_profile'}
                 found = fetch_metrics(client, [ident for _, ident in selected])
         for row, ident in selected:
             result = found.get(ident)
@@ -384,14 +449,14 @@ def error_result(exc):
         return {'ok': False, 'error': exc.code, 'stage': 'publication_reconciliation',
                 'submission_attempted': True, 'accepted': None,
                 'hint': str(exc)}
-    code = str(exc) if isinstance(exc, CreatorError) else 'CREATOR_FETCH_FAILED'
+    code = str(exc) if isinstance(exc, CreatorError) else getattr(exc, 'code', 'CREATOR_FETCH_FAILED')
     result = {'ok': False, 'error': code}
     if isinstance(exc, CreatorError):
         for key in ('stage', 'reason'):
             if getattr(exc, key):
                 result[key] = getattr(exc, key)
-    if code == 'SESSION_EXPIRED':
-        result['hint'] = '登录态缺失或失效；执行 douyin-publish login，完成后重跑 check'
+    if code in {'SESSION_EXPIRED', 'API_SESSION_MISSING', 'API_SESSION_EXPIRED', 'PLATFORM_LOGIN_REJECTED', 'PLATFORM_AUTH_REJECTED'}:
+        result['hint'] = 'API 登录态缺失或失效；执行 douyin-publish login，与 douyin-login 共用同一会话，完成身份确认后重跑 check'
     elif code in {'PROFILE_SESSION_UNAVAILABLE', 'PROFILE_SESSION_INVALID'}:
         result['hint'] = 'Camoufox profile 初始化或读取失败，登录状态尚未确认；按 stage/reason 排查，不自动重登'
     else:

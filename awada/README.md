@@ -1,6 +1,6 @@
 # Awada Relay V2 plugin
 
-基于 OpenClaw 2026.10.4，连接 Relay `/api/v2/awada`, 实现微信对话机器人（微信用户可以直接添加好友，基于企业微信）
+基于 OpenClaw 2026.10.10，连接 Relay `/api/v2/awada`, 实现微信对话机器人（微信用户可以直接添加好友，基于企业微信）
 
 ## 配置
 
@@ -132,7 +132,7 @@ IT engineer 配置 Awada channel 时，默认同时配置并核验 CustomerDB ho
 ```
 
 - `customerdb.agentId` 必须明确填写，`enabled` 缺省为允许；没有 agentId 或显式 enabled=false 不注册 CustomerDB hook 和两个业务命令。
-- OpenClaw 2026.10.4 对外部插件要求显式 `hooks.allowConversationAccess=true`；未授权会阻止 `before_prompt_build` 注册。`hooks.allowPromptInjection` 缺省允许，若显式为 false 也会阻止该 hook。这些 hooks 字段与 config 同级，不放入 config.customerdb。
+- OpenClaw 2026.10.10 对外部插件要求显式 `hooks.allowConversationAccess=true`；未授权会阻止 `before_prompt_build` 注册。`hooks.allowPromptInjection` 缺省允许，若显式为 false 也会阻止该 hook。这些 hooks 字段与 config 同级，不放入 config.customerdb。
 - `accountId` 是 channels.awada 的本地账号名，不是 lane。省略时使用插件加载时解析的默认 Awada 账号；多账号须明确填写，并将该账号绑定到指定 agent。`workspaceDir` 指向该 crew 的真实工作区；省略时回退到 `$HOME/.openclaw/workspace-sales-cs`。
 - 先部署 crew，保证真实 workspace 存在且可写、Gateway 环境可执行 sqlite3。插件会在该工作区创建缺少的 db 子目录，使用插件内置 DDL 幂等建立 CustomerDB 的两张表，并保留已有数据；不会自动建立不存在的 crew 工作区，也不执行其他 crew 的 db/schema.sql。
 - 配置后完整重启 Gateway 即加载注册，不需要再执行独立的 hook 安装命令。使用 awada-channel-setup 启用 Awada 时，默认针对所选 crew/账号写入 CustomerDB 配置和必要的会话访问授权；已有显式权限拒绝会报错，不自动覆盖。仅用户明确不启用时使用 `--without-customerdb`，它保留原配置并跳过本次 hook 配置；不等于关闭原来已运行的 hook。已有同一归属的 enabled=false 保留并在预览标记 existing_disabled。当前仅支持一组 CustomerDB 归属，冲突时拒绝覆盖，不能为绕过冲突擅自跳过 hook。
@@ -160,4 +160,4 @@ IT engineer 配置 Awada channel 时，默认同时配置并核验 CustomerDB ho
 
 客户端协议说明见 [AWADA-CLIENT-TRANSPORT.md](../docs/AWADA-CLIENT-TRANSPORT.md)。能力与参数以 `awada_api capabilities/schema` 为准。
 
-回归和夹具仅在仓根、Git 忽略的 `test/awada/`。覆盖业务能力范围、被移除动作的调用阻断、自动/手动语音转写与回退、统一动作/工具输出、真实本机 WS、OpenClaw 2026.10.4 原生入站队列/权限/上下文、标准媒体与本地 slash。该验证不替代实号收发验收。
+回归和夹具仅在仓根、Git 忽略的 `test/awada/`。覆盖业务能力范围、被移除动作的调用阻断、自动/手动语音转写与回退、统一动作/工具输出、真实本机 WS、OpenClaw 2026.10.10 原生入站队列/权限/上下文、标准媒体与本地 slash。该验证不替代实号收发验收。

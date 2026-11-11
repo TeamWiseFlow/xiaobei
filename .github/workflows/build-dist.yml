@@ -113,6 +113,8 @@ jobs:
           # 3. xiaobei-browser（dist + bridge + fixed assets, dependencies installed on target）
           rsync -a --exclude='node_modules' --exclude='.git' --exclude='.browsers' \
             "$REPO/browser/" "$STAGE/browser/"
+          # 随包保存固定 GeoIP 和 uBlock，客户安装不依赖历史 tag 或 Mozilla 下载。
+          node "$REPO/scripts/prepare-browser-data.mjs" --output "$STAGE/browser/data"
 
           # 4. xiaobei 模板与脚本
           # npm 包和 Playwright 浏览器在目标机器安装，不能从 CI 缓存带入 tarball。
@@ -176,6 +178,9 @@ jobs:
             # asset 名用 git tag（release 的 source of truth），与 install.sh 按 tag 拉对齐
             TAG="$ASSET_TAG"
 
+            # Ship the target archive; create the venv at the customer's final path.
+            node "$GITHUB_WORKSPACE/scripts/python-runtime.mjs" bundle --root "$GITHUB_WORKSPACE" --platform "$plat" --output "$PKG/tools/python-assets"
+
             # portable Node
             if [[ "$plat" == win-x64 ]]; then
               curl -fsSL -o /tmp/node.zip "$url"
@@ -195,6 +200,8 @@ jobs:
             cat > "$PKG/bin/openclaw" <<'EOF'
           #!/usr/bin/env bash
           HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+          source "$HERE/scripts/lib/python-runtime.sh"
+          xiaobei_use_python_runtime "$HERE" || exit $?
           exec "$HERE/tools/node/bin/node" "$HERE/openclaw/openclaw.mjs" "$@"
           EOF
             chmod +x "$PKG/bin/openclaw"
@@ -204,6 +211,9 @@ jobs:
           @echo off
           setlocal
           set "HERE=%~dp0.."
+          set "PATH=%HERE%\tools\python\Scripts;%PATH%"
+          set "VIRTUAL_ENV=%HERE%\tools\python"
+          set "PYTHONNOUSERSITE=1"
           "%HERE%\tools\node\node.exe" "%HERE%\openclaw\openclaw.mjs" %*
           EOF
             fi

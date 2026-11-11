@@ -1,8 +1,12 @@
 # xiaobei-browser runtime
 
-The 5.8 browser runtime uses the main-repository TypeScript SDK `camoufox 0.5.8`, `playwright-core 1.62.1` and its paired browser `156.0.1-beta.36`. Node >=22.15 is required; the full product follows OpenClaw's higher Node requirement. The runtime owns its dependency tree. Do not hoist it into OpenClaw's Playwright 1.63.
+The 5.8 browser runtime uses the main-repository TypeScript SDK `camoufox 0.5.9`, `fpgen-js 1.3.0`, `playwright-core 1.62.1` and its paired browser `158.0.1-beta.41`. Node >=22.15 is required; the full product follows OpenClaw's higher Node requirement. The runtime owns its dependency tree. Do not hoist it into OpenClaw's Playwright 1.63.
 
 The architecture, remaining validation, profile reset policy and snapshot/OSBI roadmap are maintained in [the browser development guide](../docs/browser-architecture.md). This package does not switch installed commands or production services merely by being built.
+
+Use the shared installer/update script for SDK, build and asset cutover. Source updates keep an installed 0.5.8 SDK on its paired asset lock; packaging uses the target lock. Installation verifies the built driver and pinned dependencies/assets without starting a browser or resetting profiles. Compatible v2 identities created by 0.5.8 keep their original creator tag and fingerprint under 0.5.9; v1, unknown SDKs and invalid identities still require recovery.
+
+Official browser bundles include UBO. Installation validates its pinned version before moving files and retains the standalone XPI fallback. macOS uses `Camoufox.app/Contents/Resources/addons/UBO`. Runtime startup selects the installed fpgen model through the public `setModelDir` API.
 
 ## Build and isolated validation
 
@@ -23,7 +27,9 @@ node browser/dist/cli.js --session demo stop --json
 XIAOBEI_BROWSER_E2E=1 node --test test/browser/*.test.mjs
 ```
 
-Asset installation is explicit and checksum verified, including the fpgen model, GeoIP AIO and uBlock Origin. Runtime startup fails if required assets are missing. Default assets live in `~/.camoufox-cli/assets/<version>-<release>/`; `CAMOUFOX_INSTALL_DIR` overrides the parent, `XIAOBEI_BROWSER_ASSETS` overrides the complete directory. `XIAOBEI_BROWSER_DOWNLOADS` optionally points the installer at pre-downloaded browser/addon/GeoIP files, which are still verified. The new asset directory does not replace the old SDK cache. PowerShell uses the same Node/JS entries and `$env:XIAOBEI_BROWSER_HOME` / `$env:XIAOBEI_BROWSER_ASSETS` for isolation.
+Asset installation is explicit and checksum verified, including the fpgen model, GeoIP AIO and uBlock Origin. Runtime startup fails if required assets are missing. Default assets live in `~/.camoufox-cli/assets/<version>-<release>/`; `CAMOUFOX_INSTALL_DIR` overrides the parent, `XIAOBEI_BROWSER_ASSETS` overrides the complete directory. Pre-downloaded browser/addon/GeoIP files are read from `~/.xiaobei/cache/` by their original URL filenames and still verified. `XIAOBEI_CACHE_DIR` overrides the shared cache; `XIAOBEI_BROWSER_DOWNLOADS` takes precedence for browser resources. The new asset directory does not replace the old SDK cache. PowerShell uses the same Node/JS entries and `$env:XIAOBEI_BROWSER_HOME` / `$env:XIAOBEI_BROWSER_ASSETS` for isolation.
+
+Release tarballs carry the pinned GeoIP database in `data/geoip-aio-all-<version>.mmdb` and the original signed uBlock XPI in `data/ublock_origin-<version>.xpi`, prepared by `scripts/prepare-browser-data.mjs`. Installation verifies and uses those copies before consulting the download cache or upstream, then validates the uBlock manifest version. Customer installation needs neither the Mozilla download nor the historical GeoIP release. GeoIP upstream retains only two weekly releases; installed databases also use a versioned filename so a pin update preserves the earlier database rather than comparing its contents against the new hash.
 
 Identity schema v2 records the SDK and fpgen identity. Old v1, corrupt or populated profiles without a compatible identity return `PROFILE_RESET_REQUIRED`; archive the whole old profile after stopping its session and use a fresh profile with a new login. Do not inject old cookies into a new identity. This release does not implement an automatic profile purge or lossless old-identity conversion.
 
@@ -40,7 +46,7 @@ Identity schema v2 records the SDK and fpgen identity. Old v1, corrupt or popula
 
 ## OpenClaw plugin and lifecycle service
 
-`browser/openclaw.plugin.json` and `plugin/index.ts` register the independent `xiaobei-browser` plugin through the public OpenClaw 2026.10.4 SDK. Its `xiaobei_browser` tool replaces the native browser tool. The public `skills/browser-guide/` skill remains in the normal shared skill layout; there is no second plugin-specific copy. Tool/file/evaluate/network restrictions remain enforced, including the native upload/inbound-media path rules. Unsupported SSRF/sandbox/run-bound policies fail closed.
+`browser/openclaw.plugin.json` and `plugin/index.ts` register the independent `xiaobei-browser` plugin through the public OpenClaw 2026.10.10 SDK. Its `xiaobei_browser` tool replaces the native browser tool. The public `skills/browser-guide/` skill remains in the normal shared skill layout; there is no second plugin-specific copy. Tool/file/evaluate/network restrictions remain enforced, including the native upload/inbound-media path rules. Unsupported SSRF/sandbox/run-bound policies fail closed.
 
 The plugin service publishes an authenticated local broker in this installation's private runtime registry. `BrowserClient.start()` and both CLIs delegate startup to that service; subsequent actions reuse the per-session IPC endpoint. A browser launched for an agent exec is a child of the service owner, so command-tree cleanup cannot close the login window. A missing service returns `BROKER_REQUIRED` inside OpenClaw instead of launching a disposable daemon. Standalone CLI use without a Gateway retains local startup. A live but unreachable broker never falls back to local startup, and a start dispatched before a timeout is not replayed.
 

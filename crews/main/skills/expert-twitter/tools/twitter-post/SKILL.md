@@ -24,9 +24,20 @@ twitter-post publish --text @/绝对路径/body.txt --source-folder /绝对路�
 
 独立发帖间隔至少30分钟，单日不超过50帖；这是本工具的操作上限，不代表平台保证不会限频。长文 Markdown 的相对插图路径以正文文件所在目录解析，预览时核对插图与封面。Thread 中途失败时可能已有前几条发布，先在原平台核查，不重发整个帖串。
 
+Articles 中独占普通段落一行的完整 X/Twitter 帖子链接会嵌入为帖子卡片；正文中的行内链接、引用块和代码块保持原格式。嵌入使用链接里的完整数字帖子 ID，不截断、不替换目标。
+
 核对文本、媒体、账号、可见范围与声明后，已有发布授权时加 --confirm。需要平台 AI 声明而接口没有声明字段时停止，交用户在原平台完成；不要将简介里的“AI”字样当作平台声明。不要填不存在的参数或模拟上传成功。
 
 脚本串行发布并保存 `publish-result.x.json`，返回真实作品 ID 与 URL 后自动调用 published-track record，关联作品目录的 dna-meta.json 和账号 alias。`published:true, recorded:false` 表示内容已发出、记录失败，重跑同一目录只补入库。已有 submitting/unknown 结果文件时禁止重发，先检查本人作品或原平台并由用户核实结果。下一条作品使用新的作品目录。
+
+失败时同时检查 `stage`、`submission_attempted`、`failure_reason` 与脱敏 `diagnostic`：
+
+- `ACCOUNT_SUSPENDED`：上游明确返回账号暂停（如 HTTP 403、code 64）。停止本轮操作，交用户处理账号状态，不当作 Cookie 过期要求重登。
+- `AUTH_REQUIRED` / `AUTH_EXPIRED`：认证失败。HTTP 403 本身不能证明认证过期，应结合平台错误码。
+- `MEDIA_UPLOAD_FAILED`：媒体上传或元数据准备失败；`submission_attempted:false` 明确表示尚未提交帖子，保存为 `state:failed`，不能报告“帖子发布结果未知”。
+- `PUBLISH_UNKNOWN`：可能已经发送帖子提交请求；保留收据并核查本人作品，禁止重发。进程失联且无法证明提交尚未开始时，也按此处理。
+
+`stage:media_upload` 仍可能伴随 `submission_attempted:true`：帖串前几条可能已提交，后续才上传失败；不能据最后一次上传错误清除既有提交事实。已有 submitting/unknown 收据不会被新的账号状态或上传错误覆盖。`failed` 收据再次调用只返回原失败，不自动重试。
 
 提交结果与实际可见、审核通过分开记录。返回失败、风控或超时后停止，不换通道重发。发布调用和结果文件不负责平台指标采集。
 

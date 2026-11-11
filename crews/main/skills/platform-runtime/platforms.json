@@ -39,6 +39,21 @@
     "metrics": {"views": "plays", "likes": "likes", "comments": "comments", "shares": "shares"},
     "video_publish": {"empty_caption": true, "visibility": "private", "immediate_only": true, "live_verified": true}
   },
+  "youtube": {
+    "workspace": "youtube",
+    "session": "youtube",
+    "login_url": "https://www.youtube.com/",
+    "origin": "https://www.youtube.com",
+    "cookie_domain": "youtube.com",
+    "required_cookies": [["SAPISID", "__Secure-3PAPISID"]],
+    "hunter": ["user get", "user search", "user items", "user likes", "user collects", "user following", "item get", "item search", "item related", "item media", "comment list", "comment replies", "feed list", "keyword suggest", "notice list", "notice count", "series list", "series items", "history list", "live get", "live search", "live history", "live listen"],
+    "interact": ["item like", "item unlike", "item collect", "item uncollect", "user follow", "user unfollow", "comment add", "comment delete", "comment like", "comment unlike"],
+    "im": [],
+    "live": ["live send"],
+    "creator": ["channel create"],
+    "publish": [],
+    "metrics": {"views": "views", "likes": "likes", "comments": "comments"}
+  },
   "weibo": {
     "workspace": "weibo",
     "publication_resolution": {"attempts": 7, "interval_ms": 5000, "limit": 20},

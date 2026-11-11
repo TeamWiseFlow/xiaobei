@@ -32,7 +32,7 @@
 #      no need to install zstd)
 #   2. Extract to $XIAOBEI_HOME (default $env:USERPROFILE\xiaobei, the program directory)
 #   3. portable node + pnpm install --prod --frozen-lockfile (under openclaw\)
-#   4. Upgrade pip, then pip install --user (skill deps; only runs if python is present)
+#   4. Install the pinned xiaobei Python runtime and shared venv dependencies
 #   5. Place config-templates\openclaw.json -> $OPENCLAW_HOME\openclaw.json + prefill WeChat binding
 #   6. setup-crew.sh (requires bash: Git Bash or WSL; if absent, warn and skip; user can run it
 #      manually later)
@@ -220,35 +220,20 @@ function Install-Deps {
 
 # --- 5. python skill deps ---
 function Install-PythonDeps {
-    Write-Stage "Installing python skill deps"
-    $py = Get-Command python -ErrorAction SilentlyContinue
-    if (-not $py) { Write-Warn "python not found, skipping skill python deps"; return }
-    $reqs = @()
-    $reqs += Get-ChildItem -Path (Join-Path $Root "skills") -Filter "requirements.txt" -Recurse -ErrorAction SilentlyContinue
-    $reqs += Get-ChildItem -Path (Join-Path $Root "crews") -Filter "requirements.txt" -Recurse -ErrorAction SilentlyContinue
-    $reqs += Get-ChildItem -Path $Root -Filter "requirements.txt" -ErrorAction SilentlyContinue
-    $reqs = $reqs | Select-Object -ExpandProperty FullName -Unique
-    if (-not $reqs) { Write-Ok "no requirements.txt"; return }
-    # Each line is passed as a pip command-line argument (not via -r file), so inline comments must
-    # be stripped (pip only recognizes comments inside a requirements file; `Pillow # desc` passed
-    # as an arg directly errors with Invalid requirement). The file is UTF-8; we explicitly specify
-    # the encoding to prevent Chinese comments from being misread as ANSI and producing garbled args.
-    $merged = ($reqs | ForEach-Object { Get-Content $_ -Encoding UTF8 -ErrorAction SilentlyContinue } |
-        ForEach-Object { ($_ -replace '#.*$', '').Trim() } |
-        Where-Object { $_ } | Sort-Object -Unique)
-    if (-not $merged) { Write-Ok "no python deps"; return }
-    Capture-Streamed { & $py.Source -m pip --version } | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Warn "python -m pip unavailable, skipping skill python deps"; return }
-    # Keep the same interpreter for the upgrade and dependency installation. Windows does not
-    # need the Unix-only PEP 668 override; these arguments also work with older pip versions.
-    $pipArgs = @('--user', '--no-warn-script-location', '--disable-pip-version-check')
-    Write-Stage "Upgrading pip"
-    Invoke-Streamed { & $py.Source -m pip install @pipArgs --upgrade pip }
-    if ($LASTEXITCODE -ne 0) { Write-Warn "pip upgrade failed; attempting skill dependencies with the current pip" }
-    Write-Stage "Installing python skill deps"
-    Invoke-Streamed { & $py.Source -m pip install @pipArgs $merged }
-    if ($LASTEXITCODE -ne 0) { Write-Warn "pip install returned non-zero; you can manually install the skills' python deps later" }
-    else { Write-Ok "python deps installed" }
+    Write-Stage "Installing managed Python and skill dependencies"
+    & $NodeExe (Join-Path $Root 'scripts\python-runtime.mjs') install --root $Root
+    if ($LASTEXITCODE -ne 0) { throw "managed Python installation failed (exit $LASTEXITCODE)" }
+    $script:PythonBin = Join-Path $Root 'tools\python\Scripts'
+    $env:PATH = "$script:PythonBin;$env:PATH"
+    $env:VIRTUAL_ENV = Join-Path $Root 'tools\python'
+    $env:PYTHONNOUSERSITE = '1'
+    $env:PYTHON = Join-Path $script:PythonBin 'python.exe'
+    Remove-Item Env:PYTHONHOME, Env:PYTHONPATH -ErrorAction SilentlyContinue
+}
+
+function Configure-PythonRuntime {
+    & $NodeExe (Join-Path $Root 'scripts\python-runtime.mjs') configure --root $Root --config (Join-Path $OpenclawHome 'openclaw.json')
+    if ($LASTEXITCODE -ne 0) { throw "managed Python exec configuration failed (exit $LASTEXITCODE)" }
 }
 
 # --- 6. Place config template (mirrors install.sh place_config_template) ---
@@ -512,7 +497,7 @@ function Expose-SkillWrappers {
 
 # --- 8. camoufox-cli ---
 function Install-CamoufoxCli {
-    $browserArgs = @((Join-Path $Root "scripts\install-browser.mjs"), "--root", $Root)
+    $browserArgs = @((Join-Path $Root "scripts\install-browser.mjs"), "--root", $Root, "--defer-config")
     if ($SkipBrowser) { $browserArgs += "--skip-assets" }
     & $NodeExe @browserArgs
     if ($LASTEXITCODE -ne 0) { throw "xiaobei-browser install failed (exit $LASTEXITCODE)" }
@@ -593,11 +578,11 @@ function Install-WeixinPlugin {
             $forceFlag = @("--force")
         }
     }
-    $installArgs = @("plugins", "install", "$pkg@$ver", "--pin") + $forceFlag
+    $installArgs = @("plugins", "install", "$pkg@$ver", "--pin", "--accept-capabilities") + $forceFlag
     $forceHint = if ($forceFlag) { " --force" } else { "" }
     Invoke-Streamed { & $ClawCmd @installArgs }
     if ($LASTEXITCODE -eq 0) { Write-Ok "openclaw-weixin plugin installed ($ver)" }
-    else { Write-Warn "plugin install failed; you can run manually later: $ClawCmd plugins install $pkg@$ver --pin$forceHint" }
+    else { Write-Warn "plugin install failed; you can run manually later: $ClawCmd plugins install $pkg@$ver --pin --accept-capabilities$forceHint" }
 }
 
 # --- 10. awada local plugin deps (silk-wasm + typebox + ws + zod) ---
@@ -721,7 +706,7 @@ function Install-GatewayAndEnv {
     $daemonLines += "OPENCLAW_STATE_DIR=$OpenclawHome"
     # program bin（$Root\bin，openclaw 启动器）+ wrapper bin（~\.openclaw\bin，skill 软链）+
     # node bin。gateway.cmd 不 source 用户 PATH，agent exec 调裸技能名靠此 PATH 解析软链。
-    $pathLine = "PATH=$(Join-Path $Root 'bin');$(Join-Path $OpenclawHome 'bin');$(Split-Path $NodeExe);$env:PATH"
+    $pathLine = "PATH=$(Join-Path $Root 'tools\python\Scripts');$(Join-Path $Root 'bin');$(Join-Path $OpenclawHome 'bin');$(Split-Path $NodeExe);$env:PATH"
     $daemonLines += $pathLine
     Write-EnvFile $daemonEnv $daemonLines
     Write-Ok "daemon.env written (used by the gateway service, 3 fixed values + PATH + OPENCLAW_STATE_DIR)"
@@ -744,6 +729,8 @@ function Install-GatewayAndEnv {
     Invoke-Streamed { & $ClawCmd daemon install }
     if ($LASTEXITCODE -eq 0) {
         Write-Ok "gateway daemon installed"
+        & $NodeExe (Join-Path $Root 'scripts\python-runtime.mjs') service-env --root $Root --env-file (Join-Path $OpenclawHome 'daemon.env')
+        if ($LASTEXITCODE -ne 0) { throw "Python service environment update failed" }
         Repair-GatewayCmd
         Invoke-Streamed { & $ClawCmd gateway restart }
     } else {
@@ -784,6 +771,15 @@ function Bind-WeixinChannel {
 }
 
 # --- main ---
+function Migrate-AutomationInference {
+    $automationMigration = Join-Path $Root "scripts\repair-automation-inference.mjs"
+    if (Test-Path $automationMigration) {
+        Write-Stage "Migrating automation inference accounts"
+        & $NodeExe $automationMigration --config (Join-Path $OpenclawHome "openclaw.json") --auto --apply
+        if ($LASTEXITCODE -ne 0) { throw "Automation inference account migration failed; upgrade is incomplete" }
+    }
+}
+
 function Main {
     Get-GitHubDownloadUrl 'https://github.com/' | Out-Null
     Write-Host "wiseflow installer (Windows, GitHub) - prebuilt tarball route" -ForegroundColor Magenta
@@ -801,7 +797,7 @@ function Main {
         # gateway's file locks ("Can't unlink already-existing object: Permission denied", observed
         # in practice).
         Write-Stage "Stopping gateway before update"
-        if (Test-Path $ClawCmd) { Invoke-Streamed { & $ClawCmd gateway stop } }
+        if (Test-Path $ClawCmd) { Invoke-Streamed { & $ClawCmd gateway stop --force } }
         Get-Process node -ErrorAction SilentlyContinue |
             Where-Object { $_.Path -like "$Root*" } |
             Stop-Process -Force -ErrorAction SilentlyContinue
@@ -825,13 +821,13 @@ function Main {
         Initialize-XiaobeiDownloadNetwork $Root $NodeExe
     }
 
+    Install-PythonDeps
     Install-Deps
     Write-Stage "Installing per-skill Node.js dependencies"
     & $NodeExe (Join-Path $Root 'scripts\install-skill-deps.mjs') `
         --root $Root --state-dir $OpenclawHome `
         --npm-cli (Join-Path $Root 'tools\node\node_modules\npm\bin\npm-cli.js')
     if ($LASTEXITCODE -ne 0) { throw "skill Node.js dependency install failed (exit $LASTEXITCODE)" }
-    Install-PythonDeps
     Install-AwadaPlugin
     Install-CamoufoxCli
     Write-Stage "Installing deck-render runtime"
@@ -847,26 +843,41 @@ function Main {
         # The update route also self-heals the config (mirrors install.sh: if openclaw.json was
         # minimized, repair it with the template).
         Place-Config
+        Configure-PythonRuntime
+        $finalizeArgs = @((Join-Path $Root "scripts\finalize-openclaw-upgrade.mjs"), "--root", $Root, "--config", (Join-Path $OpenclawHome "openclaw.json"), "--skip-crew")
+        if ($isUpdate) { $finalizeArgs += "--stop-gateway" }
+        & $NodeExe @finalizeArgs
+        if ($LASTEXITCODE -ne 0) { throw "OpenClaw configuration finalization failed" }
         Write-Stage "Refreshing gateway env and restarting"
         $envFile = Join-Path $OpenclawHome "daemon.env"
         if (Test-Path $envFile) {
             $lines = Get-Content $envFile
-            $lines = $lines | Where-Object { $_ -notmatch "^XIAOBEI_HOME=" }
+            $lines = @($lines | Where-Object { $_ -notmatch "^(XIAOBEI_HOME|PATH)=" })
+            $lines += "PATH=$script:PythonBin;$env:PATH"
             $lines += "XIAOBEI_HOME=$Root"
             # WriteAllText no-BOM + CRLF（Set-Content -Encoding UTF8 会写 BOM，gateway.cmd call daemon.env 炸）
             Write-EnvFile $envFile $lines
             Write-Ok "daemon.env XIAOBEI_HOME refreshed"
         }
+        & $NodeExe (Join-Path $Root 'scripts\python-runtime.mjs') service-env --root $Root --env-file (Join-Path $OpenclawHome 'daemon.env')
+        if ($LASTEXITCODE -ne 0) { throw "Python service environment update failed" }
         Repair-GatewayCmd
         Invoke-Streamed { & $ClawCmd gateway restart }
     } else {
         Place-Config
+        Configure-PythonRuntime
+        $finalizeArgs = @((Join-Path $Root "scripts\finalize-openclaw-upgrade.mjs"), "--root", $Root, "--config", (Join-Path $OpenclawHome "openclaw.json"), "--skip-crew")
+        if ($isUpdate) { $finalizeArgs += "--stop-gateway" }
+        & $NodeExe @finalizeArgs
+        if ($LASTEXITCODE -ne 0) { throw "OpenClaw configuration finalization failed" }
         Run-SetupCrew
         Sync-GlobalSkills
         Expose-SkillWrappers
         Install-GatewayAndEnv
         Bind-WeixinChannel
     }
+
+    Migrate-AutomationInference
 
     Write-Host ""
     if ($isUpdate) {

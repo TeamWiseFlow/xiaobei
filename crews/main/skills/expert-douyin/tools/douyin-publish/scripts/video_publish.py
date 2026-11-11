@@ -2,6 +2,7 @@
 """Persistent creator video publication with validated inputs and resumable SMS."""
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -14,6 +15,7 @@ import time
 import traceback
 import unicodedata
 from urllib.parse import urlparse
+import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
 from publish_browser import Browser, MANAGE_URL, SESSION, UPLOAD_URL, publish_lock, video_publish_state_path
@@ -431,10 +433,12 @@ def cmd_edit_draft(*, session=SESSION, confirm_unpublished=False):
         item = reconcile(state, session)
         if item:
             return published_result(state)
+        previous = dict(state)
         state['state'] = 'draft'
         for field in ('submitted_at', 'baseline_ids', 'sms_requested', 'aweme_id', 'account_id', 'reconciliation'):
             state.pop(field, None)
-        save_state(state)
+        save_closure(previous, state, confirmation='用户通过 edit-draft --confirm-unpublished 明确确认原提交未发布',
+                     evidence={'method': 'creator_list_no_match_and_user_confirmed_unpublished'})
         if '/content/manage' in status['url']:
             cmd_open_page(session=session)
     if evaluate(session, "document.body.innerText.includes('你还有上次未发布的视频')"):
@@ -977,14 +981,14 @@ def preflight(session):
     return status
 
 
-def work_items(session, *, since=None):
+def work_items(session, *, since=None, target_id=None):
     """Read the current account's list without navigating away from its draft.
 
-    A reconciliation scans every page in the submission time range, so a
-    matching item on page one cannot hide a second match on page two.
+    Creator lists may contain pinned items or use a nonchronological order.
+    Automatic reconciliation must exhaust pagination before accepting a unique
+    match. An explicit user-linked ID can stop once that exact work is found.
     """
-    items, seen, cursor = [], set(), None
-    previous_oldest = None
+    items, seen, cursors, cursor = [], set(), set(), None
     for _ in range(WORK_LIST_MAX_PAGES if since is not None else 1):
         result = work_page(session, cursor)
         page = result['items']
@@ -992,21 +996,18 @@ def work_items(session, *, since=None):
             raise PublishError('WORK_LIST_INVALID', RESULT_HINT, 3)
         if since is not None:
             times = [it.get('ct') for it in page]
-            if (any(type(ct) not in (int, float) or not math.isfinite(ct) or ct <= 0 for ct in times)
-                    or any(b > a for a,b in zip(times, times[1:]))
-                    or times and previous_oldest is not None and times[0] > previous_oldest):
-                raise PublishError('WORK_LIST_ORDER_UNCONFIRMED', '作品列表时间顺序异常；'+RESULT_HINT, 3)
-            if times:
-                previous_oldest = times[-1]
+            if any(type(ct) not in (int, float) or not math.isfinite(ct) or ct <= 0 for ct in times):
+                raise PublishError('WORK_LIST_INVALID', '作品缺少有效发布时间；'+RESULT_HINT, 3)
         for item in page:
             if item['id'] not in seen:
                 items.append(item)
                 seen.add(item['id'])
-        if since is None or not result.get('has_more') or page and page[-1]['ct'] < since:
+        if target_id in seen or since is None or not result.get('has_more'):
             return items
         next_cursor = result.get('cursor')
-        if not page or next_cursor is None or str(next_cursor) == str(cursor):
+        if not page or next_cursor is None or str(next_cursor) in cursors or str(next_cursor) == str(cursor):
             raise PublishError('WORK_LIST_PAGINATION_INVALID', RESULT_HINT, 3)
+        cursors.add(str(next_cursor))
         cursor = next_cursor
     raise PublishError('WORK_LIST_SCAN_LIMIT', '相关时间范围作品未遍历完整；'+RESULT_HINT, 3)
 
@@ -1145,6 +1146,93 @@ def cmd_get_link(*, session):
     return cmd_resume(session=session)
 
 
+SHARE_HOSTS = {'douyin.com', 'www.douyin.com', 'v.douyin.com', 'www.iesdouyin.com'}
+
+
+def validate_share_url(url):
+    parsed = urlparse(url)
+    if (parsed.scheme != 'https' or parsed.hostname not in SHARE_HOSTS
+            or parsed.username or parsed.password or parsed.port not in (None, 443)):
+        raise PublishError('SHARE_LINK_INVALID', '提供抖音官方 HTTPS 视频链接')
+    return parsed
+
+
+class ShareRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        validate_share_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def resolve_share_video(url):
+    parsed = validate_share_url(url)
+    if parsed.hostname == 'v.douyin.com':
+        # Resolve only an official share URL, without importing any API login.
+        request = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.build_opener(ShareRedirects()).open(request, timeout=20) as response:
+            parsed = validate_share_url(response.geturl())
+    match = re.fullmatch(r'/(?:video|share/video)/(\d{15,22})/?', parsed.path)
+    if not match:
+        raise PublishError('SHARE_LINK_INVALID', '分享链接未解析为完整视频 ID；不从文本猜测 ID')
+    return match.group(1)
+
+
+def save_closure(previous, updated, *, confirmation, evidence):
+    """Preserve the exact receipt and a prepared audit before releasing its lock."""
+    root = state_path().parent / (state_path().stem + '.audit')
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory = Path(tempfile.mkdtemp(prefix=time.strftime('%Y%m%dT%H%M%SZ-', time.gmtime()), dir=root))
+    original = state_path().read_bytes()
+    event = {'from_state': previous['state'], 'to_state': updated['state'],
+             'at': int(time.time()), 'confirmation': confirmation, 'evidence': evidence,
+             'original_sha256': hashlib.sha256(original).hexdigest(), 'status': 'prepared'}
+
+    def write_private(name, value):
+        fd = os.open(directory / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(value)
+
+    write_private('before.json', original)
+    updated['closure'] = {**event, 'status': 'applied', 'audit': str(directory)}
+    write_private('after.json', json.dumps({**updated, 'session': SESSION}, ensure_ascii=False).encode())
+    write_private('prepared.json', json.dumps(event, ensure_ascii=False).encode())
+    save_state(updated)
+    write_private('applied.json', json.dumps({**event, 'status': 'applied'}, ensure_ascii=False).encode())
+    return str(directory)
+
+
+def cmd_close(*, outcome, confirmation, url=None, confirm=False, session=SESSION):
+    state = read_state()
+    if state.get('state') not in PENDING_STATES:
+        raise PublishError('NO_PENDING_PUBLICATION', '仅结案当前未完成的本地视频任务', 3)
+    if not confirmation.strip():
+        raise PublishError('USER_CONFIRMATION_REQUIRED', '记录用户对作品已发布或取消本地任务的明确确认')
+    if outcome not in ('published', 'cancelled') or (outcome == 'published') != bool(url):
+        raise PublishError('CLOSURE_INPUT_INVALID', '已发布结案须提供 --url；本地取消不接受作品链接')
+    if not confirm:
+        return {'ok': True, 'preview': True, 'state': state['state'], 'outcome': outcome,
+                'url': url, 'confirmation': confirmation, 'local_only': True,
+                'hint': '核对用户授权后加 --confirm；本地取消不撤回线上作品，不代表原提交未发布'}
+    updated = dict(state)
+    evidence = {'method': 'user_authorized_local_cancel'}
+    if outcome == 'published':
+        target = resolve_share_video(url)
+        items = work_items(session, since=state['submitted_at']-5, target_id=target)
+        item = matching_work(state, [it for it in items if it['id'] == target])
+        if not item:
+            raise PublishError('SHARE_WORK_UNCONFIRMED', '链接作品未通过本人列表、时间、baseline 与完整文案核验；保留任务', 3)
+        updated.update(state='published', aweme_id=target)
+        evidence = {'method': 'user_link_and_creator_list', 'provided_url': url,
+                    'aweme_id': target, 'items_scanned': len(items), 'author_id': item.get('author_id')}
+    else:
+        updated['state'] = 'cancelled'
+    updated['submission_attempted'] = True
+    audit = save_closure(state, updated, confirmation=confirmation, evidence=evidence)
+    result = published_result(updated) if outcome == 'published' else {
+        'ok': True, 'state': 'cancelled', 'submission_attempted': True, 'accepted': None,
+        'id_resolved': False, 'hint': '仅取消本地阻塞；线上提交结果未据此改变，勿盲重发原作品'}
+    return {**result, 'audit': audit, 'local_only': True}
+
+
 def verification_state(session):
     state = read_state()
     if state.get('state') not in PENDING_STATES or not page_status(session)['sms_required']:
@@ -1236,8 +1324,25 @@ def cmd_verify_code(*, session, code_file):
 
 
 def cmd_status(*, session):
-    return {'ok': False, 'state': read_state().get('state', 'idle'), 'session': session,
-            'page': page_status(session), 'hint': RESULT_HINT if read_state().get('state') in PENDING_STATES else DRAFT_HINT}
+    state = read_state()
+    pending = state.get('state') in PENDING_STATES
+    result = {'ok': True, 'state': state.get('state', 'idle'), 'session': session,
+              'read_only': True, 'current_action_submission_attempted': False,
+              'receipt_submission_attempted': bool(state.get('submission_attempted')) or pending or state.get('state') == 'published'}
+    try:
+        info = browser(session).command('info')
+        if not isinstance(info, dict) or type(info.get('running')) is not bool:
+            raise PublishError('BROWSER_STATE_INVALID', '无法确定浏览器运行状态；保留原收据，不重发作品')
+        if info['running']:
+            return {**result, 'browser_running': True, 'page_checked': True, 'page': page_status(session),
+                    'hint': RESULT_HINT if pending else DRAFT_HINT}
+    except RuntimeError as exc:
+        if not re.search(r'\b(?:session is not running|browser not launched)\b', str(exc), re.I):
+            raise
+    return {**result, 'browser_running': False, 'page_checked': False, 'page': None,
+            'page_unavailable_reason': 'BROWSER_SESSION_NOT_RUNNING',
+            'hint': '浏览器会话未运行，本次只读取本地收据，未打开页面或提交作品；' +
+                    (RESULT_HINT if pending else '已结案收据不代表本次状态查询发起了发布')}
 
 
 def cmd_run(*, video, title, caption='', cover_vertical, cover_horizontal):
@@ -1265,7 +1370,7 @@ def execute(args):
     try:
         with publish_lock(allow_pending_video=True):
             result = args.func(args)
-            if result.get('state') == 'published' and args.action != 'run':
+            if result.get('state') == 'published' and args.action not in ('run', 'close', 'status'):
                 try:
                     browser(SESSION).close()
                 except Exception:
@@ -1274,12 +1379,13 @@ def execute(args):
         return 4 if result.get('state') == 'awaiting_verification' else 0
     except PublishError as exc:
         state = safe_error_state()
+        attempted = bool(state.get('submission_attempted')) or state.get('state') in PENDING_STATES | {'published'}
         hint = exc.hint
         if exc.code == 'SESSION_EXPIRED' and state.get('state') in PENDING_STATES:
             hint = '本次提交结果未知；验证页面已丢失或登录失效时用 douyin-publish login --resume-video 恢复同一 profile，登录后 resume 核查原作品，勿重发'
         print(json.dumps({'ok': False, 'error': exc.code, 'state': state.get('state', 'idle'),
-                          'publish_attempted': state.get('state') in PENDING_STATES | {'published'},
-                          'submission_attempted': state.get('state') in PENDING_STATES | {'published'},
+                          'publish_attempted': attempted,
+                          'submission_attempted': attempted,
                           'accepted': None, 'id_resolved': False,
                           'reconciliation': state.get('reconciliation'),
                           'hint': hint, 'session': SESSION}, ensure_ascii=False))
@@ -1288,12 +1394,13 @@ def execute(args):
         # Browser errors may contain code input or response data. Return only a safe error category.
         state = safe_error_state()
         pending = state.get('state') in PENDING_STATES
+        attempted = bool(state.get('submission_attempted')) or pending or state.get('state') == 'published'
         diagnostic = {'exception_type': type(exc).__name__,
                       'frames': [{'file': Path(frame.filename).name, 'line': frame.lineno, 'function': frame.name}
                                  for frame in traceback.extract_tb(exc.__traceback__)]}
         print(json.dumps({'ok': False, 'error': 'BROWSER_OPERATION_FAILED', 'state': state.get('state', 'idle'),
-                          'publish_attempted': pending, 'hint': RESULT_HINT if pending else DRAFT_HINT,
-                          'submission_attempted': pending, 'accepted': None, 'id_resolved': False,
+                          'publish_attempted': attempted, 'hint': RESULT_HINT if pending else DRAFT_HINT,
+                          'submission_attempted': attempted, 'accepted': None, 'id_resolved': False,
                           'reconciliation': state.get('reconciliation'),
                           'diagnostic': diagnostic}, ensure_ascii=False))
         return 3 if pending else 1

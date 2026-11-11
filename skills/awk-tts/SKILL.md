@@ -1,6 +1,6 @@
 ---
 name: awk-tts
-description: 声音复刻、音色设计和多供应商配音，支持绑定音色档案，多供应商旁白 TTS。生成 MP3/PCM/WAV/OPUS 旁白，可选字级时间戳，合成后自动 ASR 自检。
+description: 声音复刻、音色设计和多供应商配音，支持绑定音色档案，纯人声旁白 TTS；带背景音/环境音的人声优先用 aigc-video-gen audio，纯 BGM 用 bgm-library。生成 MP3/PCM/WAV/OPUS 旁白，可选字级时间戳，合成后自动 ASR 自检。
 metadata:
   openclaw:
     emoji: 🔊
@@ -16,6 +16,8 @@ metadata:
 # 多供应商旁白 TTS（awk-tts）
 
 火山 openspeech v3 单向流式 + 百炼 SpeechSynthesizer 双后端，凭据自动路由。
+
+用于单纯人声旁白、干声 TTS 和音色复刻/设计。需要背景音、环境音、音效或带这些声音的人声时，优先用 `aigc-video-gen audio` 一次生成完整音轨；单纯 BGM 用 `bgm-library`。不要把 `qwen-audio-3.1-tts-next` 当作本技能的普通 TTS 候选模型，它使用 `text_prompt` 与参考音频协议。
 
 ## 供应商路由（脚本内部，凭据在哪家走哪家）
 

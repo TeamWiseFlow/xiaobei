@@ -42,7 +42,7 @@ def credentials(sts):
     return value
 
 
-def gateway(method, query, sts, body=None):
+def gateway(method, query, sts, body=None, *, expected_uid=None):
     host = (
         "imagex.bytedanceapi.com"
         if query["Action"].endswith("ImageUpload")
@@ -60,6 +60,7 @@ def gateway(method, query, sts, body=None):
         if body is not None and host.startswith("vod")
         else None,
         timeout=60,
+        expected_uid=expected_uid,
     )
     if result.get("ResponseMetadata", {}).get("Error"):
         raise DouyinRequestError("UPLOAD_GATEWAY_REJECTED")
@@ -68,7 +69,7 @@ def gateway(method, query, sts, body=None):
     return result["Result"]
 
 
-def transfer(node, expiry, query="", data=None, user_id="", finish=False):
+def transfer(node, expiry, query="", data=None, user_id="", finish=False, *, expected_uid=None):
     fields = {
         "credentials": {
             "upload_host": node["upload_host"],
@@ -85,7 +86,7 @@ def transfer(node, expiry, query="", data=None, user_id="", finish=False):
             content_crc32=f"{zlib.crc32(data) & 0xFFFFFFFF:08x}",
         )
     if finish:
-        result = request_text_finish(node, fields, query, data)
+        result = request_text_finish(node, fields, query, data, expected_uid=expected_uid)
     else:
         result = request(
             "media",
@@ -100,13 +101,14 @@ def transfer(node, expiry, query="", data=None, user_id="", finish=False):
             payload=data,
             timeout=300,
             content_type="application/octet-stream",
+            expected_uid=expected_uid,
         )
     if result.get("code") not in (2000, 0):
         raise DouyinRequestError("UPLOAD_TRANSFER_REJECTED")
     return result
 
 
-def request_text_finish(node, fields, query, data):
+def request_text_finish(node, fields, query, data, *, expected_uid=None):
     # A checksum list is small UTF-8 metadata; file chunks never enter Relay.
     return request(
         "media",
@@ -117,17 +119,18 @@ def request_text_finish(node, fields, query, data):
         fields=fields,
         content_type="text/plain",
         timeout=60,
+        expected_uid=expected_uid,
     )
 
 
-def upload_bytes(path, node, expiry, user_id=""):
+def upload_bytes(path, node, expiry, user_id="", *, expected_uid=None):
     size = path.stat().st_size
     if size <= PART_SIZE:
-        return transfer(node, expiry, data=path.read_bytes(), user_id=user_id)
+        return transfer(node, expiry, data=path.read_bytes(), user_id=user_id, expected_uid=expected_uid)
     upload_id = node.get("upload_id")
     if not upload_id:
         upload_id = (
-            transfer(node, expiry, "?uploadmode=part&phase=init", user_id=user_id).get(
+            transfer(node, expiry, "?uploadmode=part&phase=init", user_id=user_id, expected_uid=expected_uid).get(
                 "data"
             )
             or {}
@@ -146,6 +149,7 @@ def upload_bytes(path, node, expiry, user_id=""):
                 f"?uploadid={quote(str(upload_id))}&part_number={index}&phase=transfer&part_offset={offset}",
                 chunk,
                 user_id,
+                expected_uid=expected_uid,
             )
             checks.append(crc)
             offset += len(chunk)
@@ -156,17 +160,18 @@ def upload_bytes(path, node, expiry, user_id=""):
         ",".join(f"{i}:{c}" for i, c in enumerate(checks, 1)).encode(),
         user_id,
         finish=True,
+        expected_uid=expected_uid,
     )
 
 
-def upload(path, kind, *, user_id="", sts=None, space=None, functions=None, gcm=False):
+def upload(path, kind, *, user_id="", sts=None, space=None, functions=None, gcm=False, expected_uid=None):
     path = Path(path).expanduser().resolve()
     if not path.is_file() or not path.stat().st_size:
         raise ValueError("MEDIA_FILE_MISSING")
     if kind not in ("image", "video", "audio", "object"):
         raise ValueError("INVALID_MEDIA_KIND")
     if sts is None:
-        response = call("upload_auth")
+        response = call("upload_auth", expected_uid=expected_uid)
         raw = response.get("auth")
         sts = json.loads(raw) if isinstance(raw, str) else raw
         if not isinstance(sts, dict):
@@ -198,7 +203,7 @@ def upload(path, kind, *, user_id="", sts=None, space=None, functions=None, gcm=
             query["s"] = str(secrets.randbelow(10**12))
         if gcm:
             query["OpenGcmEnc"] = "true"
-    result = gateway("GET", query, sts)
+    result = gateway("GET", query, sts, expected_uid=expected_uid)
     addr = (
         result.get("UploadAddress")
         if imagex
@@ -216,7 +221,7 @@ def upload(path, kind, *, user_id="", sts=None, space=None, functions=None, gcm=
         "session_key": addr["SessionKey"],
         "upload_id": store.get("UploadID", ""),
     }
-    upload_bytes(path, node, creds["expires_at"], user_id)
+    upload_bytes(path, node, creds["expires_at"], user_id, expected_uid=expected_uid)
     query = {"Action": "CommitImageUpload" if imagex else "CommitUploadInner", **common}
     body = {"SessionKey": node["session_key"]}
     if not imagex:
@@ -230,9 +235,9 @@ def upload(path, kind, *, user_id="", sts=None, space=None, functions=None, gcm=
         )
     # Refresh creator video credentials for commit; IM keeps its selected space.
     if kind == "video" and not space:
-        refreshed = call("upload_auth").get("auth")
+        refreshed = call("upload_auth", expected_uid=expected_uid).get("auth")
         sts = json.loads(refreshed) if isinstance(refreshed, str) else refreshed
-    result = gateway("POST", query, sts, body)
+    result = gateway("POST", query, sts, body, expected_uid=expected_uid)
     items = result.get("PluginResult") if imagex else result.get("Results")
     if not isinstance(items, list) or not items:
         raise DouyinRequestError("UPLOAD_COMMIT_RESULT_MISSING")

@@ -28,7 +28,7 @@ metadata:
 - 视频没有人声、或精彩与否要看**画面**而不是听内容 → 走 `video-edit` 的画面集锦流程
 - 用户已经明确告诉剪哪几段 → 直接用 `video-edit extract` 手工抽段拼接
 - 需要从零生产视频 → 委托 content-producer
-- 需要烧字幕、加 BGM → 剪完后走 `video-edit subtitles` / `video-edit audio-mix`（BGM 来源优先公共 `bgm-library` 技能：`bgm-library pick "<主题>"` 选曲下载，免 key、免版税、自动署名；定制风格用 `aigc-video-gen music`）
+- 需要烧字幕、加 BGM → 剪完后走 `video-edit subtitles` / `video-edit audio-mix`（纯 BGM 使用公共 `bgm-library`：`bgm-library pick "<英文风格标签>"` 选曲下载并保留署名；背景音/环境音用 `aigc-video-gen audio`，保持原口播，不为加背景而重配人声）
 
 ---
 
@@ -162,7 +162,7 @@ video-review <project-dir>/highlight.mp4
 | requests | 仓根 requirements.txt | 调 ASR HTTP API |
 | `video-edit` 技能 | 同 workspace | Step 3 剪拼（apply-cut）+ 后续加 BGM（audio-mix） |
 | `video-review` 技能 | 公共 skills | Step 4 成片自检 |
-| `bgm-library` 技能 | 公共 skills | 加 BGM 时的曲源（ccMixter 免版税，免 key，优先于 aigc-video-gen music） |
+| `bgm-library` 技能 | 公共 skills | 纯 BGM 曲源（ccMixter 免版税，免 key，保留署名） |
 
 **ASR 凭证**（任一组）：火山 `VOLC_ASR_APP_ID` + `VOLC_ASR_ACCESS_KEY`（旧控制台双头）或 `VOLC_ASR_APP_KEY`（新控制台单头）；百炼业务空间 `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`；百炼 agent plan `AWK_API_KEY`。全部未配置时退出码 2 并提示走 viral-chaser 开通流程。
 

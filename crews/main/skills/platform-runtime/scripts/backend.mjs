@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { readFile, mkdir, writeFile, rename, chmod } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -12,11 +13,13 @@ export const platforms = JSON.parse(await readFile(join(runtimeDir, 'platforms.j
 export const stateHome = resolve(process.env.PLATFORM_API_HOME || join(process.env.OPENCLAW_HOME || join(homedir(), '.openclaw'), 'logins/platform-api'));
 export const emit = value => process.stdout.write(JSON.stringify(value) + '\n');
 export class PlatformError extends Error {
-  constructor(code, message, exitCode = 1, diagnostic) { super(message); this.code = code; this.exitCode = exitCode; this.diagnostic = diagnostic; }
+  constructor(code, message, exitCode = 1, diagnostic, publication) {
+    super(message); this.code = code; this.exitCode = exitCode; this.diagnostic = diagnostic; this.publication = publication;
+  }
 }
 export function canonical(value) {
-  const platform = value === 'twitter' ? 'x' : value;
-  if (!platforms[platform]) throw new PlatformError('USAGE', '平台仅支持 x / tiktok / kuaishou / weibo');
+  const platform = { twitter: 'x', yt: 'youtube' }[value] || value;
+  if (!platforms[platform]) throw new PlatformError('USAGE', '平台仅支持 x / tiktok / kuaishou / weibo / youtube');
   return platform;
 }
 export function accountName(value) {
@@ -51,8 +54,31 @@ export async function atomicJson(path, value) {
   await rename(temp, path);
 }
 export function packageRoot() {
-  try { return dirname(createRequire(import.meta.url).resolve('catbus-cli/package.json')); }
-  catch { throw new PlatformError('DEPENDENCY_MISSING', '平台依赖未安装，请通过项目安装流程安装 skill Node 依赖'); }
+  const profile = JSON.parse(readFileSync(join(runtimeDir, 'runtime-profile.json'), 'utf8'));
+  let root;
+  try { root = dirname(createRequire(import.meta.url).resolve(profile.package + '/package.json')); }
+  catch {
+    throw new PlatformError('DEPENDENCY_MISSING', '平台依赖未安装，请通过项目安装流程安装 skill Node 依赖');
+  }
+  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  const contract = JSON.parse(readFileSync(join(root, 'runtime-contract.json'), 'utf8'));
+  if (pkg.version !== profile.version || contract.signingMode !== 'relay') {
+    throw new PlatformError('DEPENDENCY_INVALID', '需要安装锁定的 Relay 运行包，禁止回退旧本地签名库');
+  }
+  return root;
+}
+const contracts = new Map();
+export function runtimeContract(root = packageRoot()) {
+  if (contracts.has(root)) return contracts.get(root);
+  let value;
+  value = JSON.parse(readFileSync(join(root, 'runtime-contract.json'), 'utf8'));
+  if (value.version !== 1 || value.signingMode !== 'relay' || !/^[A-Z][A-Z0-9_]{1,63}$/.test(value.stateEnvironment || '')
+      || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(value.errorExport || '')
+      || !/^[A-Za-z0-9_.-]{1,128}$/.test(value.rawSymbol || '')) {
+    throw new PlatformError('DEPENDENCY_INVALID', '平台运行库适配协议无效');
+  }
+  contracts.set(root, value);
+  return value;
 }
 export async function networkProxy(platform) {
   const key = 'PLATFORM_API_' + platform.toUpperCase() + '_PROXY';
@@ -85,7 +111,8 @@ export async function runBackend(platform, args, { home = stateHome, identityFil
   if (proxy && !args.some(arg => arg === '--proxy' || arg.startsWith('--proxy='))) args.push('--proxy', proxy);
   const command = process.env.PLATFORM_API_CLI || process.execPath;
   const argv = process.env.PLATFORM_API_CLI ? [platform, ...args] : [join(runtimeDir, 'scripts/api-runner.mjs'), platform, ...args];
-  const env = { ...process.env, CATBUS_HOME: home };
+  const env = { ...process.env, PLATFORM_RUNTIME_STATE_HOME: home,
+    [runtimeContract().stateEnvironment]: home };
   if (identityFile) env.PLATFORM_API_IDENTITY_FILE = identityFile;
   if (loginJob) {
     env.PLATFORM_API_LOGIN_JOB = loginJob;
@@ -146,6 +173,8 @@ export async function requireWriteSession(platform, account) {
   if (missing.length) throw new PlatformError('WRITE_SESSION_REQUIRED', 'TikTok 写操作缺少同次浏览器会话材料：' + missing.join(', '), 2);
 }
 export function reportError(error) {
-  emit({ ok: false, error: error.code || 'ERROR', message: error instanceof PlatformError ? error.message : '本地处理失败，请检查输入文件、依赖和状态目录', ...(error instanceof PlatformError && error.diagnostic ? { diagnostic: error.diagnostic } : {}) });
+  emit({ ok: false, error: error.code || 'ERROR', message: error instanceof PlatformError ? error.message : '本地处理失败，请检查输入文件、依赖和状态目录',
+    ...(error instanceof PlatformError && error.diagnostic ? { diagnostic: error.diagnostic } : {}),
+    ...(error instanceof PlatformError && error.publication ? error.publication : {}) });
   process.exitCode = error.exitCode || 1;
 }

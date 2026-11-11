@@ -13,11 +13,11 @@ def upload_attachment(path, kind, user_id, thumb=None):
     path = Path(path).expanduser().resolve()
     if not path.is_file() or not path.stat().st_size:
         raise ValueError("MEDIA_FILE_MISSING")
-    if kind == "file" and path.stat().st_size > 10 * 1024**2:
+    if path.stat().st_size > 10 * 1024**2:
         raise ValueError("IM_FILE_TOO_LARGE")
     if kind == "audio":
         raise ValueError("VOICE_CONTENT_REQUIRED")
-    config = call("im_upload_config")
+    config = call("im_upload_config", expected_uid=user_id)
     sts = config.get("public_file_config" if kind == "file" else "public_image_config")
     if not isinstance(sts, dict) or not sts.get("space_name"):
         raise DouyinRequestError("IM_UPLOAD_CONFIG_MISSING")
@@ -38,7 +38,8 @@ def upload_attachment(path, kind, user_id, thumb=None):
             }
         ]
         info = upload(
-            path, "image", user_id=user_id, sts=sts, space=space, functions=functions
+            path, "image", user_id=user_id, sts=sts, space=space, functions=functions,
+            expected_uid=user_id,
         )
         return 27, MessagePayload._image_content(info, path.read_bytes(), gif=gif)
     if kind == "file":
@@ -50,6 +51,7 @@ def upload_attachment(path, kind, user_id, thumb=None):
             space=space,
             functions=[],
             gcm=True,
+            expected_uid=user_id,
         )
         enc = info.get("Encryption") or info
         return 6, {
@@ -94,6 +96,7 @@ def upload_attachment(path, kind, user_id, thumb=None):
             sts=sts,
             space=inner["space_name"],
             functions=[],
+            expected_uid=user_id,
         )
         cover_uri = MessagePayload._plain_uri(cover_info)
     info = upload(
@@ -102,6 +105,7 @@ def upload_attachment(path, kind, user_id, thumb=None):
         user_id=user_id,
         sts=sts,
         space=space,
+        expected_uid=user_id,
         functions=[
             {
                 "name": "Encryption",

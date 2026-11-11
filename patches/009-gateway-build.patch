@@ -1,35 +1,31 @@
 diff --git a/scripts/build-all.mts b/scripts/build-all.mts
-index 072fb233030..4f5abfbe67e 100644
 --- a/scripts/build-all.mts
 +++ b/scripts/build-all.mts
-@@ -92,7 +92,6 @@ const PNPM_STEP_NODE_FALLBACKS = new Map([
-   ["ui:build", ["scripts/ui.js", "build"]],
- ]);
+@@ -97,7 +97,6 @@
+     phase,
+   ]);
  export const BUILD_ALL_STEPS: BuildAllStep[] = [
 -  nodeStep("native-protocol", ["scripts/prepare-native-protocol.mjs"]),
    nodeStep("clean:dist", [
      "-e",
      'require("node:fs").rmSync("dist", { recursive: true, force: true })',
-@@ -216,7 +215,6 @@ const FINAL_BUILD_ARTIFACTS_STEP_LABELS = [
+@@ -176,7 +175,6 @@
    ...BUILD_METADATA_STEP_LABELS,
  ] as const;
  const CI_ARTIFACT_STEP_LABELS = [
 -  "native-protocol",
    ...ASSET_RUNTIME_STEP_LABELS,
+   "write-plugin-sdk-entry-dts",
    ...FINAL_BUILD_ARTIFACTS_STEP_LABELS,
- ];
-@@ -231,7 +229,6 @@ const FULL_RUNTIME_STEP_LABELS = ASSET_RUNTIME_STEP_LABELS.flatMap((step) =>
-   step === "tsdown" ? FULL_COMPILER_STEP_LABELS : [step],
+@@ -192,12 +190,10 @@
+       : [step],
  );
  const FULL_BUILD_STEP_LABELS = [
 -  "native-protocol",
    ...FULL_RUNTIME_STEP_LABELS,
    ...FINAL_BUILD_ARTIFACTS_STEP_LABELS,
  ];
-@@ -254,7 +251,6 @@ const BUILD_ALL_PROFILES: Record<string, string[]> = {
- };
- 
- const FULL_RUNTIME_ONLY_STEPS = [
+ const RUNTIME_ONLY_STEP_LABELS = [
 -  "native-protocol",
    ...ASSET_RUNTIME_STEP_LABELS,
    "ui:build",

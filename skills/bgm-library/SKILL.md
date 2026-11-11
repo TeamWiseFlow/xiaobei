@@ -1,8 +1,8 @@
 ---
 name: bgm-library
 description: 搜索、筛选并下载 ccMixter 免版税背景音乐（仅 CC BY / CC BY-SA，商用安全），
-  自动生成 TASL 署名。支持关键词搜索、5 套场景预设、按主题自动选曲、按 ID 下载。
-  纯客户端，无需 API key。
+  自动生成 TASL 署名。支持关键词搜索、5 套场景预设、按标签下载候选曲、按 ID 下载。
+  纯 BGM 优先使用本技能；背景音、环境音及带背景/环境的人声优先用 aigc-video-gen audio。纯客户端，无需 API key。
 metadata:
   openclaw:
     emoji: 🎵
@@ -43,6 +43,9 @@ bgm-library <command> [args]
 # 关键词搜
 bgm-library search chill lofi --limit 5
 
+# 要求同时包含所有标签
+bgm-library search chill lofi --match all --limit 5
+
 # 预设搜
 bgm-library search --preset travel
 ```
@@ -53,10 +56,13 @@ bgm-library search --preset travel
 | `-p, --preset <name>` | — | 预设：`travel` / `tech` / `lofi` / `food` / `workout` |
 | `--commercial-only` / `--no-commercial-only` | on | 协议过滤开关 |
 | `--sort <field>` | `score` | `date` / `name` / `score` |
+| `--match <mode>` | `any` | 多词默认 OR；`all` 要求同时命中全部标签 |
 
-### `pick <theme>` — 按主题自动选曲并下载
+使用曲库的英文标签；中文会原样参与查询，不会自动翻译或删除后变成无主题搜索。无结果时换英文标签或场景预设，不推定曲库没有相应风格。
 
-按主题关键词搜、评分排序、自动下载最佳匹配。无精确匹配时回退到首关键词广搜。
+### `pick <theme>` — 按标签下载候选曲
+
+默认按任一标签检索，在返回的候选中按标签/标题命中数排序后下载一首；同分保留上游排序。无匹配时报错，不删除关键词另下无关曲目。它不分析音频，不保证旋律、高潮段或最终听感；下载后必须试听。
 
 ```bash
 bgm-library pick "chill lofi study" --output ./audio/
@@ -68,6 +74,7 @@ bgm-library pick "energetic workout motivation" --output ./audio/
 | `-o, --output <dir>` | `./public` | 输出目录 |
 | `-l, --limit <n>` | `5` | 候选评估条数 |
 | `--force` | off | 覆盖已存在文件 |
+| `--match <mode>` | `any` | 多词 OR；`all` 为全部标签匹配 |
 
 ### `download <uploadId>` — 按 ccMixter upload ID 下载
 
@@ -88,11 +95,11 @@ bgm-library presets
 
 | Preset | 场景 | Tags |
 |--------|------|------|
-| `travel` | 旅行 / Vlog | upbeat, travel, vlog, vacation, summer |
-| `tech` | 科技 / 产品 | corporate, technology, digital, modern |
-| `lofi` | 咖啡馆 / 学习 | lofi, chill, study, cafe, downtempo |
-| `food` | 美食 / 生活 | acoustic, cooking, lifestyle, warm, light |
-| `workout` | 运动 / 健身 | workout, gym, sport, energy, edm |
+| `travel` | 旅行 / Vlog | upbeat |
+| `tech` | 科技 / 产品 | electronic |
+| `lofi` | 咖啡馆 / 学习 | chill |
+| `food` | 美食 / 生活 | acoustic |
+| `workout` | 运动 / 健身 | edm |
 
 ### `info <uploadId>` — 查看曲目详情（协议 / BPM / 时长 / 文件）
 
@@ -139,21 +146,21 @@ bgm-library info 70473
 
 ## 在 video-edit / video-producer 中使用
 
-配乐环节拿到 `--bgm` 文件的来源之一（与 `aigc-video-gen music` 生成路线并列）：
+下载并试听候选后，把明确的曲目路径交给 `video-edit`；选段与音量按本次素材设置：
 
 ```bash
-# 1. 按视频主题选曲并下载到工程 audio/ 目录
-bgm-library pick "科技产品展示 轻快" --output <project-dir>/audio/
-
-# 2. 交给 video-edit 混音（循环/裁剪到视频时长，默认 0.25 音量垫底）
-video-edit audio-mix input.mp4 --bgm <project-dir>/audio/Coruscate_-_The_Fade_Out.mp3 --output out.mp4
+video-edit audio-mix input.mp4 --bgm <已下载的曲目.mp3> --bgm-start 47 --bgm-duration 20 --bgm-volume 0.3 --bgm-outro-fade 0.8 --output out.mp4
 ```
 
 选曲策略：
 
 - ✅ **优先 `bgm-library`**：免 key、免版税、自动署名、商用安全；适合绝大多数配乐场景
-- ✅ **需要定制风格 / 无法在 ccMixter 找到匹配时**：用 `aigc-video-gen music`（MiniMax 生成，需 `MINIMAX_API_KEY`）
+- ✅ **纯 BGM**：继续用 `bgm-library` 换标签、预设或候选曲；也可使用用户提供的授权曲目。
+- ✅ **背景音、音效、环境音，或带背景/环境的人声**：优先用 `aigc-video-gen audio` 一次生成；纯人声旁白用 `awk-tts`。完整混合音轨不再叠一遍 BGM。
 - ❌ **不要**放开 `--no-commercial-only` 下 NC/ND 协议曲目到商用成片
+- ✅ 先试听几处候选段落，核对旋律、节奏、人声冲突和循环接缝；用户要高潮段时，明确选段起点与长度，不默认曲首或全曲 RMS 最大段就是高潮。
+- ✅ 默认增益只是起点。试听带旁白样片，测量所选段落的电平，再调节比例；频谱平坦度只能作为音色参考，不能据一个阈值判废曲目或认证旋律。
+- ✅ 最终混音走 `video-review` 并抽听末 3 秒。不要自行拼接动态 `loudnorm → amix` 链；使用 `video-edit audio-mix --normalize-inputs` 完整处理分轨后再混合，避免末句丢失。
 
 ---
 
@@ -167,7 +174,12 @@ video-edit audio-mix input.mp4 --bgm <project-dir>/audio/Coruscate_-_The_Fade_Ou
 ### pitfall: 搜索无结果
 
 - **症状**：`No tracks found matching your query`
-- **workaround**：ccMixter 曲库比 Pixabay 小，换更宽的关键词、减少标签、或用 `--preset`
+- **workaround**：先确认查询实际成功；多词用 `--match any`，换英文单标签或用 `--preset`。网络/解析错误不算无结果，不从错误中推定曲库为空。
+
+### pitfall: Header overflow / 瞬态查询失败
+
+- **症状**：`Parse Error: Header overflow`、超时、连接重置、429 或 5xx。
+- **workaround**：只读 API 查询已自动在 1 秒、2 秒后最多重试两次（含首次共三次）。仍失败则保留错误、停止本次查询；不要连续手动重试或当成无曲目。下载不会因此自动重发。
 
 ### pitfall: ccMixter SSL 证书链不全
 

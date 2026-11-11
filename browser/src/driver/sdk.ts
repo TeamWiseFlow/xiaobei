@@ -1,15 +1,15 @@
 /** All version-sensitive SDK imports live here. Assets are installed explicitly. */
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Reader } from "maxmind";
 import { NewBrowser, type NewBrowserOptions } from "camoufox";
 import { LIBRARY_VERSION } from "camoufox/dist/__version__.js";
 import { generateFingerprint } from "camoufox/dist/fingerprints.js";
-import { isModelInstalled, MODEL_PIN } from "camoufox/dist/fpgen/index.js";
+import { MODEL_PIN, setModelDir } from "fpgen-js";
 import { publicIP, validIPv4, validIPv6 } from "camoufox/dist/ip.js";
 import { Geolocation, SELECTOR } from "camoufox/dist/locales.js";
 import { firefox, type Browser, type BrowserContext } from "playwright-core";
-import { assetPaths, lock } from "../../scripts/asset-paths.mjs";
+import { assetPaths, fingerprintModelInstalled, lock } from "../../scripts/asset-paths.mjs";
 import { RuntimeError } from "../protocol/index.js";
 import { parseProxySettings } from "../state/proxy.js";
 
@@ -22,7 +22,7 @@ export function assetStatus() {
   try { addonInstalled = JSON.parse(readFileSync(join(paths.addon, "manifest.json"), "utf8")).version === lock.ubo.version; } catch {}
   return { ...paths, installed: existsSync(paths.launcher), version,
     versionMatches: version === `${lock.version}-${lock.release}`,
-    modelInstalled: isModelInstalled(paths.model) && existsSync(join(paths.model, "values.dat")) && statSync(join(paths.model, "values.dat")).size > 0,
+    modelInstalled: fingerprintModelInstalled(paths.model),
     geoipInstalled: existsSync(paths.geoip), addonInstalled };
 }
 export function requireAssets(geoip = false): ReturnType<typeof assetPaths> {
@@ -31,7 +31,9 @@ export function requireAssets(geoip = false): ReturnType<typeof assetPaths> {
     throw new RuntimeError("ASSET_MISSING", "Pinned Camoufox/browser model/addon or requested GeoIP asset missing; run xiaobei-browser install before starting");
   if (lock.sdk.name !== "camoufox" || LIBRARY_VERSION !== lock.sdk.version || MODEL_PIN.sha256 !== lock.model.sha256)
     throw new RuntimeError("ASSET_MISSING", "SDK or fingerprint model differs from assets.lock.json");
-  process.env.CAMOUFOX_FPGEN_DATA = status.model;
+  // The SDK configures fpgen during module import; changing an env var afterwards
+  // leaves it pointing at the SDK cache. Set the public model directory explicitly.
+  setModelDir(status.model);
   return status;
 }
 export function newFingerprint(os: string, window?: [number, number] | null): Record<string, unknown> {

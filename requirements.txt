@@ -1,7 +1,7 @@
 # wiseflow-client 全仓 Python 依赖（统一声明）
 #
-# 由 scripts/apply-addons.sh 扫描合并后 pip install（源码部署），
-# 或由 Dockerfile wiseflow-layer 阶段直接 pip install（Docker 部署）。
+# 由 scripts/python-runtime.mjs 扫描合并，使用小贝自管 Python 安装进 tools/python venv；
+# 源码、预构建包和 Docker 共用此入口，不写入系统或用户级 Python 包目录。
 # 运行链路必需的 skill 依赖统一声明；只在手工场景用到的重型工具（如 manim）按需安装。
 #
 # 第三方包清单（被 skills/ crews/ 下脚本 import）：
@@ -13,7 +13,7 @@ python-pptx>=1,<2  # pitch-deck；浏览器渲染统一使用 Node Playwright，
 websockets        # wechat-channels-publish 视频上传
 httpx             # wx-mp-hunter fetch（MicroMessenger UA 直访）
 zstandard         # wx-mp-hunter posts-list（49 号消息 Zstd 解压）
-curl_cffi>=0.16.2,<0.17  # expert-xhs Creator HTTP 指纹传输
+curl_cffi>=0.16.2,<0.17  # 小红书与抖音 HTTP 传输
 loguru            # expert-xhs Creator API / 登录日志
 python-dotenv     # expert-xhs Creator 初始化工具
 qrcode           # expert-xhs Creator 本地扫码登录

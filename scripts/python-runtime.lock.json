@@ -1,0 +1,27 @@
+{
+  "version": "3.12.16",
+  "build": "20261026",
+  "source": "https://github.com/astral-sh/python-build-standalone",
+  "assets": {
+    "linux-x64": {
+      "target": "x86_64-unknown-linux-gnu",
+      "sha256": "ce4f6d0a6cfdb3bed6e44c2f9affd85943c76a42e25ad3a259002f31d6fb8a20"
+    },
+    "linux-arm64": {
+      "target": "aarch64-unknown-linux-gnu",
+      "sha256": "bb4b6392670c5d3f93876996fcaa19858a4a413a0c7720144c18b0d6f1f0db2d"
+    },
+    "mac-x64": {
+      "target": "x86_64-apple-darwin",
+      "sha256": "37c38fda76fec1fbf310adcbafb7f0d96af13b5511bf8ea954c3aa8eec185734"
+    },
+    "mac-arm64": {
+      "target": "aarch64-apple-darwin",
+      "sha256": "353d5f1b4fd2715e7053f12f068435d5bbad16b91e057006b5d01e0925709a7e"
+    },
+    "win-x64": {
+      "target": "x86_64-pc-windows-msvc",
+      "sha256": "1f2ab53880fc67ea323398c6388e05af28addc99a8e389209f08a51fdff4b149"
+    }
+  }
+}

@@ -9,6 +9,8 @@ metadata:
         - node
 ---
 
+上传签名和会话标记由 Relay 计算，使用 `OFB_KEY` 与可选 `RELAY_BASE_URL`；不需要签名的读取不强制调用 Relay。平台 HTTP 与会话留在客户端，Relay 错误独立处理，不回退本地签名或解验证码。
+
 
 # 微博内容采集
 

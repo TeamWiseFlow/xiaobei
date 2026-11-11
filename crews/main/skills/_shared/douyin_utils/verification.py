@@ -167,9 +167,17 @@ def creator_verification(headers):
     if (
         not isinstance(event, dict)
         or event.get("verify_scene") != "creator"
-        or event.get("verify_reason") != "gateway_web_authlv_check"
+        or event.get("verify_reason") not in {"gateway_web_authlv_check", "gateway_biz_verify"}
     ):
         return None
+    if event["verify_reason"] == "gateway_biz_verify":
+        log_id = event.get("log_id")
+        if not isinstance(log_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", log_id):
+            return None
+        if values.get("x-tt-logid") and values["x-tt-logid"] != log_id:
+            return None
+        return {"required": True, "scene": "creator", "reason": "gateway_biz_verify",
+                "methods": ["qrcode_verify"], "log_id": log_id}
     ways = decision.get("verify_way_name_list")
     if isinstance(ways, str):
         ways = [way.strip() for way in ways.split(",")]

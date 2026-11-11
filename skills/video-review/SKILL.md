@@ -21,6 +21,7 @@ metadata:
 - 5 位抽帧黑帧扫（0% / 25% / 50% / 75% / 100%）—— ≥2 黑帧判 critical
 - 100% 定位最后可解码帧，尾部先取2秒、再8秒窗口，仍无帧才从头解码（每次最多60秒）。缺帧或亮度分析失败写入 `coverage_missing[]`、`frame_coverage` 和 warning，不能以4帧无黑帧判 pass。
 - 音频电平分析（volumedetect）—— 静音 / 削波 / 无音轨
+- 音视频流起止时间对比（默认容差 0.1 秒）；音轨提前结束或延迟开始会 fail，流时长不可得会 warn，不以容器总时长代替短音轨。
 - 时长 vs 目标（`--target-duration`，默认 ±5% 容差）
 - 分辨率 floor（9:16 竖屏最低 720x1280）+ 目标比对 + 段一致性
 
@@ -74,6 +75,8 @@ video-review <final.mp4> --output review.json
 ## 抽帧产物
 
 每次检查的 5 帧与完整报告落独立的 `<project-dir>/review/runs/<review_id>/frames/frame_NNN.jpg` 和 `verdict.json`；报告记录源视频 SHA256、每帧 SHA256 及永久 `report_path`。同目录多素材、同名素材、重复或并行检查互不覆盖。`--output`（默认 `review/verdict.json`）仅是最新报告副本，复查或交接使用返回的 `report_path` 与帧路径。**不进 `artifacts/`、不进 `previews/`**。
+
+`checks[].name=audio_timeline` 记录两路流的开始、时长、结束及起止偏差。音视频等长不能证明口播完整：BGM 和补静音都能掩盖末句丢失，交付前另行抽听末 3 秒。报告须绑定当前成片 SHA256，重新混音后重跑，不沿用旧文件的 pass。
 
 人工或制作方另行补查的图片与结论单独保存，不修改公共报告里的缺失状态；需要公共检查完整时重跑本工具。尾帧的实际时间见 `decoded_timestamp_seconds`，不要把容器 duration 当作可解码时间点。
 

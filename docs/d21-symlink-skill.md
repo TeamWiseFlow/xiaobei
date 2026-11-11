@@ -125,7 +125,7 @@ login-manager check douyin   # wrapper 在 PATH 中
 | **C. 多并列脚本**（scripts 下多个并列脚本，按子命令选）| ~8 | **暂不加**（分发器 wrapper 引入新方言、agent 还要学；现状 SKILL.md 已写清 `./skills/<name>/scripts/<file>.sh` 绝对路径，CLAUDE.md 也强制绝对路径写法）| 0 |
 | **合计** | ~63 | — | 30 |
 
-**A 类清单（25 个纯指导，不加 wrapper）**：browser-guide、complex-task、council、smart-search、web-form-fill、login-manager（⚠️ 原文档错列 P0 wrapper，无脚本可包）、intel-gathering、investor-hunting、investor-materials、investor-outreach、investor-pipeline、lead-hunting、market-research、project-application、twitter-post、wechat-channels-publish、weibo-publish、xhs-interact、xianyu-ops、zhihu-publish、ui-demo、seo、tccli、alicloud-find-skills、demo-send、`_shared`。
+**A 类清单（24 个纯指导，不加 wrapper）**：browser-guide、complex-task、council、smart-search、web-form-fill、login-manager（⚠️ 原文档错列 P0 wrapper，无脚本可包）、intel-gathering、investor-hunting、investor-materials、investor-outreach、investor-pipeline、lead-hunting、market-research、project-application、twitter-post、wechat-channels-publish、weibo-publish、xhs-interact、xianyu-ops、ui-demo、seo、tccli、alicloud-find-skills、demo-send、`_shared`。
 
 **B 类清单（30 个薄转发 wrapper，2026-07-12 全落）**：
 

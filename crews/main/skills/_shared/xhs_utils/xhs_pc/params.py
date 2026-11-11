@@ -14,13 +14,13 @@ from xhs_utils.xhs_core.http import ordered_wire_headers
 PC_LOGIN_ACCEPT_LANGUAGE = 'zh-CN,zh;q=0.9'
 PC_BUSINESS_ACCEPT_LANGUAGE = 'zh-CN,zh;q=0.9,en;q=0.8,zh-TW;q=0.7,ja;q=0.6'
 PC_SEC_CH_UA = (
-    '"Not;A=Brand";v="8", "Chromium";v="152", '
-    '"Google Chrome";v="152"'
+    '"Google Chrome";v="155", "Chromium";v="155", '
+    '"Not(A:Brand";v="24"'
 )
 
 PC_CURRENT_BROWSER_UA = (
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-    '(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36'
+    '(KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36'
 )
 
 PC_NAVIGATION_HEADER_ORDER = (
@@ -224,15 +224,16 @@ def generate_x_rap_param(api, data, app_id=None, fingerprint_hex: str = '', prof
     })
     return str(result['x_rap_param'])
 
-def get_common_headers():
+def get_common_headers(release=None):
+    context = release or {}
     return {
         'upgrade-insecure-requests': '1',
-        'user-agent': (
+        'user-agent': context.get('userAgent', (
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
             'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/152.0.0.0 Safari/537.36'
-        ),
-        'sec-ch-ua': PC_SEC_CH_UA,
+            'Chrome/155.0.0.0 Safari/537.36'
+        )),
+        'sec-ch-ua': context.get('secChUa', PC_SEC_CH_UA),
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"Windows"',
         'accept': (
@@ -266,7 +267,7 @@ def get_request_headers_template(
     user_agent = context.get(
         'userAgent',
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-        '(KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36',
+        '(KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36',
     )
     headers = {
         'referer': 'https://www.xiaohongshu.com/',

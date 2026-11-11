@@ -49,7 +49,13 @@ if (!migrate) throw new Error("This OpenClaw build has no compatible Doctor migr
 const result = migrate(raw, {});
 if (result.partiallyValid)
   throw new Error("Doctor migration found remaining validation errors; config was not changed");
-const candidate = result.sourceConfig ?? result.config ?? raw;
+const candidate = structuredClone(result.sourceConfig ?? result.config ?? raw);
+// xiaobei owns the pinned engine upgrade. Native discovery fetches the upstream
+// development branch even for a detached release and can leave large partial packs.
+candidate.update ??= {};
+candidate.update.checkOnStart = false;
+candidate.update.auto ??= {};
+candidate.update.auto.enabled = false;
 const changed = JSON.stringify(candidate) !== JSON.stringify(raw);
 if (write) {
   candidate.meta ??= {};

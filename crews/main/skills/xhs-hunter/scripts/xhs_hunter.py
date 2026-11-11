@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import fcntl
@@ -12,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -20,12 +22,16 @@ from uuid import uuid4
 
 from xhs_utils.pc_session import LOGIN_DIR, SESSION_FILE, SessionMissing, load_auth, save_auth, session_lock
 from xhs_utils.runtime_logs import logged_worker_command
+from xhs_utils.verification import VerificationRequired
+import verification_flow
 
 
-STATUS_FILE = LOGIN_DIR / 'xhs-pc-login-status.json'
-LOGIN_LOCK = LOGIN_DIR / 'xhs-pc-login.lock'
-QR_FILE = LOGIN_DIR / 'xhs-pc-qr.png'
+STATUS_FILE = SESSION_FILE.with_name('xhs-pc-login-status.json')
+LOGIN_LOCK = SESSION_FILE.with_name('xhs-pc-login.lock')
+QR_FILE = SESSION_FILE.with_name('xhs-pc-qr.png')
 WORKER_LOG = Path.home() / '.openclaw' / 'logs' / 'xhs-pc-login.log'
+QR_READY_TIMEOUT = 90
+LOGIN_JOB_TIMEOUT = 420
 COUNT_FIELDS = ('liked_count', 'collected_count', 'comment_count', 'share_count')
 
 
@@ -96,85 +102,272 @@ def login_status() -> dict:
         return {}
 
 
-def _alive(pid) -> bool:
+def _process_identity(pid) -> str | None:
+    if isinstance(pid, bool):
+        return None
     try:
-        os.kill(int(pid), 0)
-        return True
-    except (TypeError, ValueError, ProcessLookupError, PermissionError):
-        return False
+        pid = int(pid)
+        if pid <= 0:
+            return None
+        os.kill(pid, 0)
+        if sys.platform.startswith('linux'):
+            fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+            return None if fields[0] in {'Z', 'X'} else f'linux:{fields[19]}'
+        result = subprocess.run(['ps', '-p', str(pid), '-o', 'stat=', '-o', 'lstart='],
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=2)
+        fields = result.stdout.strip().split(maxsplit=1)
+        return fields[1] if result.returncode == 0 and len(fields) == 2 and not fields[0].startswith(('Z', 'X')) else None
+    except (OSError, ValueError, TypeError, IndexError, subprocess.TimeoutExpired):
+        return None
+
+
+def _alive(pid, identity=None) -> bool:
+    current = _process_identity(pid)
+    return current is not None and (identity is None or current == identity)
+
+
+@contextmanager
+def _login_lock():
+    LOGIN_LOCK.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(LOGIN_LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def _fail_login_locked(current, error, message):
+    current.update({'state': 'failed', 'error': error, 'message': message,
+                    'finished_at': datetime.now(timezone.utc).isoformat()})
+    _atomic_json(STATUS_FILE, current)
+    QR_FILE.unlink(missing_ok=True)
+    return current
+
+
+def _refresh_login_locked(worker=None):
+    current = login_status()
+    if current.get('state') != 'pending':
+        return current
+    pid, identity = current.get('pid'), current.get('process_identity')
+    if worker is not None and worker.pid == pid and worker.poll() is not None:
+        reason = ('LOGIN_WORKER_EXITED', '登录后台任务已退出；本次扫码结果未完成，请重新运行 xhs-hunter login')
+    elif not _alive(pid, identity):
+        reason = ('LOGIN_WORKER_EXITED', '登录后台任务已退出；本次扫码结果未完成，请重新运行 xhs-hunter login')
+    elif not identity or not current.get('owner_identity'):
+        reason = ('LOGIN_JOB_UNTRACKED', '旧登录任务缺少进程标识，请重新运行 xhs-hunter login')
+    elif not _alive(current.get('owner_pid'), current['owner_identity']):
+        reason = ('LOGIN_OWNER_EXITED', '登录命令已结束；本次扫码结果未完成，请重新运行 xhs-hunter login')
+    elif not isinstance(current.get('expires_at'), (int, float)) or time.time() >= current['expires_at']:
+        reason = ('LOGIN_TIMEOUT', '登录任务已超时，请重新运行 xhs-hunter login')
+    else:
+        return current
+    _fail_login_locked(current, *reason)
+    # Only signal the recorded process when its identity still matches.
+    if identity and _alive(pid, identity):
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    return current
+
+
+def refresh_login_status(worker=None):
+    with _login_lock():
+        return _refresh_login_locked(worker)
+
+
+def _fail_login(run_id, error, message):
+    with _login_lock():
+        current = login_status()
+        if current.get('run_id') == run_id and current.get('state') == 'pending':
+            return _fail_login_locked(current, error, message)
+        return current
+
+
+def _login_result(current):
+    state = current.get('state', 'missing')
+    if state == 'success':
+        return {'ok': True, 'state': 'authenticated', 'session_path': str(SESSION_FILE)}, 0
+    if state == 'awaiting_verification':
+        return {'ok': False, 'state': state, 'verification': current.get('verification'),
+                'message': current.get('message')}, 4
+    if state == 'failed':
+        return {'ok': False, 'state': state, 'error': current.get('error', 'LOGIN_FAILED'),
+                'message': current.get('message'), 'qr_path': None, 'log_path': str(WORKER_LOG)}, 1
+    return {'ok': False, 'state': state,
+            'message': '登录任务运行中，尚未取得最终登录结果' if state == 'pending' else '请先运行 xhs-hunter login',
+            'qr_path': str(QR_FILE) if state == 'pending' and QR_FILE.is_file() else None}, 1
+
+
+def _reap_login_worker(worker):
+    try:
+        worker.wait(timeout=2)
+        return
+    except subprocess.TimeoutExpired:
+        try:
+            worker.terminate()
+        except ProcessLookupError:
+            pass
+    try:
+        worker.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(worker.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        worker.wait(timeout=2)
+
+
+class _LoginCancelled(BaseException):
+    pass
 
 
 def start_login() -> int:
-    LOGIN_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd = os.open(LOGIN_LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+    worker, run_id = None, None
+    owns_run = False
+    handlers = {}
+    def cancel(_signum, _frame):
+        raise _LoginCancelled()
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        current = login_status()
-        if current.get('state') != 'pending' or not _alive(current.get('pid')):
-            QR_FILE.unlink(missing_ok=True)
-            run_id = uuid4().hex
-            current = {'state': 'pending', 'run_id': run_id,
-                       'started_at': datetime.now(timezone.utc).isoformat()}
-            _atomic_json(STATUS_FILE, current)
-            WORKER_LOG.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            worker = subprocess.Popen(
-                logged_worker_command(WORKER_LOG, [sys.executable, __file__, '_login-worker', run_id]),
-                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True,
-                env={**os.environ, 'XHS_PC_QR_IMAGE': str(QR_FILE)},
-            )
-            current['pid'] = worker.pid
-            _atomic_json(STATUS_FILE, current)
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            handlers[signum] = signal.signal(signum, cancel)
+        with _login_lock():
+            current = _refresh_login_locked()
+            if current.get('state') != 'pending':
+                QR_FILE.unlink(missing_ok=True)
+                run_id = uuid4().hex
+                owns_run = True
+                current = {'state': 'pending', 'run_id': run_id,
+                           'started_at': datetime.now(timezone.utc).isoformat(),
+                           'expires_at': time.time() + LOGIN_JOB_TIMEOUT,
+                           'owner_pid': os.getpid(), 'owner_identity': _process_identity(os.getpid())}
+                _atomic_json(STATUS_FILE, current)
+                WORKER_LOG.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                worker = subprocess.Popen(
+                    logged_worker_command(WORKER_LOG, [sys.executable, __file__, '_login-worker', run_id]),
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                    env={**os.environ, 'XHS_PC_QR_IMAGE': str(QR_FILE)},
+                )
+                current.update({'pid': worker.pid, 'process_identity': _process_identity(worker.pid)})
+                _atomic_json(STATUS_FILE, current)
+            run_id = current['run_id']
 
-    deadline = time.monotonic() + 90
-    while time.monotonic() < deadline:
-        current = login_status()
-        if current.get('state') == 'success':
-            emit({'ok': True, 'state': 'authenticated', 'session_path': str(SESSION_FILE)})
-            return 0
-        if current.get('state') == 'failed':
-            emit({'ok': False, 'error': 'LOGIN_FAILED', 'message': current.get('message', '')})
-            return 1
-        if current.get('pid') and not _alive(current['pid']):
-            emit({'ok': False, 'error': 'LOGIN_WORKER_EXITED', 'log_path': str(WORKER_LOG)})
-            return 1
-        if QR_FILE.is_file() and QR_FILE.stat().st_size:
-            emit({'ok': True, 'state': 'awaiting_scan', 'qr_path': str(QR_FILE),
-                  'message': '将二维码图片交给用户扫码；用户确认后运行 login-confirm'})
-            return 0
-        time.sleep(0.25)
-    emit({'ok': False, 'error': 'QR_NOT_READY', 'log_path': str(WORKER_LOG)})
-    return 1
+        deadline = time.monotonic() + max(0, current['expires_at'] - time.time())
+        qr_deadline = time.monotonic() + QR_READY_TIMEOUT
+        qr_emitted = False
+        while True:
+            current = refresh_login_status(worker)
+            if current.get('run_id') != run_id:
+                emit({'ok': False, 'state': 'failed', 'error': 'LOGIN_TASK_CHANGED',
+                      'message': '登录任务已变化，请查询当前任务'})
+                return 1
+            if current.get('state') != 'pending':
+                result, code = _login_result(current)
+                emit(result)
+                return code
+            if time.monotonic() >= deadline:
+                current = _fail_login(run_id, 'LOGIN_TIMEOUT', '登录任务已超时，请重新运行 xhs-hunter login')
+                continue
+            try:
+                qr_ready = QR_FILE.is_file() and QR_FILE.stat().st_size > 0
+            except FileNotFoundError:
+                qr_ready = False
+            if not qr_emitted and qr_ready:
+                emit({'ok': True, 'state': 'awaiting_scan', 'qr_path': str(QR_FILE),
+                      'message': '将二维码图片交给用户扫码；保持当前任务运行，用户确认后运行 login-confirm'})
+                sys.stdout.flush()
+                qr_emitted = True
+            if not qr_emitted and time.monotonic() >= qr_deadline:
+                current = _fail_login(run_id, 'QR_NOT_READY', '登录二维码准备超时，请重新运行 xhs-hunter login')
+                continue
+            time.sleep(0.25)
+    except (_LoginCancelled, KeyboardInterrupt):
+        if owns_run:
+            _fail_login(run_id, 'LOGIN_CANCELLED', '登录任务已取消，请重新运行 xhs-hunter login')
+        emit({'ok': False, 'state': 'failed', 'error': 'LOGIN_CANCELLED', 'message': '登录任务已取消'})
+        return 1
+    except Exception:
+        if owns_run and run_id:
+            _fail_login(run_id, 'LOGIN_START_FAILED', '登录任务启动失败，请查看私有登录日志')
+        raise
+    finally:
+        try:
+            if worker is not None:
+                _reap_login_worker(worker)
+        finally:
+            for signum, previous in handlers.items():
+                signal.signal(signum, previous)
 
 
 def login_worker(run_id: str) -> int:
+    client = None
+    verification = None
     try:
         from xhs_utils.xhs_pc import XHSPcAuth
+        from xhs_utils.xhs_pc.login import XHSLoginApi
 
-        auth = XHSPcAuth.from_qrcode_login(show_in_terminal=False)
+        client = XHSLoginApi()
+        render_qr = client.show_qrcode_image
+        def show_current_qr(url):
+            with _login_lock():
+                current = _refresh_login_locked()
+                if current.get('run_id') != run_id or current.get('state') != 'pending':
+                    raise RuntimeError('登录任务已变化，拒绝写入旧二维码')
+                return render_qr(url)
+        client.show_qrcode_image = show_current_qr
+        cookies = client.qrcode_login(show_in_terminal=False)
+        if not cookies:
+            raise RuntimeError('扫码登录未返回正式会话')
+        local, session = client.profile.browser_storage_snapshot()
+        auth = XHSPcAuth.from_cookie(
+            cookies, local_storage=local, session_storage=session,
+            host_cookie_state=client.host_cookie_state(), dsl=client.dsl)
         try:
-            with session_lock():
-                save_auth(auth)
+            guard = os.open(LOGIN_LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            try:
+                fcntl.flock(guard, fcntl.LOCK_EX)
+                current = _refresh_login_locked()
+                if current.get('run_id') != run_id or current.get('state') != 'pending':
+                    raise RuntimeError('登录任务已变化，拒绝写入旧会话')
+                with session_lock():
+                    save_auth(auth)
+            finally:
+                fcntl.flock(guard, fcntl.LOCK_UN)
+                os.close(guard)
         finally:
             auth.close()
         state, message = 'success', 'PC 本地 HTTP 会话已就位'
+    except VerificationRequired as exc:
+        try:
+            verification = verification_flow.capture(client, exc, run_id=run_id)
+            state, message = 'awaiting_verification', '需要用户安全验证；运行 xhs-hunter verify-start'
+        except Exception:
+            state, message = 'failed', '无法保存登录安全验证任务，请查看私有登录日志'
     except Exception as exc:
         state, message = 'failed', f'{type(exc).__name__}: {str(exc)[:160]}'
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                state, message = 'failed', '登录资源关闭失败，请查看私有登录日志'
     fd = os.open(LOGIN_LOCK, os.O_RDWR | os.O_CREAT, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         current = login_status()
-        if current.get('run_id') == run_id:
+        if current.get('run_id') == run_id and current.get('state') == 'pending':
             current.update({'state': state, 'message': message,
                             'finished_at': datetime.now(timezone.utc).isoformat()})
+            if verification:
+                current['verification'] = verification
             _atomic_json(STATUS_FILE, current)
+            QR_FILE.unlink(missing_ok=True)
     finally:
         fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
-    QR_FILE.unlink(missing_ok=True)
     return 0 if state == 'success' else 1
 
 
@@ -224,6 +417,7 @@ def call_method(name: str, args: list | None = None, kwargs: dict | None = None)
     methods = _methods()
     if name not in methods or name == 'bootstrap':
         raise ValueError(f'未知 PC 接口 {name}；运行 methods 查看可用接口')
+    verification = None
     with session_lock():
         auth = load_auth()
         try:
@@ -231,8 +425,12 @@ def call_method(name: str, args: list | None = None, kwargs: dict | None = None)
 
             result = getattr(XHS_Apis(auth), name)(*(args or []), **(kwargs or {}))
             save_auth(auth)
+        except VerificationRequired as exc:
+            verification = exc
         finally:
             auth.close()
+    if verification:
+        return verification_flow.capture(auth, verification)
     if isinstance(result, tuple) and len(result) == 3:
         success, message, data = result
         return {'ok': bool(success), 'method': name, 'message': str(message), 'data': data}
@@ -501,6 +699,7 @@ def collect(source: str, target: str, *, count: int, output_dir: str,
         urls = [line.strip() for line in path.read_text(encoding='utf-8').splitlines()
                 if line.strip() and not line.startswith('#')][:count]
     notes, errors = [], []
+    verification = None
     with session_lock():
         auth = load_auth()
         try:
@@ -520,6 +719,9 @@ def collect(source: str, target: str, *, count: int, output_dir: str,
                     note_dir = directory / f'note-{index:03d}'
                     save_note(note, str(note_dir), download_media)
                     notes.append(note)
+                except VerificationRequired as exc:
+                    verification = exc
+                    break
                 except Exception as exc:
                     errors.append({'url': input_url, 'message': f'{type(exc).__name__}: {str(exc)[:160]}'})
             save_auth(auth)
@@ -528,6 +730,9 @@ def collect(source: str, target: str, *, count: int, output_dir: str,
     index_path = directory / 'notes.json'
     index_path.write_text(json.dumps({'notes': notes, 'errors': errors}, ensure_ascii=False,
                                      indent=2) + '\n', encoding='utf-8')
+    if verification:
+        return {**verification_flow.capture(auth, verification),
+                'count': len(notes), 'index_path': str(index_path)}
     result = {'ok': bool(notes), 'count': len(notes), 'failed': len(errors),
               'index_path': str(index_path), 'errors': errors}
     if xlsx and notes:
@@ -554,11 +759,18 @@ def collect(source: str, target: str, *, count: int, output_dir: str,
 def main() -> int:
     parser = argparse.ArgumentParser(description='小红书 PC 端搜索、笔记、用户、评论与媒体采集')
     subs = parser.add_subparsers(dest='command', required=True)
-    subs.add_parser('login', help='启动后台扫码并返回二维码图片路径')
+    login_parser = subs.add_parser('login', help='输出二维码并保持登录任务运行，直到成功、验证或失败')
+    # Accept the previous opt-in flag; retaining the root is now the default.
+    login_parser.add_argument('--keep-alive', action='store_true',
+                              help=argparse.SUPPRESS)
     subs.add_parser('login-confirm', help='查询扫码进度并验证 PC 登录态')
     subs.add_parser('login-phone', help='交互式手机号验证码登录')
     subs.add_parser('check', help='校验已保存的 PC 登录态')
     subs.add_parser('methods', help='列出全部可调用 PC 接口及参数')
+    subs.add_parser('verify-start', help='准备当前安全验证，发送一次短信或生成验证二维码')
+    verify = subs.add_parser('verify-code', help='提交当前安全验证的短信验证码')
+    verify.add_argument('--code-file', required=True, help='权限 0600 的六位验证码文件')
+    subs.add_parser('verify-confirm', help='查询验证二维码状态并续接原登录')
     generic = subs.add_parser('call', help='调用任一 PC 公开接口')
     generic.add_argument('method')
     generic.add_argument('--args', default='[]', help='JSON 数组')
@@ -602,14 +814,18 @@ def main() -> int:
             return login_worker(args.run_id)
         if args.command == 'login-phone':
             return phone_login()
+        if args.command in {'verify-start', 'verify-code', 'verify-confirm'}:
+            result = (verification_flow.start() if args.command == 'verify-start'
+                      else verification_flow.confirm(args.code_file if args.command == 'verify-code' else None))
+            emit(result)
+            return 0 if result.get('ok') else 4
         if args.command == 'login-confirm':
-            state = login_status()
+            state = refresh_login_status()
             if state.get('state') == 'success':
                 return check_login()
-            emit({'ok': False, 'state': state.get('state', 'missing'),
-                  'message': state.get('message') or '等待扫码确认',
-                  'qr_path': str(QR_FILE) if state.get('state') == 'pending' and QR_FILE.is_file() else None})
-            return 1
+            result, code = _login_result(state)
+            emit(result)
+            return code
         if args.command == 'check':
             return check_login()
         if args.command == 'methods':
@@ -659,10 +875,25 @@ def main() -> int:
         else:
             parser.error('未知命令')
         emit(result)
-        return 0 if result.get('ok') else 1
+        return 0 if result.get('ok') else (4 if result.get('error') == 'VERIFICATION_REQUIRED' else 1)
     except SessionMissing as exc:
         emit({'ok': False, 'error': 'SESSION_MISSING', 'message': str(exc)})
         return 2
+    except VerificationRequired as exc:
+        if args.command.startswith('verify-'):
+            emit({'ok': False, **exc.public(), 'message': '验证请求再次受限；保留原任务，请勿重复发码'})
+            return 4
+        if args.command == 'login-phone':
+            emit({'ok': False, **exc.public(), 'supported': False,
+                  'message': '当前手机号登录需要同账号网页安全验证；完成后重新发起登录'})
+            return 4
+        try:
+            result = verification_flow.capture_saved(exc)
+        except (OSError, ValueError) as error:
+            emit({'ok': False, 'error': 'VERIFICATION_STATE_UNAVAILABLE', 'message': str(error)[:160]})
+            return 4
+        emit(result)
+        return 4
     except Exception as exc:
         emit({'ok': False, 'error': type(exc).__name__, 'message': str(exc)[:300]})
         return 1

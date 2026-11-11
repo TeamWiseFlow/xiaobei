@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 import fcntl
 import json
@@ -177,7 +177,7 @@ def creator_api() -> Iterator:
         os.close(lock_fd)
 
 
-def login_local() -> None:
+def login_local(*, commit_guard=nullcontext, show_in_terminal=True) -> None:
     auth_class, api_class = _imports()
     qr_image = Path(os.environ.get(
         "XHS_CREATOR_QR_IMAGE",
@@ -185,13 +185,21 @@ def login_local() -> None:
     )).expanduser()
     os.environ["XHS_CREATOR_QR_IMAGE"] = str(qr_image)
     try:
-        auth = auth_class.from_qrcode_login(show_in_terminal=True)
+        auth = auth_class.from_qrcode_login(show_in_terminal=show_in_terminal)
         try:
             success, message, data = api_class(auth).get_user_info()
             if not success:
                 code = data.get("code") if isinstance(data, dict) else None
                 raise CreatorApiFailure(message, code=code)
-            _write_session(auth)
+            SESSION_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            lock_fd = os.open(SESSION_FILE.with_suffix('.lock'), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+            try:
+                # Waiting for an active API call must not block login timeout/cancellation.
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                with commit_guard():
+                    _write_session(auth)
+            finally:
+                os.close(lock_fd)
             observe("login", "ok")
         finally:
             auth.close()

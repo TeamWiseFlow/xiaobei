@@ -1,4 +1,10 @@
 {
+  "update": {
+    "checkOnStart": false,
+    "auto": {
+      "enabled": false
+    }
+  },
   "logging": {
     "level": "warn",
     "consoleLevel": "warn",

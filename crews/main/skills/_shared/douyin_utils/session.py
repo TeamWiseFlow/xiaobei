@@ -25,10 +25,35 @@ SECURITY_FIELDS = {
     "sec_ts",
     "csrf_token",
 }
+COOKIE_ORDER = (
+    "bd_ticket_guard_client_web_domain", "n_mh", "has_biz_token",
+    "__security_server_data_status", "_bd_ticket_crypt_doamin",
+    "SEARCH_RESULT_LIST_TYPE", "live_use_vvc", "store-region", "store-region-src",
+    "d_ticket", "is_staff_user", "enter_pc_once", "hevc_supported",
+    "passport_csrf_token", "passport_csrf_token_default", "UIFID", "uid_tt",
+    "uid_tt_ss", "sid_tt", "sessionid", "sessionid_ss", "bd_ticket_guard_ts_sign_id",
+    "__security_mc_1_s_sdk_crypt_sdk", "__security_mc_1_s_sdk_cert_key",
+    "__security_mc_1_s_sdk_sign_data_key_web_protect", "is_dbsc",
+    "is_support_rtm_web_ts", "stream_recommend_feed_params", "home_can_add_dy_2_desktop",
+    "strategyABtestKey", "publish_badge_show_info", "is_dash_user", "sid_guard",
+    "session_tlb_tag", "sid_ucp_v1", "ssid_ucp_v1", "IsDouyinActive",
+    "x-web-secsdk-uid", "ttwid", "csrf_session_id", "s_v_web_id", "odin_tt", "x_tt_token", "fpk1", "fpk2",
+)
 
 
 class SessionError(RuntimeError):
     pass
+
+
+def cookie_key(cookie):
+    return (cookie.get("name"), str(cookie.get("domain", "")).lstrip(".").lower(),
+            cookie.get("path", "/"))
+
+
+def latest_cookies(cookies):
+    # A leading domain dot is ignored for cookie identity. Keep the latest value
+    # while retaining its hostOnly and Secure attributes for scope checks.
+    return list({cookie_key(cookie): cookie for cookie in cookies if isinstance(cookie, dict)}.values())
 
 
 def runtime_fields(result):
@@ -104,7 +129,7 @@ class ApiSession:
             raise SessionError("API_SESSION_INVALID")
         if any(c in self.state["userAgent"] for c in "\r\n") or any(
             not isinstance(self.state.get(k, {}), dict)
-            for k in ("security", "security_by_host", "csrf", "tokens", "device")
+            for k in ("security", "security_by_host", "csrf", "tokens", "token_sources", "device")
         ):
             raise SessionError("API_SESSION_INVALID")
 
@@ -134,7 +159,7 @@ class ApiSession:
         parsed = urlsplit(url)
         host, path = parsed.hostname, parsed.path or "/"
         selected = []
-        for c in self.state["cookies"]:
+        for c in latest_cookies(self.state["cookies"]):
             if (
                 not isinstance(c, dict)
                 or not isinstance(c.get("name"), str)
@@ -152,6 +177,7 @@ class ApiSession:
             )
             if (
                 not domain
+                or c["name"] == "msToken"
                 or not scoped
                 or not matches
                 or c.get("expires", 0) > 0
@@ -161,7 +187,9 @@ class ApiSession:
             if any(x in c["name"] + c["value"] for x in "\r\n;"):
                 raise SessionError("API_SESSION_INVALID")
             selected.append(c)
-        selected.sort(key=lambda c: -len(c.get("path", "/")))
+        rank = {name: index for index, name in enumerate(COOKIE_ORDER)}
+        selected.sort(key=lambda c: (-len(c.get("path", "/")),
+                                    rank.get(c["name"], len(rank))))
         return "; ".join(c["name"] + "=" + c["value"] for c in selected)
 
     def security(self, host):
@@ -188,6 +216,7 @@ class ApiSession:
 
     def merge_cookies(self, entries):
         jar = self.state["cookies"]
+        jar[:] = latest_cookies(jar)
         previous = {
             c.get("name"): c.get("value")
             for c in jar
@@ -203,6 +232,9 @@ class ApiSession:
             self.state.pop("relay_security_expires_at", None)
             self.state.pop("csrf", None)
             self.state.pop("login_context", None)
+            self.state.pop("session_channels", None)
+            for name in ("msToken", "creator_msToken"):
+                self.state.get("tokens", {}).pop(name, None)
             for material in [
                 self.state.get("security", {}),
                 *self.state.get("security_by_host", {}).values(),
@@ -210,15 +242,16 @@ class ApiSession:
                 for name in ("ticket", "ts_sign", "sec_ts", "csrf_token"):
                     material.pop(name, None)
         for c in entries:
-            key = (c["name"], c["domain"], c.get("path", "/"))
+            key = cookie_key(c)
             jar[:] = [
                 old
                 for old in jar
-                if (old.get("name"), old.get("domain"), old.get("path", "/")) != key
+                if cookie_key(old) != key
             ]
-            jar.append(c)
+            if c.get("value") and not (c.get("expires", 0) > 0 and c["expires"] <= time.time()):
+                jar.append(c)
 
-    def harvest(self, response, url):
+    def harvest(self, response, url, *, persist=True):
         host = urlsplit(url).hostname
         entries = []
         jar = getattr(
@@ -241,13 +274,17 @@ class ApiSession:
                     "expires": c.expires or -1,
                 }
             )
+        if not persist:
+            return entries
         self.merge_cookies(entries)
         headers = getattr(response, "headers", {})
         token = headers.get("x-ms-token") or next(
             (c["value"] for c in entries if c["name"] == "msToken"), None
         )
         if token:
-            self.state.setdefault("tokens", {})["msToken"] = token
+            from urllib.parse import parse_qs
+            creator = host == "creator.douyin.com" or parse_qs(urlsplit(url).query).get("ms_appid") == ["2906"]
+            self.state.setdefault("tokens", {})["creator_msToken" if creator else "msToken"] = token
         sec = self.state.setdefault("security", {})
         if headers.get("bd-ticket-guard-sec-ts"):
             sec["sec_ts"] = headers["bd-ticket-guard-sec-ts"]
@@ -258,6 +295,9 @@ class ApiSession:
                 for k in ("ticket", "ts_sign"):
                     if isinstance(values.get(k), str):
                         sec[k] = values[k]
+                if values.get("ts_sign"):
+                    self.merge_cookies([{"name": "bd_ticket_guard_ts_sign_id", "value": values["ts_sign"],
+                                         "domain": ".douyin.com", "path": "/", "hostOnly": False}])
             except (ValueError, TypeError):
                 raise SessionError("PLATFORM_SECURITY_RESPONSE_INVALID")
         self.save()

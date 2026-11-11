@@ -10,11 +10,11 @@ description: 通过 Creator 本地 HTTP 会话发布小红书图文和视频笔�
 ## 登录流程
 
 1. 发布前运行 `xhs-publish check`。退出码 0 表示有效；2 表示缺少会话或明确认证失效；1 表示接口或环境故障，先排查。
-2. 仅在需要重新登录时运行 `xhs-publish login`。它启动后台扫码任务并返回 `qr_path`，默认图片在 `/tmp/qr-xhs.png`，权限 0600。若二维码尚未生成，按返回错误排查或稍后重试；不要并发启动多个登录。
-3. 使用当前会话的图片发送工具，把 `qr_path` 指向的 PNG 作为图片发给用户，然后**停止并等待用户回复已扫码/已确认**。脚本只生成图片，不代发飞书或微信消息。不要仅发路径给远程用户，也不要把登录二维码发给其他人。
-4. 用户确认后运行 `xhs-publish login-confirm`。退出码 0 且 `ok: true` 才算登录成功；`LOGIN_PENDING` 表示手机端确认还没完成，稍后再查；二维码过期或失败时重新运行 `login`，再发送新图片。登录成功后会话原子落盘；旧会话只有新登录验过时才替换。
+2. 仅在需要重新登录时运行 `xhs-publish login`。在受管 `exec` 中设置 `background=true`、`timeoutSeconds=480`，用 `process log` / `process poll` 读取当前执行会话输出。二维码准备最多等待 90 秒，登录任务最多运行 7 分钟；命令输出 `awaiting_scan` 和 `qr_path` 后仍会运行到成功或失败。不要使用 shell `&`、`nohup` 或 `setsid`，不要并发启动多个登录。
+3. 使用当前会话的图片发送工具，把 `qr_path` 指向的 PNG 作为图片发给用户，然后**停止业务操作并等待用户回复已扫码/已确认，同时保持原登录执行会话运行**。二维码路径按任务生成，不猜测固定文件名。脚本只生成图片，不代发飞书或微信消息。不要仅发路径给远程用户，也不要把登录二维码发给其他人。
+4. 用户确认后另行运行 `xhs-publish login-confirm`。退出码 0 且 `ok: true` 才算登录成功；`LOGIN_PENDING` 仅表示后台任务存活且尚未取得最终结果，不能据此断言用户没有扫码或确认。进程退出、原命令结束、任务超时或状态损坏会返回具体错误；不要继续展示旧码或查询已失败的任务。失败后按原授权重新运行 `login` 并发送新图片。登录成功后会话原子落盘；旧会话只有新登录验过且仍属于当前有效任务时才替换。
 
-二维码图片是短期临时文件，登录结束会删除。后台日志在 `~/.openclaw/logs/xhs-creator-login.log`；不向用户转发日志。`xhs-publish check` 使用签名 `user/info` 验证，不反复扫码排查非认证错误。
+二维码图片是短期临时文件，登录结束会删除；每个任务单独管理自己的图片。后台日志在 `~/.openclaw/logs/xhs-creator-login.log`；不向用户转发日志。`xhs-publish check` 使用签名 `user/info` 验证，不反复扫码排查非认证错误。查看登录帮助用 `xhs-publish login --help`；帮助和未知选项均不发起登录。Creator 若要求额外安全验证，保留原始提示并暂停业务，不调用 `xhs-hunter verify-*` 续接独立的 Creator 任务，不循环扫码或重复发布。
 
 登录日志与 `xhs-creator-observe.jsonl` 均按 5 MiB 轮转，各保留 `.1`–`.3` 三份备份，连同当前文件每组最多约 20 MiB；后台登录执行期间也会持续轮转。
 
@@ -52,6 +52,10 @@ xhs-publish --mode video --title "标题" --body @/绝对路径/body.txt --video
 发布 Workflow 负责判断内容是否需要 AI 声明，并在调用发布命令时传入 `--ai-declaration`。
 
 视频转码与笔记提交分别判断：`readiness.state:ready` 表示查询返回就绪证据；Creator 会话缺少 www 查询认证时允许服务端异步转码提交，但返回 `readiness_unknown/auth_unavailable`。网络、服务错误、空数据和持续 pending 不按 ready 处理，提交前停止并返回 `VIDEO_READINESS_UNCONFIRMED`、`submission_attempted:false`。`accepted:true` 与作品 ID 只证明平台接受，`public`/`playable:null` 仍需核实；不要因可播放未知自动重发。
+
+`auth_unavailable` 表示转码查询需要的 PC 网页认证不可用，不据此要求重新登录 Creator，也不拼接采集端 Cookie。已接受的笔记先用 `xhs-engagement list` 按真实作品 ID 只读核对本人列表；列表可能滞后，其存在本身也不足以确认公开可见或可播放。把原作品链接交用户在 App 打开核实，明确记录核实范围；没有公开或播放证据时继续保留未知，不自动重发或修改可见性。
+
+对用户报告时先说明平台已接受和真实作品链接，再将 `auth_unavailable` 解释为“工具未能查询转码状态”，不称为发布失败或发布登录失效。用户已经明确确认发布成功时，按用户确认结案并报告成功，不重复要求打开 App 或再次确认；机器未核实的 `public` / `playable` 字段不自动改成 true。
 
 ## 提交结果不确定时
 

@@ -8,6 +8,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { schemaFor, validateArgs, xTextPreview } from './metadata.mjs';
 import { videoTransportPolicy } from './weibo-video.mjs';
 import { completePublication, matchWeiboVideo, creatorRecordId } from './publication.mjs';
+import { xPublicationFailure } from './x-publication.mjs';
+import { downloadYoutube } from './youtube-download.mjs';
 import { canonical, platforms, stateHome, emit, PlatformError, runBackend, networkProxy, requireWriteSession, activeAccount, credential, atomicJson, reportError, packageRoot } from './backend.mjs';
 
 export function take(args, flag, fallback) {
@@ -135,18 +137,21 @@ export async function fetchItem(platform, input) {
   const download = toggle(args, '--download-media');
   const videoOnly = toggle(args, '--video-only');
   const account = take(args, '--account', take(args, '-a', undefined));
-  const target = args.some(arg => arg === '--url' || arg.startsWith('--url=')) ? take(args, '--url') : args.shift();
+  let target = args.some(arg => arg === '--url' || arg.startsWith('--url=')) ? take(args, '--url') : args.shift();
   if (!target || args.length) throw new PlatformError('USAGE', 'fetch <完整链接或作品ID> [--output-dir DIR --download-media --video-only]');
+  if (platform === 'youtube' && /^[A-Za-z0-9_-]{11}$/.test(target)) target = 'https://youtu.be/' + target;
   if (download && !dir) throw new PlatformError('USAGE', '下载必须提供 --output-dir');
   const result = await runBackend(platform, ['item', 'get', target, ...(account ? ['--account', account] : [])]);
   const note = result.data;
   if (!note || typeof note.id !== 'string' || !note.id) throw new PlatformError('INVALID_ITEM', '详情没有返回完整作品 ID');
-  if (videoOnly && (note.kind !== 'video' || !note.media?.some(media => media.type === 'video'))) throw new PlatformError('VIDEO_REQUIRED', '图文或文本不能进入视频分析器', 4);
+  if (videoOnly && (note.kind !== 'video' || platform !== 'youtube' && !note.media?.some(media => media.type === 'video'))) throw new PlatformError('VIDEO_REQUIRED', '图文或文本不能进入视频分析器', 4);
   const output = dir ? resolve(dir) : undefined;
   if (output) {
     await mkdir(output, { recursive: true });
     await writeFile(join(output, 'note.json'), JSON.stringify({ ...note, source_url: target, captured_at: new Date().toISOString() }, null, 2) + '\n');
   }
+  if (download && platform === 'youtube') return { ok: true, platform, note, output_dir: output,
+    ...await downloadYoutube(note.id, output, account, runBackend) };
   const mediaPaths = download ? await downloadMedia(platform, note, output, { videoOnly, account }) : [];
   return { ok: true, platform, note, media_paths: mediaPaths, output_dir: output || null };
 }
@@ -257,10 +262,27 @@ export async function publish(platform, input) {
     let receipt;
     try { receipt = JSON.parse(await readFile(receiptPath, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
     if (receipt && receipt.account !== alias) throw new PlatformError('ACCOUNT_MISMATCH', '作品目录已绑定其他发布账号，请核对结果文件');
-    if (receipt && !receipt.result) throw new PlatformError('PUBLISH_UNKNOWN', '已有未结案提交，先在本人作品或原平台核查，禁止自动重发');
+    if (receipt && !receipt.result) {
+      const failed = platform === 'x' && receipt.state === 'failed' && receipt.submission_attempted === false;
+      throw new PlatformError(failed ? receipt.error : 'PUBLISH_UNKNOWN',
+        failed ? '本目录上次操作在帖子提交前失败；保留收据，先处理账号或上传问题，不自动重试'
+          : '已有未结案提交，先在本人作品或原平台核查，禁止自动重发', 1, receipt.diagnostic,
+        platform === 'x' ? { stage: receipt.stage || 'unknown', submission_attempted: failed ? false : true,
+          ...(receipt.failure_reason ? { failure_reason: receipt.failure_reason } : {}), receipt: receiptPath } : undefined);
+    }
     if (!receipt) {
       await requireWriteSession(platform, alias);
-      const me = await status(platform, ['--account', alias]);
+      let me;
+      try { me = await status(platform, ['--account', alias]); }
+      catch (error) {
+        if (platform === 'x' && error instanceof PlatformError) {
+          const failure = xPublicationFailure({ ...error.diagnostic, code: error.code, detail: { ...error.diagnostic?.detail,
+            publication: { stage: 'preparing', submission_attempted: false } } });
+          throw new PlatformError(failure.error, error.message, error.exitCode, error.diagnostic,
+            { stage: 'authentication', submission_attempted: false, failure_reason: failure.failure_reason });
+        }
+        throw error;
+      }
       const now = new Date();
       const publishDate = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
       receipt = { platform, account: alias, user: me.data.user, state: 'submitting', publish_date: publishDate, submitted_at: now.toISOString() };
@@ -277,10 +299,22 @@ export async function publish(platform, input) {
           if (complete.state !== 'published') throw new PlatformError('PUBLISH_UNKNOWN', '提交没有返回完整作品 ID，且没有平台接受提交的证据，请在原平台核查');
           receipt = complete;
         }
+        if (platform === 'x') receipt = { ...receipt, stage: 'published', submission_attempted: true };
         await atomicJson(receiptPath, receipt);
       } catch (error) {
         const message = error instanceof PlatformError ? error.message : '本地处理失败，请检查依赖和输入';
         const diagnostic = error instanceof PlatformError ? error.diagnostic : undefined;
+        if (platform === 'x') {
+          const failure = xPublicationFailure(diagnostic);
+          const messagePrefix = failure.submission_attempted
+            ? '已尝试帖子提交，结果未知；保留收据，核查本人作品，禁止重发。'
+            : failure.error === 'ACCOUNT_SUSPENDED' ? '账号已暂停，操作停止于帖子提交前，尚未提交帖子。'
+            : '操作在帖子提交前失败，尚未提交帖子。';
+          await atomicJson(receiptPath, { ...receipt, ...failure, error_message: message, ...(diagnostic ? { diagnostic } : {}) });
+          throw new PlatformError(failure.error, messagePrefix + message, error.exitCode || 1, diagnostic,
+            { stage: failure.stage, submission_attempted: failure.submission_attempted,
+              failure_reason: failure.failure_reason, receipt: receiptPath });
+        }
         await atomicJson(receiptPath, { ...receipt, state: 'unknown', error: error.code || 'ERROR', error_message: message, ...(diagnostic ? { diagnostic } : {}) });
         throw new PlatformError('PUBLISH_UNKNOWN', `发布结果未知，结果文件已保存；核查本人作品或原平台，禁止重发。${message}`, 1, diagnostic);
       }
@@ -318,6 +352,11 @@ export function itemId(platform, value) {
     if (platform === 'x' && /(^|\.)(x|twitter)\.com$/.test(host)) return /\/status\/(\d+)/.exec(url.pathname)?.[1];
     if (platform === 'tiktok' && /(^|\.)tiktok\.com$/.test(host)) return /\/(?:video|photo)\/(\d+)/.exec(url.pathname)?.[1];
     if (platform === 'kuaishou' && /(^|\.)kuaishou\.com$/.test(host)) return /\/(?:short-video|fw\/photo)\/([^/]+)/.exec(url.pathname)?.[1] || url.searchParams.get('photoId');
+    if (platform === 'youtube') {
+      const id = host === 'youtu.be' ? url.pathname.slice(1).split('/')[0]
+        : /(^|\.)youtube\.com$/.test(host) ? url.searchParams.get('v') || /\/(?:shorts|live|embed)\/([^/]+)/.exec(url.pathname)?.[1] : null;
+      return /^[A-Za-z0-9_-]{11}$/.test(id || '') ? id : null;
+    }
   } catch { /* 不能从完整来源识别，不猜内容ID */ }
   return null;
 }
@@ -354,7 +393,7 @@ export async function engagement(platform, action, input) {
     if (!item) { skipped.push({ id: row.id, reason: 'NOT_IN_FETCHED_PAGE' }); continue; }
     if (item.author?.id && !ownIds.has(item.author.id)) throw new PlatformError(platform === 'kuaishou' ? 'ACCOUNT_UNVERIFIED' : 'ACCOUNT_MISMATCH',
       platform === 'kuaishou' ? '主站与创作者作者 ID 尚无已验证映射，停止指标回填并核实归属' : '作品作者不属于当前账号，停止指标回填');
-    if (platform === 'x' && !item.author?.id) throw new PlatformError('ACCOUNT_UNVERIFIED', 'X 作品缺少作者，停止回填');
+    if (['x', 'youtube'].includes(platform) && !item.author?.id) throw new PlatformError('ACCOUNT_UNVERIFIED', '作品缺少作者，停止回填');
     const metrics = metricsOf(platform, item);
     if (!Object.keys(metrics).length) { skipped.push({ id: row.id, reason: 'METRICS_UNAVAILABLE' }); continue; }
     await tracked(['update-metrics', '--platform', platforms[platform].workspace, '--id', String(row.id), ...Object.entries(metrics).flatMap(([key, value]) => ['--' + key, String(value)])]);
@@ -386,11 +425,12 @@ export async function main(argv = process.argv.slice(2)) {
     const { main: login } = await import('./login.mjs');
     return login([action === 'login-confirm' ? 'export' : action, '--platform', platform, ...args]);
   }
-  if (action === 'methods' && ['hunter', 'interact', 'im', 'live', 'publish'].includes(role)) return emit({ ok: true, platform, methods: methods(platform, role), schemas: await Promise.all(methods(platform, role).map(key => schemaFor(platform, key))) });
+  if (action === 'methods' && ['hunter', 'interact', 'im', 'live', 'publish', 'creator'].includes(role)) return emit({ ok: true, platform, methods: methods(platform, role), schemas: await Promise.all(methods(platform, role).map(key => schemaFor(platform, key))) });
   if (role === 'hunter' && action === 'fetch') return emit(await fetchItem(platform, args));
   if (role === 'publish' && ['publish', 'post'].includes(action)) return emit(await publish(platform, args));
   if (role === 'engagement' && ['list', 'fetch', 'daily'].includes(action)) return emit(await engagement(platform, action, args));
   if (role === 'publish' || role === 'engagement') throw new PlatformError('USAGE', '不支持该子命令');
+  if (role === 'creator' && action !== 'call') throw new PlatformError('USAGE', '使用 call channel create [--name NAME --handle HANDLE] [--confirm]');
   const aliases = { search: ['item', 'search'], user: ['user', 'get'], 'user-search': ['user', 'search'], 'user-posts': ['user', 'items'], comments: ['comment', 'list'] };
   const interactAliases = { retweet: 'repost', unretweet: 'unrepost', bookmark: 'collect', unbookmark: 'uncollect' };
   if (role === 'hunter' && aliases[action]) args = [...aliases[action], ...args];

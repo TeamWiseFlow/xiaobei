@@ -6,15 +6,15 @@
 
 ## 平台能力归属
 
-- `expert-douyin` / `expert-xhs` / `expert-tiktok` / `expert-kuaishou` / `expert-twitter` 仅保留创作、发布、本人已发布作品数据获取和创作者服务；私信、评论发布/回复、点赞、收藏、关注等写操作及直播互动统一放在 `expert-bd`。
-- 内容搜索、账号与作品获取、评论读取、评论/@提醒、点赞收藏提醒、新增关注通知和媒体下载使用一级技能 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter`，不要收纳进平台专家包。缺少已实现接口的互动写能力保留为不支持，待后续有可复用方案再补齐。
-- `viral-chaser` 只编排视频分析：先调用对应 hunter 获取资料与下载，再运行本地 analyzer 做转写和关键帧提取。analyzer 不集成探活、登录、链接解析或下载；快手、TikTok、X 和微博同样通过各自 hunter 执行；不支持 B 站链接。图文下载调用 hunter，分析由对应平台专家 workflow 完成。
-- 公共 `smart-search` 专用于 Camoufox 浏览器搜索。当前 crew 已配置 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `wx-mp-hunter` 且任务命中其能力时优先使用；这些技能目前仅 main 配置，未配置的 crew 按已有站点浏览器规则或公开索引搜索，不调用不可用技能，不因采集技能失败就自动绕行。普通站点统一复用持久化 `default` session/profile，不按站点或类别另建 profile；自媒体专用 profile 和 API 会话按各技能实际登录约定执行；微信视频号仍没有搜索与取内容方案。
+- `expert-douyin` / `expert-xhs` / `expert-tiktok` / `expert-kuaishou` / `expert-twitter` / `expert-youtube` 仅保留创作、发布、本人已发布作品数据获取和创作者服务；私信、评论发布/回复、点赞、收藏、关注等写操作及直播互动统一放在 `expert-bd`。
+- 内容搜索、账号与作品获取、评论读取、评论/@提醒、点赞收藏提醒、新增关注通知和媒体下载使用一级技能 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `youtube-hunter`，不要收纳进平台专家包。缺少已实现接口的互动写能力保留为不支持，待后续有可复用方案再补齐。
+- `viral-chaser` 只编排视频分析：先调用对应 hunter 获取资料与下载，再运行本地 analyzer 做转写和关键帧提取。analyzer 不集成探活、登录、链接解析或下载；快手、TikTok、X、微博、YouTube 同样通过各自 hunter 执行；不支持 B 站链接。图文下载调用 hunter，分析由对应平台专家 workflow 完成。
+- 公共 `smart-search` 专用于 Camoufox 浏览器搜索。当前 crew 已配置 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `youtube-hunter` / `wx-mp-hunter` 且任务命中其能力时优先使用；这些技能目前仅 main 配置，未配置的 crew 按已有站点浏览器规则或公开索引搜索，不调用不可用技能，不因采集技能失败就自动绕行。普通站点统一复用持久化 `default` session/profile，不按站点或类别另建 profile；自媒体专用 profile 和 API 会话按各技能实际登录约定执行；微信视频号仍没有搜索与取内容方案。
 - `published-track` 只管理发布记录、查询和指标入库，不负责平台取数；具体取数全部放在对应专家包的 engagement tool，工具采集后调用 `published-track update-metrics`。
-- 后续能力移植和新增平台均按此划分。抖音发布使用 Camoufox 持久化 session `douyin`；本人取数走 HTTP 接口，仅临时从同一 profile 读取 cookie/UA，不另存登录态、不走 login-manager。hunter 和 expert-bd 互动使用独立 API 登录态。
-- TikTok、快手、X、微博共用 `platform-runtime` 内部运行库；登录与会话管理归运行库，由各自 hunter 暴露登录命令，不另设 `login-manager` 技能。安装时按固定四平台配置裁剪其他平台及专属依赖，不改保留平台的业务或签名代码；上游版本、包校验值、注册结构变化必须复核后再升级。
+- 后续能力移植和新增平台均按此划分。抖音采集、创作者发布、本人取数和 expert-bd 互动共用 douyin-login 的 API 会话；平台请求走 HTTP，主站与创作者 token/证书分别维护，不读取 Camoufox profile、不拼接凭据、不走 login-manager。旧浏览器收据仅保留历史提交核查，不用于新登录或发布。
+- TikTok、快手、X、微博、YouTube 共用 `platform-runtime` 内部运行库；登录与会话管理归运行库，由 `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `youtube-hunter` 暴露登录命令，不另设 `login-manager` 技能。五平台签名统一调用 Relay，平台 HTTP、登录、上传与会话保留在客户端，不提供本地签名回退。Relay 只计算签名，不提供验证码求解；遇到验证码停止并交用户在平台处理，不引入视觉识别、OpenCV 或 ONNX 模型。安装按固定五平台配置裁剪业务外模块和依赖，上游版本、包校验值、注册结构变化必须复核后升级。YouTube 公开读取可免登录，创作与本人取数归 `expert-youtube`，互动写操作归 `expert-bd`；自动视频发布/删除未接入，不启用 BotGuard 求解或另装 Chromium。
 
-- main 的 `expert-osbi` 负责公开信息提取、跟踪、分析与市场研究，`expert-bd` 保留 Lead Hunting，负责潜客探索筛选、互动和联络；邮件联络使用公共 `email-ops`。原始资料获取按平台调用 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `wx-mp-hunter` 或公共 `smart-search`；公开直播读取与监听使用 `douyin-hunter live` / `xhs-hunter live` / `tiktok-hunter live` / `kuaishou-hunter live`，直播写操作归 BD；通用 RSS/Atom 解析和情报记录工具归 OSBI。技能操作指导必须写出具体技能名，不用“使用一级 hunter”等泛称代替。
+- main 的 `expert-osbi` 负责公开信息提取、跟踪、分析与市场研究，`expert-bd` 保留 Lead Hunting，负责潜客探索筛选、互动和联络；邮件联络使用公共 `email-ops`。原始资料获取按平台调用 `douyin-hunter` / `xhs-hunter` / `tiktok-hunter` / `kuaishou-hunter` / `x-hunter` / `weibo-hunter` / `youtube-hunter` / `wx-mp-hunter` 或公共 `smart-search`；公开直播读取与监听使用 `douyin-hunter live` / `xhs-hunter live` / `tiktok-hunter live` / `kuaishou-hunter live` / `youtube-hunter live`，直播写操作归 BD；通用 RSS/Atom 解析和情报记录工具归 OSBI。技能操作指导必须写出具体技能名，不用“使用一级 hunter”等泛称代替。
 
 - Awada 对用户和所有 crew（含 IT engineer）只暴露统一账号、动作和产品范围内的业务能力合集；登录设备、客户端指令/维护、历史诊断、回调扩展、通信加密和原消息转发不属于客户端接口；原生转写自动完成，手动仅提供一个转写命令；同一业务能力只保留一个公开命令和统一参数，不能仅删除前缀后保留同义动作。底层实现仅留在插件内部适配。工具说明、配置指导和技术元数据不得要求识别或选择底层平台；客户端不按账号裁剪能力或预判动作支持，兼容与执行限制由 Awada server 处理。
 
@@ -36,6 +36,9 @@
 - **HEARTBEAT.md**：已退役，不再提供模板或部署；旧文件由用户升级后手动删除，实际周期任务由原生 Automation / 心跳 scratch 管理
 - **BOOTSTRAP.md**：一次性首次运行引导，完成后删除
 - **USER.md**：服务对象信息
+
+- internal crew 模板不写 `### Python 环境`；该段由统一提示生成器在每次 setup 时清理旧区块并重建到 AGENTS.md 的 `## Tools` 节末尾，路径按实际部署生成，其他本机备注保留。`workspace-guides.py` 内的提示统一按标题删除旧段落后重写，保留段落外的用户正文，不做已有标题即跳过或逐条对齐。
+- external crew 的 AGENTS.md 模板必须直接包含完整操作规范，明确禁止自行创建、修改或执行 Python 脚本；缺少能力或需要编程时写入本工作区 `feedback/YYYY-MM-DD.md`。安装与升级脚本不向 external crew 自动注入提示，不要求其 spawn 未配置的 IT Engineer；已部署实例的自定义正文保持不变。
 
 ## 创建/更新 skill 时，如果涉及到脚本或者 cli 指导内容，必须遵从以下原则：
 - 1、多步骤操作且涉及中间态保存的（下一步操作的某一输入为上一步返回结果），哪怕每一步都只是一条命令，也必须做脚本！
@@ -88,7 +91,7 @@ SKILL.md 是写给**执行时的智能体**看的操作手册，不是开发日�
 
 ### Python 依赖
 
-在仓根 `requirements.txt` 声明。`scripts/apply-addons.sh` 扫描 `skills/`、`crews/*/skills/`、仓根下所有 `requirements.txt`，合并去重后 `pip install --user`。内容哈希守卫，依赖集变化才重装。
+在仓根 `requirements.txt` 声明。源码、预构建包和 Docker 统一调用 `scripts/python-runtime.mjs`，使用项目锁定的 CPython 与 `tools/python` 共享 venv；扫描公共技能、crew 技能及仓根依赖，合并去重后由该解释器安装。依赖标记归 venv，解释器或依赖变化时重建，不使用系统/用户级 pip、`--user` 或 `--break-system-packages`。agent 默认解释器通过原生 `tools.exec.pathPrepend` 接入；Python Tools 指导仅给 internal crew，不扩大 sales-cs 等 external crew 的权限。
 
 ### Node 依赖
 
@@ -102,4 +105,4 @@ SKILL.md 是写给**执行时的智能体**看的操作手册，不是开发日�
 
 - 所有技能共用 `browser/package.json` 锁定的 `playwright-core`，仅安装到 `browser/node_modules`；技能不得另声明 `playwright` / `playwright-core` / `@playwright/test`，不得安装 Python Playwright。
 - Chromium headless shell 由 `scripts/install-playwright.mjs` 在安装/升级时预装，唯一缓存是 `browser/.browsers`；不要在技能内下载、回退系统 Chrome 或另建浏览器缓存。
-- Node 使用 `browser/scripts/shared-playwright.mjs`，Python 使用 `browser/bridge/shared_playwright.py`；缺依赖交统一安装器修复，技能执行时不临时下载。平台会话与网页浏览仍走 xiaobei-browser/Camoufox。
+- Node 使用 `browser/scripts/shared-playwright.mjs`，Python 使用 `browser/bridge/shared_playwright.py`；缺依赖交统一安装器修复，技能执行时不临时下载。网页浏览和仍需浏览器的平台会话走 xiaobei-browser/Camoufox；已有 API 登录的平台按各自技能约定执行。

@@ -24,6 +24,9 @@ from xhs_utils.relay import compute
     获小红书的api
 """
 def _log_api_error(error):
+    from xhs_utils.verification import VerificationRequired
+    if isinstance(error, VerificationRequired):
+        raise error
     # The CLI reports this message as JSON. Avoid a second, unstructured
     # traceback on stderr, which also breaks callers that merge both streams.
     return f'{type(error).__name__}: {error}'
@@ -148,9 +151,7 @@ class XHS_Apis():
             api=api,
             method=method,
         )
-        # Preserve the UA tied to the captured release/session.  The current
-        # default is Chrome 152, while explicit historical fixtures may carry
-        # Chrome 150; never overwrite a captured context here.
+        # Keep wire identity tied to the release selected by the compute service.
         headers['user-agent'] = sign_context.get('userAgent', PC_CURRENT_BROWSER_UA)
         return headers, wire_cookies, body
 
@@ -165,7 +166,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(api, '', 'GET')
             response = self.http.get(self.base_url + api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -216,7 +217,7 @@ class XHS_Apis():
             headers, cookies, trans_data = self._request_params(api, data, 'POST')
             response = self.http.post(self.base_url + api, headers=headers, data=trans_data, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -268,7 +269,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(splice_api, '', 'GET')
             response = self.http.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -286,7 +287,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(api, '', 'GET')
             response = self.http.get(self.base_url + api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -314,7 +315,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(splice_api, '', 'GET')
             response = self.http.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -374,7 +375,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(splice_api, '', 'GET')
             response = self.http.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -433,7 +434,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(splice_api, '', 'GET')
             response = self.http.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -499,7 +500,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(api, data, 'POST')
             response = self.http.post(self.base_url + api, headers=headers, data=data, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
             code = res_json.get("code")
             if code is not None and code not in (0, "0", 200, "200"):
                 success = False
@@ -641,7 +642,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(splice_api, '', 'GET')
             response = self.http.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -663,7 +664,7 @@ class XHS_Apis():
             )
             self._merge_response_cookies(response, self.base_url + api)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -682,7 +683,7 @@ class XHS_Apis():
             )
             self._merge_response_cookies(response, target)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -966,7 +967,7 @@ class XHS_Apis():
                 timeout=REQUEST_TIMEOUT,
             )
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -1031,7 +1032,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(api, data, 'POST')
             response = self.http.post(self.base_url + api, headers=headers, data=data.encode('utf-8'), cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -1086,7 +1087,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(splice_api, '', 'GET')
             response = self.http.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
             code = res_json.get("code")
             if code is not None and code not in (0, "0", 200, "200"):
                 success = False
@@ -1114,6 +1115,8 @@ class XHS_Apis():
                     return False, msg, note_out_comment_list
                 data = (res_json or {}).get('data') or {}
                 comments = data.get('comments')
+                if comments is None and data.get('has_more') is False:
+                    comments = []
                 if not isinstance(comments, list):
                     return False, msg or '评论接口未返回 comments', note_out_comment_list
                 note_out_comment_list.extend(comments)
@@ -1153,7 +1156,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(splice_api, '', 'GET')
             response = self.http.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
             code = res_json.get("code")
             if code is not None and code not in (0, "0", 200, "200"):
                 success = False
@@ -1180,6 +1183,8 @@ class XHS_Apis():
                     return False, msg, comment
                 data = (res_json or {}).get('data') or {}
                 comments = data.get('comments')
+                if comments is None and data.get('has_more') is False:
+                    comments = []
                 if not isinstance(comments, list):
                     return False, msg or '二级评论接口未返回 comments', comment
                 inner_comment_list.extend(comments)
@@ -1234,7 +1239,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(api, '', 'GET')
             response = self.http.get(self.base_url + api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -1257,7 +1262,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(splice_api, '', 'GET')
             response = self.http.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -1305,7 +1310,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(splice_api, '', 'GET')
             response = self.http.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -1353,7 +1358,7 @@ class XHS_Apis():
             headers, cookies, data = self._request_params(splice_api, '', 'GET')
             response = self.http.get(self.base_url + splice_api, headers=headers, cookies=cookies, proxies=self._proxies(proxies), timeout=REQUEST_TIMEOUT)
             res_json = response.json()
-            success, msg = res_json["success"], res_json["msg"]
+            success, msg = res_json["success"], res_json.get('msg', '')
         except Exception as e:
             success = False
             msg = _log_api_error(e)
@@ -1395,10 +1400,7 @@ class XHS_Apis():
         msg = '成功'
         video_addr = None
         try:
-            # This is a non-login document request.  The current Chrome
-            # capture for webBuild 6.47.2 uses Chrome/152; keep the legacy
-            # 150 UA in get_common_headers() for the separate login cold
-            # chain, but align this public navigation call with the capture.
+            # This public document request does not use an authenticated context.
             navigation_headers = get_common_headers()
             navigation_headers['user-agent'] = PC_CURRENT_BROWSER_UA
             headers = build_pc_navigation_headers(navigation_headers)

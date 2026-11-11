@@ -76,6 +76,12 @@ WORKDIR /opt/xiaobei
 # xiaobei-browser runtime 在 browser/ 下，全部随仓根打进镜像。
 COPY . /opt/xiaobei
 
+# The owned interpreter and venv are application files, never persistent user state.
+RUN node scripts/python-runtime.mjs install --root /opt/xiaobei
+ENV PATH="/opt/xiaobei/tools/python/bin:${PATH}" \
+    VIRTUAL_ENV=/opt/xiaobei/tools/python \
+    PYTHONNOUSERSITE=1
+
 # 校验源码树 + 跑 bootstrap 完成"装好后"状态
 # bootstrap 复用裸机安装的 apply-addons.sh / setup-crew.sh / scripts/install-browser.mjs，
 # 但不跑 daemon install / 不交互收密钥 / 不拉远程仓库（源码已 COPY 进来）
@@ -107,6 +113,10 @@ RUN grep -q "BOOTSTRAP_CHAIN_EXIT=0" /opt/xiaobei/.bootstrap-log
 # Stage 2: runtime（瘦运行镜像，从 build 拷 immutable 层）
 # ════════════════════════════════════════════════════════════════════
 FROM node:24.16.0-bookworm
+
+ENV PATH="/opt/xiaobei/tools/python/bin:${PATH}" \
+    VIRTUAL_ENV=/opt/xiaobei/tools/python \
+    PYTHONNOUSERSITE=1
 
 # runtime 镜像里 pnpm openclaw gateway 启动时不拉包，NPM_CONFIG_REGISTRY 仅给
 # 首启用户手动 npm install -g 补包用。默认走 npmmirror（与裸机 install.sh 同源），

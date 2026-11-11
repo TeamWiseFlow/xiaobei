@@ -1,19 +1,37 @@
 {
-  "package": "catbus-cli",
-  "version": "0.1.0",
-  "integrity": "sha512-NigI2Wuwrnq08/hR7KF6HgeaQK+y6UdEmAmqK5gUu5yUBDhkzLMy8c6C8xVPJdOyXid6EoZayDRHUaj8IO1waA==",
-  "registrySha256": "213d66519a0c3fd7efff3dcb04075fc83587cd30958f4d0f25536bd7f9bdbd54",
-  "platforms": ["tiktok", "kuaishou", "weibo", "x"],
-  "excludeDependencies": ["onnxruntime-web", "@cv-cat/catbus-assets-jd", "@cv-cat/catbus-assets-ocr"],
+  "package": "xiaobei-platform-backend",
+  "version": "0.3.1",
+  "integrity": "sha512-ntjcSA/2M0cDEXW00HQLTMH5vICDpLAJc7yHbhEBC2HrF9mgy5+DKaiqwmfOWcLAcqJjuh/kObk3MIS4d4W6ZA==",
+  "registrySha256": "6e1e2e706cb9bbcb4119991b0a725b6ea30a8a94dfd8de57bf885465f8bff6d6",
+  "platforms": [
+    "tiktok",
+    "kuaishou",
+    "weibo",
+    "x",
+    "youtube"
+  ],
+  "excludeDependencies": [
+    "onnxruntime-web",
+    "@napi-rs/canvas",
+    "@techstark/opencv-js",
+    "crypto-js",
+    "jsdom"
+  ],
   "dependencies": {
-    "@napi-rs/canvas": "1.0.10",
-    "@techstark/opencv-js": "5.0.0-release.1",
-    "crypto-js": "4.2.0",
-    "jsdom": "30.1.2",
     "protobufjs": "8.8.0",
     "qrcode": "1.5.4",
     "smol-toml": "1.9.0",
     "wreq-js": "3.2.0",
     "zod": "4.6.5"
+  },
+  "artifact": {
+    "filename": "xiaobei-platform-backend-0.3.1.tgz",
+    "url": "https://github.com/TeamWiseFlow/xiaobei/releases/download/platform-runtime-0.3.1/xiaobei-platform-backend-0.3.1.tgz"
+  },
+  "businessAssets": {
+    "static/kuaishou/fixtures/live_ws_maps.json": "c6fe4a11a3933bbb96fa554495d05a03efbc04b38744b5b92fdfa5cb48afa05f",
+    "static/kuaishou/fixtures/live_ws_proto.json": "f8e034d13ca9f69f7881d22854217b97e646aad4e0dfef36366cf9e4d63c1c0c",
+    "static/tiktok/Tiktok_Request.json": "4bb03b298fb5d3103abf9e44307dabc3b46b89d47ff767788a4c809d83ac56e9",
+    "static/x/graphql.json": "b947aac9c7120387db37a04df8b0ba307da9c3283e9914c8a987e56a30c7c624"
   }
 }

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""MiniMax Hailuo 视频生成 + 背景音乐生成。
+"""MiniMax Hailuo 视频生成。
 
 直连 MiniMax V2 异步任务端点：
   - 视频：POST /v2/video_generation → GET /v2/query/video_generation/{task_id}
-  - 音乐：POST /v1/music_generation（同步，返回音频字节）
 
-模型：MiniMax-H3（视频）、music-3.0（音乐）。
+模型：MiniMax-H3。
 鉴权：HTTP header `Authorization: Bearer ${MINIMAX_API_KEY}`。
 
 H3 多模态参考（content[] + role）支持的输入组合：
@@ -23,13 +22,10 @@ first_frame/last_frame（反之亦然）。
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 # aigc_common.py 与本脚本同目录（skills/aigc-video-gen/scripts/）
@@ -55,12 +51,10 @@ from aigc_common import (  # noqa: E402
 MM_BASE = "https://api.minimaxi.com"
 MM_VIDEO_CREATE = f"{MM_BASE}/v2/video_generation"
 MM_VIDEO_QUERY = f"{MM_BASE}/v2/query/video_generation/{{task_id}}"
-MM_MUSIC_CREATE = f"{MM_BASE}/v1/music_generation"
 
 MM_VIDEO_MODELS = {
     "hailuo-h3": "MiniMax-H3",
 }
-MM_MUSIC_MODEL = "music-3.0"
 
 MM_POLL_INTERVAL = 10  # 官方推荐轮询间隔 10 秒
 MM_TIMEOUT = 900
@@ -178,53 +172,6 @@ def mm_video_candidates(args: argparse.Namespace) -> list[str]:
     return [MM_VIDEO_MODELS["hailuo-h3"]]
 
 
-# ---- MiniMax 音乐生成 --------------------------------------------------------
-
-def mm_music_build_payload(args: argparse.Namespace) -> dict:
-    """构造 MiniMax 音乐生成请求体。
-
-    官方字段：model(music-3.0) / prompt(风格描述) / lyrics(歌词,可含 [verse]/[chorus] 标签)
-    / audio_setting(sample_rate/bitrate/format)。
-    """
-    payload: dict = {
-        "model": MM_MUSIC_MODEL,
-        "prompt": args.prompt,
-    }
-    lyrics = getattr(args, "lyrics", None)
-    if lyrics:
-        payload["lyrics"] = lyrics
-    audio_setting: dict = {"format": "mp3", "sample_rate": 44100, "bitrate": 256000}
-    payload["audio_setting"] = audio_setting
-    return payload
-
-
-def mm_music_generate(args: argparse.Namespace, api_key: str) -> bytes:
-    """MiniMax 音乐生成：POST /v1/music_generation，返回音频二进制。
-
-    官方示例为同步 POST，响应体即音频字节流（或 JSON 含 base64 audio 字段）。
-    """
-    payload = mm_music_build_payload(args)
-    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(
-        MM_MUSIC_CREATE, data=data, headers=mm_headers(api_key), method="POST"
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            content_type = resp.headers.get("Content-Type", "")
-            body = resp.read()
-            if "audio" in content_type or content_type == "application/octet-stream":
-                return body
-            json_resp = json.loads(body.decode("utf-8"))
-            audio_field = json_resp.get("audio") or (json_resp.get("data") or {}).get("audio")
-            if audio_field:
-                return base64.b64decode(audio_field)
-            die(f"minimax music: no audio in response: {json.dumps(json_resp, ensure_ascii=False)}")
-    except urllib.error.HTTPError as exc:
-        die(f"minimax music HTTP {exc.code}: {exc.read().decode(errors='replace')}")
-    except urllib.error.URLError as exc:
-        die(f"minimax music URLError: {exc.reason}")
-
-
 # ---- 调度 --------------------------------------------------------------------
 
 def run_one(platform: str, model: str, args: argparse.Namespace, api_key: str) -> str:
@@ -232,41 +179,6 @@ def run_one(platform: str, model: str, args: argparse.Namespace, api_key: str) -
     task_id = mm_video_submit(model, args, api_key)
     log(f"minimax video task submitted: {task_id} (model={model})")
     return mm_video_poll(task_id, api_key)
-
-
-def cmd_music(args: argparse.Namespace) -> None:
-    """MiniMax 背景音乐生成子命令。
-
-    流程：mm_music_generate（同步 POST /v1/music_generation）→ 写文件。
-    仅 minimax 平台支持，需 MINIMAX_API_KEY。
-    """
-    api_key = (os.environ.get("MINIMAX_API_KEY") or "").strip()
-    if not api_key:
-        die("MINIMAX_API_KEY 未设置 —— 请实时提醒用户提供 key,然后交 IT engineer 配置")
-    output_path = ensure_safe_output(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    log(f"minimax music generation: prompt={args.prompt!r}")
-    audio_bytes = mm_music_generate(args, api_key)
-    output_path.write_bytes(audio_bytes)
-    meta = output_path.with_suffix(".json")
-    meta.write_text(
-        json.dumps(
-            {
-                "platform": "minimax",
-                "capability": "music",
-                "model": MM_MUSIC_MODEL,
-                "prompt": args.prompt,
-                "lyrics": getattr(args, "lyrics", None),
-                "file": str(output_path),
-                "bytes": len(audio_bytes),
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-    print(f"[done] music saved: {output_path}")
-    print(f"[done] metadata:    {meta}")
 
 
 def cmd_video(args: argparse.Namespace) -> None:
@@ -331,7 +243,7 @@ def cmd_video(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="MiniMax Hailuo video generation + music generation."
+        description="MiniMax Hailuo video generation."
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -349,12 +261,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_video.add_argument("--model", default=None, help="指定模型 id（关闭候选链 fallback）")
     p_video.add_argument("--output", required=True, help="输出 MP4 路径（相对工作区，须在 output_videos/tmp/fragments/artifacts 或 <platform>/outputs/ 下）")
 
-    # ── music 子命令：minimax 背景音乐生成 ──
-    p_music = sub.add_parser("music", help="MiniMax 背景音乐生成(需 MINIMAX_API_KEY)")
-    p_music.add_argument("--prompt", required=True, help="音乐描述(风格/情绪/乐器)")
-    p_music.add_argument("--duration", type=int, default=None, dest="music_duration", help="音乐时长(秒),不传走模型默认")
-    p_music.add_argument("--output", required=True, help="输出音频路径(相对工作区,须在 output_videos/tmp/fragments/artifacts 或 <platform>/outputs/ 下)")
-
     return parser
 
 
@@ -366,17 +272,9 @@ def main() -> None:
     if not argv or argv[0].startswith("-"):
         argv = ["video"] + argv
 
-    # video 子命令可省略：如果第一个 token 不是已知子命令，默认走 video
-    known_subcommands = {"video", "music"}
-    if argv and argv[0] not in known_subcommands:
-        argv = ["video"] + argv
-
     args = parser.parse_args(argv)
 
-    if args.command == "music":
-        cmd_music(args)
-    else:
-        cmd_video(args)
+    cmd_video(args)
 
 
 if __name__ == "__main__":

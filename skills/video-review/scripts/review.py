@@ -52,8 +52,10 @@ Verdict JSON schema (also pretty-printed to stdout):
 from __future__ import annotations
 
 import argparse
+from fractions import Fraction
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -79,6 +81,7 @@ AUDIO_CLIPPING_THRESHOLD_DB = -1.0
 
 # Duration tolerance — 拼接允许 ±5% 偏差
 DURATION_TOLERANCE_PCT = 5.0
+AUDIO_TIMELINE_TOLERANCE = 0.1
 
 # Resolution floor — 9:16 竖屏短视频最低 720x1280，横屏 1280x720
 RES_MIN_LONG = 720
@@ -176,6 +179,35 @@ def extract_frames(video: str, duration: float, out_dir: Path) -> list[dict]:
 
 
 # ── Audio level analysis ────────────────────────────────────────────────────
+
+def stream_timing(stream: dict) -> dict | None:
+    """Use stream timing, never substitute container duration for a short track."""
+    try:
+        start = float(stream.get("start_time", 0))
+        raw = stream.get("duration")
+        duration = float(raw) if raw not in (None, "N/A") else (
+            float(stream["duration_ts"]) * float(Fraction(stream["time_base"])))
+        if not math.isfinite(start) or not math.isfinite(duration) or duration <= 0:
+            return None
+    except (KeyError, ValueError, TypeError, ZeroDivisionError):
+        return None
+    return {"start_time": start, "duration": duration, "end_time": start + duration}
+
+
+def check_audio_timeline(video_stream: dict, audio_stream: dict | None) -> dict:
+    video = stream_timing(video_stream)
+    audio = stream_timing(audio_stream) if audio_stream else None
+    result = {"name": "audio_timeline", "video": video, "audio": audio,
+              "tolerance_seconds": AUDIO_TIMELINE_TOLERANCE}
+    if audio_stream is None:
+        return {**result, "status": "skipped", "detail": "no audio stream"}
+    if video is None or audio is None:
+        return {**result, "status": "warn", "detail": "stream timing unavailable; cannot verify audio coverage"}
+    start_gap = abs(audio["start_time"] - video["start_time"])
+    end_gap = abs(audio["end_time"] - video["end_time"])
+    return {**result, "status": "pass" if max(start_gap, end_gap) <= AUDIO_TIMELINE_TOLERANCE + 1e-6 else "fail",
+            "start_gap_seconds": start_gap, "end_gap_seconds": end_gap,
+            "detail": f"audio/video start gap {start_gap:.3f}s, end gap {end_gap:.3f}s"}
 
 def analyze_audio(video: str, has_audio: bool) -> dict:
     """Use ffmpeg volumedetect filter. Returns {mean_db, max_db, silent, clipping, absent}."""
@@ -314,7 +346,8 @@ def review(project_dir: Path, video: Path, target_duration: float | None,
         "audio": (
             {"codec": a_stream.get("codec_name", "unknown"),
              "sample_rate": int(a_stream.get("sample_rate", 0)),
-             "channels": int(a_stream.get("channels", 0))}
+             "channels": int(a_stream.get("channels", 0)),
+             "timing": stream_timing(a_stream)}
             if a_stream else None
         ),
     }
@@ -343,6 +376,12 @@ def review(project_dir: Path, video: Path, target_duration: float | None,
         )
 
     # ── 3. Audio level ───────────────────────────────────────────────────
+    timeline = check_audio_timeline(v_stream, a_stream)
+    verdict["checks"].append(timeline)
+    if timeline["status"] == "fail":
+        verdict["critical"].append("audio_timeline_mismatch: " + timeline["detail"])
+    elif timeline["status"] == "warn":
+        verdict["warnings"].append("audio_timeline_unknown: " + timeline["detail"])
     audio = analyze_audio(str(video), a_stream is not None)
     verdict["audio_level"] = audio
     if audio.get("absent"):

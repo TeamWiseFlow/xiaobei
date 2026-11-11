@@ -329,8 +329,9 @@
       "awemePcRecRawData": "{\"is_client\":false}",
       "Seo-Flag": "0"
     },
-    "list": "aweme_list",
-    "cursor": "refresh_index"
+    "list": "cards",
+    "cursor": "refresh_index",
+    "pagination": "refresh-index"
   },
   "like": {
     "profile": "web",
@@ -754,6 +755,20 @@
     "defaults": {},
     "sensitive": true
   },
+  "creator_items": {
+    "profile": "creator",
+    "method": "GET",
+    "path": "/web/api/creator/item/list",
+    "required": [],
+    "defaults": {
+      "count": "50",
+      "order_by": "1",
+      "fields": "metrics,review,visibility",
+      "need_cooperation": "true",
+      "need_long_article": "true"
+    },
+    "host": "creator.douyin.com"
+  },
   "creator_profile": {
     "profile": "creator",
     "method": "GET",
@@ -788,5 +803,19 @@
     },
     "host": "live.douyin.com",
     "binary": true
+  },
+  "declaration_suggestion": {
+    "profile": "creator",
+    "method": "GET",
+    "path": "/aweme/v3/user_declaration/suggestion/",
+    "required": [
+      "creation_id",
+      "user_decl_judge_feats"
+    ],
+    "defaults": {
+      "scene": "new_self_media_before_publish",
+      "libra_token": "douyin_pc"
+    },
+    "host": "creator.douyin.com"
   }
 }
