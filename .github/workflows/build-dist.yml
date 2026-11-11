@@ -105,7 +105,10 @@ jobs:
 
           # 1. openclaw 引擎：dist + 源码 + lockfile + package.jsons，排除 node_modules / .git / 缓存
           #    用户侧 pnpm install --prod 按 lockfile 重建 node_modules
+          #    Plugin SDK 的生成包装包属于构建产物，必须保留。
           rsync -a \
+            --include='/dist/extensions/node_modules/' \
+            --include='/dist/extensions/node_modules/openclaw/***' \
             --exclude='node_modules' \
             --exclude='.git' \
             --exclude='*.tsbuildinfo' \
