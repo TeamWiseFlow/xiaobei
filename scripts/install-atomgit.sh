@@ -981,13 +981,15 @@ WISEFLOW_ROOT="${WISEFLOW_ROOT:-$WISEFLOW_ROOT_DEFAULT}"
 # （见 openclaw/src/config/paths.ts resolveStateDir → newStateDir = homedir/.openclaw），
 # 故若 export OPENCLAW_HOME=~/.openclaw 给引擎，会产出 ~/.openclaw/.openclaw 崌套。
 # 正确做法：export OPENCLAW_STATE_DIR（引擎用作 state dir 直接覆盖，不 append），OPENCLAW_HOME 仅本脚本内部用、不外传。
-OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
+OPENCLAW_HOME="${OPENCLAW_HOME:-${OPENCLAW_STATE_DIR:-$HOME/.openclaw}}"
+export -n OPENCLAW_HOME
 export OPENCLAW_STATE_DIR="$OPENCLAW_HOME"
 VERBOSE=0
 NO_PROMPT=0
 FORCE_RUNTIME=false
 SKIP_WEIXIN_BIND=false
 SKIP_BROWSER=false
+SKIP_SERVICE=false
 TAGLINE="$DEFAULT_TAGLINE"
 
 parse_args() {
@@ -1017,6 +1019,11 @@ parse_args() {
                 SKIP_BROWSER=true
                 shift
                 ;;
+            --skip-service)
+                SKIP_SERVICE=true
+                SKIP_WEIXIN_BIND=true
+                shift
+                ;;
             --root)
                 if [[ $# -lt 2 || "${2:-}" == --* ]]; then
                     ui_error "Missing value for $1"
@@ -1042,6 +1049,7 @@ Options:
   --force            Overwrite existing runtime data (~/.openclaw); default preserves it on re-install
   --skip-bind        Skip the WeChat QR binding at the end (CI/automation)
   --skip-browser     Skip Camoufox Firefox and shared Chromium downloads (smoke/CI)
+  --skip-service     Prepare runtime/env only; skip service management and WeChat binding (smoke/CI)
   --verbose          Print debug output
   --no-prompt        Disable prompts (CI/automation)
   --help, -h         Show this help
@@ -1217,9 +1225,13 @@ main() {
         place_config_template
         "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/python-runtime.mjs" configure --root "$WISEFLOW_ROOT" --config "$OPENCLAW_HOME/openclaw.json"
         local finalize_args=(--root "$WISEFLOW_ROOT" --config "$OPENCLAW_HOME/openclaw.json" --skip-crew)
-        [[ "$is_update" == "true" ]] && finalize_args+=(--stop-gateway)
+        [[ "$is_update" == "true" && "$SKIP_SERVICE" != "true" ]] && finalize_args+=(--stop-gateway)
         run_required_step "Finalizing pinned OpenClaw configuration" "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/finalize-openclaw-upgrade.mjs" "${finalize_args[@]}"
-        ui_stage "Refreshing gateway env and restarting"
+        if [[ "$SKIP_SERVICE" == "true" ]]; then
+            ui_stage "Refreshing runtime environment"
+        else
+            ui_stage "Refreshing gateway env and restarting"
+        fi
         refresh_gateway_env_only
     else
         # ─── 首装路线：放 config + setup-crew + gateway daemon ──
@@ -1230,7 +1242,7 @@ main() {
         place_config_template
         "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/python-runtime.mjs" configure --root "$WISEFLOW_ROOT" --config "$OPENCLAW_HOME/openclaw.json"
         local finalize_args=(--root "$WISEFLOW_ROOT" --config "$OPENCLAW_HOME/openclaw.json" --skip-crew)
-        [[ "$is_update" == "true" ]] && finalize_args+=(--stop-gateway)
+        [[ "$is_update" == "true" && "$SKIP_SERVICE" != "true" ]] && finalize_args+=(--stop-gateway)
         run_required_step "Finalizing pinned OpenClaw configuration" "$WISEFLOW_ROOT/$PORTABLE_NODE" "$WISEFLOW_ROOT/scripts/finalize-openclaw-upgrade.mjs" "${finalize_args[@]}"
 
         ui_stage "Setting up crew templates"
@@ -1254,7 +1266,9 @@ main() {
 
     # Use the packaged migration when available; older release archives may predate it.
     local automation_migration="$WISEFLOW_ROOT/scripts/repair-automation-inference.mjs"
-    if [[ -f "$automation_migration" ]]; then
+    if [[ "${SKIP_SERVICE:-false}" == "true" ]]; then
+        ui_info "Automation account migration deferred until Gateway startup (--skip-service)"
+    elif [[ -f "$automation_migration" ]]; then
         run_required_step "Migrating automation inference accounts" "$WISEFLOW_ROOT/$PORTABLE_NODE" "$automation_migration" --config "$OPENCLAW_HOME/openclaw.json" --auto --apply
     fi
 
@@ -1450,6 +1464,7 @@ DROPIN_EOF
 # 停掉运行中的 gateway（更新路线开头调，避免 pnpm 重写 node_modules 时文件句柄竞争卡死）。
 # 平台分支：Linux systemctl --user stop；Darwin openclaw gateway stop。无 service / 未运行则静默。
 stop_gateway_if_running() {
+    [[ "${SKIP_SERVICE:-false}" != "true" ]] || return 0
     local claw_cmd="$WISEFLOW_ROOT/bin/openclaw"
     if [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
         systemctl --user stop "openclaw-gateway.service" 2>/dev/null && ui_info "Stopped gateway before update" || true
@@ -1462,6 +1477,7 @@ stop_gateway_if_running() {
 # （PATH + XIAOBEI_HOME/OPENCLAW_STATE_DIR 走 .env 业务变量）+ restart gateway 让新 program 生效。
 # env 分工对齐首装：业务变量在 .env，daemon.env 只放 3 固定值 + OPENCLAW_STATE_DIR + PATH。
 restart_linux_gateway() {
+    [[ "${SKIP_SERVICE:-false}" != "true" ]] || return 0
     local unit="openclaw-gateway.service"
     run_required_step "Reloading Gateway service" systemctl --user daemon-reload
     run_required_step "Enabling Gateway autostart" systemctl --user enable "$unit"
@@ -1478,7 +1494,7 @@ refresh_gateway_env_only() {
     local systemd_env="$OPENCLAW_HOME/daemon.env"
     local macos_env="$OPENCLAW_HOME/service-env/ai.openclaw.gateway.env"
 
-    if [ "$(uname -s)" = "Linux" ]; then
+    if [ "${SKIP_SERVICE:-false}" != "true" ] && [ "$(uname -s)" = "Linux" ]; then
         local load_state
         if ! load_state="$(systemctl --user show openclaw-gateway.service --property=LoadState --value)"; then
             if [[ "$load_state" != "not-found" ]]; then
@@ -1522,7 +1538,9 @@ refresh_gateway_env_only() {
         grep -vE "^OPENCLAW_STATE_DIR=" "$daemon_env_file" 2>/dev/null > "${daemon_env_file}.new" || true
         mv "${daemon_env_file}.new" "$daemon_env_file"
         printf 'OPENCLAW_STATE_DIR=%s\n' "$OPENCLAW_HOME" >> "$daemon_env_file"
-        if [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
+        if [ "${SKIP_SERVICE:-false}" = "true" ]; then
+            ui_info "Gateway service management skipped (--skip-service)"
+        elif [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
             ensure_systemd_wait_display_dropin
             restart_linux_gateway
             ui_success "Restarted gateway"
@@ -1548,16 +1566,6 @@ install_gateway_and_env() {
     local dot_env="$OPENCLAW_HOME/.env"
     local systemd_env="$OPENCLAW_HOME/daemon.env"
     local macos_env="$OPENCLAW_HOME/service-env/ai.openclaw.gateway.env"
-
-    # ─── 提示用户清掉错误的 OPENCLAW_HOME 环境变量 ─────────────
-    # 引擎 resolveStateDir 把 OPENCLAW_HOME 当 homedir 再 append /.openclaw（见
-    # openclaw/src/config/paths.ts），故若用户 shell export 了 OPENCLAW_HOME=~/.openclaw，
-    # 会产出嵌套路径。本脚本顶部已把 OPENCLAW_HOME 设成内部变量且未 export，不会传给引擎子进程，
-    # 所以这里只打 info 提示用户清理 shell 环境变量，不能 unset——unset 会误伤脚本内部变量，
-    # 导致后续 ${OPENCLAW_HOME//...} 在 set -u 下报 unbound variable。
-    if [ -n "${OPENCLAW_HOME:-}" ] && [ "$(cd "${OPENCLAW_HOME:-}" && pwd)" = "$(cd "$HOME/.openclaw" && pwd)" ]; then
-        ui_info "检测到 shell 里 export OPENCLAW_HOME=${OPENCLAW_HOME:-}（不影响本次安装，但建议清掉避免引擎嵌套）"
-    fi
 
     # redirect stdin from /dev/tty so interactive read 工作于 curl|bash
     if is_promptable; then exec </dev/tty; fi
@@ -1620,6 +1628,10 @@ install_gateway_and_env() {
     load_env_vars_for_cli "$dot_env"
 
     # ─── daemon install（平台分支）─────────────────────────
+    if [ "${SKIP_SERVICE:-false}" = "true" ]; then
+        ui_info "Gateway service management skipped (--skip-service)"
+        return 0
+    fi
     if [ "$(uname -s)" = "Linux" ]; then
         # systemd drop-in 引用 daemon.env（必须在 daemon install 之前）
         if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then

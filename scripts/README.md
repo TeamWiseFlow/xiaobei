@@ -80,13 +80,14 @@ irm https://raw.atomgit.com/wiseflow/xiaobei/raw/master/scripts/install-atomgit.
 > - **普通用户（不开开发者模式）**：软链失败时自动回退到拷贝（`cp -rf`），功能完全可用，但仓库 skill 改动不会自动同步到 workspace，需要重跑 `setup-crew.sh --force`。
 > - **普通用户 + 开启开发者模式**：`设置 → 隐私和安全性 → 开发者选项 → 开发人员模式` 打开，即可创建软链，无需管理员。
 
-常用参数（四个 install 脚本行为开关同构；sh 走 `--flag`，ps1 走 `$env:XIAOBEI_FLAG=1`）：
+常用参数（公共开关在四个 install 脚本中同构；sh 走 `--flag`，ps1 走 `$env:XIAOBEI_FLAG=1`；Bash 专用参数单独标注）：
 
 | 参数（sh） | env（ps1） | 作用 |
 |------|------|------|
 | `--force` | `XIAOBEI_FORCE=1` | 强覆盖已有运行数据（`~/.openclaw`）；默认已装机器重跑只更新 program，不碰运行数据 |
 | `--skip-bind` | `XIAOBEI_SKIP_BIND=1` | 跳过末尾微信扫码绑定（CI / 自动化） |
 | `--skip-browser` | `XIAOBEI_SKIP_BROWSER=1` | 跳过 Camoufox Firefox 与共享 Chromium 下载（冒烟 / CI） |
+| `--skip-service` | —（仅 Bash） | 安装运行环境和配置，跳过系统服务的安装、停止和重启；隐含 `--skip-bind`，自动化账号迁移留待 Gateway 启动后的正常安装/升级收尾 |
 | `--no-prompt` | `XIAOBEI_NO_PROMPT=1` | 关闭交互提示（CI / 自动化，隐含 `--skip-bind`） |
 | `--root <dir>` | `XIAOBEI_HOME=<dir>` | 程序目录覆盖（默认 `~/xiaobei`） |
 | — | `XIAOBEI_TAG=<tag>` | 指定版本 tag（默认拉最新 release；sh 也认 `XIAOBEI_TAG` env） |
