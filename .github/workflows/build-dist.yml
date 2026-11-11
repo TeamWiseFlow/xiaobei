@@ -285,16 +285,18 @@ jobs:
           tar --zstd -xf "$TB" -C "$SMOKE/extract"
           [[ -f "$SMOKE/extract/scripts/install.sh" ]] || { echo "❌ tarball 缺 scripts/install.sh"; exit 1; }
           export XIAOBEI_HOME="$SMOKE/program"
-          export OPENCLAW_HOME="$SMOKE/runtime"
+          unset OPENCLAW_HOME
           export OPENCLAW_STATE_DIR="$SMOKE/runtime"
           export XIAOBEI_TARBALL="$TB"
           export XIAOBEI_TAG="$ASSET_TAG"
           export XIAOBEI_SOURCE=github
           export AWK_API_KEY="smoke-test-key"
+          # Isolated runtime smoke tests do not register an OS-account service.
           bash "$SMOKE/extract/scripts/install.sh" \
-            --no-prompt --skip-bind --skip-browser --root "$XIAOBEI_HOME"
+            --no-prompt --skip-bind --skip-browser --skip-service --root "$XIAOBEI_HOME"
           "$XIAOBEI_HOME/bin/openclaw" --version
           "$XIAOBEI_HOME/bin/openclaw" daemon --help
+          "$XIAOBEI_HOME/bin/openclaw" config validate
 
           # Re-running install.sh is the user upgrade path. Preserve a healthy
           # config and representative workspace/login files across this run.
@@ -311,9 +313,10 @@ jobs:
           printf '%s\n' 'CI user workspace content' > "$OPENCLAW_STATE_DIR/workspace-main/ci-upgrade-preserve.txt"
           printf '%s\n' 'CI login state sentinel' > "$OPENCLAW_STATE_DIR/openclaw-weixin/ci-upgrade-preserve.txt"
           bash "$XIAOBEI_HOME/scripts/install.sh" \
-            --no-prompt --skip-bind --skip-browser --root "$XIAOBEI_HOME"
+            --no-prompt --skip-bind --skip-browser --skip-service --root "$XIAOBEI_HOME"
           "$XIAOBEI_HOME/bin/openclaw" --version
           "$XIAOBEI_HOME/bin/openclaw" daemon --help
+          "$XIAOBEI_HOME/bin/openclaw" config validate
           node --input-type=module -e '
             import assert from "node:assert/strict";
             import fs from "node:fs";
