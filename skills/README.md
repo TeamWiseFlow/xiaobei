@@ -19,4 +19,5 @@
 | `pixabay-footage` | Pixabay 免费素材搜索下载 | main + content-producer 继承 |
 | `wxwork-drive` | 企业微信微盘 | main + content-producer 继承 |
 | `awk-img-gen` | 阿里云百炼生图/编辑（业务空间 qwen-image / agent plan wan2.7-image） | main + content-producer 继承 |
+| `atlascloud-img-gen` | Atlas Cloud 异步图像生成与编辑 | main + content-producer 继承 |
 | `youtube-publish` | YouTube 视频发布（Data API v3 + OAuth2） | main + content-producer 继承 |
