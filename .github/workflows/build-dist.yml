@@ -25,6 +25,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    # GitHub runners use upstream registries throughout the build and install smoke test.
+    env:
+      NPM_REGISTRY: https://registry.npmjs.org
+      npm_config_registry: https://registry.npmjs.org
+      PNPM_CONFIG_REGISTRY: https://registry.npmjs.org
+      PIP_INDEX_URL: https://pypi.org/simple
     steps:
       - name: Checkout xiaobei
         uses: actions/checkout@v5
