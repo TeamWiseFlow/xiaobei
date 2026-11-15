@@ -222,6 +222,11 @@ def validate_mfa_plan(action, plan):
         allowed = (plan["method"] == "POST" and target.hostname == "login.douyin.com"
                    and target.path == ("/passport/web/sms_login/" if action.startswith("sms-")
                                       else "/passport/web/check_qrconnect/")) or (
+            plan["method"] == "POST" and target.hostname == "www.douyin.com"
+            and target.path == "/passport/ticket_guard/get_client_cert/"
+            and [v for k, v in parse_qsl(target.query, keep_blank_values=True) if k == "aid"] == ["6383"]
+            and plan["body"] == "server_data=1,aid=6383"
+        ) or (
             plan["method"] == "GET" and target.hostname in {
                 "www.douyin.com", "login.douyin.com", "passport.douyin.com", "sso.douyin.com"
             } and (target.path == "/" or target.path.startswith("/passport/")

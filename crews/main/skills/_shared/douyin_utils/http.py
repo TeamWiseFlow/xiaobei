@@ -566,6 +566,9 @@ def request(
             verification=verification,
         )
     if response.status_code == 401:
+        if profile == "web":
+            state.state.update(login_identity_pending=True, login_error="PLATFORM_AUTH_REJECTED")
+            state.save()
         raise DouyinRequestError("PLATFORM_AUTH_REJECTED", status=response.status_code)
     if response.status_code == 403:
         raise DouyinRequestError("PLATFORM_RISK_CONTROL", status=403,
@@ -596,6 +599,9 @@ def request(
         if not isinstance(status, (str, int)) or not re.fullmatch(r"-?[0-9]{1,10}", str(status)):
             raise DouyinRequestError("PLATFORM_BAD_RESPONSE")
         request_info, diagnostic = platform_error_context(state, profile, method, url, data, response)
+        if str(status) == "8" and profile == "web":
+            state.state.update(login_identity_pending=True, login_error="PLATFORM_LOGIN_REJECTED")
+            state.save()
         raise DouyinRequestError(
             "PLATFORM_LOGIN_REJECTED"
             if str(status) == "8"
@@ -603,19 +609,21 @@ def request(
             status=response.status_code, response_info=response_info(response),
             request_info=request_info, diagnostic_file=diagnostic,
         )
+    identity_url = urlsplit(url)
+    if (identity_url.hostname == "www.douyin.com" and identity_url.path == "/aweme/v1/web/query/user/"
+            and re.fullmatch(r"[1-9][0-9]{0,19}", str(data.get("id", "")))):
+        ident = str(data["id"])
+        state.state.setdefault("tokens", {}).update(device_id=ident, webid=ident)
+        state.state.setdefault("token_sources", {})["webid"] = "query-user.id"
+        state.save()
     if verify_identity:
         user = data.get("user") or data.get("user_info")
-        if not user and str(data.get("user_uid", "")).isdigit():
-            user = {"uid": str(data["user_uid"])}
-            data["user"] = user
-        if not isinstance(user, dict) or not str(user.get("uid", "")).isdigit():
+        if (identity_url.path == "/aweme/v1/web/query/user/"
+                or not isinstance(user, dict) or not str(user.get("uid", "")).isdigit()):
             raise DouyinRequestError("SELF_PROFILE_MISSING")
+        if expected_uid is not None and str(user["uid"]) != str(expected_uid):
+            raise DouyinRequestError("API_ACCOUNT_MISMATCH")
         state.state.update(uid=str(user["uid"]), sec_uid=user.get("sec_uid", ""))
-        identity_url = urlsplit(url)
-        if (identity_url.hostname == "www.douyin.com" and identity_url.path == "/aweme/v1/web/query/user/"
-                and re.fullmatch(r"[1-9][0-9]{0,19}", str(data.get("id", "")))):
-            ident = str(data["id"])
-            state.state.setdefault("tokens", {}).update(device_id=ident, webid=ident)
-            state.state.setdefault("token_sources", {})["webid"] = "query-user.id"
+        state.state.pop("login_error", None)
         state.save()
     return data

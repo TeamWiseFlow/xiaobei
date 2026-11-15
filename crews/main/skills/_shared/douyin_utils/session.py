@@ -227,6 +227,7 @@ class ApiSession:
             for c in entries
         )
         if changed:
+            self.state.pop("login_error", None)
             self.state.pop("uid", None)
             self.state.pop("sec_uid", None)
             self.state.pop("relay_security_expires_at", None)
