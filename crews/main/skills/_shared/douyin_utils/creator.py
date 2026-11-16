@@ -1,6 +1,8 @@
 """Creator HTTP publishing with durable submission and reconciliation state."""
 
 import json
+import base64
+import hashlib
 import os
 from pathlib import Path
 import secrets
@@ -8,11 +10,13 @@ import time
 from contextlib import contextmanager
 
 from .api import call, common, csrf
-from .http import DouyinRequestError, prepare, request, session, public_error_info
+from .http import (DouyinRequestError, prepare, request, session, public_error_info,
+                   private_response_headers, response_info)
 from .login import flow, refresh_channel, refresh_security
 from .media import upload
 from .payload import PublishPayload
-from .session import read_private, write_private, session_lock
+from .session import read_private, write_private, session_lock, identity_binding
+from .verification import creator_verification, validate_creator_verification
 
 CREATOR = "https://creator.douyin.com"
 CREATE_PATH = "/web/api/media/aweme/create_v2/"
@@ -45,6 +49,11 @@ def asset_metadata(value):
     return {key: value[key] for key in ("vid", "uri", "poster_uri", "width", "height", "duration") if key in value}
 
 
+def payload_digest(job):
+    return hashlib.sha256(json.dumps(job["payload"], ensure_ascii=False,
+                                     separators=(",", ":")).encode()).hexdigest()
+
+
 def pending():
     if not STATE_PATH.exists():
         return None
@@ -52,7 +61,18 @@ def pending():
     return job if job.get("state") not in {"confirmed", "cancelled"} else None
 
 
-def owner():
+def owner(*, max_age=60):
+    current = session()
+    if max_age > 0 and current.state.get("login_error") in {"PLATFORM_LOGIN_REJECTED", "PLATFORM_AUTH_REJECTED"}:
+        raise DouyinRequestError(current.state["login_error"])
+    checked = current.state.get("identity_check") or {}
+    stamp = checked.get("at", 0)
+    age = time.time() - stamp if type(stamp) in (int, float) else float("inf")
+    if (max_age > 0 and 0 <= age < max_age and checked.get("uid") == current.state.get("uid")
+            and checked.get("binding") and checked["binding"] == identity_binding(current)
+            and not current.runtime_expired and not current.state.get("login_identity_pending")
+            and not current.state.get("login_error")):
+        return checked["uid"]
     result = call("self")
     uid = str((result.get("user") or {}).get("uid", ""))
     if not uid.isdigit():
@@ -138,9 +158,15 @@ def summary(job):
                                 "preparation_step", "preparation_completed_steps", "failed_at", "relay_info", "http_status",
                                 "request_info", "response_info", "diagnostic_file") if k in job}
     result.update(ok=job["state"] in {"confirmed", "cancelled"}, receipt=str(STATE_PATH), session_source="api",
+                  publication_confirmed=job["state"] == "confirmed",
                   accepted=True if job["state"] == "confirmed" else None,
                   next=None if job["state"] in {"confirmed", "cancelled"} else
                        "resume" if job.get("submission_attempted") else "publish" if job["state"] == "prepared" else "close")
+    ready = job.get("verified_retry_ready") or {}
+    if (job["state"] not in {"confirmed", "cancelled"} and ready.get("expires_at", 0) > time.time()
+            and not any(a.get("log_id") == ready.get("log_id") for a in job.get("verified_retries", []))):
+        result["next"] = "retry-verified"
+    result["verified_retry_count"] = len(job.get("verified_retries", []))
     return result
 
 
@@ -150,13 +176,25 @@ def confirm(job, ident, *, evidence="platform-item-id"):
     job.update(state="confirmed", item_id=ident, evidence=evidence,
                url="https://www.douyin.com/" + ("video/" if job["kind"] == "video" else "note/") + ident)
     job.pop("error", None)
+    if job.get("verification"):
+        job["completed_verification"] = job.pop("verification")
+    job.pop("verified_retry_ready", None)
     write_private(STATE_PATH, job)
     return summary(job)
 
 
-def reconcile(job):
+def reconcile(job, *, force=False):
     if job["state"] in {"confirmed", "cancelled"}:
         return summary(job)
+    if job.get("submission_payload_sha256", payload_digest(job)) != payload_digest(job):
+        raise DouyinRequestError("PUBLISH_PAYLOAD_CHANGED")
+    checked = job.get("last_reconciliation") or {}
+    age = time.time() - checked.get("at", 0)
+    if (not force and checked and 0 <= age < 15 and checked.get("payload_sha256") == payload_digest(job)):
+        ensure_owner(job["uid"])
+        if checked.get("binding") and checked["binding"] == identity_binding(session()):
+            return {**summary(job), "candidates": checked["candidates"], "cached": True,
+                    "checked_at": checked["at"], "retry_after_seconds": max(1, int(15 - age))}
     if owner() != job["uid"]:
         raise DouyinRequestError("API_ACCOUNT_MISMATCH")
     if not job.get("submission_attempted"):
@@ -178,9 +216,13 @@ def reconcile(job):
         candidates.append(ident)
     if len(set(candidates)) == 1:
         return confirm(job, candidates[0], evidence="creator-list-match")
+    job["last_reconciliation"] = {"at": time.time(), "candidates": candidates,
+                                  "payload_sha256": payload_digest(job), "binding": identity_binding(session())}
     job["state"] = "submission_unknown"
     write_private(STATE_PATH, job)
-    return {**summary(job), "candidates": candidates, "hint": "保留原任务，继续只读核查；不要重新发布"}
+    return {**summary(job), "candidates": candidates, "cached": False,
+            "checked_at": job["last_reconciliation"]["at"], "retry_after_seconds": 15,
+            "hint": "保留原任务，继续只读核查；验证后续接使用 retry-verified"}
 
 
 def publish(job):
@@ -188,7 +230,6 @@ def publish(job):
         return reconcile(job)
     ensure_session(job["uid"])
     ensure_owner(job["uid"])
-    body = job["payload"]
     # Validate signing inputs before recording the once-only submission intent.
     query = common("creator", session())
     query.update(read_aid="2906", msToken=session().state["tokens"]["creator_msToken"])
@@ -197,10 +238,43 @@ def publish(job):
         prepare("creator", "publish-security", append_params(CREATOR + CREATE_PATH, query),
                 fields={"work_type": "video" if job["kind"] == "video" else "image"},
                 expected_uid=job["uid"])
-    job.update(state="submitting", submission_attempted=True, submitted_at=time.time())
+    job.update(state="submitting", submission_attempted=True, submitted_at=time.time(),
+               submission_payload_sha256=payload_digest(job))
     write_private(STATE_PATH, job)
+    return _submit(job)
+
+
+def _submit(job, *, before_send=None):
+    """Send only after the caller has durably recorded a distinct send intent."""
+    suffix = ("-retry-" + str(len(job["verified_retries"])) if job.get("verified_retries") else
+              "-operator-" + str(len(job["operator_retries"])) if job.get("operator_retries") else "")
+    diagnostic = STATE_PATH.parent / "diagnostics" / (job["attempt_id"] + suffix + ".json")
+
+    def capture(response):
+        # Persist the platform evidence before cookie harvesting or parsing can
+        # fail. An unrecognized decision must remain available for diagnosis.
+        current = session()
+        headers = private_response_headers(response)
+        write_private(diagnostic, {"formatVersion": 2, "captured_at": time.time(),
+                                  "attempt_id": job["attempt_id"], "creation_id": job["creation_id"],
+                                  "payload_sha256": payload_digest(job),
+                                  "response": response_info(response),
+                                  "headers": headers,
+                                  "header_bytes": {name: len(str(response.headers.get(name, "")).encode())
+                                                   for name in headers},
+                                  "body_prefix_base64": base64.b64encode(response.content[:512]).decode(),
+                                  "security_expires_at": current.state.get("relay_security_expires_at"),
+                                  "creator_channel_expires_at": current.state.get("session_channels", {}).get("creator")})
+        job["diagnostic"] = str(diagnostic)
+        job["diagnostic_file"] = str(diagnostic)
+        job["response_info"] = response_info(response)
+        job["http_status"] = response.status_code
+        write_private(STATE_PATH, job)
+
     try:
-        response = call("create", {"read_aid": "2906"}, body=body, confirm=True, expected_uid=job["uid"])
+        response = call("create", {"read_aid": "2906"}, body=job["payload"], confirm=True, expected_uid=job["uid"],
+                        on_response=capture,
+                        **({"before_send": before_send} if before_send is not None else {}))
         ident = str(response.get("item_id") or "")
         if response.get("status_code") in (0, "0") and ident.isdigit():
             return confirm(job, ident)
@@ -211,12 +285,121 @@ def publish(job):
         job.update(public_error_info(exc))
         if getattr(exc, "verification", None):
             job["verification"] = exc.verification
-            diagnostic = STATE_PATH.parent / "diagnostics" / (job["attempt_id"] + ".json")
+        if getattr(exc, "response_headers", None) is not None and not diagnostic.exists():
             write_private(diagnostic, {"headers": getattr(exc, "response_headers", {}) or {}})
             job["diagnostic"] = str(diagnostic)
+            job["diagnostic_file"] = str(diagnostic)
         job["error"] = getattr(exc, "code", "PUBLISH_RESULT_UNKNOWN")
         write_private(STATE_PATH, job)
         return {**summary(job), "hint": "已尝试提交，先核查或完成本任务验证；不要重发"}
+
+
+def retry_verified(job, args):
+    """One explicit continuation per verified challenge, retaining the original payload."""
+    if job["state"] in {"confirmed", "cancelled"}:
+        return summary(job)
+    if not getattr(args, "confirm", False):
+        return {"ok": True, "preview": True, "action": "retry-verified", "attempt_id": job["attempt_id"],
+                "requires": ["valid-creator-verification", "original-work-confirmed-not-published"]}
+    confirmation = getattr(args, "not_published_confirmation", "")
+    if not isinstance(confirmation, str) or not confirmation.strip():
+        raise ValueError("USER_CONFIRMATION_REQUIRED")
+    if job["state"] == "submitting" and job.get("verified_retries"):
+        return reconcile(job)
+    if not job.get("submission_attempted") or job.get("state") not in {"awaiting_verification", "submission_unknown"}:
+        raise DouyinRequestError("VERIFICATION_CHALLENGE_MISSING")
+    current = session()
+    ensure_owner(job["uid"])
+    if (not current.state.get("creator_verification_binding")
+            or current.state["creator_verification_binding"] != identity_binding(current)):
+        raise DouyinRequestError("VERIFICATION_CONTEXT_MISMATCH")
+    expected_binding = current.state["creator_verification_binding"]
+    try:
+        value = validate_creator_verification(current.state.get("creator_verification"))
+    except ValueError as exc:
+        raise DouyinRequestError("VERIFICATION_CHALLENGE_MISSING") from exc
+    if value["status"] != "ticket-issued" or value["ticket_present"] is not True:
+        raise DouyinRequestError("VERIFICATION_TICKET_MISSING")
+    if any(a.get("log_id") == value["log_id"] for a in job.get("verified_retries", [])):
+        return reconcile(job)
+    if value["expires_at"] <= time.time():
+        raise DouyinRequestError("VERIFICATION_EXPIRED")
+    decision = creator_verification(read_private(job["diagnostic"])["headers"])
+    if (not decision or decision.get("reason") != "gateway_web_authlv_check"
+            or decision["log_id"] != value["log_id"] or value["log_id"] != job.get("verification", {}).get("log_id")):
+        raise DouyinRequestError("VERIFICATION_CONTEXT_MISMATCH")
+    digest = payload_digest(job)
+    if job.get("submission_payload_sha256", digest) != digest:
+        raise DouyinRequestError("PUBLISH_PAYLOAD_CHANGED")
+    creation = str(job["payload"].get("item", {}).get("common", {}).get("creation_id", ""))
+    if not creation or creation != str(job.get("creation_id", "")):
+        raise DouyinRequestError("PUBLISH_PAYLOAD_CHANGED")
+    if owner(max_age=0) != job["uid"]:
+        raise DouyinRequestError("API_ACCOUNT_MISMATCH")
+    check = reconcile(job, force=True)
+    if check["ok"] or check.get("candidates"):
+        return check
+    if job.get("verification_materials_refreshed") != value["id"]:
+        current = session()
+        current.state.pop("relay_security_expires_at", None)
+        current.state.get("session_channels", {}).pop("creator", None)
+        current.save()
+    ensure_session(job["uid"])
+    job["verification_materials_refreshed"] = value["id"]
+    job.setdefault("submission_payload_sha256", digest)
+    write_private(STATE_PATH, job)
+    if value["expires_at"] <= time.time():
+        raise DouyinRequestError("VERIFICATION_EXPIRED")
+    query = common("creator", session())
+    query.update(read_aid="2906", msToken=session().state["tokens"]["creator_msToken"])
+    from .http import append_params
+    prepare("creator", "publish-security", append_params(CREATOR + CREATE_PATH, query),
+            fields={"work_type": "video" if job["kind"] == "video" else "image"}, expected_uid=job["uid"])
+    if value["expires_at"] <= time.time():
+        raise DouyinRequestError("VERIFICATION_EXPIRED")
+    # Persist before computation/transport. An interrupted or uncertain attempt
+    # is only reconciled on every later invocation, including the same command.
+    job.setdefault("verified_retries", []).append({"verification_id": value["id"], "log_id": value["log_id"],
+        "at": time.time(), "payload_sha256": digest, "confirmation": confirmation.strip(),
+        "previous_error": job.get("error"), "diagnostic": job.get("diagnostic")})
+    job.update(state="submitting", submission_payload_sha256=digest)
+    job.pop("last_reconciliation", None)
+    write_private(STATE_PATH, job)
+    def check_before_send():
+        # The transport holds the API-session lock while invoking this check
+        # and sending, so a concurrent login cannot swap the account here.
+        latest = session()
+        verification = latest.state.get("creator_verification") or {}
+        if (str(latest.state.get("uid", "")) != job["uid"]
+                or identity_binding(latest) != expected_binding
+                or verification.get("id") != value["id"] or verification.get("log_id") != value["log_id"]):
+            raise DouyinRequestError("VERIFICATION_CONTEXT_MISMATCH")
+        if value["expires_at"] <= time.time():
+            raise DouyinRequestError("VERIFICATION_EXPIRED")
+    return _submit(job, before_send=check_before_send)
+
+
+def verification_result(job, value, *, cached=False):
+    """Report completion of this verification step separately from publication."""
+    result = summary(job)
+    previous = result.pop("error", None)
+    if previous:
+        result["publication_error"] = previous
+    action_path = None
+    if value.get("user_action"):
+        action_path = STATE_PATH.parent / (job["attempt_id"] + "-user-action.json")
+        write_private(action_path, value["user_action"])
+    consumed = any(a.get("log_id") == value.get("log_id") for a in job.get("verified_retries", []))
+    next_step = {"prepared": "verify-send", "awaiting-code": "verify-code",
+                 "awaiting-up-sms": "verify-confirm", "ticket-issued": "retry-verified"}.get(value.get("status"))
+    if value.get("status") == "ticket-issued" and consumed:
+        next_step = "resume"
+    return {**result, "ok": True, "publication_confirmed": job["state"] == "confirmed",
+            "verification": {k: v for k, v in value.items() if k != "user_action"},
+            "verification_status": value.get("status"), "cached": cached,
+            "user_action_file": str(action_path) if action_path else None,
+            "next": next_step, "verified_retry_consumed": consumed,
+            "hint": "此验证步骤已完成，作品尚待确认；续接原请求使用 retry-verified"}
 
 
 def verify(job, args):
@@ -224,6 +407,21 @@ def verify(job, args):
         return {"ok": True, "preview": True, "action": args.action}
     if not job.get("submission_attempted") or not job.get("diagnostic"):
         raise DouyinRequestError("VERIFICATION_CHALLENGE_MISSING")
+    if job.get("verification", {}).get("reason") == "passport_verify":
+        raise DouyinRequestError("VERIFICATION_CHALLENGE_INCOMPLETE", diagnostic_file=job["diagnostic"])
+    current = session()
+    value = current.state.get("creator_verification") or {}
+    if (args.action == "verify-prepare" and not getattr(args, "restart", False)
+            and not current.state.get("creator_verification_flow")
+            and value.get("log_id") == job.get("verification", {}).get("log_id")
+            and value.get("status") in {"prepared", "awaiting-code", "awaiting-up-sms", "ticket-issued"}
+            and current.state.get("creator_verification_binding")
+            and current.state.get("creator_verification_binding") == identity_binding(current)):
+        ensure_owner(job["uid"])
+        if value["expires_at"] <= time.time():
+            raise DouyinRequestError("VERIFICATION_EXPIRED")
+        value = validate_creator_verification(value)
+        return verification_result(job, value, cached=True)
     if owner() != job["uid"]:
         raise DouyinRequestError("API_ACCOUNT_MISMATCH")
     headers = read_private(job["diagnostic"])["headers"]
@@ -287,13 +485,30 @@ def verify(job, args):
             fields["code"] = code
         result = flow(args.action, fields)
     value = result.get("verification") or {}
-    action_path = None
-    if value.get("user_action"):
-        action_path = STATE_PATH.parent / (job["attempt_id"] + "-user-action.json")
-        write_private(action_path, value["user_action"])
-    return {**summary(job), "verification": {k: v for k, v in value.items() if k != "user_action"},
-            "user_action_file": str(action_path) if action_path else None, "verification_status": value.get("status"),
-            "hint": "验证票据不等于发布成功；继续 resume 核查原提交"}
+    if value.get("status") == "ticket-issued":
+        job["verified_retry_ready"] = {k: value[k] for k in ("id", "log_id", "expires_at")}
+        write_private(STATE_PATH, job)
+    return verification_result(job, value)
+
+
+def wait_video_ready(uid, media):
+    deadline, delay = time.monotonic() + 180, 2
+    detect = {"resource_list": [{"type": 2, "video_id": media["vid"],
+                                 "duration": round(media["duration"]), "cover_uri": ""}],
+              "source": 1, "is_redetect": False}
+    while True:
+        if time.monotonic() >= deadline:
+            raise DouyinRequestError("VIDEO_PROCESSING_TIMEOUT")
+        checked = call("fast_detect", body=detect, confirm=True, expected_uid=uid)
+        if checked.get("has_done") is True:
+            return
+        if checked.get("task_id"):
+            detect["task_id"] = str(checked["task_id"])
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise DouyinRequestError("VIDEO_PROCESSING_TIMEOUT")
+        time.sleep(min(delay, remaining))
+        delay = min(delay * 2, 8)
 
 
 def run(args, *, stop_before_submit=False, prepare_cover=None):
@@ -345,20 +560,8 @@ def run(args, *, stop_before_submit=False, prepare_cover=None):
                     call("video_enable", {"video_id": media["vid"]}, expected_uid=uid)
                 with preparation_step(job, "video_transend"):
                     call("video_transend", {"video_id": media["vid"]}, expected_uid=uid)
-                deadline = time.monotonic() + 180
-                detect = {"resource_list": [{"type": 2, "video_id": media["vid"],
-                                             "duration": round(media["duration"]), "cover_uri": ""}],
-                          "source": 1, "is_redetect": False}
                 with preparation_step(job, "video_processing"):
-                    while True:
-                        checked = call("fast_detect", body=detect, confirm=True, expected_uid=uid)
-                        if checked.get("has_done") is True:
-                            break
-                        if checked.get("task_id"):
-                            detect["task_id"] = str(checked["task_id"])
-                        if time.monotonic() >= deadline:
-                            raise DouyinRequestError("VIDEO_PROCESSING_TIMEOUT")
-                        time.sleep(2)
+                    wait_video_ready(uid, media)
                 covers = []
                 directory = STATE_PATH.parent / ("covers-" + job["attempt_id"])
                 directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -390,7 +593,7 @@ def run(args, *, stop_before_submit=False, prepare_cover=None):
 
 
 def execute(args, *, prepare_cover=None):
-    supported = {"run", "publish", "close", "status", "get-link", "resume", "verify-prepare",
+    supported = {"run", "publish", "close", "status", "get-link", "resume", "retry-verified", "verify-prepare",
                  "verify-qr", "verify-poll", "verify-send", "verify-code", "verify-confirm"}
     if args.action not in supported:
         raise ValueError("HTTP_PUBLISH_ACTION_UNSUPPORTED")
@@ -409,6 +612,8 @@ def execute(args, *, prepare_cover=None):
             raise ValueError("PUBLISH_KIND_MISMATCH")
         if args.action.startswith("verify-"):
             return verify(job, args)
+        if args.action == "retry-verified":
+            return retry_verified(job, args)
         if args.action in {"status", "get-link", "resume"}:
             return reconcile(job) if args.action != "status" else summary(job)
         if args.action == "publish":

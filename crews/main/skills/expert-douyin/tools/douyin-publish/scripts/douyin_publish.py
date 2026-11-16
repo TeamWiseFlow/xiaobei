@@ -23,8 +23,15 @@ def content_options(parser):
     parser.add_argument('--caption', default='', help='正文文字或 @UTF-8正文文件路径')
 
 
+def verified_retry_options(commands):
+    command = commands.add_parser('retry-verified', help='用户确认未发布且验证票据有效时，续接原请求一次')
+    command.add_argument('--confirm', action='store_true')
+    command.add_argument('--not-published-confirmation', default='', help='用户确认原作品未发布的原文或 @UTF-8确认文件')
+
+
 def video_commands(parent):
     commands = parent.add_subparsers(dest='action', required=True)
+    verified_retry_options(commands)
     for name, function in (
         ('publish', video.cmd_publish),
         ('get-link', video.cmd_get_link), ('resume', video.cmd_resume),
@@ -73,6 +80,7 @@ def video_commands(parent):
 
 def note_commands(parent):
     commands = parent.add_subparsers(dest='action', required=True)
+    verified_retry_options(commands)
     close = commands.add_parser('close')
     close.add_argument('--outcome', choices=('published', 'cancelled'), required=True)
     close.add_argument('--url')
@@ -198,6 +206,8 @@ def main(argv=None):
             note.validate(title=args.title, caption=args.caption)
     if hasattr(args, 'confirmation'):
         args.confirmation = read_publish_text(args.confirmation)
+    if hasattr(args, 'not_published_confirmation'):
+        args.not_published_confirmation = read_publish_text(args.not_published_confirmation)
     if hasattr(args, 'images'):
         args.images = [str(Path(path).expanduser().resolve()) for path in args.images]
         note.validate(images=args.images, title=getattr(args, 'title', '上传'))

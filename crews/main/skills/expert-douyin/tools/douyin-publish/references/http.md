@@ -12,6 +12,8 @@
 
 提交前工具持久化意图。出现网络中断、空响应或未知结果时，`publish`、`resume`、`get-link` 均只核查原提交，不再次 POST。使用 `video resume` / `note resume` 查本人作品，工具仅接受完整 ID、同账号、对应文案和提交时间内的唯一新作品；不拿全局最新作品替代。多候选或无候选继续保留未知状态。
 
+发布响应原始决策头保存在返回的 `diagnostic_file` 私有文件中，即使正文为空或客户端未识别挑战也保留。`verification:null` 不代表响应没有验证头；`header_names` 只说明头名存在，具体识别状态看 `response_info.verification_decision`。遇到未识别的决策保留原任务并反馈诊断，不把旧任务的过期验证、票据或 log_id 拼到当前作品，也不靠结案后反复上传重发排障。
+
 `accepted: true` 仅表示平台已返回或核实真实作品 ID，不表示已公开、可播放或审核通过。只有真实 ID 和完整链接才能调用 `published-track` 入库，按既有工作流去重。用户提供确认链接时，使用对应类型的 `close --outcome published --url "完整链接" --confirmation "用户确认原文" --confirm`；不因此把公开/播放状态设为真。
 
 ## 创作者二次验证
@@ -22,6 +24,24 @@
 - `gateway_web_authlv_check`：运行 `verify-prepare`；仅使用返回的支持方式。选择接收短信后用 `verify-send --method mobile_sms_verify --confirm`；将用户验证码写入仓外 0600 文件，再用 `verify-code --code-file /受控目录/code.txt`。选择上行短信则用 `verify-send --method mobile_up_sms_verify --confirm`，读取仅供用户的交互文件，用户确认发送后 `verify-confirm --method mobile_up_sms_verify --confirm`。
 - 平台返回不支持方式、拒绝、过期或请求结果未知时停止，保留诊断，不自动发码、改方式、重建登录或重发作品。验证票据与扫码通过都不等于发布成功，继续 `resume` 核查。
 
-若只读 `verify-prepare` 已保存 HTTP 200 响应，但因计算故障停住且准备上下文已经过期，可由用户明确选择 `video verify-prepare --restart`（图文使用 `note`）重新准备。此选项也可恢复旧发码计划漏带编码标记、且平台明确返回错误码 1003 的已保存失败响应；客户端和 Relay 都会检查原请求、响应及原作品挑战。它先归档原现场，再仅执行新的只读查询；不发送验证码、不重传素材、不重发作品。已成功发码、已取得票据、其他失败或请求结果未知的流程不能通过此选项重置。准备成功后仍需用户明确执行发码并完成验证，再用 `resume` 核查原提交。
+### 短信验证后的原作品续接
+
+`ticket-issued` 后，先按原任务核查。用户明确确认原作品未发布并要求继续时，执行：
+
+```bash
+douyin-publish video retry-verified --not-published-confirmation "用户确认原作品未发布并要求继续的原文" --confirm
+```
+
+图文将 `video` 换成 `note`。已有用户确认与授权时直接使用，不重复询问。没有 `--confirm` 时只读本地预览。程序要求有效的同账号、同挑战票据，复核本人作品，并保留原 creation_id、视频和封面、文案及完整正文；不新增手工票据参数。匹配到已发布作品时直接确认；多候选或账号不符时停止。
+
+每个验证流程只允许一次这种明确授权的续接，发送前先保存意图。中断、网络失败、再次出现验证或结果未知时不自动再 POST；后续 `resume`、`publish` 和重复同一 `retry-verified` 只核查。`publish_gate_verified=false` 表示尚未证实发布放行，不修改它来伪装成功。只有平台作品 ID 或核查匹配才能确认发布。
+
+准备、等待验证码、等待上行短信或票据阶段已过期，且没有挂起的请求时，可用 `verify-prepare --restart` 重新查询原作品挑战。它归档旧验证上下文，保留原作品收据和上传材料，不发送短信；之后按实际方式明确发码、验码，再使用新票据续接。尚有效的流程或已发送但结果未知的请求不能用此选项重置。
+
+重复 `verify-prepare` 会复用尚有效的验证摘要。结果核查可能返回 `cached=true` 与 `retry_after_seconds`，应等提示时间再查，不把缓存结果当作一次新平台核查。
+
+若只读 `verify-prepare` 已保存 HTTP 200 响应，但因计算故障停住且准备上下文已经过期，可由用户明确选择 `video verify-prepare --restart`（图文使用 `note`）重新准备。此选项也可恢复旧发码计划漏带编码标记、且平台明确返回错误码 1003 的已保存失败响应；客户端和 Relay 都会检查原请求、响应及原作品挑战。它先归档原现场，再仅执行新的只读查询；不发送验证码、不重传素材、不重发作品。尚有效的验证流程、其他失败或请求结果未知的流程不能通过此选项重置。准备成功后仍需用户明确执行发码并完成验证，按上节核查或续接原提交。
+
+验证命令的 `ok=true` 只表示本次验证步骤完成，作品是否确认由 `publication_confirmed` 和作品 ID 判断。旧发布错误会放在 `publication_error`，不能据此重复执行已经完成的发码或验码步骤。
 
 主登录会话不会被二次扫码结果替换。`API_ACCOUNT_MISMATCH` 时停止当前任务，恢复原账号后核查；不能跨账号续传或提交。`PUBLISH_PENDING_API` 表示原 HTTP 任务尚未结案，不切到浏览器再发同一作品。

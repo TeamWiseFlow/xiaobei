@@ -12,7 +12,7 @@ import requests
 from relay_sign import RelaySignError, douyin_v2
 
 from .http import DouyinRequestError, _send, session, require_runtime
-from .session import DEFAULT_SESSION, ApiSession, SessionError, runtime_fields, read_private, session_lock, write_private
+from .session import DEFAULT_SESSION, ApiSession, SessionError, runtime_fields, read_private, session_lock, write_private, identity_binding
 from .verification import (login_verification, login_verification_status,
                            validate_login_verification, validate_creator_verification)
 
@@ -290,6 +290,7 @@ def adopt_creator_verification(state, result, action):
                                        or previous["log_id"] != value["log_id"]):
         raise DouyinRequestError("INVALID_RELAY_RESPONSE")
     state.state["creator_verification"] = value
+    state.state["creator_verification_binding"] = identity_binding(state)
 
 
 def adopt_verification(state, result, action):
@@ -380,7 +381,14 @@ def flow(action, fields=None, *, consume_mfa=False, restart=False):
                     and verification.get("id") == previous.get("verification_id")
                     and verification.get("log_id") == fields.get("log_id")
                     and verification.get("status") == "prepared" and verification.get("ticket_present") is False)
-            if action != "verify-prepare" or not (original_prepare or rejected_send):
+            try:
+                completed = validate_creator_verification(verification)
+            except ValueError:
+                completed = {}
+            expired_completed = (not saved and completed.get("log_id") == fields.get("log_id")
+                    and completed.get("status") in {"prepared", "awaiting-code", "awaiting-up-sms", "ticket-issued"}
+                    and completed.get("expires_at", float("inf")) <= time.time())
+            if action != "verify-prepare" or not (original_prepare or rejected_send or expired_completed):
                 raise DouyinRequestError("VERIFICATION_ACTION_PENDING")
             next_fields = {**fields, "restart": "true"}
             result = compute("flow", {"ua": state.ua, "runtime": state.state["relay_runtime"],
@@ -394,6 +402,7 @@ def flow(action, fields=None, *, consume_mfa=False, restart=False):
                                        "verification": verification})
             adopt(state, result, save=False)
             state.state.pop("creator_verification", None)
+            state.state.pop("creator_verification_binding", None)
             fields = next_fields
             saved = {"action": action, "fields": fields, "request": result["request"]}
             state.state[flow_key] = saved

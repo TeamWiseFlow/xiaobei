@@ -150,6 +150,64 @@ def login_verification(body):
     }
 
 
+def creator_decision_diagnostic(headers):
+    """Describe a rejected header without exposing identity, ticket or unknown values."""
+    values = {str(k).lower(): v for k, v in headers.items()} if isinstance(headers, dict) else {}
+    name = "x-tt-verify-passport-decision"
+    if name not in values:
+        return {"status": "absent"}
+    raw = values[name]
+    if not isinstance(raw, str):
+        return {"status": "invalid_type"}
+    result = {"bytes": len(raw.encode())}
+    if not raw:
+        return {**result, "status": "empty"}
+    if len(raw) > 8192:
+        return {**result, "status": "too_large"}
+    try:
+        decision = json.loads(raw)
+    except (ValueError, RecursionError):
+        return {**result, "status": "invalid_json"}
+    if not isinstance(decision, dict):
+        status = "invalid_shape"
+    elif decision.get("account_flow") != "verify":
+        status = "not_verification"
+    elif not isinstance(decision.get("event_params"), dict):
+        status = "event_invalid"
+    elif decision["event_params"].get("verify_scene") != "creator":
+        status = "scene_unsupported"
+    elif decision["event_params"].get("verify_reason") not in {"gateway_web_authlv_check", "gateway_biz_verify"}:
+        status = "reason_unsupported"
+    elif (not isinstance(decision["event_params"].get("log_id"), str)
+          or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", decision["event_params"]["log_id"])):
+        status = "log_id_invalid"
+    elif creator_verification(headers):
+        status = "recognized"
+    else:
+        status = "methods_unsupported_or_invalid"
+    if (isinstance(decision, dict) and isinstance(decision.get("event_params"), dict)
+            and values.get("x-tt-logid")):
+        result["transport_log_id_matches"] = values["x-tt-logid"] == decision["event_params"].get("log_id")
+    return {**result, "status": status}
+
+
+def creator_gateway_verification(headers, body):
+    """Recognize the gateway signal without inventing missing challenge material."""
+    if body or not isinstance(headers, dict):
+        return None
+    values = {str(k).lower(): v for k, v in headers.items()}
+    exposed = values.get("access-control-expose-headers", "")
+    if (values.get("bd_passport_security_gateway") != "1" or not isinstance(exposed, str)
+            or "x-tt-verify-passport-decision" not in {name.strip().lower() for name in exposed.split(",")}):
+        return None
+    result = {"required": True, "scene": "creator", "reason": "passport_verify", "methods": [],
+              "challenge_complete": False, "decision_status": creator_decision_diagnostic(headers)["status"]}
+    log_id = values.get("x-tt-logid")
+    if isinstance(log_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", log_id):
+        result["log_id"] = log_id
+    return result
+
+
 def creator_verification(headers):
     if not isinstance(headers, dict):
         return None
@@ -174,8 +232,6 @@ def creator_verification(headers):
         log_id = event.get("log_id")
         if not isinstance(log_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", log_id):
             return None
-        if values.get("x-tt-logid") and values["x-tt-logid"] != log_id:
-            return None
         return {"required": True, "scene": "creator", "reason": "gateway_biz_verify",
                 "methods": ["qrcode_verify"], "log_id": log_id}
     ways = decision.get("verify_way_name_list")
@@ -189,8 +245,9 @@ def creator_verification(headers):
     log_id = event.get("log_id")
     if not isinstance(log_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", log_id):
         return None
-    if values.get("x-tt-logid") and values["x-tt-logid"] != log_id:
-        return None
+    # The gateway challenge owns its log_id. A later response can have a new
+    # transport trace while carrying the same challenge. Bind verification to
+    # the decision, as the platform SDK does; never substitute x-tt-logid.
     return {
         "required": True,
         "scene": "creator",

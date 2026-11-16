@@ -216,7 +216,7 @@ def csrf(host):
     state.save()
 
 
-def call(name, params=None, *, body=None, confirm=False, expected_uid=None, _uifid_retry=False):
+def call(name, params=None, *, body=None, confirm=False, expected_uid=None, _uifid_retry=False, before_send=None, on_response=None):
     if name not in ENDPOINTS:
         raise ValueError("UNKNOWN_METHOD")
     e = ENDPOINTS[name]
@@ -346,6 +346,8 @@ def call(name, params=None, *, body=None, confirm=False, expected_uid=None, _uif
             binary_response=e.get("binary", False), empty_result=e.get("empty_result"),
             capture_response=name == "create", content_type=e.get("content_type"),
             static_headers=headers,
+            **({"before_send": before_send} if before_send is not None else {}),
+            **({"on_response": on_response} if on_response is not None else {}),
             **({"query_tail": {"verifyFp": cookie_values["s_v_web_id"], "fp": cookie_values["s_v_web_id"]}}
                if name == "replies" and cookie_values.get("s_v_web_id") else {}),
         )
@@ -370,7 +372,7 @@ def call(name, params=None, *, body=None, confirm=False, expected_uid=None, _uif
             if not session().cookies("https://www.douyin.com/").count("UIFID="):
                 raise exc
             return call(name, params, body=body, confirm=confirm,
-                        expected_uid=expected_uid, _uifid_retry=True)
+                        expected_uid=expected_uid, _uifid_retry=True, before_send=before_send, on_response=on_response)
         raise
     if name == "live_fetch":
         from google.protobuf.json_format import MessageToDict

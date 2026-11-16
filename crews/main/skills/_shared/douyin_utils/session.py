@@ -3,6 +3,7 @@
 from __future__ import annotations
 import base64
 import fcntl
+import hashlib
 import json
 import os
 import tempfile
@@ -43,6 +44,17 @@ COOKIE_ORDER = (
 
 class SessionError(RuntimeError):
     pass
+
+
+def identity_binding(state):
+    """Bind a recent authenticated identity check to the actual account cookies."""
+    header = state.cookies("https://www.douyin.com/aweme/v1/web/user/profile/self/")
+    account = [piece.strip() for piece in header.split(";")
+               if piece.strip().partition("=")[0] in {"sessionid", "sessionid_ss"}]
+    if not account:
+        return None
+    value = [str(state.state.get("uid", "")), state.ua, account]
+    return hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()
 
 
 def cookie_key(cookie):
@@ -228,6 +240,9 @@ class ApiSession:
         )
         if changed:
             self.state.pop("login_error", None)
+            self.state.pop("identity_check", None)
+            self.state.pop("creator_verification", None)
+            self.state.pop("creator_verification_binding", None)
             self.state.pop("uid", None)
             self.state.pop("sec_uid", None)
             self.state.pop("relay_security_expires_at", None)
