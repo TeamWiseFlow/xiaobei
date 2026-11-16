@@ -27,6 +27,6 @@ metadata:
 
 运营资料存 `kuaishou/ref/`、`kuaishou/outputs/`、`kuaishou/calibration/`，DNA 存 `kuaishou/dna/`。默认 dna-0 为 视频，其他形态另建 ID。生产前读取 DNA 文档与 template；单篇借鉴按 focus 明确作用范围。未经用户确认不把对标规则写回默认 DNA。
 
-视频全案由 content-producer 制作；main 负责选题、Brief、标题简介、素材与口播稿，CP 负责旁白与制作。已有素材轻加工可用 video-edit/talking-head-cut，完成后检查成品。Brief 不含 DNA 信息，写清素材绝对路径、授权范围、验收标准与闸门批准人。
+视频全案由 content-producer 制作；main 负责选题、Brief、标题简介、素材与口播稿，CP 负责旁白与制作。已有素材轻加工可用 video-edit/talking-head-cut，完成后检查成品。Brief 不含 DNA 信息，写清素材绝对路径、验收标准与闸门批准人。
 
 所有发布返回真实作品 ID/URL 后记录 published-track，保留账号 alias 和 dna-meta.json。复盘只用实际指标，缺项不补零；没有创作者服务 API 时不宣称商业合作、收入、画像或后台管理能力。

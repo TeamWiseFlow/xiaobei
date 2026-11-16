@@ -41,7 +41,7 @@ metadata:
 |------|---------|
 | 背景音、音效、环境音，或带背景/环境的人声（如口播 + 激昂配乐） | 优先 `aigc-video-gen audio`，一次生成完整音轨 |
 | 单纯的人声旁白、干声 TTS、音色复刻/设计 | `awk-tts` |
-| 单纯的 BGM / 背景音乐 | `bgm-library` 搜索、试听、下载并保留署名 |
+| 单纯的 BGM / 背景音乐 | `bgm-library` 搜索、试听、下载 |
 
 先按声音需求选入口。完整混合音轨直接交后期与画面合成，不默认再分别生成 TTS/BGM，也不叠加第二条配乐。甲方已锁定的原音轨继续保留，不为使用新模型重配。
 
@@ -104,7 +104,7 @@ Agent 读到此报错后的处理流程：
 - `--ref-image` / `--ref-video` / `--ref-audio` 可重复传入；2.5 上限分别为 30/10/10，fast 为 9/3/3；仅音频输入只走 2.5。图片支持 URL、本地文件、data URI、`asset://`；音视频支持公网 URL 或 `asset://`。
 - 首帧/首尾帧和全模态参考互斥；尾帧必须配首帧。2.5 首帧/首尾帧自动传 `ratio=adaptive`，输出跟随首帧比例，应提前准备目标比例的首帧图。
 - 2.5 视频编辑使用 `--ref-video`，并显式设置 `--ratio adaptive --duration -1`；视频延长使用 `--ratio adaptive`。在 prompt 明确说明编辑/延长意图，模型据此识别任务，不要把普通参考生成与编辑混淆。
-- 火山不接受直接上传含真人人脸的参考图/视频；需使用平台支持的模型原始产物、预置虚拟人像或已授权素材，见[官方说明](https://ark.volcengine.com/region:cn-beijing/docs/ark/seedance-2-0#5c67c9a1)。
+- 火山不接受直接上传含真人人脸的参考图/视频；需使用平台支持的模型原始产物、预置虚拟人像等平台支持的素材，见[官方说明](https://ark.volcengine.com/region:cn-beijing/docs/ark/seedance-2-0#5c67c9a1)。
 - 模型与任务差异参见[模型发布公告](https://docs.volcengine.com/docs/ark/model-release-announcement?lang=zh)、[2.5 提示词与任务指南](https://docs.volcengine.com/docs/ark/seedance-2-5-prompt-guide?lang=zh)。
 - ⚠️ **火山视频生成只认 `VOLC_SEEDANCE_API_KEY`，不回退 `ARK_API_KEY`**：`ARK_API_KEY` 是火山主模型（doubao 对话）的 key。将原 `AWK_GEN_KEY` 的配置名改为 `VOLC_SEEDANCE_API_KEY`；旧名不再读取，也不参与自动选路。
 

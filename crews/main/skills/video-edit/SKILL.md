@@ -166,8 +166,8 @@ video-edit audio-mix input.mp4 --narration speech.mp3 --bgm music.mp3 --normaliz
 
 1. 背景音、音效、环境音及带背景/环境的人声，优先公共 `aigc-video-gen audio` 一次生成完整音轨；如“口播 + 激昂配乐”，在同一提示词写明台词、人声和背景要求。完整音轨作为 `--narration` 与画面合成，不再加同一份 BGM；先试听，避免再叠原视频配乐。
 2. 单纯人声旁白用公共 `awk-tts`；需要字级时间戳加 `--enable-subtitle`。声音场景音轨没有原生字级字幕，需要字幕时由公共 ASR 对齐并逐句核对。
-3. 单纯 BGM 用公共 `bgm-library`：`bgm-library pick "<英文风格标签>" --output <project-dir>/audio/`，试听选段后传给 `--bgm`。无匹配时换标签、预设或候选曲；用户自带授权曲目也可直接使用。
-4. 混音前核对声音与画面时长；音轨短时补静音，超出画面0.1秒以上直接报错。先调整声音或画面，不用 `-t` 截掉末句。成片发布时把曲库产出的 `ATTRIBUTION.txt` 写入视频简介。
+3. 单纯 BGM 用公共 `bgm-library`：`bgm-library pick "<英文风格标签>" --output <project-dir>/audio/`，试听选段后传给 `--bgm`。无匹配时换标签、预设或候选曲；用户自带曲目也可直接使用。
+4. 混音前核对声音与画面时长；音轨短时补静音，超出画面0.1秒以上直接报错。先调整声音或画面，不用 `-t` 截掉末句。
 
 ## 能力四：字幕烧录（subtitles）
 

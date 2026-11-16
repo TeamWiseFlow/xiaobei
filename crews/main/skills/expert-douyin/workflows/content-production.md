@@ -184,7 +184,7 @@ DNA 约束的是选题与观看理由、标题与封面写法、内容创意原�
 
 ### Step 5A - 图文制作
 
-按图文 DNA template 编排封面、逐页内容、阅读顺序和正文；DNA 要求 CTA 时再加入。已有跨平台图组优先复用，检查事实、裁切、平台文案与授权；缺图用 `awk-img-gen`，复杂设计交 content-producer。交付有序图片清单（1–35 张，单张 ≤50MB，jpg/jpeg/png/webp/bmp/tif，建议 3:4 或 4:3）及标题、描述。配乐只确定风格意图；上传后根据抖音实际推荐候选选择歌曲。
+按图文 DNA template 编排封面、逐页内容、阅读顺序和正文；DNA 要求 CTA 时再加入。已有跨平台图组优先复用，检查事实、裁切、平台文案；缺图用 `awk-img-gen`，复杂设计交 content-producer。交付有序图片清单（1–35 张，单张 ≤50MB，jpg/jpeg/png/webp/bmp/tif，建议 3:4 或 4:3）及标题、描述。配乐只确定风格意图；上传后根据抖音实际推荐候选选择歌曲。
 
 #### 【确认】图组与正文
 
@@ -215,7 +215,7 @@ DNA 约束的是选题与观看理由、标题与封面写法、内容创意原�
 - 视频名 / slug：
 - platform：douyin
 - workflow：reversal-ad / collage-broll / deck-talk（视频形态未确定时省略本字段；省略 = CP 按其通用制作流程做，叙事 / 动效 / 蒙太奇手法由 CP 据创意自定）
-- deck-talk 专属（仅该类型填写）：在 Brief 中逐项写 `- presenter_source：footage/avatar/audio`（兼容 none）、`- visual_source：slides/broll/mixed`、`- audio_origin：recorded/cloned/designed/stock-tts`、`- presenter：绝对路径`（需小窗时）、`- audio：绝对路径`（avatar/audio 模式）。实拍先用 talking-head-cut 剪好再交 CP；数字人交肖像+音频或音色档案；纯音频模式交音频，CP 配 B-roll。记录授权。
+- deck-talk 专属（仅该类型填写）：在 Brief 中逐项写 `- presenter_source：footage/avatar/audio`（兼容 none）、`- visual_source：slides/broll/mixed`、`- audio_origin：recorded/cloned/designed/stock-tts`、`- presenter：绝对路径`（需小窗时）、`- audio：绝对路径`（avatar/audio 模式）。实拍先用 talking-head-cut 剪好再交 CP；数字人交肖像+音频或音色档案；纯音频模式交音频，CP 配 B-roll。
 - 选题与观看理由：
 - 核心传达：
 - 内容创意：创意原型 + 展开逻辑 + 记忆点（+ 反转设计，如为反转植入类）
@@ -224,7 +224,7 @@ DNA 约束的是选题与观看理由、标题与封面写法、内容创意原�
 - 封面要求：封面主文案 + 视觉方向；3:4 竖封面、4:3 横封面，关键文字避开边缘 15%；比例不符等比补底，禁止裁掉文字
 - 制作规格：横屏 / 竖屏、时长带、画面风格、配音音色与声音形态、BGM 与音效、字幕
 - 口播文案：`voiceover.md` 绝对路径 / 真人口播录音绝对路径 / 不适用（口播 = 真人出镜、数字人、真人录音；剪辑配解说的**旁白归 CP 写**，写「不适用」）
-- 素材清单：逐条**绝对路径** + 来源 + 授权（无素材时写「无，由 CP 按 Brief 取材」）
+- 素材清单：逐条**绝对路径** + 来源（无素材时写「无，由 CP 按 Brief 取材」）
 - 交付物与验收：`video.mp4` + `cover-vertical.jpg`（3:4）+ `cover-horizontal.jpg`（4:3）+ `final-deliver.md`，回报各绝对路径；验收标准
 - 闸门：GATE A / GATE B 批准人（用户或 main 代理批准 + 批准范围）
 - 禁止事项：事实与承诺边界、合规红线、禁用方向

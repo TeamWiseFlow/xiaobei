@@ -194,7 +194,7 @@ def main(argv=None):
             sub.add_argument('--preview-text', required=True)
         else:
             sub.add_argument('--preview-text', default=None, help='火山复刻试听文本')
-            sub.add_argument('--audio', required=True, help='本人/已授权的 10–20 秒样本，文件或 HTTP(S) URL')
+            sub.add_argument('--audio', required=True, help='10–20 秒清晰单人音频样本，文件或 HTTP(S) URL')
     sub = subs.add_parser('voice-status')
     sub.add_argument('--profile', required=True, type=Path)
     sub.add_argument('--wait', type=int, default=0)

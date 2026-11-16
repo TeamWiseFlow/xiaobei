@@ -96,7 +96,7 @@ xhs-style-profiler report \
 
 Agent 生成 scaffold 后必须：
 
-1. 补齐「样本观测」：作品类型、样本来源、账号与简介、发布时间、数据线索、素材来源与授权。
+1. 补齐「样本观测」：作品类型、样本来源、账号与简介、发布时间、数据线索、素材来源。
 2. 回读原文，补齐各维度的单篇结论、原文证据与可复用信号。
 3. 视频形态必须给出**制作指向**（Content Producer `expert-video` 的某个 workflow，或 main 的某个素材加工技能），只写真实存在的资源名。
 4. 账号运营子模块无法从单篇观测时写「未观测」。
@@ -166,7 +166,7 @@ xhs-style-profiler update \
 7. 业务植入与 CTA
 
 - 开头两段（**选题**、**标题与封面**）跨平台通用。
-- 视频 template 的各段直接对应 Brief 正文字段；**Brief 不含 DNA 信息**（Content Producer 看不到 main 的 DNA），素材清单与授权、验收标准、闸门批准人按平台 Content Production Workflow 填。
+- 视频 template 的各段直接对应 Brief 正文字段；**Brief 不含 DNA 信息**（Content Producer 看不到 main 的 DNA），素材清单、验收标准、闸门批准人按平台 Content Production Workflow 填。
 - 账号运营子模块不进 template，只留在 DNA 文档。
 
 ## 用户输入转译

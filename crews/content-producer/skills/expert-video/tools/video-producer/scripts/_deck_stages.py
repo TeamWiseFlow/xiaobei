@@ -30,9 +30,9 @@ STAGES = {
         "instruction": "逐镜描述首尾视觉状态与实际运动；时间戳来自同源音频，不为版式拉伸原声。",
     }),
     5: ("storyboard/shot_decompose.json", "characters/registry.json", {
-        "presenter_source": None, "presenter_media": None, "authorization": None,
+        "presenter_source": None, "presenter_media": None,
         "audio_source": None, "presenter_position": None, "characters": [],
-        "instruction": "登记真人/数字人素材身份、授权、同源音轨和小窗位置；audio 模式明确无人物。画面若另含需跨镜一致的生成角色，仍登记其特征与参考图。GATE A 在本阶段后。",
+        "instruction": "登记真人/数字人素材身份、同源音轨和小窗位置；audio 模式明确无人物。画面若另含需跨镜一致的生成角色，仍登记其特征与参考图。GATE A 在本阶段后。",
     }),
     6: ("characters/registry.json", "slots/slot-plan.json", {
         "slots": [],
@@ -47,11 +47,11 @@ STAGES = {
         "picks": [],
         "pick_schema": {
             "slot_id": "slot-01", "resolved": False, "picked_file": None,
-            "picked_source": "user|licensed|generated|chart-data", "authorization": None,
+            "picked_source": "user|downloaded|generated|chart-data",
             "probe": {"width": None, "height": None, "duration": None, "codec": None},
             "rejected_picks": [],
         },
-        "instruction": "用户素材先 probe 并记录授权；缺口才搜索/生成。幻灯数据也须记录单位、日期范围和来源。",
+        "instruction": "用户素材先 probe 并记录规格；缺口才搜索/生成。幻灯数据也须记录单位、日期范围和来源。",
     }),
     8: ("slots/asset-resolve.json", "slots/slideshow-risk.json", {
         "dims": [
@@ -61,7 +61,7 @@ STAGES = {
                 ("timing", "句边界翻页，页/段时长与同源音频一致"),
                 ("coverage", "所有镜头的画面与素材槽均已落实"),
                 ("motion", "幻灯元素真实动画或 B-roll 真实画面动作；静态停留如实登记"),
-                ("source", "素材与图表数据来源、授权已核对"),
+                ("source", "素材文件可读取，图表数据来源已核对"),
             )
         ],
         "verdict": None,

@@ -142,7 +142,6 @@ export async function generateAttribution(outputDir) {
 
   lines.push('---');
   lines.push('All tracks sourced from ccMixter under Creative Commons licenses.');
-  lines.push('Please include this attribution when publishing your video.');
 
   const content = lines.join('\n') + '\n';
   await fs.writeFile(attrPath, content);

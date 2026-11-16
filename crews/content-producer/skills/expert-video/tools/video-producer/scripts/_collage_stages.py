@@ -33,9 +33,8 @@ STAGES = {
         "paper_subject_schema": {
             "id": "paper-01", "source_shot": "shot-01", "subject": "人物或物件剪贴",
             "static_features": "跨镜不变的半调外观/服饰/轮廓", "asset_reference": None,
-            "authorization": None,
         },
-        "instruction": "登记需要跨镜一致的人物/物件纸片、素材与授权；无角色时 characters 明确为空。需跨镜一致的生成角色仍制作参考视图。GATE A 在本阶段后。",
+        "instruction": "登记需要跨镜一致的人物/物件纸片、素材；无角色时 characters 明确为空。需跨镜一致的生成角色仍制作参考视图。GATE A 在本阶段后。",
     }),
     6: ("characters/registry.json", "slots/slot-plan.json", {
         "slots": [],
@@ -50,11 +49,11 @@ STAGES = {
         "picks": [],
         "pick_schema": {
             "slot_id": "slot-01", "resolved": False, "picked_file": None,
-            "picked_source": "user|licensed|awk-img-gen|css", "authorization": None,
+            "picked_source": "user|downloaded|awk-img-gen|css",
             "prompt": None, "model": None, "generated_at": None,
             "rejected_picks": [],
         },
-        "instruction": "每层单独取材或生成并记录来源、授权、prompt、模型和时间；优先人核已有素材，禁止整张完成画面充当纸片。",
+        "instruction": "每层单独取材或生成并记录来源、prompt、模型和时间；优先人核已有素材，禁止整张完成画面充当纸片。",
     }),
     8: ("slots/asset-resolve.json", "slots/slideshow-risk.json", {
         "dims": [
@@ -63,7 +62,7 @@ STAGES = {
                 ("metaphor", "隐喻可一眼看懂，3–6 个纸片主体清晰"),
                 ("independent_layers", "纸片独立可动，不是整图淡入或 Ken Burns"),
                 ("motion", "入场顺序、位置和末帧定格时间可实现"),
-                ("source", "素材来源与授权、生成记录齐全"),
+                ("source", "素材文件与生成记录齐全"),
                 ("visual_safety", "无假字、水印、越界和关键元素遮挡"),
             )
         ],

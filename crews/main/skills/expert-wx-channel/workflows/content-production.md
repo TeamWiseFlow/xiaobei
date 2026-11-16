@@ -201,7 +201,7 @@ DNA 约束的是选题与观看理由、短标题与视频描述写法、内容�
 - 视频名 / slug：
 - platform：wx_channel
 - workflow：reversal-ad / collage-broll / deck-talk（视频形态未确定时省略本字段；省略 = CP 按其通用制作流程做，叙事 / 动效 / 蒙太奇手法由 CP 据创意自定）
-- deck-talk 专属（仅该类型填写）：在 Brief 中逐项写 `- presenter_source：footage/avatar/audio`（兼容 none）、`- visual_source：slides/broll/mixed`、`- audio_origin：recorded/cloned/designed/stock-tts`、`- presenter：绝对路径`（需小窗时）、`- audio：绝对路径`（avatar/audio 模式）。实拍先用 talking-head-cut 剪好再交 CP；数字人交肖像+音频或音色档案；纯音频模式交音频，CP 配 B-roll。记录授权。
+- deck-talk 专属（仅该类型填写）：在 Brief 中逐项写 `- presenter_source：footage/avatar/audio`（兼容 none）、`- visual_source：slides/broll/mixed`、`- audio_origin：recorded/cloned/designed/stock-tts`、`- presenter：绝对路径`（需小窗时）、`- audio：绝对路径`（avatar/audio 模式）。实拍先用 talking-head-cut 剪好再交 CP；数字人交肖像+音频或音色档案；纯音频模式交音频，CP 配 B-roll。
 - 选题与观看理由：
 - 核心传达：
 - 内容创意：创意原型 + 展开逻辑 + 记忆点（+ 反转设计，如为反转植入类）
@@ -209,7 +209,7 @@ DNA 约束的是选题与观看理由、短标题与视频描述写法、内容�
 - 封面要求：封面主文案（用短标题或核心传达）+ 视觉方向
 - 制作规格：横屏 / 竖屏、时长带、画面风格、配音音色与声音形态、BGM 与音效、字幕
 - 口播文案：`voiceover.md` 绝对路径 / 真人口播录音绝对路径 / 不适用（口播 = 真人出镜、数字人、真人录音；剪辑配解说的**旁白归 CP 写**，写「不适用」）
-- 素材清单：逐条**绝对路径** + 来源 + 授权 + 规格（分辨率 / 帧率 / 时长——多源帧率不一致需 CP 在拼接时统一，注明各源帧率让 CP 规划期即预判最低公共规格）（无素材时写「无，由 CP 按 Brief 取材」）
+- 素材清单：逐条**绝对路径** + 来源 + 规格（分辨率 / 帧率 / 时长——多源帧率不一致需 CP 在拼接时统一，注明各源帧率让 CP 规划期即预判最低公共规格）（无素材时写「无，由 CP 按 Brief 取材」）
 - 交付物与验收：`video.mp4` + `cover.jpg` + `final-deliver.md`，回报三者绝对路径；验收标准
 - 闸门：GATE A / GATE B 批准人（用户或 main 代理批准 + 批准范围）
 - 禁止事项：事实与承诺边界、合规红线、禁用方向

@@ -215,7 +215,7 @@ awk-tts --voice-profile /absolute/voices/clone/voice.json --text-file /absolute/
 - 火山复刻/设计使用现有 `VOLC_TTS_APP_ID` + `VOLC_TTS_ACCESS_KEY` 或 `VOLC_TTS_APP_KEY`，不是 `VOLC_SEEDANCE_API_KEY`。旧鉴权在音色接口用 `X-Api-App-Key`，在合成接口用 `X-Api-App-Id`。`--speaker-id` 也可由 `VOLC_TTS_SPEAKER_ID` 配置。使用确认可覆盖的音色槽位；工具不购买槽位、不自动启用后付费自定义 ID。
 - 火山文本设计描述最多200字，试听文本最多300字；当前 CLI 提供文本设计。设计/复刻通过后用 `seed-icl-2.0` 合成，新版训练返回的 model_type=5 会保存在档案并在合成时使用。
 - 百炼使用 `voice-enrollment`，业务空间默认绑定 `qwen-audio-3.1-tts-plus`，Plan 默认仍为 `qwen-audio-3.0-tts-plus`；也可显式指定支持的 `--target-model`。`--name` 1–10位英文字母/数字；描述1–500字符，试听文本15–200字符。
-- 复刻 CLI 接收10–20秒、<10MB的 WAV/MP3/M4A 清晰单人音频，样本使用本人或有授权的声音；提供文件或 HTTP(S) URL 均可。火山直接传 Base64；百炼使用模型绑定的临时上传。URL 会先下载校验，确保上传的是已核验样本。
+- 复刻 CLI 接收10–20秒、<10MB的 WAV/MP3/M4A 清晰单人音频，提供文件或 HTTP(S) URL 均可。火山直接传 Base64；百炼使用模型绑定的临时上传。URL 会先下载校验，确保上传的是已核验样本。
 - `voice-design` 保存试听文件，`voice-clone` 保存音色档案；火山返回试听 URL 时立即下载。只有远端状态可用才将档案标为 OK；创建状态不确定时保留记录，先查询，勿自动重复消耗创建/训练次数。
 - 试听确认清晰度、音色、语气后再用于全稿。复刻声与设计声均是合成声音，不能承诺等同真人原录音或保证通过平台检测。deck-talk 已有用户原录音时优先原声，不主动替换。
 - 输出文件已存在即停止，换目录创建新音色；不会覆盖现有档案。程序不修改 `~/.openclaw/.env`。

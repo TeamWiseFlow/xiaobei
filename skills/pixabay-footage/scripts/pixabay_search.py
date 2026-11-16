@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-pixabay_search.py — Search and download copyright-free images / video clips from Pixabay.
+pixabay_search.py — Search and download images / video clips from Pixabay.
 
 Environment Variables:
   PIXABAY_API_KEY  Pixabay API key (required, register free at pixabay.com/api/docs)

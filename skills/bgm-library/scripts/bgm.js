@@ -2,7 +2,7 @@
 
 /**
  * BGM Library - Background Music CLI for video projects.
- * Search, filter, and download royalty-free music from ccMixter.
+ * Search, filter, and download music from ccMixter.
  *
  * 纯文本输出（无 chalk/ora），agent 友好，无 ANSI 转义码污染 stdout。
  */
@@ -49,13 +49,13 @@ const PRESETS = {
   },
 };
 
-// Blocked license keywords (case-insensitive)
+// Keywords for the optional --commercial-only filter (case-insensitive).
 const BLOCKED_LICENSES = ['noncommercial', 'noderivs', 'no-deriv', 'nc', 'nd'];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Check if a license is commercially safe (CC BY or CC BY-SA).
+ * Match the optional license filter.
  */
 function isCommercialSafe(licenseName) {
   const lower = licenseName.toLowerCase();
@@ -114,7 +114,7 @@ function formatSize(bytes) {
 
 program
   .name('bgm-library')
-  .description('Search & download royalty-free background music from ccMixter (CC BY / CC BY-SA only)')
+  .description('Search & download background music from ccMixter')
   .version('1.0.0');
 
 // ── search ───────────────────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ program
   .description('Search ccMixter for background music tracks')
   .option('-l, --limit <n>', 'Max results', '10')
   .option('-p, --preset <name>', 'Use a predefined tag preset (travel, tech, lofi, food, workout)')
-  .option('--commercial-only', 'Only show commercially safe licenses (CC BY / CC BY-SA)', true)
+  .option('--commercial-only', 'Filter out NC / ND licenses', false)
   .option('--no-commercial-only', 'Include all licenses')
   .option('--sort <field>', 'Sort by: date, name, score', 'score')
   .addOption(new Option('--match <mode>', 'Tag matching: any or all').choices(['any', 'all']).default('any'))
@@ -192,13 +192,6 @@ program
 
       const track = tracks[0];
 
-      if (!isCommercialSafe(track.license_name)) {
-        console.error(
-          `✗ Track "${track.upload_name}" has license "${track.license_name}" which is NOT commercially safe. Use --force to override.`
-        );
-        if (!opts.force) process.exit(1);
-      }
-
       const file = getBestFile(track);
       if (!file) {
         console.error('✗ No downloadable MP3 file found for this track.');
@@ -249,6 +242,8 @@ program
   .option('-o, --output <dir>', 'Output directory', './public')
   .option('-l, --limit <n>', 'Number of candidates to evaluate', '5')
   .option('--force', 'Overwrite existing files', false)
+  .option('--commercial-only', 'Filter out NC / ND licenses', false)
+  .option('--no-commercial-only', 'Include all licenses')
   .addOption(new Option('--match <mode>', 'Tag matching: any or all').choices(['any', 'all']).default('any'))
   .action(async (theme, opts) => {
     try {
@@ -260,19 +255,20 @@ program
       const tracks = await queryApi({
         tags,
         type: opts.match,
-        lic: 'open',
+        ...(opts.commercialOnly ? { lic: 'open' } : {}),
         limit: opts.limit,
         sort: 'score',
       });
 
-      const safe = rankTracks(tracks.filter((t) => isCommercialSafe(t.license_name) && getBestFile(t)), terms);
+      const candidates = rankTracks(tracks.filter((t) =>
+        getBestFile(t) && (!opts.commercialOnly || isCommercialSafe(t.license_name))), terms);
 
-      if (safe.length === 0) {
-        console.error('✗ No commercially safe tracks found for this theme. Try English tags or search --preset; no unrelated fallback was downloaded.');
+      if (candidates.length === 0) {
+        console.error('✗ No downloadable tracks found for this theme. Try English tags or search --preset; no unrelated fallback was downloaded.');
         process.exit(1);
       }
 
-      const picked = safe[0];
+      const picked = candidates[0];
       const file = getBestFile(picked);
 
       if (!file) {
@@ -364,9 +360,6 @@ program
       console.log(`Artist Page:  ${track.artist_page_url}`);
       console.log(`BPM:          ${track.upload_extra?.bpm || 'N/A'}`);
       console.log(`Date:         ${track.upload_date_format}`);
-
-      const safe = isCommercialSafe(track.license_name);
-      console.log(`Commercial:   ${safe ? 'YES (safe)' : 'NO (restricted)'}`);
 
       if (track.upload_extra?.usertags) {
         console.log(`Tags:         ${track.upload_extra.usertags.replace(/,/g, ', ')}`);

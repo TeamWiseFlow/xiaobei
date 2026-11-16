@@ -94,7 +94,7 @@ design-full pick "<风格描述>"
 
 - **优先**：公共 `pexels-footage` / `pixabay-footage` 搜索下载
 - **备选**：公共 `awk-img-gen` 生成（参数记 `prompts.json`）
-- 甲方给的素材入 `source/`，记录来源与授权
+- 甲方给的素材入 `source/`，记录来源
 
 ### Step 5：HTML + CSS 编写
 

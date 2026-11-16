@@ -12,7 +12,7 @@ metadata:
 
 # Avatar
 
-按 expert-video 的 deck-talk Brief 与闸门执行。使用 `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`（或 `DASHSCOPE_API_KEY`），不使用 Token Plan Key。声音优先用用户原录音；合成声音须获明确批准并沿用 awk-tts 音色档案。肖像与声音须有使用授权。
+按 expert-video 的 deck-talk Brief 与闸门执行。使用 `WORKSPACE_ID` + `MODELSTUDIO_API_KEY`（或 `DASHSCOPE_API_KEY`），不使用 Token Plan Key。声音优先用用户原录音；合成声音须获明确批准并沿用 awk-tts 音色档案。
 
 ```bash
 avatar generate --image /absolute/portrait.png --audio /absolute/narration.wav --output /absolute/render/presenter.mp4
