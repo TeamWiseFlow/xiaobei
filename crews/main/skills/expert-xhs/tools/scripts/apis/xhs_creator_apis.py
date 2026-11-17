@@ -753,12 +753,9 @@ class XHS_Creator_Apis:
             target_origin=self.edith_url,
             order_wire_headers=False,
         )
-        # Creator 发布请求需要独立的 Relay 签名配置。
-        headers['x-rap-param'] = generate_x_rap_param(
-            post_api,
-            body,
-            profile='creator',
-        )
+        # Older Relay releases compute RAP separately; atomic signing already includes it.
+        if not headers.get('x-rap-param'):
+            headers['x-rap-param'] = generate_x_rap_param(post_api, body, profile='creator')
         # 本地接入只提交一次。code=-1 或响应丢失时，调用方先人工核对后台，
         # 避免在平台已经收单但回包异常时创建重复笔记。
         progress.update(stage='submitting', submission_attempted=True)

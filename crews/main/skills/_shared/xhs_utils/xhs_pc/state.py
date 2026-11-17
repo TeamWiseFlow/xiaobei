@@ -359,11 +359,11 @@ class PcDeviceProfile:
             'env_const': env_const, 'env_fp_tail': env_fp_tail,
         }
 
-    def next_sign_context(self, api: str, *, tier: Optional[str] = None,
+    def sign_context_inputs(self, api: str, *, tier: Optional[str] = None,
                           mns_profile: Optional[str] = None,
                           timestamp_ms: Optional[int] = None,
                           version: Optional[int] = None) -> Dict[str, Any]:
-        result = compute('pc', 'next-sign-context', {
+        return {
             'api': api, 'tier': tier, 'mns_profile': mns_profile,
             'timestamp_ms': timestamp_ms, 'version': version,
             'session': self.session.snapshot(),
@@ -371,7 +371,10 @@ class PcDeviceProfile:
             'web_build': self.web_build,
             'local_storage': dict(self.local_storage),
             'overrides': dict(self.mns_overrides),
-        })
+        }
+
+    def next_sign_context(self, api: str, **kwargs) -> Dict[str, Any]:
+        result = compute('pc', 'next-sign-context', self.sign_context_inputs(api, **kwargs))
         context = result.get('context')
         if not isinstance(context, dict) or not context.get('tier') or not context.get('token'):
             raise RuntimeError('OFB Relay 未返回 PC 签名上下文')

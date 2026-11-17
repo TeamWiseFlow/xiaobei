@@ -22,11 +22,13 @@ def get_ds_bundle(
     proxies: dict | None = None,
     force: bool = False,
     http_client=None,
+    cache_identity=None,
 ) -> tuple[str, str]:
     return _default.get_bundle(
         proxies=proxies,
         force=force,
         http_client=http_client,
+        cache_identity=cache_identity,
     )
 
 

@@ -227,11 +227,11 @@ class CreatorDeviceProfile:
             'device_tag': device_tag,
         }
 
-    def next_sign_context(self, *, tier: Optional[str] = None,
+    def sign_context_inputs(self, *, tier: Optional[str] = None,
                           mns_profile: Optional[str] = None,
                           timestamp_ms: Optional[int] = None,
                           version: Optional[int] = None) -> Dict[str, Any]:
-        result = compute('creator', 'next-sign-context', {
+        return {
             'tier': tier, 'mns_profile': mns_profile,
             'timestamp_ms': timestamp_ms, 'version': version,
             'session': self.session.snapshot(),
@@ -239,7 +239,10 @@ class CreatorDeviceProfile:
             'local_storage': dict(self.local_storage),
             'ds_program': self.ds_program,
             'overrides': dict(self.mns_overrides),
-        })
+        }
+
+    def next_sign_context(self, **kwargs) -> Dict[str, Any]:
+        result = compute('creator', 'next-sign-context', self.sign_context_inputs(**kwargs))
         context = result.get('context')
         if not isinstance(context, dict) or not context.get('tier') or not context.get('token'):
             raise RuntimeError('OFB Relay 未返回 Creator 签名上下文')

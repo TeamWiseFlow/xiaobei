@@ -198,9 +198,14 @@ class XHSCreatorAuth(XHSAuth):
             proxies=self.proxies,
             force=force,
             http_client=self.http_client,
+            cache_identity={
+                'cookies': {k: v for k, v in self.profile.cookie_map.items()
+                            if k in _AUTH_COOKIE_KEYS + ('a1', 'web_session_ugc', 'loadts', 'webId')},
+                'release': self.profile.release,
+                'device': self.profile.local_storage.get('b1b1'),
+            },
         )
-        if force or not self.profile.dsl:
-            self.profile.dsl = dsl
+        self.profile.dsl = dsl
         self.profile.ds_program = program
         if force:
             self.profile.session.dsllt = now_ms()

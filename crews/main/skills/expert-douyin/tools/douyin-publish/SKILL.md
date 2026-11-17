@@ -24,7 +24,7 @@ douyin-publish note run --images /绝对路径/1.png /绝对路径/2.png --title
 
 正文文件使用 UTF-8 和真实换行，文件只放已确认的纯正文与话题，不含标题或交付说明；不拼接 shell 命令读取正文。短正文仍可直接传入，以 `@` 开头的参数按文件路径处理。
 
-视频需要 3:4 竖封面和 4:3 横封面，工具等比补底并写入最终请求；默认 AI 声明，视频不接受 `--declaration none`。图文默认 AI 声明，非 AI 内容可传 `--declaration none`；仅支持明确指定 `--original-sound` 的原声图文，不承诺 HTTP 配乐选择。浏览器填表、草稿和配乐命令不能替代 HTTP 入口。
+**视频需要 3:4 竖封面和 4:3 横封面**，由工具等比补底并写入最终请求；默认 AI 声明，视频不接受 `--declaration none`。图文默认 AI 声明，非 AI 内容可传 `--declaration none`；仅支持明确指定 `--original-sound` 的原声图文，不承诺 HTTP 配乐选择。浏览器填表、草稿和配乐命令不能替代 HTTP 入口。
 
 已授权上传、暂不提交时，在 `run --confirm` 后加 `--prepare-only`；核对 `state: prepared` 后用相同类型的 `publish --confirm` 提交原请求。可见性用 `--visibility public|private|friends`，默认 public。
 
