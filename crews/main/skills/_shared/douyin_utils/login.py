@@ -47,6 +47,10 @@ CREATOR_ROUTES = {
     "verify-send": ("POST", {"/passport/web/send_code/"}),
     "verify-code": ("POST", {"/passport/web/validate_code/"}),
     "verify-confirm": ("POST", {"/passport/upsms/verify/", "/passport/upsms/chain_mobile/verify/"}),
+    "verify-face-prepare": ("POST", {"/passport/safe/get_auth_ticket/v1/"}),
+    "verify-face-check": ("POST", {"/passport/safe/verify_auth_ticket/"}),
+    "verify-qr-prepare": ("POST", {"/passport/web/get_qrcode/"}),
+    "verify-qr-check": ("POST", {"/passport/mobile/validate_by_qrcode/"}),
 }
 
 
@@ -386,8 +390,10 @@ def flow(action, fields=None, *, consume_mfa=False, restart=False):
             except ValueError:
                 completed = {}
             expired_completed = (not saved and completed.get("log_id") == fields.get("log_id")
-                    and completed.get("status") in {"prepared", "awaiting-code", "awaiting-up-sms", "ticket-issued"}
-                    and completed.get("expires_at", float("inf")) <= time.time())
+                    and completed.get("status") in {"prepared", "awaiting-code", "awaiting-up-sms", "awaiting-face",
+                                                    "awaiting-scan", "scanned", "ticket-issued", "expired", "refused"}
+                    and (completed.get("expires_at", float("inf")) <= time.time()
+                         or completed.get("status") in {"expired", "refused"}))
             if action != "verify-prepare" or not (original_prepare or rejected_send or expired_completed):
                 raise DouyinRequestError("VERIFICATION_ACTION_PENDING")
             next_fields = {**fields, "restart": "true"}

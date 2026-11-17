@@ -17,7 +17,7 @@ class VerificationRequired(RuntimeError):
                            'verifyType': self.challenge['type'],
                            'verifyBiz': self.challenge['status']})
         return {'error': 'VERIFICATION_REQUIRED', 'verify_type': self.challenge['type'],
-                'supported': self.challenge['type'] in {'120', '124'},
+                'supported': self.challenge['type'] in {'120', '124', '213'},
                 'verify_url': 'https://www.xiaohongshu.com/website-login/captcha?' + query}
 
 

@@ -12,6 +12,8 @@ metadata:
 
 平台任务调用对应技能的 wrapper。本目录提供共用传输、能力检查和登录会话管理，不作为业务入口。浏览器登录与导出经 `x-hunter` / `tiktok-hunter` / `weibo-hunter` 的 `login`、`login-status`、`export`（别名 `login-confirm`）执行，专属 session 分别为 `twitter` / `tiktok` / `weibo`；禁止改用通用浏览器会话登录。快手经 `kuaishou-hunter login/login-confirm` 执行 QR/SMS 流程。登录与 TikTok 写材料准备规则见 [登录说明](references/login.md)。
 
+同一 Relay 地址和 key 的实际计算请求由 Python/Node 共用本机调度，默认每分钟 50 次，并按服务端配额留余量；排队和一次明确 429 重试由工具处理。返回 `RELAY_RATE_LIMITED` 后按 `retry_after_seconds` 等待，不并发启动多个 CLI 补偿重试。签名失败的诊断保留平台、计算步骤和 HTTP 状态；业务写请求结果未知时按原收据核查，不重发。
+
 五平台所有签名由 Relay 计算：环境使用 `OFB_KEY` 和可选 `RELAY_BASE_URL`，默认官方地址。平台 HTTP、Cookie 更新、上传、下载与业务状态仍由客户端完成，不能要求 Relay 代发。缺 key、Relay 不可用、签名材料缺失或配额不足时停止；不要切换本地签名、反复重登或直接重试写操作。`RELAY_RATE_LIMITED` 是 Relay 配额，不等于平台风控。YouTube 游客读取和无需签名的微博读取不强制调用 Relay。
 
 不处理滑块、图片点选或 BotGuard 等验证码，不自动刷新验证码、生成拖动轨迹或提交验证结果。快手400002和其他验证码返回 RISK_CONTROL，交用户在平台完成人工验证。运行库不携带签名脚本、视觉识别、OpenCV/Canvas 或 ONNX 模型；媒体图片转码只复用已安装的 ffmpeg/ffprobe。

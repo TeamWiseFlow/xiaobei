@@ -41,6 +41,8 @@ xhs-hunter login-confirm
 xhs-hunter verify-start
 ```
 
+若返回 `verify_type: "213"`，需用户提供本次验证的手机号，保存为权限 0600 的私有普通文件，再执行 `xhs-hunter verify-start --phone-file /绝对路径/手机号文件`。该分支在原登录会话上发码，不能新建验证页或重新扫码；发送后删除自建的手机号文件。
+
 此命令只为当前任务准备一次验证。返回 `awaiting_code` 时将脱敏手机号告知用户，取得验证码后保存为当前用户所有、权限 0600 的普通文件，再执行：
 
 ```bash

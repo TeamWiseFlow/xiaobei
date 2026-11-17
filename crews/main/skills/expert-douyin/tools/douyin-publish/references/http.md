@@ -4,6 +4,31 @@
 
 当前发布默认采用 HTTP，直接使用本说明，无需设置后端开关。登录入口仍是 `douyin-publish login`，通过与采集共用的 API 会话扫码；随后 `douyin-publish check` 验证本人 UID、创作者会话和作品读取。不得从浏览器或其他账号手工拼接 Cookie、UA 或密钥。浏览器分步编辑、配乐与草稿命令不适用于此模式；不支持的动作会停止。
 
+## 人脸与设备扫码验证
+
+`gateway_biz_verify_with_face` 先执行对应类型的 `verify-prepare`，使用平台查询返回的可用方法。即使原始决策列出 `mobile_sms_verify`，本关卡也禁止发短信或复用旧短信票据。
+
+人脸方式：
+
+```bash
+douyin-publish video verify-prepare
+douyin-publish video verify-face-prepare
+```
+
+将返回的 `qr_file` 交用户用抖音 App 扫码并完成本人刷脸；二维码票据只写入仓外 0600 文件，不复制到日志或正文。用户完成后执行：
+
+```bash
+douyin-publish video verify-face-check
+```
+
+返回 `awaiting-face` 时仍在等待，至少隔 3 秒再查；`ticket-issued` 只表示验证出票，作品尚未发布。不重新生成二维码催促用户。
+
+设备扫码方式：查询确实返回 `qr_code_verify` 时，执行 `verify-qr`，将 `qr_file` 交用户用已登录原账号的抖音 App 扫码，并在手机确认；之后 `verify-poll` 查询。`awaiting-scan` 是等待扫码，`scanned` 是等待手机确认，两者至少隔 3 秒再查。`refused` 表示用户拒绝，`expired` 表示入口失效；停止并按用户意愿显式 `verify-prepare --restart` 重建验证准备，不自动刷新或切换方式。
+
+图文将以上命令的 `video` 换成 `note`。验证全部不重传素材、不提交作品；出票后仅在已有发布授权和未发布确认下用 `retry-verified`。旧 `gateway_biz_verify` 的独立扫码仍使用 `verify-qr` / `verify-poll`，它与新设备扫码由工具自动区分，不需要拼接参数。
+
+未知 `*_with_face`、缺少已接入的方法或不完整材料仍返回 `VERIFICATION_METHOD_UNSUPPORTED`；保留收据，禁止改走短信、登录 MFA、手工复制票据或重新 `run`。短信验证后出现新的挑战时，保留历史续接次数；每个挑战 log_id 仍只允许一次续接，新本地验证 ID 不能重置同一挑战的次数。
+
 ## 准备与提交
 
 视频与原声图文沿用 SKILL.md 的 `video run` / `note run` 参数。默认只做本地预览，无网络副作用。已有发布授权后加 `--confirm`；要先准备上传而不提交，另加 `--prepare-only`。此时返回 `state: prepared`、`submission_attempted: false`，核对后用同类型的 `publish --confirm` 提交保存的原请求。可传 `--visibility public|private|friends`，默认 public。视频仍要求 AI 声明及双封面，图文默认 AI 声明；工具把声明和双封面字段写进最终请求。
@@ -21,10 +46,11 @@
 `state: awaiting_verification` 保留原提交和挑战。按照 `verification.reason` 与实际返回方式操作，短信登录和登录 MFA 命令不能替代本任务验证。
 
 - `gateway_biz_verify`：运行对应类型的 `verify-qr`，把返回 `qr_file` 交用户扫码；用户完成后运行 `verify-poll`。过期则保留原提交并报告，不反复生成二维码。验证完成后 `resume`，不会自动重发作品。
-- `gateway_web_authlv_check`：运行 `verify-prepare`；仅使用返回的支持方式。选择接收短信后用 `verify-send --method mobile_sms_verify --confirm`；将用户验证码写入仓外 0600 文件，再用 `verify-code --code-file /受控目录/code.txt`。选择上行短信则用 `verify-send --method mobile_up_sms_verify --confirm`，读取仅供用户的交互文件，用户确认发送后 `verify-confirm --method mobile_up_sms_verify --confirm`。
+- `gateway_biz_verify_with_face`：按上方人脸/设备扫码步骤处理，不使用短信。
+- `gateway_web_authlv_check`：运行 `verify-prepare`；仅使用返回的支持方式；平台提供人脸或设备扫码时也可按上方对应步骤处理。选择接收短信后用 `verify-send --method mobile_sms_verify --confirm`；将用户验证码写入仓外 0600 文件，再用 `verify-code --code-file /受控目录/code.txt`。选择上行短信则用 `verify-send --method mobile_up_sms_verify --confirm`，读取仅供用户的交互文件，用户确认发送后 `verify-confirm --method mobile_up_sms_verify --confirm`。
 - 平台返回不支持方式、拒绝、过期或请求结果未知时停止，保留诊断，不自动发码、改方式、重建登录或重发作品。验证票据与扫码通过都不等于发布成功，继续 `resume` 核查。
 
-### 短信验证后的原作品续接
+### 验证后的原作品续接
 
 `ticket-issued` 后，先按原任务核查。用户明确确认原作品未发布并要求继续时，执行：
 
@@ -36,7 +62,7 @@ douyin-publish video retry-verified --not-published-confirmation "用户确认�
 
 每个验证流程只允许一次这种明确授权的续接，发送前先保存意图。中断、网络失败、再次出现验证或结果未知时不自动再 POST；后续 `resume`、`publish` 和重复同一 `retry-verified` 只核查。`publish_gate_verified=false` 表示尚未证实发布放行，不修改它来伪装成功。只有平台作品 ID 或核查匹配才能确认发布。
 
-准备、等待验证码、等待上行短信或票据阶段已过期，且没有挂起的请求时，可用 `verify-prepare --restart` 重新查询原作品挑战。它归档旧验证上下文，保留原作品收据和上传材料，不发送短信；之后按实际方式明确发码、验码，再使用新票据续接。尚有效的流程或已发送但结果未知的请求不能用此选项重置。
+准备、等待验证码、等待上行短信、人脸、扫码或票据阶段已过期，且没有挂起的请求时，可用 `verify-prepare --restart` 重新查询原作品挑战。它归档旧验证上下文，保留原作品收据和上传材料，不发送短信；之后按实际方式明确发码、验码，再使用新票据续接。尚有效的流程或已发送但结果未知的请求不能用此选项重置。
 
 重复 `verify-prepare` 会复用尚有效的验证摘要。结果核查可能返回 `cached=true` 与 `retry_after_seconds`，应等提示时间再查，不把缓存结果当作一次新平台核查。
 

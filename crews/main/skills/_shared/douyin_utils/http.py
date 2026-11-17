@@ -565,7 +565,8 @@ def request(
         verification = creator_gateway_verification(dict(response.headers), response.content)
     if verification:
         raise DouyinRequestError(
-            "PLATFORM_VERIFICATION_REQUIRED", status=response.status_code,
+            "VERIFICATION_METHOD_UNSUPPORTED" if verification.get("supported") is False
+            else "PLATFORM_VERIFICATION_REQUIRED", status=response.status_code,
             response_info=response_info(response),
             response_prefix=response.content[:512] if capture_response else None,
             response_headers=private_response_headers(response) if capture_response else None,

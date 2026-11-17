@@ -5,6 +5,7 @@ import { createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
 import { schemaFor, validateArgs, xTextPreview } from './metadata.mjs';
 import { videoTransportPolicy } from './weibo-video.mjs';
 import { completePublication, matchWeiboVideo, creatorRecordId } from './publication.mjs';
@@ -51,9 +52,32 @@ export function methods(platform, role) { return platforms[platform][role] || []
 export function allowed(platform, role, command) {
   if (!methods(platform, role).includes(command)) throw new PlatformError('UNSUPPORTED', '该工具不支持 ' + command + '；按能力表选择 hunter、平台专家或 expert-bd', 4);
 }
-async function status(platform, args) {
+async function status(platform, args, { maxAgeMs = 0 } = {}) {
+  const options = [...args];
+  const alias = await activeAccount(platform, take(options, '--account') ?? take(options, '-a'));
+  const file = join(stateHome, 'checks', platform, alias + '.json');
+  const binding = async () => {
+    const saved = await credential(platform, alias);
+    return createHash('sha256').update(JSON.stringify({ scopes: saved.scopes,
+      method: saved.method, user: saved.user, device: saved.device,
+      proxy: await networkProxy(platform) })).digest('hex');
+  };
+  if (maxAgeMs > 0) {
+    try {
+      const cached = JSON.parse(await readFile(file, 'utf8'));
+      if (cached.binding === await binding() && cached.at <= Date.now() && Date.now() - cached.at < Math.min(maxAgeMs, 60000)
+          && cached.result?.data?.logged_in && cached.result.data.user?.id) {
+        return { ...cached.result, authentication_cache_age_ms: Date.now() - cached.at };
+      }
+    } catch { /* A missing or changed proof requires the native check. */ }
+  }
+  await rm(file, { force: true });
   const result = await runBackend(platform, ['auth', 'status', ...args]);
-  if (!result.data?.logged_in) throw new PlatformError('AUTH_REQUIRED', '当前登录态未通过在线校验', 2);
+  if (!result.data?.logged_in) {
+    await rm(file, { force: true });
+    throw new PlatformError('AUTH_REQUIRED', '当前登录态未通过在线校验', 2);
+  }
+  if (result.data.user?.id) try { await atomicJson(file, { at: Date.now(), binding: await binding(), result }); } catch {}
   return result;
 }
 function durationMs(value) {
@@ -273,7 +297,7 @@ export async function publish(platform, input) {
     if (!receipt) {
       await requireWriteSession(platform, alias);
       let me;
-      try { me = await status(platform, ['--account', alias]); }
+      try { me = await status(platform, ['--account', alias], { maxAgeMs: 60000 }); }
       catch (error) {
         if (platform === 'x' && error instanceof PlatformError) {
           const failure = xPublicationFailure({ ...error.diagnostic, code: error.code, detail: { ...error.diagnostic?.detail,

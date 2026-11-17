@@ -396,13 +396,13 @@ def generate_headers(
     a1, api, data='', method='POST', user_id: str = '', cookie: str = '',
     b1=None, dsl_pair=None, with_xy_direction: bool = False,
     tier=None, sign_context=None,
-    include_client_hints=True, include_trace_headers=True,
+    include_client_hints=True, include_trace_headers=True, computed=None,
 ):
     # user_id 用于可选 xy-direction；签名材料仍强制在 generate_xs_xs_common / generate_request_params 校验
-    xs, xt, xs_common = generate_xs_xs_common(
+    xs, xt, xs_common = ((computed['xs'], computed['xt'], computed.get('xs_common', '')) if computed is not None else generate_xs_xs_common(
         a1, api, data, method, b1=b1, dsl_pair=dsl_pair, cookie=cookie, tier=tier,
         sign_context=sign_context,
-    )
+    ))
     x_b3_traceid = (sign_context or {}).get('xB3TraceId') or generate_x_b3_traceid()
     headers = get_request_headers_template(
         sign_context,
@@ -419,7 +419,7 @@ def generate_headers(
     if with_xy_direction:
         if not user_id:
             raise ValueError('generate_headers: 该接口需要 xy-direction，user_id 必传')
-        headers['xy-direction'] = str(generate_xy_direction(user_id))
+        headers['xy-direction'] = str(computed['xy_direction'] if computed is not None else generate_xy_direction(user_id))
     if data == '' or data is None:
         data = ''
     elif isinstance(data, str):
@@ -432,7 +432,7 @@ def generate_request_params(
     cookies_str, api, data='', method='POST', user_id: str = '', b1=None,
     dsl_pair=None, doc_cookie: str = '', with_xy_direction: bool = False,
     tier=None, sign_context=None,
-    include_client_hints=True, include_trace_headers=True,
+    include_client_hints=True, include_trace_headers=True, computed=None,
 ):
     # Network Cookie 已含 a1 时可直接复用，不必再传一份 document.cookie
     sign_cookie = doc_cookie or cookies_str
@@ -455,6 +455,7 @@ def generate_request_params(
         with_xy_direction=with_xy_direction, tier=tier, sign_context=sign_context,
         include_client_hints=include_client_hints,
         include_trace_headers=include_trace_headers,
+        computed=computed,
     )
     return headers, cookies, data
 

@@ -1199,10 +1199,15 @@ class XHSCreatorLoginApi:
 
         logger.info('[4/5] 等待扫码和手机确认...')
         last_status = None
-        while True:
-            # Production BeerLogin schedules the first and subsequent polls
-            # one second after the previous poll completes.
-            time.sleep(1)
+        deadline = time.monotonic() + 180
+        polls = 0
+        detail = {'success': False}
+        while time.monotonic() < deadline:
+            delay = 2 if last_status == QR_STATUS_WAIT_CONFIRM else min(8, 2 ** min(polls + 1, 3))
+            time.sleep(min(delay, max(0, deadline - time.monotonic())))
+            if time.monotonic() >= deadline:
+                break
+            polls += 1
             detail = self.query_qrcode_status(qr_data['qr_id'])
             status = detail['status']
             if status != last_status:
@@ -1216,6 +1221,10 @@ class XHSCreatorLoginApi:
             if status not in {QR_STATUS_WAIT_SCAN, QR_STATUS_WAIT_CONFIRM}:
                 logger.error(detail['message'])
                 return None
+
+        if not detail['success']:
+            logger.error('等待扫码超时，请重新生成二维码')
+            return None
 
         logger.info('[5/5] 验证正式 Creator 会话...')
         return self._accept_session(detail['cookies'])

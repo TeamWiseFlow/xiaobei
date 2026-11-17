@@ -896,6 +896,7 @@ class XHSLoginApi:
 
         logger.info('[4/5] 等待扫码和手机确认...')
         deadline = time.monotonic() + max(1.0, float(timeout_seconds))
+        polls = 0
         while time.monotonic() < deadline:
             try:
                 success, msg, cookies = self.check_qrcode_status(
@@ -914,7 +915,11 @@ class XHSLoginApi:
             if msg == '二维码已过期':
                 logger.error(msg)
                 return None
-            time.sleep(max(0.5, float(poll_interval)))
+            polls += 1
+            delay = max(0.5, float(poll_interval)) * min(4, 2 ** min(polls - 1, 2))
+            if '确认' in str(msg):
+                delay = max(0.5, float(poll_interval))
+            time.sleep(min(delay, max(0, deadline - time.monotonic())))
         else:
             logger.error('等待扫码超时，请重新生成二维码')
             return None

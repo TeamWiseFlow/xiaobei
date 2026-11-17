@@ -28,6 +28,8 @@ weibo-hunter search '关键词' --limit 20
 weibo-hunter user '<用户ID或主页链接>'
 weibo-hunter user-posts '<用户ID或主页链接>' --limit 20
 weibo-hunter comments '<作品链接>' --limit 20
+weibo-hunter call feed list --kind recommend --limit 20
+weibo-hunter call feed list --kind following --limit 20
 weibo-hunter fetch '<作品链接>' --output-dir /绝对路径/样本 --download-media
 weibo-hunter fetch '<视频链接>' --output-dir /绝对路径/样本 --download-media --video-only
 weibo-hunter methods
@@ -38,6 +40,6 @@ weibo-hunter call <resource> <action> [平台选项]
 
 列表默认 20 条，`--limit` 范围 1–100；按实际 `page` 游标有界续读，不使用 --all。`call` 只允许 methods 列出的读取接口，不能借此发评论、私信、点赞或关注。会话缺失/明确过期返回 2，风控和网络故障保留独立错误，不触发盲重登。
 
-搜索仅第一页，--limit 不会突破该限制；评论只有一级。用户搜索、推荐流与通知未实现。详情资料的媒体地址由本技能下载，不调用尚未实现的平台 item download。
+搜索仅第一页，--limit 不会突破该限制；评论只有一级。推荐流与关注流需要登录，使用返回的游标续读，勿自行拆改对象游标。用户搜索与通知未实现。详情资料的媒体地址由本技能下载，不调用尚未实现的平台 item download。
 
 视频先下载再交 `viral-chaser` 本地 analyzer，采用返回的实际视频路径；`--video-only` 在下载前拒绝图文。图文和文字由调用方回读原文与图片分析，发布使用 `weibo-publish`。微博没有专家包或本人指标回填工具；互动写操作、私信和直播尚不支持。下载依赖平台返回的实际可访问媒体 URL，失败不回报下载成功。

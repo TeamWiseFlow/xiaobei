@@ -45,7 +45,7 @@ def video_commands(parent):
         if name == 'verify-send':
             command.add_argument('--method', choices=('mobile_sms_verify', 'mobile_up_sms_verify'), default='mobile_sms_verify')
             command.add_argument('--confirm', action='store_true')
-    for name in ('verify-prepare', 'verify-qr', 'verify-poll', 'verify-confirm'):
+    for name in ('verify-prepare', 'verify-qr', 'verify-poll', 'verify-confirm', 'verify-face-prepare', 'verify-face-check'):
         command = commands.add_parser(name)
         if name == 'verify-prepare':
             command.add_argument('--restart', action='store_true', help='仅重建已过期的只读验证准备，不发送验证码或重发作品')
@@ -86,7 +86,7 @@ def note_commands(parent):
     close.add_argument('--url')
     close.add_argument('--confirmation', required=True)
     close.add_argument('--confirm', action='store_true')
-    for name in ('verify-prepare', 'verify-qr', 'verify-poll', 'verify-send', 'verify-code', 'verify-confirm'):
+    for name in ('verify-prepare', 'verify-qr', 'verify-poll', 'verify-send', 'verify-code', 'verify-confirm', 'verify-face-prepare', 'verify-face-check'):
         verify = commands.add_parser(name)
         if name == 'verify-prepare':
             verify.add_argument('--restart', action='store_true', help='仅重建已过期的只读验证准备，不发送验证码或重发作品')

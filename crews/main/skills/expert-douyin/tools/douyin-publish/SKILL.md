@@ -34,7 +34,11 @@ douyin-publish note run --images /绝对路径/1.png /绝对路径/2.png --title
 
 `status` 只读本地收据；`resume` 和 `get-link` 核查本次任务。提交前保存意图；网络异常、空响应或验证要求发生后，任何续接都不会自动再 POST。返回 `submission_attempted: true` 且无确认 ID 时报告“已尝试提交，正在核实”，不能说未发布或重发。验证完成也不等于发布成功。
 
-创作者短信验证到 `ticket-issued` 后，若用户已经明确确认原作品未发布并授权续接，用对应类型的 `retry-verified --not-published-confirmation "用户确认原文" --confirm` 续接原请求；不重新 `run`、上传或手改收据。该入口先核查本人作品，再允许同一验证流程续接一次。没有确认时默认仅预览；过期票据、账号或挑战不匹配会停止。中断或结果未知后再运行仍只核查，不重复提交。操作细节见 HTTP 说明。
+创作者验证到 `ticket-issued` 后，若用户已经明确确认原作品未发布并授权续接，用对应类型的 `retry-verified --not-published-confirmation "用户确认原文" --confirm` 续接原请求；不重新 `run`、上传或手改收据。该入口先核查本人作品，再允许同一验证流程续接一次。没有确认时默认仅预览；过期票据、账号或挑战不匹配会停止。中断或结果未知后再运行仍只核查，不重复提交。操作细节见 HTTP 说明。
+
+发布遇到 `gateway_biz_verify_with_face` 时先用 `verify-prepare` 查询可用方法，禁止用短信替代。人脸使用 `verify-face-prepare`，将返回的 `qr_file` 交用户在抖音 App 扫码刷脸，随后 `verify-face-check`；设备扫码使用 `verify-qr` 和 `verify-poll`，由已登录原账号的手机确认。两者到 `ticket-issued` 后才可按上节显式续接，不会自动发作品。操作细节先读 HTTP 说明。
+
+返回 `VERIFICATION_METHOD_UNSUPPORTED` / `verification.supported: false` 时停止。未识别的 `*_with_face`、缺少验证方法或不完整平台材料仍不支持；不要调用登录 MFA 处理发布挑战、手改收据或用旧短信票据替代。保留原任务并核查作品。
 
 只有真实作品 ID 与完整链接才能调用 `published-track record` 入库并去重。平台接受、公开、可播放、审核通过分别判断，不用全局最新旧作品替代本次作品。用户已确认发布成功时据此结案，不要求重复确认；未核实的公开和播放状态保持未知。
 

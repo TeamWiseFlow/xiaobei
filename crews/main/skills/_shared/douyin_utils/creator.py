@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import secrets
 import time
+import io
+import tempfile
 from contextlib import contextmanager
 
 from .api import call, common, csrf
@@ -15,8 +17,8 @@ from .http import (DouyinRequestError, prepare, request, session, public_error_i
 from .login import flow, refresh_channel, refresh_security
 from .media import upload
 from .payload import PublishPayload
-from .session import read_private, write_private, session_lock, identity_binding
-from .verification import creator_verification, validate_creator_verification
+from .session import read_private, write_private, session_lock, identity_binding, SessionError
+from .verification import creator_verification, validate_creator_verification, decode_verification_qr, validate_face_action
 
 CREATOR = "https://creator.douyin.com"
 CREATE_PATH = "/web/api/media/aweme/create_v2/"
@@ -153,6 +155,30 @@ def item_id(item):
     return str(item.get("item_id") or item.get("aweme_id") or item.get("id") or "")
 
 
+def publication_verification(job):
+    """Reclassify old receipts from their latest private response, without writes."""
+    if job.get("diagnostic"):
+        try:
+            decision = creator_verification(read_private(job["diagnostic"]).get("headers"))
+            if decision:
+                return decision
+        except (OSError, ValueError, SessionError):
+            pass
+    return job.get("verification") or {}
+
+
+def verification_next(value):
+    status = value.get("status")
+    if status == "prepared":
+        methods = value.get("methods", [])
+        return ("verify-send" if "mobile_sms_verify" in methods or "mobile_up_sms_verify" in methods else
+                "verify-face-prepare" if "face_verify" in methods else "verify-qr")
+    return {"awaiting-code": "verify-code", "awaiting-up-sms": "verify-confirm",
+            "awaiting-face": "verify-face-check", "awaiting-scan": "verify-poll", "scanned": "verify-poll",
+            "ticket-issued": "retry-verified", "expired": "verify-prepare --restart",
+            "refused": "verify-prepare --restart"}.get(status)
+
+
 def summary(job):
     result = {k: job[k] for k in ("attempt_id", "uid", "kind", "state", "submission_attempted", "item_id", "url", "error", "verification", "evidence",
                                 "preparation_step", "preparation_completed_steps", "failed_at", "relay_info", "http_status",
@@ -162,10 +188,31 @@ def summary(job):
                   accepted=True if job["state"] == "confirmed" else None,
                   next=None if job["state"] in {"confirmed", "cancelled"} else
                        "resume" if job.get("submission_attempted") else "publish" if job["state"] == "prepared" else "close")
+    verification = publication_verification(job) if job["state"] not in {"confirmed", "cancelled"} else {}
+    if verification:
+        result["verification"] = verification
+    progress = job.get("verification_progress") or {}
+    if (job["state"] not in {"confirmed", "cancelled"} and verification
+            and progress.get("log_id") == verification.get("log_id")):
+        result["verification_status"] = progress.get("status")
+        result["next"] = verification_next(progress)
+        if progress.get("expires_at", 0) <= time.time():
+            result["verification_status"] = "expired"
+            result["next"] = "verify-prepare --restart"
+    elif job["state"] == "awaiting_verification" and verification.get("reason") in {
+            "gateway_web_authlv_check", "gateway_biz_verify_with_face"}:
+        result["next"] = "verify-prepare"
     ready = job.get("verified_retry_ready") or {}
     if (job["state"] not in {"confirmed", "cancelled"} and ready.get("expires_at", 0) > time.time()
+            and ready.get("log_id") == verification.get("log_id")
             and not any(a.get("log_id") == ready.get("log_id") for a in job.get("verified_retries", []))):
         result["next"] = "retry-verified"
+    if verification.get("supported") is False:
+        result.update(ok=False, error="VERIFICATION_METHOD_UNSUPPORTED", next="resume",
+                      hint="平台要求的人脸或二维码验证尚不支持；停止短信验证和发布续接，仅核查原作品")
+    if (result.get("next") == "retry-verified" and any(
+            entry.get("log_id") == verification.get("log_id") for entry in job.get("verified_retries", []))):
+        result["next"] = "resume"
     result["verified_retry_count"] = len(job.get("verified_retries", []))
     return result
 
@@ -220,9 +267,10 @@ def reconcile(job, *, force=False):
                                   "payload_sha256": payload_digest(job), "binding": identity_binding(session())}
     job["state"] = "submission_unknown"
     write_private(STATE_PATH, job)
-    return {**summary(job), "candidates": candidates, "cached": False,
-            "checked_at": job["last_reconciliation"]["at"], "retry_after_seconds": 15,
-            "hint": "保留原任务，继续只读核查；验证后续接使用 retry-verified"}
+    result = {**summary(job), "candidates": candidates, "cached": False,
+              "checked_at": job["last_reconciliation"]["at"], "retry_after_seconds": 15}
+    result.setdefault("hint", "保留原任务，继续只读核查；验证后续接使用 retry-verified")
+    return result
 
 
 def publish(job):
@@ -285,18 +333,25 @@ def _submit(job, *, before_send=None):
         job.update(public_error_info(exc))
         if getattr(exc, "verification", None):
             job["verification"] = exc.verification
+            if (job.get("verification_progress") or {}).get("log_id") != exc.verification.get("log_id"):
+                job.pop("verification_progress", None)
+        job.pop("verified_retry_ready", None)
         if getattr(exc, "response_headers", None) is not None and not diagnostic.exists():
             write_private(diagnostic, {"headers": getattr(exc, "response_headers", {}) or {}})
             job["diagnostic"] = str(diagnostic)
             job["diagnostic_file"] = str(diagnostic)
         job["error"] = getattr(exc, "code", "PUBLISH_RESULT_UNKNOWN")
         write_private(STATE_PATH, job)
-        return {**summary(job), "hint": "已尝试提交，先核查或完成本任务验证；不要重发"}
+        result = summary(job)
+        result.setdefault("hint", "已尝试提交，先核查或完成本任务验证；不要重发")
+        return result
 
 
 def retry_verified(job, args):
     """One explicit continuation per verified challenge, retaining the original payload."""
     if job["state"] in {"confirmed", "cancelled"}:
+        return summary(job)
+    if publication_verification(job).get("supported") is False:
         return summary(job)
     if not getattr(args, "confirm", False):
         return {"ok": True, "preview": True, "action": "retry-verified", "attempt_id": job["attempt_id"],
@@ -325,9 +380,11 @@ def retry_verified(job, args):
     if value["expires_at"] <= time.time():
         raise DouyinRequestError("VERIFICATION_EXPIRED")
     decision = creator_verification(read_private(job["diagnostic"])["headers"])
-    if (not decision or decision.get("reason") != "gateway_web_authlv_check"
+    if (not decision or decision.get("reason") not in {"gateway_web_authlv_check", "gateway_biz_verify_with_face"}
             or decision["log_id"] != value["log_id"] or value["log_id"] != job.get("verification", {}).get("log_id")):
         raise DouyinRequestError("VERIFICATION_CONTEXT_MISMATCH")
+    if value.get("method") not in decision.get("methods", []):
+        raise DouyinRequestError("VERIFICATION_METHOD_UNSUPPORTED")
     digest = payload_digest(job)
     if job.get("submission_payload_sha256", digest) != digest:
         raise DouyinRequestError("PUBLISH_PAYLOAD_CHANGED")
@@ -363,6 +420,7 @@ def retry_verified(job, args):
         "at": time.time(), "payload_sha256": digest, "confirmation": confirmation.strip(),
         "previous_error": job.get("error"), "diagnostic": job.get("diagnostic")})
     job.update(state="submitting", submission_payload_sha256=digest)
+    job.pop("verified_retry_ready", None)
     job.pop("last_reconciliation", None)
     write_private(STATE_PATH, job)
     def check_before_send():
@@ -379,6 +437,34 @@ def retry_verified(job, args):
     return _submit(job, before_send=check_before_send)
 
 
+def verification_qr(job, action):
+    extension = ".jpg" if action.get("mime_type") == "image/jpeg" else ".png"
+    target = STATE_PATH.parent / (job["attempt_id"] + "-verification" + extension)
+    if target.is_symlink():
+        raise ValueError("API_SESSION_UNSAFE")
+    if action["kind"] == "scan-face-qr":
+        import qrcode
+        validate_face_action(action)
+        stream = io.BytesIO()
+        qrcode.make(action["uri"]).save(stream, format="PNG")
+        raw = stream.getvalue()
+    else:
+        from PIL import Image
+        raw = decode_verification_qr(action)
+        with Image.open(io.BytesIO(raw)) as image:
+            if image.format not in {"PNG", "JPEG"} or max(image.size) > 4096 or min(image.size) <= 0:
+                raise ValueError("INVALID_RELAY_RESPONSE")
+            image.verify()
+    fd, temporary = tempfile.mkstemp(prefix=".verification-", dir=STATE_PATH.parent)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(raw)
+        os.replace(temporary, target)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    return str(target)
+
+
 def verification_result(job, value, *, cached=False):
     """Report completion of this verification step separately from publication."""
     result = summary(job)
@@ -386,35 +472,60 @@ def verification_result(job, value, *, cached=False):
     if previous:
         result["publication_error"] = previous
     action_path = None
+    qr_file = None
     if value.get("user_action"):
         action_path = STATE_PATH.parent / (job["attempt_id"] + "-user-action.json")
         write_private(action_path, value["user_action"])
+        if value["user_action"].get("kind") in {"scan-face-qr", "scan-device-qr"}:
+            qr_file = verification_qr(job, value["user_action"])
+    elif value.get("status") in {"ticket-issued", "expired", "refused"}:
+        (STATE_PATH.parent / (job["attempt_id"] + "-verification.png")).unlink(missing_ok=True)
+        (STATE_PATH.parent / (job["attempt_id"] + "-verification.jpg")).unlink(missing_ok=True)
+        (STATE_PATH.parent / (job["attempt_id"] + "-user-action.json")).unlink(missing_ok=True)
     consumed = any(a.get("log_id") == value.get("log_id") for a in job.get("verified_retries", []))
-    next_step = {"prepared": "verify-send", "awaiting-code": "verify-code",
-                 "awaiting-up-sms": "verify-confirm", "ticket-issued": "retry-verified"}.get(value.get("status"))
+    next_step = verification_next(value)
     if value.get("status") == "ticket-issued" and consumed:
         next_step = "resume"
-    return {**result, "ok": True, "publication_confirmed": job["state"] == "confirmed",
+    status = value.get("status")
+    hints = {"prepared": "验证准备已完成，按可用方式继续；作品尚未确认发布",
+             "awaiting-face": "请用抖音 App 扫描二维码并完成人脸验证，再执行 verify-face-check；不会自动提交作品",
+             "awaiting-scan": "请用已登录原账号的抖音 App 扫描二维码，再执行 verify-poll；不会自动提交作品",
+             "scanned": "已扫码，等待手机确认；执行 verify-poll 查询，不自动提交作品",
+             "expired": "验证已过期；显式 verify-prepare --restart 后重新生成验证入口，不重发作品",
+             "refused": "手机端已拒绝验证；确认后显式 verify-prepare --restart，不重发作品"}
+    failure = {"expired": "VERIFICATION_EXPIRED", "refused": "VERIFICATION_REJECTED"}.get(status)
+    return {**result, "ok": failure is None, **({"error": failure} if failure else {}),
+            "publication_confirmed": job["state"] == "confirmed",
             "verification": {k: v for k, v in value.items() if k != "user_action"},
             "verification_status": value.get("status"), "cached": cached,
             "user_action_file": str(action_path) if action_path else None,
+            "qr_file": qr_file,
             "next": next_step, "verified_retry_consumed": consumed,
-            "hint": "此验证步骤已完成，作品尚待确认；续接原请求使用 retry-verified"}
+            "hint": hints.get(status, "此验证步骤已完成，作品尚待确认；续接原请求使用 retry-verified")}
 
 
 def verify(job, args):
+    decision = publication_verification(job)
+    if decision.get("supported") is False:
+        return summary(job)
     if args.action in {"verify-send", "verify-confirm"} and not getattr(args, "confirm", False):
         return {"ok": True, "preview": True, "action": args.action}
+    method = {"verify-code": "mobile_sms_verify", "verify-face-prepare": "face_verify",
+              "verify-face-check": "face_verify", "verify-qr": "qr_code_verify", "verify-poll": "qr_code_verify"}.get(
+                  args.action, getattr(args, "method", None))
+    legacy_qr = decision.get("reason") == "gateway_biz_verify" and args.action in {"verify-qr", "verify-poll"}
+    if args.action != "verify-prepare" and not legacy_qr and method not in decision.get("methods", []):
+        raise DouyinRequestError("VERIFICATION_METHOD_UNSUPPORTED")
     if not job.get("submission_attempted") or not job.get("diagnostic"):
         raise DouyinRequestError("VERIFICATION_CHALLENGE_MISSING")
-    if job.get("verification", {}).get("reason") == "passport_verify":
+    if decision.get("reason") == "passport_verify":
         raise DouyinRequestError("VERIFICATION_CHALLENGE_INCOMPLETE", diagnostic_file=job["diagnostic"])
     current = session()
     value = current.state.get("creator_verification") or {}
     if (args.action == "verify-prepare" and not getattr(args, "restart", False)
             and not current.state.get("creator_verification_flow")
-            and value.get("log_id") == job.get("verification", {}).get("log_id")
-            and value.get("status") in {"prepared", "awaiting-code", "awaiting-up-sms", "ticket-issued"}
+            and value.get("log_id") == decision.get("log_id")
+            and value.get("status") in {"prepared", "awaiting-code", "awaiting-up-sms", "awaiting-face", "awaiting-scan", "scanned", "ticket-issued"}
             and current.state.get("creator_verification_binding")
             and current.state.get("creator_verification_binding") == identity_binding(current)):
         ensure_owner(job["uid"])
@@ -427,12 +538,12 @@ def verify(job, args):
     headers = read_private(job["diagnostic"])["headers"]
     cookie = session().cookies(CREATOR + "/")
     base = {"uid": job["uid"], "cookie": cookie}
-    if args.action in {"verify-qr", "verify-poll"}:
-        if job.get("verification", {}).get("reason") != "gateway_biz_verify":
+    if legacy_qr:
+        if decision.get("reason") != "gateway_biz_verify":
             raise DouyinRequestError("VERIFICATION_METHOD_UNSUPPORTED")
         if args.action == "verify-qr":
             result = flow("creator-qr", {**base, "decision": headers["x-tt-verify-passport-decision"],
-                                         "log_id": job["verification"]["log_id"]})
+                                         "log_id": decision["log_id"]})
         else:
             challenge = job.get("creator_challenge") or {}
             if not challenge.get("id"):
@@ -441,7 +552,7 @@ def verify(job, args):
         challenge = result.get("creator_challenge")
         import re
         if (not isinstance(challenge, dict) or not re.fullmatch(r"[a-f0-9]{32}", str(challenge.get("id", "")))
-                or challenge.get("log_id") != job["verification"]["log_id"]
+                or challenge.get("log_id") != decision["log_id"]
                 or challenge.get("status") not in {"awaiting-scan", "verified", "expired"}
                 or type(challenge.get("expires_at")) is not int):
             raise DouyinRequestError("INVALID_RELAY_RESPONSE")
@@ -468,12 +579,16 @@ def verify(job, args):
                 "qr_file": job.get("verification_qr"), "hint": "验证完成后 resume 核查原提交，不自动重发"}
     if args.action == "verify-prepare":
         result = flow("verify-prepare", {**base, "decision": headers["x-tt-verify-passport-decision"],
-                                         "log_id": job["verification"]["log_id"]}, restart=getattr(args, "restart", False))
+                                         "log_id": decision["log_id"]}, restart=getattr(args, "restart", False))
     else:
         value = session().state.get("creator_verification") or {}
-        method = getattr(args, "method", None) or ("mobile_sms_verify" if args.action == "verify-code" else None)
-        if not value.get("id") or method not in value.get("methods", []):
+        if (not value.get("id") or method not in value.get("methods", [])
+                or value.get("log_id") != decision.get("log_id")
+                or session().state.get("creator_verification_binding") != identity_binding(session())):
             raise DouyinRequestError("VERIFICATION_METHOD_UNSUPPORTED")
+        value = validate_creator_verification(value)
+        if value["expires_at"] <= time.time():
+            raise DouyinRequestError("VERIFICATION_EXPIRED")
         fields = {**base, "verification_id": value["id"], "method": method}
         if args.action == "verify-code":
             path = Path(args.code_file).expanduser()
@@ -483,11 +598,18 @@ def verify(job, args):
             if not code.isdigit() or not 4 <= len(code) <= 6:
                 raise ValueError("INVALID_VERIFICATION_CODE")
             fields["code"] = code
-        result = flow(args.action, fields)
-    value = result.get("verification") or {}
+        flow_action = {"verify-qr": "verify-qr-prepare", "verify-poll": "verify-qr-check"}.get(args.action, args.action)
+        result = flow(flow_action, fields)
+    value = validate_creator_verification(result.get("verification"))
+    if value["log_id"] != decision.get("log_id"):
+        raise DouyinRequestError("VERIFICATION_CONTEXT_MISMATCH")
+    job["verification"] = decision
+    job["verification_progress"] = {k: v for k, v in value.items() if k != "user_action"}
     if value.get("status") == "ticket-issued":
         job["verified_retry_ready"] = {k: value[k] for k in ("id", "log_id", "expires_at")}
-        write_private(STATE_PATH, job)
+    else:
+        job.pop("verified_retry_ready", None)
+    write_private(STATE_PATH, job)
     return verification_result(job, value)
 
 
@@ -594,7 +716,7 @@ def run(args, *, stop_before_submit=False, prepare_cover=None):
 
 def execute(args, *, prepare_cover=None):
     supported = {"run", "publish", "close", "status", "get-link", "resume", "retry-verified", "verify-prepare",
-                 "verify-qr", "verify-poll", "verify-send", "verify-code", "verify-confirm"}
+                 "verify-qr", "verify-poll", "verify-send", "verify-code", "verify-confirm", "verify-face-prepare", "verify-face-check"}
     if args.action not in supported:
         raise ValueError("HTTP_PUBLISH_ACTION_UNSUPPORTED")
     if args.action == "run":

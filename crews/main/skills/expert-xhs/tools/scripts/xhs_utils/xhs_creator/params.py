@@ -277,17 +277,40 @@ def generate_profile_request_params(
     if not cookies.get('a1'):
         raise ValueError('Creator profile Cookie must contain a1')
     context = profile.next_sign_context(tier=tier, mns_profile=mns_profile)
-    b1 = (
-        profile.current_b1(context['now'], profile_name=b1_profile)
-        if b1_value is None
-        else str(b1_value)
-    )
+    from .state import REFERENCE_PROFILE
+    from xhs_utils.relay import compute
+    bundled = 'bundle-sign' in REFERENCE_PROFILE.get('capabilities', [])
+    cached_b1 = profile._named_b1_values.get(str(b1_profile)) if b1_profile and not profile._b1_state_explicit else None
+    given_b1 = b1_value if b1_value is not None else profile.fixed_b1 or cached_b1
+    if bundled:
+        b1 = given_b1
+    else:
+        b1 = (
+            profile.current_b1(context['now'], profile_name=b1_profile)
+            if b1_value is None else str(b1_value)
+        )
     dsl_pair = (
         profile.dsl_pair(context['now'])
         if dsl_pair_value is None
         else str(dsl_pair_value)
     )
-    result = run_signer(
+    if bundled:
+        body = data if isinstance(data, str) else '' if data is None else json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+        inputs = {'api': api, 'data': data, 'wire_body': body, 'cookie': '; '.join(f'{k}={v}' for k,v in cookies.items()),
+                  'dsl_pair': dsl_pair, 'tier': context['tier'], 'sign_context': context}
+        if b1 is not None: inputs['b1'] = str(b1)
+        else:
+            state = profile.b1_state
+            if b1_profile and not profile._b1_state_explicit:
+                from .state import CreatorB1RuntimeState
+                state = profile._named_b1_states.setdefault(str(b1_profile), CreatorB1RuntimeState.reference(
+                    started_at=profile.session.loadts, profile_name=str(b1_profile)))
+            inputs['b1_options'] = state.to_b1_options(context['now'])
+        result = compute('creator', 'bundle-sign', inputs)
+        if b1_profile and not profile._b1_state_explicit:
+            profile._named_b1_values[str(b1_profile)] = result['b1']
+    else:
+        result = run_signer(
         api,
         data,
         cookie='; '.join(f'{key}={value}' for key, value in cookies.items()),
@@ -295,7 +318,7 @@ def generate_profile_request_params(
         dsl_pair=dsl_pair,
         tier=context['tier'],
         sign_context=context,
-    )
+        )
     headers = get_request_headers_template(
         context,
         method=method,

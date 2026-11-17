@@ -13,6 +13,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import requests
+from relay_transport import post as relay_post, RelayBudgetError
 
 # 默认指向官方中转 relay（VIP Club 会员默认走我们中转，零配置起手）。
 # 仅当用户自建 relay 时才需要在 daemon.env 覆盖 RELAY_BASE_URL。
@@ -84,12 +85,16 @@ def _post(path: str, body: dict, *, context=None, require_object=False) -> Any:
             raise
         raise RelaySignError("OFB_KEY_MISSING", relay_info=_relay_info("configuration", context)) from exc
     try:
-        resp = requests.post(
+        resp = relay_post(
             f"{RELAY_BASE_URL}{path}",
+            key=key, request=requests.post,
             headers={"Content-Type": "application/json", "X-OFB-Key": key},
             json=body,
             timeout=_TIMEOUT,
         )
+    except RelayBudgetError as exc:
+        raise RelaySignError('RATE_LIMITED', 429, relay_info={'source': 'relay', 'reason': 'client_budget',
+            **(context or {}), 'retry_after_seconds': exc.retry_after_seconds}) from exc
     except requests.RequestException as exc:
         if context is None:
             raise
@@ -110,6 +115,8 @@ def _post(path: str, body: dict, *, context=None, require_object=False) -> Any:
     def failure(code, reason, exception=None):
         return RelaySignError(code, resp.status_code,
             relay_info=_relay_info(reason, context, resp, exception) if context is not None else None)
+    if resp.status_code == 429:
+        raise failure('RATE_LIMITED', 'relay_error')
     try:
         env = resp.json()
     except ValueError as exc:

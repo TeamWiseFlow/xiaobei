@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import base64
+import binascii
 import re
 import time
 from urllib.parse import parse_qs, urlsplit
 
 SMS_METHODS = ("mobile_sms_verify", "mobile_up_sms_verify")
+CREATOR_METHODS = (*SMS_METHODS, "face_verify", "qr_code_verify", "qrcode_verify")
+CREATOR_TICKET_METHODS = (*SMS_METHODS, "face_verify", "qr_code_verify")
 MFA_METHODS = (*SMS_METHODS, "face_verify")
 MFA_STATUSES = {"prepared", "awaiting-code", "awaiting-up-sms", "awaiting-face",
                 "ticket-issued", "login-confirmed", "expired", "unsupported"}
@@ -23,28 +27,70 @@ def validate_creator_verification(value):
     if (not isinstance(value["id"], str) or not re.fullmatch(r"[a-f0-9]{32}", value["id"])
             or value["scene"] != "creator"
             or not isinstance(value["log_id"], str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value["log_id"])
-            or not isinstance(methods, list) or not 1 <= len(methods) <= 2
-            or any(not isinstance(m, str) or m not in SMS_METHODS for m in methods)
+            or not isinstance(methods, list) or not 1 <= len(methods) <= 4
+            or any(not isinstance(m, str) or m not in CREATOR_TICKET_METHODS for m in methods)
             or len(set(methods)) != len(methods)
             or type(value["expires_at"]) is not int or value["expires_at"] <= 0
             or not isinstance(value["status"], str)
-            or value["status"] not in {"prepared", "awaiting-code", "awaiting-up-sms", "ticket-issued"}
+            or value["status"] not in {"prepared", "awaiting-code", "awaiting-up-sms", "awaiting-face",
+                                        "awaiting-scan", "scanned", "ticket-issued", "expired", "refused"}
             or type(value["ticket_present"]) is not bool or value["ticket_present"] != ticket
             or value["publish_gate_verified"] is not False
             or (value.get("evidence") == "same-session-verification-ticket") != ticket
             or not ticket and "evidence" in value
             or "method" in value and value["method"] not in methods):
         raise ValueError("INVALID_RELAY_RESPONSE")
+    status_method = {"awaiting-code": "mobile_sms_verify", "awaiting-up-sms": "mobile_up_sms_verify",
+                     "awaiting-face": "face_verify", "awaiting-scan": "qr_code_verify", "scanned": "qr_code_verify"}.get(value["status"])
+    if status_method and value.get("method") != status_method:
+        raise ValueError("INVALID_RELAY_RESPONSE")
     if "user_action" in value:
         action = value["user_action"]
-        if (value.get("method") != "mobile_up_sms_verify" or value["status"] != "awaiting-up-sms"
-                or not isinstance(action, dict) or set(action) != {"kind", "destination", "text"}
-                or action["kind"] != "send-sms" or not isinstance(action["destination"], str)
-                or not re.fullmatch(r"\+?[0-9]{3,32}", action["destination"])
-                or not isinstance(action["text"], str) or not 1 <= len(action["text"]) <= 1024
-                or any(c in action["text"] for c in "\r\n\0")):
+        if not isinstance(action, dict):
+            raise ValueError("INVALID_RELAY_RESPONSE")
+        if value.get("method") == "mobile_up_sms_verify" and value["status"] == "awaiting-up-sms":
+            if (set(action) != {"kind", "destination", "text"}
+                    or action["kind"] != "send-sms" or not isinstance(action["destination"], str)
+                    or not re.fullmatch(r"\+?[0-9]{3,32}", action["destination"])
+                    or not isinstance(action["text"], str) or not 1 <= len(action["text"]) <= 1024
+                    or any(c in action["text"] for c in "\r\n\0")):
+                raise ValueError("INVALID_RELAY_RESPONSE")
+        elif value.get("method") == "face_verify" and value["status"] == "awaiting-face":
+            validate_face_action(action)
+        elif value.get("method") == "qr_code_verify" and value["status"] in {"awaiting-scan", "scanned"}:
+            decode_verification_qr(action)
+        else:
             raise ValueError("INVALID_RELAY_RESPONSE")
     return {**value, "methods": list(methods)}
+
+
+def validate_face_action(action):
+    if (set(action) != {"kind", "uri"} or action["kind"] != "scan-face-qr"
+            or not isinstance(action["uri"], str) or len(action["uri"]) > 32768
+            or any(c in action["uri"] for c in "\r\n\0")):
+        raise ValueError("INVALID_RELAY_RESPONSE")
+    uri = urlsplit(action["uri"])
+    query = parse_qs(uri.query, keep_blank_values=True)
+    if (uri.scheme != "aweme" or uri.netloc != "aweme" or uri.path != "/cert/verify" or uri.fragment
+            or set(query) != {"cert_app_id", "flow", "ignore_result", "scene", "ticket"}
+            or query["ignore_result"] != ["true"]
+            or any(len(values) != 1 or not values[0] or len(values[0]) > 16384 for values in query.values())):
+        raise ValueError("INVALID_RELAY_RESPONSE")
+
+
+def decode_verification_qr(action):
+    if (set(action) != {"kind", "image_base64", "mime_type"} or action["kind"] != "scan-device-qr"
+            or action["mime_type"] not in {"image/png", "image/jpeg"}
+            or not isinstance(action["image_base64"], str) or not 1 <= len(action["image_base64"]) <= 180000):
+        raise ValueError("INVALID_RELAY_RESPONSE")
+    try:
+        raw = base64.b64decode(action["image_base64"], validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("INVALID_RELAY_RESPONSE") from exc
+    if (base64.b64encode(raw).decode() != action["image_base64"]
+            or not raw.startswith(b"\x89PNG\r\n\x1a\n" if action["mime_type"] == "image/png" else b"\xff\xd8\xff")):
+        raise ValueError("INVALID_RELAY_RESPONSE")
+    return raw
 
 
 def validate_login_verification(value):
@@ -176,7 +222,9 @@ def creator_decision_diagnostic(headers):
         status = "event_invalid"
     elif decision["event_params"].get("verify_scene") != "creator":
         status = "scene_unsupported"
-    elif decision["event_params"].get("verify_reason") not in {"gateway_web_authlv_check", "gateway_biz_verify"}:
+    elif (creator_verification(headers) or {}).get("supported") is False:
+        status = "method_unsupported"
+    elif decision["event_params"].get("verify_reason") not in {"gateway_web_authlv_check", "gateway_biz_verify", "gateway_biz_verify_with_face"}:
         status = "reason_unsupported"
     elif (not isinstance(decision["event_params"].get("log_id"), str)
           or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", decision["event_params"]["log_id"])):
@@ -222,28 +270,44 @@ def creator_verification(headers):
     if not isinstance(decision, dict) or decision.get("account_flow") != "verify":
         return None
     event = decision.get("event_params")
+    reason = event.get("verify_reason") if isinstance(event, dict) else None
+    face_required = isinstance(reason, str) and reason.endswith("_with_face")
     if (
         not isinstance(event, dict)
         or event.get("verify_scene") != "creator"
-        or event.get("verify_reason") not in {"gateway_web_authlv_check", "gateway_biz_verify"}
+        or reason not in {"gateway_web_authlv_check", "gateway_biz_verify"} and not face_required
     ):
         return None
-    if event["verify_reason"] == "gateway_biz_verify":
-        log_id = event.get("log_id")
-        if not isinstance(log_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", log_id):
-            return None
+    log_id = event.get("log_id")
+    if not isinstance(log_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", log_id):
+        return None
+    if reason == "gateway_biz_verify":
         return {"required": True, "scene": "creator", "reason": "gateway_biz_verify",
                 "methods": ["qrcode_verify"], "log_id": log_id}
     ways = decision.get("verify_way_name_list")
     if isinstance(ways, str):
         ways = [way.strip() for way in ways.split(",")]
+    # A mandatory face gate cannot be satisfied by selecting the SMS entry
+    # from its advertised methods. Preserve the decision even with missing ways.
+    if face_required and reason == "gateway_biz_verify_with_face" and isinstance(ways, list):
+        methods = [m for m in ("face_verify", "qr_code_verify") if m in ways]
+        if methods:
+            return {"required": True, "scene": "creator", "reason": reason,
+                    "methods": methods, "log_id": log_id}
+    if face_required:
+        methods = [m for m in CREATOR_METHODS if isinstance(ways, list) and m in ways]
+        return {"required": True, "scene": "creator", "reason": reason if reason == "gateway_biz_verify_with_face"
+                else "face_verification_required", "methods": methods, "log_id": log_id,
+                "supported": False, "unsupported_reason": "face_verify"}
     if not isinstance(ways, list) or not ways or any(not isinstance(way, str) for way in ways):
         return None
-    methods = [way for way in SMS_METHODS if way in ways]
+    methods = [way for way in CREATOR_TICKET_METHODS if way in ways]
     if not methods:
-        return None
-    log_id = event.get("log_id")
-    if not isinstance(log_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", log_id):
+        advertised = [m for m in CREATOR_METHODS if m in ways]
+        if advertised:
+            return {"required": True, "scene": "creator", "reason": reason,
+                    "methods": advertised, "log_id": log_id, "supported": False,
+                    "unsupported_reason": "face_verify" if "face_verify" in advertised else "qr_code_verify"}
         return None
     # The gateway challenge owns its log_id. A later response can have a new
     # transport trace while carrying the same challenge. Bind verification to

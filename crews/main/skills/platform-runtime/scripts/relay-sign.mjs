@@ -7,7 +7,7 @@ export function compute(platform, operation, inputs) {
     return raw instanceof Uint8Array ? { $bytes: Buffer.from(raw).toString('base64') } : value;
   });
   const response = spawnSync(process.execPath, [fileURLToPath(new URL('./relay-request.mjs', import.meta.url))], {
-    input: body, encoding: 'utf8', timeout: 40000, maxBuffer: 1024 * 1024,
+    input: body, encoding: 'utf8', timeout: 85000, maxBuffer: 1024 * 1024,
     // 不继承调试预加载器，避免把签名输入写入平台请求诊断。
     env: Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'NODE_OPTIONS')),
   });
@@ -16,7 +16,9 @@ export function compute(platform, operation, inputs) {
   if (response.error || response.status !== 0 || value?.success !== true) {
     const error = new Error('签名服务不可用，请检查 Relay 配置或服务状态；不要改为本地计算');
     error.code = value?.error || 'SIGN_UNAVAILABLE';
-    error.detail = { source: 'relay', platform, operation, ...(value?.http_status ? { status: value.http_status } : {}) };
+    error.detail = { source: 'relay', platform, operation, ...(value?.http_status ? { status: value.http_status } : {}),
+      ...(value?.retry_after_seconds ? { retry_after_seconds: value.retry_after_seconds } : {}),
+      ...(response.error ? { reason: response.error.code === 'ETIMEDOUT' ? 'timeout' : 'spawn' } : value?.reason ? { reason: value.reason } : {}) };
     throw error;
   }
   return JSON.parse(JSON.stringify(value.data), (_key, item) => item && typeof item === 'object' && Object.keys(item).length === 1
