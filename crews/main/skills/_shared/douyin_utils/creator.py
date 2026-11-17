@@ -15,7 +15,7 @@ from .api import call, common, csrf
 from .http import (DouyinRequestError, prepare, request, session, public_error_info,
                    private_response_headers, response_info)
 from .login import flow, refresh_channel, refresh_security
-from .media import upload
+from .media import upload, UploadCredentials
 from .payload import PublishPayload
 from .session import read_private, write_private, session_lock, identity_binding, SessionError
 from .verification import creator_verification, validate_creator_verification, decode_verification_qr, validate_face_action
@@ -634,6 +634,7 @@ def wait_video_ready(uid, media):
 
 
 def run(args, *, stop_before_submit=False, prepare_cover=None):
+    image_credentials = UploadCredentials()
     with publication_lock():
         if pending():
             raise DouyinRequestError("PUBLISH_PENDING")
@@ -664,7 +665,7 @@ def run(args, *, stop_before_submit=False, prepare_cover=None):
                 for index, path in enumerate(args.images):
                     with preparation_step(job, "image_upload_" + str(index + 1)):
                         ensure_owner(uid)
-                        image = upload(path, "image", user_id=uid, expected_uid=uid)
+                        image = upload(path, "image", user_id=uid, expected_uid=uid, credential_cache=image_credentials)
                         images.append(image)
                         job.setdefault("uploaded_images", []).append(asset_metadata(image))
                 with preparation_step(job, "payload_build"):
@@ -695,7 +696,7 @@ def run(args, *, stop_before_submit=False, prepare_cover=None):
                         prepare_cover(source, target, ratio)
                     with preparation_step(job, "cover_" + name + "_upload"):
                         ensure_owner(uid)
-                        cover = upload(target, "image", user_id=uid, expected_uid=uid)
+                        cover = upload(target, "image", user_id=uid, expected_uid=uid, credential_cache=image_credentials)
                         covers.append(cover)
                         job.setdefault("uploaded_covers", []).append({"kind": name, **asset_metadata(cover)})
                 with preparation_step(job, "payload_build"):

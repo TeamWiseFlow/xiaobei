@@ -2,8 +2,8 @@
 import { isVideoSubmit } from './weibo-video.mjs';
 const ERROR_CODES = new Set(['ERROR', 'USAGE', 'UNSUPPORTED', 'CONFIRM_REQUIRED', 'AUTH_REQUIRED', 'AUTH_EXPIRED', 'NOT_IMPLEMENTED', 'RISK_CONTROL', 'NETWORK', 'UPSTREAM', 'SIGN_UNAVAILABLE', 'OFB_KEY_MISSING', 'OFB_KEY_INVALID', 'RELAY_URL_INVALID', 'RELAY_RATE_LIMITED', 'INVALID_INPUT', 'MATERIAL_UNAVAILABLE']);
 const RELAY_OPERATIONS = {
-  kuaishou: ['falcon', 'sig3', 'encrypt', 'decrypt', 'kwf', 'kws', 'fingerprint-report', 'like-token'],
-  tiktok: ['request', 'ticket-guard', 'aws-v4', 'x-bogus', 'frontier', 'shop', 'im-access'],
+  kuaishou: ['capabilities', 'bootstrap-material', 'falcon', 'sig3', 'encrypt', 'decrypt', 'kwf', 'kws', 'fingerprint-report', 'like-token'],
+  tiktok: ['capabilities', 'guarded-request', 'request', 'ticket-guard', 'aws-v4', 'x-bogus', 'frontier', 'shop', 'im-access'],
   x: ['transaction'], weibo: ['session', 'upload-image', 'upload-video'], youtube: ['authorization'],
 };
 const SENSITIVE = /cookie|token|authorization|password|secret|ticket|private.?key|api_[sp][ht]|web_[sp][ht]|kw[fwcs]|ts.?sign/i;

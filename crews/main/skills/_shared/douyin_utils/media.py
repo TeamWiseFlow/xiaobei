@@ -2,16 +2,53 @@
 
 from __future__ import annotations
 import datetime
+import hashlib
 import json
+import os
 from pathlib import Path
 import secrets
 import time
 import zlib
 from urllib.parse import quote
 from .api import call
-from .http import DouyinRequestError, request
+from .http import DouyinRequestError, request, session
+from .session import identity_binding
 
 PART_SIZE = 8 * 1024 * 1024
+
+
+class UploadCredentials:
+    """Reuse image STS within one publication, with no credentials persisted."""
+
+    def __init__(self):
+        self._binding = None
+        self._value = None
+
+    def image(self, expected_uid):
+        current = session()
+        if expected_uid is None or str(current.state.get('uid', '')) != str(expected_uid):
+            raise DouyinRequestError('API_ACCOUNT_MISMATCH')
+        identity = identity_binding(current)
+        binding = hashlib.sha256(json.dumps([
+            str(current.path), str(expected_uid), identity, current.state.get('device', {}),
+            os.environ.get('RELAY_BASE_URL', ''), os.environ.get('OFB_KEY', ''),
+        ], sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        if identity and binding == self._binding and self._value is not None:
+            try:
+                if credentials(self._value)['expires_at'] > time.time() * 1000 + 60_000:
+                    return dict(self._value)
+            except (DouyinRequestError, ValueError, TypeError):
+                pass
+        # A failed renewal cannot leave a previous account's material reusable.
+        self._binding, self._value = None, None
+        raw = call('upload_auth', expected_uid=expected_uid).get('auth')
+        value = json.loads(raw) if isinstance(raw, str) else raw
+        if not isinstance(value, dict):
+            raise DouyinRequestError('UPLOAD_CREDENTIALS_MISSING')
+        expiry = credentials(value)['expires_at']
+        if identity and expiry > time.time() * 1000 + 60_000:
+            self._binding, self._value = binding, dict(value)
+        return value
 
 
 def credentials(sts):
@@ -164,12 +201,14 @@ def upload_bytes(path, node, expiry, user_id="", *, expected_uid=None):
     )
 
 
-def upload(path, kind, *, user_id="", sts=None, space=None, functions=None, gcm=False, expected_uid=None):
+def upload(path, kind, *, user_id="", sts=None, space=None, functions=None, gcm=False, expected_uid=None, credential_cache=None):
     path = Path(path).expanduser().resolve()
     if not path.is_file() or not path.stat().st_size:
         raise ValueError("MEDIA_FILE_MISSING")
     if kind not in ("image", "video", "audio", "object"):
         raise ValueError("INVALID_MEDIA_KIND")
+    if sts is None and kind == 'image' and not space and credential_cache is not None:
+        sts = credential_cache.image(expected_uid)
     if sts is None:
         response = call("upload_auth", expected_uid=expected_uid)
         raw = response.get("auth")
