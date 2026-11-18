@@ -162,7 +162,8 @@ video-edit audio-mix input.mp4 --bgm <已下载的曲目.mp3> --bgm-start 47 --b
 ### pitfall: Header overflow / 瞬态查询失败
 
 - **症状**：`Parse Error: Header overflow`、超时、连接重置、429 或 5xx。
-- **workaround**：只读 API 查询已自动在 1 秒、2 秒后最多重试两次（含首次共三次）。仍失败则保留错误、停止本次查询；不要连续手动重试或当成无曲目。下载不会因此自动重发。
+- **根因（Header overflow）**：ccMixter 旧 PHP API 会把整个 JSON 结果回显进 `X-JSON` 响应头（limit=10 约 20KB），超过 Node 默认 16KB 头部上限。这是确定性错误，重试无效；wrapper 已用 `--max-http-header-size=131072` 仅对本 CLI 进程放宽到 128KB。
+- **workaround**：只读 API 查询已自动在 1 秒、2 秒后最多重试两次（含首次共三次）。仍失败则保留错误、停止本次查询；不要连续手动重试或当成无曲目。下载不会因此自动重发。若再报 Header overflow，先确认 wrapper 的 `--max-http-header-size` 参数仍在，不要盲目加大 limit。
 
 ### pitfall: ccMixter SSL 证书链不全
 
