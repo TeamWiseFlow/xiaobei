@@ -84,7 +84,7 @@ for (const [name, version] of Object.entries(deps)) {
 NODE
 then
   echo "Installing pinned deck-render npm packages..."
-  (cd "$TOOL" && npm install --omit=dev --no-audit --no-fund \
+  (cd "$TOOL" && ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install --omit=dev --no-audit --no-fund \
     --registry="${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}")
 fi
 

@@ -8,7 +8,7 @@
   "xiaobei": {
     "dependencyInstaller": {
       "script": "scripts/install-runtime.mjs",
-      "inputs": ["runtime-profile.json"]
+      "inputs": ["runtime-profile.json", "assets/xiaobei-platform-backend-0.3.3.tgz"]
     }
   }
 }
