@@ -1,16 +1,35 @@
-import { spawn } from 'node:child_process';
-import { mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises';
-import { join, resolve, extname } from 'node:path';
+import { execFile, spawn } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises';
+import { basename, join, resolve, extname } from 'node:path';
 import { createWriteStream } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
+import { promisify } from 'node:util';
 import { schemaFor, validateArgs, xTextPreview } from './metadata.mjs';
 import { videoTransportPolicy } from './weibo-video.mjs';
 import { completePublication, matchWeiboVideo, creatorRecordId } from './publication.mjs';
 import { xPublicationFailure } from './x-publication.mjs';
 import { downloadYoutube } from './youtube-download.mjs';
 import { canonical, platforms, stateHome, emit, PlatformError, runBackend, networkProxy, requireWriteSession, activeAccount, credential, atomicJson, reportError, packageRoot } from './backend.mjs';
+
+const runFile = promisify(execFile);
+
+async function verifyVideoUpload(path, approval, copyTo) {
+  const script = fileURLToPath(new URL('../../_shared/video_version.py', import.meta.url));
+  try {
+    const { stdout } = await runFile(process.platform === 'win32' ? 'python' : 'python3',
+      [script, 'verify-upload', path, '--video-approval', approval, ...(copyTo ? ['--copy-to', copyTo] : [])],
+      { timeout: 120000, windowsHide: true, env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+    return JSON.parse(stdout);
+  } catch (error) {
+    const message = error.stderr?.trim();
+    const code = /^VIDEO_(?:VERSION_MISMATCH|UNCONFIRMED):/.exec(message || '')?.[0].slice(0, -1);
+    throw new PlatformError(code || 'VIDEO_VERIFICATION_FAILED', code ? message : '上传前无法核对视频确认记录');
+  }
+}
 
 export function take(args, flag, fallback) {
   const matches = args.flatMap((arg, index) => arg === flag || arg.startsWith(flag + '=') ? [index] : []);
@@ -51,9 +70,32 @@ export function methods(platform, role) { return platforms[platform][role] || []
 export function allowed(platform, role, command) {
   if (!methods(platform, role).includes(command)) throw new PlatformError('UNSUPPORTED', '该工具不支持 ' + command + '；按能力表选择 hunter、平台专家或 expert-bd', 4);
 }
-async function status(platform, args) {
+async function status(platform, args, { maxAgeMs = 0 } = {}) {
+  const options = [...args];
+  const alias = await activeAccount(platform, take(options, '--account') ?? take(options, '-a'));
+  const file = join(stateHome, 'checks', platform, alias + '.json');
+  const binding = async () => {
+    const saved = await credential(platform, alias);
+    return createHash('sha256').update(JSON.stringify({ scopes: saved.scopes,
+      method: saved.method, user: saved.user, device: saved.device,
+      proxy: await networkProxy(platform) })).digest('hex');
+  };
+  if (maxAgeMs > 0) {
+    try {
+      const cached = JSON.parse(await readFile(file, 'utf8'));
+      if (cached.binding === await binding() && cached.at <= Date.now() && Date.now() - cached.at < Math.min(maxAgeMs, 60000)
+          && cached.result?.data?.logged_in && cached.result.data.user?.id) {
+        return { ...cached.result, authentication_cache_age_ms: Date.now() - cached.at };
+      }
+    } catch { /* A missing or changed proof requires the native check. */ }
+  }
+  await rm(file, { force: true });
   const result = await runBackend(platform, ['auth', 'status', ...args]);
-  if (!result.data?.logged_in) throw new PlatformError('AUTH_REQUIRED', '当前登录态未通过在线校验', 2);
+  if (!result.data?.logged_in) {
+    await rm(file, { force: true });
+    throw new PlatformError('AUTH_REQUIRED', '当前登录态未通过在线校验', 2);
+  }
+  if (result.data.user?.id) try { await atomicJson(file, { at: Date.now(), binding: await binding(), result }); } catch {}
   return result;
 }
 function durationMs(value) {
@@ -201,6 +243,7 @@ export async function resolvePublication(platform, receipt, backend = runBackend
 export async function publish(platform, input) {
   const args = [...input];
   const confirm = toggle(args, '--confirm');
+  const videoApproval = take(args, '--video-approval', undefined);
   const sourceFolder = take(args, '--source-folder', undefined);
   const recordTitle = take(args, '--record-title', undefined);
   const distributeStatus = take(args, '--distribute-status', undefined);
@@ -219,6 +262,9 @@ export async function publish(platform, input) {
   if (!sourceFolder) throw new PlatformError('USAGE', '发布必须提供 --source-folder，以便保存结果与记录发布');
   const images = args.filter(arg => arg === '--image').length;
   const hasVideo = args.includes('--video');
+  if (videoApproval && args.filter(arg => arg === '--video').length !== 1) {
+    throw new PlatformError('USAGE', '--video-approval 需要唯一的 --video');
+  }
   if (images && hasVideo) throw new PlatformError('USAGE', '图片和视频不能同时发布');
   const maxImages = { x: 4, weibo: 15, kuaishou: 31 }[platform];
   if (maxImages && images > maxImages) throw new PlatformError('USAGE', `本平台最多 ${maxImages} 张图片`);
@@ -250,7 +296,9 @@ export async function publish(platform, input) {
   }
   if (!text && !images && !hasVideo) throw new PlatformError('USAGE', '没有待发布内容');
   const recordDistribution = distributeStatus ?? (platform === 'kuaishou' && hasVideo && parsed.options.visibility === 'private' ? '1' : undefined);
+  const videoIndex = args.indexOf('--video') + 1;
   if (!confirm) return { ok: true, preview: true, platform, command, args, source_folder: resolve(sourceFolder), text,
+    ...(videoApproval ? { video_confirmation: await verifyVideoUpload(args[videoIndex], videoApproval) } : {}),
     ...(recordDistribution !== undefined ? { distribute_status: Number(recordDistribution) } : {}),
     ...(platform === 'x' && !article ? await xTextPreview(text, parsed.options.thread) : {}), ...(weiboVideo ? { video_transport: { upload_timeout_seconds: weiboVideo.upload_timeout_seconds, process_timeout_seconds: weiboVideo.process_timeout_ms / 1000 } } : {}), message: '核对正文、媒体、可见范围和平台声明；已有发布授权时加 --confirm' };
   const alias = await activeAccount(platform, account);
@@ -258,6 +306,7 @@ export async function publish(platform, input) {
   const folder = resolve(sourceFolder);
   await mkdir(folder, { recursive: true });
   const receiptPath = join(folder, `publish-result.${platform}.json`);
+  let snapshotDirectory;
   return locked(platform, alias, async () => {
     let receipt;
     try { receipt = JSON.parse(await readFile(receiptPath, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -271,9 +320,16 @@ export async function publish(platform, input) {
           ...(receipt.failure_reason ? { failure_reason: receipt.failure_reason } : {}), receipt: receiptPath } : undefined);
     }
     if (!receipt) {
+      let videoConfirmation;
+      if (videoApproval) {
+        snapshotDirectory = await mkdtemp(join(tmpdir(), 'xiaobei-video-'));
+        const snapshot = join(snapshotDirectory, basename(args[videoIndex]));
+        videoConfirmation = await verifyVideoUpload(args[videoIndex], videoApproval, snapshot);
+        args[videoIndex] = snapshot;
+      }
       await requireWriteSession(platform, alias);
       let me;
-      try { me = await status(platform, ['--account', alias]); }
+      try { me = await status(platform, ['--account', alias], { maxAgeMs: 60000 }); }
       catch (error) {
         if (platform === 'x' && error instanceof PlatformError) {
           const failure = xPublicationFailure({ ...error.diagnostic, code: error.code, detail: { ...error.diagnostic?.detail,
@@ -286,6 +342,7 @@ export async function publish(platform, input) {
       const now = new Date();
       const publishDate = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
       receipt = { platform, account: alias, user: me.data.user, state: 'submitting', publish_date: publishDate, submitted_at: now.toISOString() };
+      if (videoConfirmation) receipt.video_confirmation = videoConfirmation;
       await atomicJson(receiptPath, receipt);
       try {
         const result = await runBackend(platform, [...command.split(' '), ...args]);
@@ -319,10 +376,11 @@ export async function publish(platform, input) {
         throw new PlatformError('PUBLISH_UNKNOWN', `发布结果未知，结果文件已保存；核查本人作品或原平台，禁止重发。${message}`, 1, diagnostic);
       }
     }
+    const confirmation = receipt.video_confirmation ? { video_confirmation: receipt.video_confirmation } : {};
     if (receipt.state === 'accepted' || platform === 'kuaishou' && receipt.state === 'published') {
       receipt = await resolvePublication(platform, receipt);
       await atomicJson(receiptPath, receipt);
-      if (receipt.state === 'accepted') return { ok: true, platform, accepted: true, published: false, recorded: false, resolution_pending: true, result: receipt.result, receipt: receiptPath, message: platform === 'weibo' ? '平台已明确接受提交，作品 ID 尚待确认；保留收据，稍后重跑同一目录只查询本人作品，不会再次发布。不要删除收据或改目录重发' : '平台已明确接受提交，尚未取得创作者作品 ID；请用 kuaishou-engagement list 或原平台核查。保留 accepted 收据，重跑不会再次发布，不拿上传 fileId 拼造作品链接' };
+      if (receipt.state === 'accepted') return { ok: true, platform, accepted: true, published: false, recorded: false, resolution_pending: true, result: receipt.result, receipt: receiptPath, ...confirmation, message: platform === 'weibo' ? '平台已明确接受提交，作品 ID 尚待确认；保留收据，稍后重跑同一目录只查询本人作品，不会再次发布。不要删除收据或改目录重发' : '平台已明确接受提交，尚未取得创作者作品 ID；请用 kuaishou-engagement list 或原平台核查。保留 accepted 收据，重跑不会再次发布，不拿上传 fileId 拼造作品链接' };
     }
     if (!receipt.recorded) {
       try {
@@ -331,10 +389,12 @@ export async function publish(platform, input) {
         receipt = { ...receipt, recorded: true, record };
         await atomicJson(receiptPath, receipt);
       } catch (error) {
-        return { ok: true, platform, published: true, recorded: false, result: receipt.result, receipt: receiptPath, message: error.message };
+        return { ok: true, platform, published: true, recorded: false, result: receipt.result, receipt: receiptPath, ...confirmation, message: error.message };
       }
     }
-    return { ok: true, platform, published: true, recorded: true, result: receipt.result, receipt: receiptPath };
+    return { ok: true, platform, published: true, recorded: true, result: receipt.result, receipt: receiptPath, ...confirmation };
+  }).finally(async () => {
+    if (snapshotDirectory) await rm(snapshotDirectory, { recursive: true, force: true }).catch(() => {});
   });
 }
 function metricsOf(platform, item) {

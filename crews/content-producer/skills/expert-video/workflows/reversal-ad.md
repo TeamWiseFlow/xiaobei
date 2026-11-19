@@ -71,12 +71,12 @@ GATE A 交审脚本时必须附四问答案（`script-self-eval` 同查）：
 
 ## 素材 sourcing
 
-来源模式只允许以下四类（含混合），每段素材都必须能追溯到来源模式与授权记录：
+按实际素材选择以下模式（可混合）：
 
-1. **open_license_footage**：首选 **Blender 开源电影**——官网直链 `studio.blender.org/films/…`，无需登录，协议均为 CC BY。片库实测状态（2026-09 核验）：Big Buck Bunny / Sintel / Tears of Steel / Agent 327 官方直链可下；**Caminandes 部分集数直链已 404、Coffee Run 需登录 cloud.blender.org（302）**——选片前先 curl 探测直链可用性再定片，不要默认全片库可下。逐部记录原片 URL、许可证与署名要求；**发布简介必须带原片署名**——署名文案写入 `final-deliver.md` 交甲方并入发布说明。片库以外的片源逐案核实许可证允许商用与改编，不得把"网上能下载"等同于可用。
-2. **user_provided**：用户直供现成影视片段。入库**三查**：① `ffprobe` 全片 decode 校验（整片解码，不只读文件头，防尾部损坏）；② 记录分辨率、帧率、时长、音轨；③ 来源与授权背景向用户确认，原样记入 `final-deliver.md`。署名按用户提供的信息如实标注，不猜测、不做授权背书；版权风险由甲方确认承担，我只做技术处理。入库副本落 `raw_materials/`。
+1. **existing_footage**：使用与 Brief 剧情匹配的现成片源；可从 Blender 电影片库等来源选片。先确认实际链接可下载，记录原片名称、URL 和选用时间窗。
+2. **user_provided**：用户直供现成影视片段。入库时做全片解码校验（不只读文件头，防尾部损坏），记录分辨率、帧率、时长和音轨；副本落 `raw_materials/`。
 3. **aigc**：按 Brief 风格边界生成（公共 `aigc-video-gen`）。**每段 3–15s**；prompt 必须含**画面描述 + 音频描述**——AIGC 声画同出，源文件自带音频可作环境音床（见护栏 5）。产物存 `<project-dir>/generations/`（天然满足 `aigc-video-gen` 的 `output_videos/` 路径约束），每段附 metadata（prompt、模型、生成时间）。发布时按平台要求勾「AI 生成」标注——标注要求写入 `final-deliver.md` 交甲方。
-4. **mixed**：以上混合，每段素材独立追溯到各自的模式与授权记录。
+4. **mixed**：以上混合，逐段记录模式、文件路径与使用时间窗。
 
 通用入库要求：
 
@@ -87,7 +87,7 @@ GATE A 交审脚本时必须附四问答案（`script-self-eval` 同查）：
 
 ## Brief 必备字段
 
-缺任一项先向 Brief owner 澄清，不自行补品牌事实、授权或许可证：
+缺任一项先向 Brief owner 澄清，不自行补品牌事实：
 
 | 字段 | 要求 |
 |------|------|
@@ -96,10 +96,10 @@ GATE A 交审脚本时必须附四问答案（`script-self-eval` 同查）：
 | product_points | 产品/服务事实、允许讲的能力、禁用承诺（只以 Brief 为准，不内置品牌事实） |
 | implant_cta | Brief「业务植入与 CTA」字段：植入位置与方式、内容与业务的衔接句要求、CTA 主目标与句式；未给时按本 workflow 默认（反转点 55%–76%、植入段单点深打、片尾一个主行动且优先二次反转剧情化承载），并在 GATE A 说明 |
 | twist_variant | 任务指引式 / 双关置换式 / 身份彩蛋式 / 画面转场式 / 戏中戏式；未指定时由我据素材与故事选定，并在 GATE A 说明理由 |
-| story_source | 解说正文的故事来源（开源片名 / 用户素材 / AIGC 生成；开源片名优先 Blender 开源电影片库，见「素材 sourcing」） |
+| story_source | 解说正文的故事来源（现成片源 / 用户素材 / AIGC 生成，见「素材 sourcing」） |
 | voiceover | 仅真人出镜 / 数字人口播形态填（甲方交付口播终稿路径）；解说旁白形态写「不适用」——旁白由我写 |
-| source_mode | open_license_footage / user_provided / aigc / mixed |
-| assets | 素材绝对路径、来源 URL、许可证、授权确认记录 |
+| source_mode | existing_footage / user_provided / aigc / mixed |
+| assets | 素材绝对路径、原片链接与使用时间窗 |
 | form | 横竖屏、时长带、画面风格、配音音色与 BGM 倾向 |
 | subtitle_style | 是否烧字幕、样式与安全区；未指定按平台常规可读性处理 |
 | gates | GATE A/B 批准人；甲方代理批准时写明批准范围 |
@@ -124,7 +124,7 @@ GATE A 交审脚本时必须附四问答案（`script-self-eval` 同查）：
 4. 反转前零产品提及；意象桥成立（产品段第一镜复用剧情核心意象）。
 5. 反转两轴达标：铺垫段可信为纯内容视频且与产品世界落差足够（幅度）、接入句因果一句话可复述（丝滑）；设二次反转时 CTA 是剧情动机的延伸。
 6. 产品段占比与反转点位置落在承诺区间，且与选定手法一致。
-7. 每段素材来源与授权可追溯；Blender 署名、用户素材授权确认、AIGC 标注要求均已写入 `final-deliver.md`。
+7. 每段素材文件与使用时间窗可定位；AIGC 标注要求已写入 `final-deliver.md`。
 8. 解说旁白 / 口播（按形态）、字幕、画面、音效与 GATE A 批准稿 / Brief / `voiceover.md` 一致。
 9. `video-review` verdict=pass；未通过不得交付。
-10. `final-deliver.md` 含素材来源与协议、口播终稿、各段实际时长、自检结果、弃用产物与遗留问题。
+10. `final-deliver.md` 含素材清单、口播终稿、各段实际时长、自检结果、弃用产物与遗留问题。

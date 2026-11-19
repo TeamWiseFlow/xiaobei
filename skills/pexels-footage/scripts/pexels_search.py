@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-pexels_search.py — Search and download copyright-free images / video clips from Pexels.
+pexels_search.py — Search and download images / video clips from Pexels.
 
 Environment Variables:
   PEXELS_API_KEY   Pexels API key (required, register free at pexels.com/api)

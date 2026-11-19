@@ -63,7 +63,7 @@
     "origin": "https://weibo.com",
     "cookie_domain": "weibo.com",
     "required_cookies": [["SUB"]],
-    "hunter": ["user get", "user items", "item get", "item search", "comment list"],
+    "hunter": ["user get", "user items", "item get", "item search", "comment list", "feed list"],
     "interact": [],
     "im": [],
     "live": [],

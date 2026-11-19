@@ -110,8 +110,40 @@ class XHS_Apis():
         route_policy = compute('pc', 'route-policy', {'api': api})
         if route_policy.get('xy') and not self.auth.user_id:
             self.bootstrap()
-        sign_context = self.auth.next_sign_context(api, tier=tier)
-        b1 = self.auth.current_b1(sign_context['now'])
+        from xhs_utils.xhs_pc.state import REFERENCE_PROFILE
+        capabilities = REFERENCE_PROFILE.get('capabilities', [])
+        atomic = 'sign-request' in capabilities and not self.auth.profile.rap_fingerprint_hex
+        bundled = (atomic or 'bundle-sign' in capabilities) and not self.auth.profile.rap_fingerprint_hex
+        if atomic:
+            import time
+            context_inputs = self.auth.profile.sign_context_inputs(api, tier=tier, timestamp_ms=int(time.time()*1000))
+            sign_context = {'now': context_inputs['timestamp_ms']}
+        else:
+            sign_context = self.auth.next_sign_context(api, tier=tier)
+        computed = None
+        if bundled:
+            wire_body = data if isinstance(data, str) else '' if data is None else json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+            inputs = {'api': api, 'data': data, 'wire_body': wire_body, 'cookie': self.auth.sign_cookie,
+                      'dsl_pair': self.auth.dsl_pair}
+            if atomic:
+                inputs['context'] = context_inputs
+            else:
+                inputs.update(tier=sign_context['tier'], sign_context=sign_context)
+            if self.auth.user_id: inputs['user_id'] = self.auth.user_id
+            if self.auth.profile.fixed_b1: inputs['b1'] = self.auth.profile.fixed_b1
+            else: inputs['b1_options'] = self.auth.profile.b1_state.to_b1_options(sign_context['now'])
+            computed = compute('pc', 'sign-request' if atomic else 'bundle-sign', inputs)
+            if atomic:
+                sign_context = computed.get('context')
+                if not isinstance(sign_context, dict) or not all(sign_context.get(k) for k in ('tier', 'now', 'userAgent', 'xB3TraceId', 'xXrayTraceId')):
+                    raise RuntimeError('OFB Relay 未返回 PC 签名上下文')
+                if 'b1' not in computed or not all(computed.get(k) for k in ('xs', 'xt')):
+                    raise RuntimeError('OFB Relay 未返回 PC 签名结果')
+                self.auth.profile.session.next_seq()
+                self.auth._sync_storage_from_profile()
+            b1 = computed['b1']
+        else:
+            b1 = self.auth.current_b1(sign_context['now'])
         headers, cookies, body = generate_request_params(
             self.auth.cookies, api, data, method,
             user_id=self.auth.user_id,
@@ -122,6 +154,7 @@ class XHS_Apis():
             tier=sign_context['tier'],
             sign_context=sign_context,
             include_client_hints=False,
+            computed=computed,
         )
         headers.pop("x-mns", None)
         # Chrome's message-page bootstrap marks these cacheable GET/empty-POST
@@ -135,7 +168,7 @@ class XHS_Apis():
             headers['cache-control'] = 'no-cache'
             headers['pragma'] = 'no-cache'
         if route_policy.get('rap'):
-            headers["x-rap-param"] = generate_x_rap_param(
+            headers["x-rap-param"] = computed['x_rap_param'] if computed is not None else generate_x_rap_param(
                 api,
                 body or "",
                 app_id=self.auth.profile.release['appId'],

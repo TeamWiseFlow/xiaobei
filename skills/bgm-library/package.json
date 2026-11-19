@@ -1,7 +1,7 @@
 {
   "name": "bgm-library",
   "version": "1.0.0",
-  "description": "Search and download royalty-free background music from ccMixter (CC BY / CC BY-SA only) with auto-attribution.",
+  "description": "Search and download background music from ccMixter with track metadata.",
   "type": "module",
   "dependencies": {
     "axios": "^1.7.0",

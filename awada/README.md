@@ -1,6 +1,6 @@
 # Awada Relay V2 plugin
 
-基于 OpenClaw 2026.10.10，连接 Relay `/api/v2/awada`, 实现微信对话机器人（微信用户可以直接添加好友，基于企业微信）
+基于小贝锁定的 OpenClaw 2026.10 LTS，连接 Relay `/api/v2/awada`，实现微信对话机器人（微信用户可以直接添加好友，基于企业微信）
 
 ## 配置
 

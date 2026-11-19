@@ -118,7 +118,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subs = parser.add_subparsers(dest='command', required=True)
     gen = subs.add_parser('generate')
-    gen.add_argument('--image', required=True, help='本人/已授权肖像，文件或 HTTP(S) URL')
+    gen.add_argument('--image', required=True, help='肖像图片，文件或 HTTP(S) URL')
     gen.add_argument('--audio', required=True, help='唯一驱动音轨，文件或 HTTP(S) URL')
     gen.add_argument('--output', required=True, type=Path)
     gen.add_argument('--template', choices=['calm', 'normal', 'active'], default='calm')

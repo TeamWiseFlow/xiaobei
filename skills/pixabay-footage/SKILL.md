@@ -1,6 +1,6 @@
 ---
 name: pixabay-footage
-description: Search and download copyright-free images and video clips from Pixabay
+description: Search and download images and video clips from Pixabay
   API. Alternative to pexels-footage when Pexels has no suitable results. Supports
   both photo search (--type image) and video search (--type video, default).
 metadata:
@@ -17,7 +17,7 @@ metadata:
 
 Use this skill when:
 - Pexels results are not suitable or quota is exhausted
-- You need alternative copyright-free images or video clips
+- You need alternative images or video clips
 - Preparing visual assets for content creation
 
 **Prerequisites**: `PIXABAY_API_KEY` must be set. Register free at https://pixabay.com/api/docs/

@@ -102,7 +102,7 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 1. 图文笔记链接 → `xhs-hunter fetch <完整链接> --output-dir xhs/outputs/<note-name>/references --download-media` 保存正文、有序图片与真实指标；本 workflow 回读正文、封面和逐图结构完成参考分析，不调用 viral-chaser。
 2. 视频笔记链接 → self-spawn subagent 走 `viral-chaser`。
 3. 本地图片 / 视频 / 音频 / 文档 → 复制或提取进 `materials/`。
-4. 建立素材清单：用户原话、事实、数据、案例、画面素材、授权信息、待确认项。
+4. 建立素材清单：用户原话、事实、数据、案例、画面素材、待确认项。
 5. 区分必用素材、参考素材、对标素材；冲突时问用户，商业事实以 `business_knowledge/business_knowledge.md` 和用户最新说明为准。
 
 ## Step 3 - 选题与搜索意图
@@ -165,7 +165,7 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 - 视频名 / slug：
 - platform：xhs
 - workflow：reversal-ad / collage-broll / deck-talk（视频形态未确定时省略本字段；省略 = CP 按其通用制作流程做，叙事 / 动效 / 蒙太奇手法由 CP 据创意自定）
-- deck-talk 专属（仅该类型填写）：在 Brief 中逐项写 `- presenter_source：footage/avatar/audio`（兼容 none）、`- visual_source：slides/broll/mixed`、`- audio_origin：recorded/cloned/designed/stock-tts`、`- presenter：绝对路径`（需小窗时）、`- audio：绝对路径`（avatar/audio 模式）。实拍先用 talking-head-cut 剪好再交 CP；数字人交肖像+音频或音色档案；纯音频模式交音频，CP 配 B-roll。记录授权。
+- deck-talk 专属（仅该类型填写）：在 Brief 中逐项写 `- presenter_source：footage/avatar/audio`（兼容 none）、`- visual_source：slides/broll/mixed`、`- audio_origin：recorded/cloned/designed/stock-tts`、`- presenter：绝对路径`（需小窗时）、`- audio：绝对路径`（avatar/audio 模式）。实拍先用 talking-head-cut 剪好再交 CP；数字人交肖像+音频或音色档案；纯音频模式交音频，CP 配 B-roll。
 - 选题与观看理由：
 - 核心传达：
 - 内容创意：创意原型 + 展开逻辑 + 记忆点
@@ -175,7 +175,7 @@ DNA template 是 main agent 的生产输入模板：**图文 DNA 的 template = 
 - 封面要求：封面主文案 + 视觉方向
 - 制作规格：横屏 / 竖屏、时长带、画面风格、配音音色与声音形态、BGM 与音效、字幕
 - 口播文案：`voiceover.md` 绝对路径 / 真人口播录音绝对路径 / 不适用（口播 = 真人出镜、数字人、真人录音；剪辑配解说的**旁白归 CP 写**，写「不适用」）
-- 素材清单：逐条**绝对路径** + 来源 + 授权（无素材时写「无，由 CP 按 Brief 取材」）
+- 素材清单：逐条**绝对路径** + 来源（无素材时写「无，由 CP 按 Brief 取材」）
 - 交付物与验收：`video.mp4` + `cover.jpg` + `final-deliver.md`，回报三者绝对路径；验收标准
 - 闸门：GATE A / GATE B 批准人（用户或 main 代理批准 + 批准范围）
 - 禁止事项：事实与承诺边界、合规红线、禁用方向
@@ -227,6 +227,8 @@ Brief 硬性规则：
 
 第四个必停节点。图文确认正文、图组与封面；视频确认成片、封面、标题正文与发布描述。
 
+视频按 `video-edit` 的发布版本流程发送预览并保存确认记录。
+
 ## Step 7 - 存文件
 
 `xhs/outputs/<note-name>/`：
@@ -249,7 +251,7 @@ xhs-publish check
 xhs-publish --mode image --title "标题" --body @/绝对路径/body.txt --images img1.jpg img2.jpg img3.jpg
 
 # 2'. 视频发布
-xhs-publish --mode video --title "标题" --body @/绝对路径/body.txt --video video.mp4 --cover cover.jpg
+xhs-publish --mode video --title "标题" --body @/绝对路径/body.txt --video video.mp4 --video-approval 确认记录.json --cover cover.jpg
 ```
 
 - `--body @/绝对路径/body.txt` 由脚本读取 UTF-8 正文文件，读取失败即停止。文件只放发布正文和话题，不含标题或分节说明；不要硬编码多行正文或用 `$(cat file)` 展开。

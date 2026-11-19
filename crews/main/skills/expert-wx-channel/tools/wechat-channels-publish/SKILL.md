@@ -60,11 +60,12 @@ URL 含 `login` → 走前置条件的 `wechat-channels-publish login/login-conf
 
 ### Step 3: 上传视频
 
-```
-camoufox-cli --session wechat-channel --persistent --json upload "input[type=file]" <video.mp4>
+```bash
+wechat-channels-publish upload-video --video <母带.mp4> --video-approval <确认记录.json>
 ```
 
-- 发布页常驻一个隐藏 `<input type="file">`，**直接用选择器 upload，不要先 click 上传按钮**——click 触发按钮后 snapshot 里并不会出现 file input ref，「click → snapshot 拿 ref → upload ref」路线走不通。
+- 用 `video-edit` 的发布版本流程生成确认记录。命令会暂存母带、核对实际上传副本并设置视频文件输入。保存返回的 `video_confirmation`，在 `publish-copy.md` 关联本次发布结果及后续取得的作品链接。上传结果待核实时先检查原发布页。
+- 发布页常驻一个隐藏 `<input type="file">`。运行上传命令前保持发布页打开，直接由命令定位输入框。
 - 此时页面只有这一个 file input，裸选择器 `input[type=file]` 唯一命中。**封面弹窗打开后页面会有两个 file input**，裸选择器 strict violation——视频上传必须在打开封面弹窗之前完成（封面见 Step 5）。
 
 ### Step 4: 等待上传+转码完成

@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-24.04
     # GitHub runners use upstream registries throughout the build and install smoke test.
     env:
+      XIAOBEI_NODE_VERSION: '24.22.3'
       NPM_REGISTRY: https://registry.npmjs.org
       npm_config_registry: https://registry.npmjs.org
       PNPM_CONFIG_REGISTRY: https://registry.npmjs.org
@@ -67,7 +68,7 @@ jobs:
         # "Unable to locate executable file: pnpm"（setup-node#1351）
         uses: actions/setup-node@v6
         with:
-          node-version: '24.16.0'
+          node-version: ${{ env.XIAOBEI_NODE_VERSION }}
       - uses: pnpm/action-setup@v6
         # 不指定 version，action-setup v6 自动读 package.json 的 packageManager
         # （显式 version 会与其冲突报 "Multiple versions of pnpm specified"）
@@ -101,6 +102,7 @@ jobs:
           cd openclaw
           NODE_OPTIONS=--max-old-space-size=8192 pnpm build
           NODE_OPTIONS=--max-old-space-size=8192 pnpm ui:build
+          node ../scripts/openclaw-plugins.mjs verify
         env:
           CI: 'true'
 
@@ -124,7 +126,9 @@ jobs:
           # 1. openclaw 引擎：dist + 源码 + lockfile + package.jsons，排除 node_modules / .git / 缓存
           #    用户侧 pnpm install --prod 按 lockfile 重建 node_modules
           #    Plugin SDK 的生成包装包属于构建产物，必须保留。
+          node "$REPO/scripts/openclaw-plugins.mjs" rsync-excludes > "$RUNNER_TEMP/openclaw-plugin-excludes"
           rsync -a \
+            --exclude-from="$RUNNER_TEMP/openclaw-plugin-excludes" \
             --include='/dist/extensions/node_modules/' \
             --include='/dist/extensions/node_modules/openclaw/***' \
             --exclude='node_modules' \
@@ -187,16 +191,16 @@ jobs:
           echo "ASSET_TAG=$ASSET_TAG"
           mkdir -p "$RUNNER_TEMP/out"
 
-          # 平台 → (node_url, subdir)
-          declare -A PLATFORMS=(
-            [linux-x64]="https://nodejs.org/dist/v24.16.0/node-v24.16.0-linux-x64.tar.xz|node-v24.16.0-linux-x64"
-            [mac-arm64]="https://nodejs.org/dist/v24.16.0/node-v24.16.0-darwin-arm64.tar.xz|node-v24.16.0-darwin-arm64"
-            [mac-x64]="https://nodejs.org/dist/v24.16.0/node-v24.16.0-darwin-x64.tar.xz|node-v24.16.0-darwin-x64"
-            [win-x64]="https://nodejs.org/dist/v24.16.0/node-v24.16.0-win-x64.zip|node-v24.16.0-win-x64"
+          declare -A NODE_TARGETS=(
+            [linux-x64]=linux-x64
+            [mac-arm64]=darwin-arm64
+            [mac-x64]=darwin-x64
+            [win-x64]=win-x64
           )
 
           for plat in linux-x64 mac-arm64 mac-x64 win-x64; do
-            IFS='|' read -r url subdir <<< "${PLATFORMS[$plat]}"
+            subdir="node-v${XIAOBEI_NODE_VERSION}-${NODE_TARGETS[$plat]}"
+            url="https://nodejs.org/dist/v${XIAOBEI_NODE_VERSION}/$subdir"
             echo "=== packaging $plat ==="
             PKG="$RUNNER_TEMP/pkg-$plat"
             rm -rf "$PKG"
@@ -210,11 +214,11 @@ jobs:
 
             # portable Node
             if [[ "$plat" == win-x64 ]]; then
-              curl -fsSL -o /tmp/node.zip "$url"
+              curl -fsSL -o /tmp/node.zip "$url.zip"
               unzip -q /tmp/node.zip -d /tmp/
               mv "/tmp/$subdir" "$PKG/tools/node"
             else
-              curl -fsSL -o /tmp/node.tar.xz "$url"
+              curl -fsSL -o /tmp/node.tar.xz "$url.tar.xz"
               tar -xJf /tmp/node.tar.xz -C /tmp/
               mv "/tmp/$subdir" "$PKG/tools/node"
             fi

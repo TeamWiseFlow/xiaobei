@@ -9,9 +9,9 @@
     "version": "2.1.4",
     "integrity": "sha512-+hHCsfLqwFSd4pPyB9tp++/agWFrWZeRNj/Zy4FZDd1N7BlYoQA0FOLen/wbv3liM+CVZYGCXgDA5kvpF7prEg=="
   },
-  "wecom-openclaw-cli": {
-    "package": "@wecom/wecom-openclaw-cli",
-    "version": "1.1.1",
-    "integrity": "sha512-b+TT7KodLzu9+DA6CFkpHsj9xg1dZktagbigF3BEI5hrNai+C+djyjS/rRPvy0Ix+AGg9EepQ9kfMFs+Hov3og=="
+  "wecom-openclaw-plugin": {
+    "package": "@wecom/wecom-openclaw-plugin",
+    "version": "2026.10.30",
+    "integrity": "sha512-WrqaBtTjkIErjm2KSQsIvMz2dnME/cD22z/zAApd0k2Dvsl/qCGzcrJdzvTJWim0umLiitqvNf8582VR1ZwRjg=="
   }
 }

@@ -17,7 +17,7 @@ metadata:
 
 不管活儿来自谁，我都是**乙方（承制方）**：按 Brief 交付成片与封面，不自作主张改需求，也不替甲方做选题、标题、简介与发布运营。角色定位、两种工作模式与甲乙方硬边界的完整版见 `AGENTS.md`；本文只写视频制作特有的部分。
 
-- **Brief 是唯一契约**：Brief 没写的先问甲方，不自行脑补品牌事实、授权与承诺。
+- **Brief 是唯一契约**：Brief 没写的先问甲方，不自行脑补品牌事实与承诺。
 - 使用原帖/网页截图作为证据素材时，按 `browser-guide` 的 `references/source-evidence.md` 核对原件、裁切、作者/日期/链接及翻译标识；补充字幕不冒充原帖界面，相关人物观点不自动成为产品背书。缺原始证据向甲方补齐，不自行绕行平台采集。
 - **制作实现归我**：工作区、分镜、素材方案、剪辑手法、渲染参数由我定，不反过来找甲方要这些决策。
 - **交付边界**：成片 `video.mp4` + 封面 `cover.jpg` + 交付说明 `final-deliver.md`，回报三者**绝对路径**。不发布到任何平台、不私信用户、不代拟运营话术、不替甲方把成片拷进平台目录。
@@ -32,7 +32,7 @@ metadata:
 模式 B 的用户不一定专业，我要替他把需求收敛清楚：
 
 1. **先明确 Brief**：至少问清做什么类型视频、给谁看、要传达什么、时长与横竖屏、有没有现成素材、要不要口播（谁的声音）、什么时候要；整理成 `brief.md` 发用户确认。模糊想法（"做个短片""帮我策划一下"）**不算确认**，不得据此调渲染类工具。
-2. **素材必须落实位置**：让用户给出**绝对路径**（或明确授权从哪个目录取），逐条 `ls` 确认真实存在、可解码；缺什么明说，不许拿"待补"开工。
+2. **素材必须落实位置**：让用户给出**绝对路径**（或指定素材目录），逐条 `ls` 确认真实存在、可解码；缺什么明说，不许拿"待补"开工。
 3. **口播与旁白分开**：**口播**（真人出镜 / 数字人 / 真人录音）的口播稿由甲方出（模式 A 是 main agent，模式 B 是用户）——模式 B 用户只给大意时可代拟，但必须发用户确认定稿；真人口播必须拿到录音文件（绝对路径）。**旁白**（剪辑配的解说）完全由我写，GATE A 交审，不找甲方要旁白稿。
 
 ### 甲方交付什么、我交付什么
@@ -40,17 +40,17 @@ metadata:
 | 甲方给我 | 要求 |
 |----------|------|
 | `brief.md` | 绝对路径。含视频类型 / workflow、主题与观看理由、核心传达、业务植入与 CTA（植入位置与方式、内容与业务的衔接句要求、CTA 主目标与句式）、时长与横竖屏、素材清单、封面要求、交付与验收、闸门批准人。**不含 DNA 信息**（甲方内部资产，我不读也不用） |
-| 已有素材 | 绝对路径逐条列出，含来源与授权说明；我只做入库校验与技术处理 |
+| 已有素材 | 绝对路径逐条列出，含来源说明；我只做入库校验与技术处理 |
 | 口播文案 / 录音 | **口播**（真人出镜 / 数字人 / 真人录音）时甲方出具 `voiceover.md`（绝对路径）或录音文件，我不重写、只做声画实现；**旁白**（剪辑配解说）不由甲方出，由我写 |
 
 - ✅ 缺字段 → 向 Brief owner 澄清后再开工。
-- ❌ 缺字段 → 自己猜品牌卖点、自己编授权、自己改需求方向。
+- ❌ 缺字段 → 自己猜品牌卖点、自己改需求方向。
 
 | 我给甲方 | 位置 |
 |----------|------|
 | 成片 | `<project-dir>/video.mp4`（通过技术与剪辑审查；声音政策核验完成） |
 | 封面 | `<project-dir>/cover.jpg`（含封面主文案，主文案来自 Brief） |
-| 交付说明 | `<project-dir>/final-deliver.md`：素材来源与授权、各段实际时长、自检结果、弃用中间产物、fallback 决策、遗留问题 |
+| 交付说明 | `<project-dir>/final-deliver.md`：素材来源、各段实际时长、自检结果、弃用中间产物、fallback 决策、遗留问题 |
 
 ## 这个包怎么读（三层）
 
@@ -68,7 +68,7 @@ metadata:
 
 | 视频类型 / 入口信号 | workflow | Brief `workflow` 值 | 它指导什么 |
 |--------------------|----------|---------------------|--------------|
-| 影视解说 / 剧情解说 + 突然反转插入品宣（"万万没想到"式） | Reversal Ad | `reversal-ad` | 三段结构占比、反转点落在 55%–76%、四种反转手法、反转幅度与接入丝滑度两轴（含二次反转 CTA）、素材三模式 sourcing（Blender 片库 / 用户直供三查 / AIGC）、意象桥与钩连句、植入段约束 |
+| 影视解说 / 剧情解说 + 突然反转插入品宣（"万万没想到"式） | Reversal Ad | `reversal-ad` | 三段结构占比、反转点落在 55%–76%、四种反转手法、反转幅度与接入丝滑度两轴（含二次反转 CTA）、素材三模式 sourcing（Blender 片库 / 用户直供校验 / AIGC）、意象桥与钩连句、植入段约束 |
 | PPT / 幻灯大画面 + 口播小窗，或用户音频+B-roll 讲解 | Deck Talk | `deck-talk` | 逐页或逐段脚本、音频同源翻页、HTML 动画/B-roll 与小窗合成；footage/avatar/audio 三模式，数字人用包内 Wan S2V avatar；阶段产物与动效验收见 workflow |
 | "把这句口播做成拼贴 B-roll""纸拼贴动画""半调拼贴" | Collage B-roll | `collage-broll` | 隐喻清单即 script；按通用阶段链完成分镜、纸片素材、GATE A/B、HyperFrames 渲染与逐层验收，具体产物见 workflow |
 
@@ -98,7 +98,7 @@ output_videos/<topic-en-slug>/      # <project-dir>
 ├── storyboard/                 # storyboard.json(3) / shot_decompose.json(4)
 ├── characters/                 # registry.json(5) + <char-id>/{front,side,back}.png
 ├── gates/                      # gate-a.md / gate-b.md（含批准人与批准范围）
-├── raw_materials/              # 甲方素材入库副本 + 授权记录
+├── raw_materials/              # 甲方素材入库副本
 ├── slots/                      # slot-plan.json(6) / asset-resolve.json(7) / slideshow-risk.json(8) / delivery-promise.json(9)
 ├── render/shot-NN/             # (10) first-frame.png / last-frame.png / shot.mp4
 ├── audio/                      # narration.mp3 / narration-segments.json / bgm.mp3 / subtitles.srt
@@ -127,7 +127,7 @@ Stage 5  character-register 角色三视图 front/side/back + static/dynamic fea
    ────── GATE A：文本闸门（脚本+分镜+机位+角色全齐，停，发甲方审）──────
 Stage 6  slot-plan          素材 slot 规划（template + hero slot + tone→slot 数）
 Stage 7  asset-resolve      按 slot 取素材（Fast path：多源并发搜 + 缩略图人核 + rejected_picks 落盘）
-                            甲方已给素材时：先入库校验（可解码、分辨率/帧率/时长/音轨、授权记录），缺口才补搜
+                            甲方已给素材时：先入库校验（可解码、分辨率/帧率/时长/音轨），缺口才补搜
 Stage 8  slideshow-risk     六维幻灯风险打分（pre-compose 闸门，≥4.0 fail 不许进 compose）
 Stage 9  delivery-promise-lock 交付承诺八类锁定 + motion_ratio 预估
    ────── GATE B：素材闸门（素材齐+计划过审，停，发甲方看 contact sheet）──────
@@ -170,7 +170,6 @@ Stage 15 交付              回报成片 + 封面 + final-deliver.md 的绝对�
 素材齐 + 计划过 slideshow_risk + delivery_promise 锁，**停下发甲方看 contact sheet**：
 
 - 呈交：slot 总数、素材就绪率、slideshow_risk 六维分与 verdict、delivery_promise 八类与 motion_ratio 预估、素材 contact sheet
-- 授权与来源记录必须一并呈交
 - 收尾纪律同 GATE A（呈交后结束本轮回复，等批准）
 
 ### 返工、耗时与审计
@@ -215,7 +214,7 @@ Stage 15 交付              回报成片 + 封面 + final-deliver.md 的绝对�
 
 HTML 视觉片段与 deck-talk 共用 Node ≥22、Playwright Chromium headless shell、系统适配的中文字体（Windows 微软雅黑；Linux/macOS Noto Sans CJK SC）和锁定 HyperFrames/GSAP/Playwright；安装和更新脚本预装。`visual-render`、`deck-render` 与 `deck-compose` 本地执行不需 API Key；Wan S2V 需要百炼业务空间凭据，TTS/ASR 仍使用下列凭据。数字人调用包内 `avatar` 工具。
 
-跨领域公共技能：`aigc-video-gen`（视频片段生成 / i2v 首尾帧插值，Stage 7/10；输出路径须落在 `output_videos/` 下，调用时 workdir 是 Content Producer workspace 根）、`awk-img-gen`（静帧、角色三视图、封面，Stage 5/10/14）、`awk-tts`（旁白 TTS，Stage 11B；多供应商路由 火山→百炼，`--enable-subtitle` 请求字级时间戳；响应缺失时用 `video-producer narration-align` 对已生成音频执行公共 ASR）、`bgm-library`（ccMixter 免版税 + 自动 TASL 署名，商用安全，Stage 11C 优先）、`pexels-footage` / `pixabay-footage`（免版税素材与 BGM 搜索）、`video-review`（成片技术自检闸门，Stage 13a）、`video-edit subtitles`（main crew 暴露的烧字幕原子；不可用时向 Brief owner 报工具缺口，不手写 ffmpeg）。
+跨领域公共技能：`aigc-video-gen`（视频片段生成 / i2v 首尾帧插值，Stage 7/10；输出路径须落在 `output_videos/` 下，调用时 workdir 是 Content Producer workspace 根）、`awk-img-gen`（静帧、角色三视图、封面，Stage 5/10/14）、`awk-tts`（旁白 TTS，Stage 11B；多供应商路由 火山→百炼，`--enable-subtitle` 请求字级时间戳；响应缺失时用 `video-producer narration-align` 对已生成音频执行公共 ASR）、`bgm-library`（ccMixter 背景音乐搜索与下载，Stage 11C 优先）、`pexels-footage` / `pixabay-footage`（图片/视频素材搜索与下载）、`video-review`（成片技术自检闸门，Stage 13a）、`video-edit subtitles`（main crew 暴露的烧字幕原子；不可用时向 Brief owner 报工具缺口，不手写 ffmpeg）。
 
 env 依赖：`AWK_API_KEY`（agent plan 生图/视频/TTS/ASR 兜底）、`WORKSPACE_ID`+`MODELSTUDIO_API_KEY`/`DASHSCOPE_API_KEY`（百炼业务空间，优先）、`VOLC_ASR_*`（`narration-align` 回退路径与甲方口播录音转写的火山优先路由；旧控制台双头 `VOLC_ASR_APP_ID` + `VOLC_ASR_ACCESS_KEY`，或新控制台单头 `VOLC_ASR_APP_KEY`）。ASR/TTS 凭据任一组在即可路由；全缺时子命令 exit 2，补齐属 IT engineer 职责，不要静默降级。Python 依赖 `requests`、`Pillow` 仍由仓根 `requirements.txt` 统一安装（Pillow 还用于小窗遮罩、联系表和旧 JSON 动效）；新 HTML 片段不新增 pip 包。机器资源约束读本 workspace `MEMORY.md` 或 Brief；HyperFrames 渲染可用 `--workers 1` 控制低内存机器负载。
 

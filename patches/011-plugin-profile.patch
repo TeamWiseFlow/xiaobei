@@ -1,0 +1,270 @@
+diff --git a/scripts/lib/bundled-plugin-build-entries.mjs b/scripts/lib/bundled-plugin-build-entries.mjs
+--- a/scripts/lib/bundled-plugin-build-entries.mjs
++++ b/scripts/lib/bundled-plugin-build-entries.mjs
+@@ -241,7 +241,17 @@
+   return filesByPlugin;
+ }
+ 
++export function readXiaobeiPluginBuildIds(cwd) {
++  const profilePath = path.join(cwd, ".xiaobei-plugins.json");
++  if (!fs.existsSync(profilePath)) {
++    return null;
++  }
++  const { plugins, buildSupport } = JSON.parse(fs.readFileSync(profilePath, "utf8"));
++  return new Set([...plugins, ...buildSupport]);
++}
++
+ function collectBundledPluginCandidates(cwd, extensionsRoot) {
++  const selected = readXiaobeiPluginBuildIds(cwd);
+   const candidates =
+     collectTrackedBundledPluginFiles(cwd) ??
+     new Map(
+@@ -251,6 +261,7 @@
+         .map((dirent) => [dirent.name, null]),
+     );
+   return [...candidates]
++    .filter(([dirName]) => !selected || selected.has(dirName))
+     .map(([dirName, relativeFiles]) => {
+       const pluginDir = path.join(extensionsRoot, dirName);
+       return {
+diff --git a/src/plugins/bundled-dir.ts b/src/plugins/bundled-dir.ts
+--- a/src/plugins/bundled-dir.ts
++++ b/src/plugins/bundled-dir.ts
+@@ -45,8 +45,14 @@
+   return DISABLED_BUNDLED_PLUGINS_DIR;
+ }
+ 
++function hasXiaobeiPluginProfile(packageRoot: string): boolean {
++  return pluginCacheExistsSync(path.join(packageRoot, ".xiaobei-plugins.json"));
++}
++
+ export function isSourceCheckoutRoot(packageRoot: string): boolean {
+   return (
++    // Xiaobei managed builds ship a selected plugin set, even in a Git checkout.
++    !hasXiaobeiPluginProfile(packageRoot) &&
+     pluginCacheExistsSync(path.join(packageRoot, "pnpm-workspace.yaml")) &&
+     pluginCacheExistsSync(path.join(packageRoot, "src")) &&
+     pluginCacheExistsSync(path.join(packageRoot, "extensions"))
+@@ -227,6 +233,12 @@
+   preference: PluginRuntimeArtifactPreference = "bundled",
+ ): string | undefined {
+   const builtExtensionsDir = path.join(packageRoot, "dist", "extensions");
++  // Isolated plugins resolve their package-local dependencies from the compiled tree.
++  if (hasXiaobeiPluginProfile(packageRoot)) {
++    return isPluginInPackageBundledRoots({ rootDir: builtExtensionsDir, packageRoot })
++      ? builtExtensionsDir
++      : undefined;
++  }
+   const runtimeExtensionsDir = path.join(packageRoot, "dist-runtime", "extensions");
+   if (isSourceCheckoutRoot(packageRoot)) {
+     const sourceExtensionsDir = path.join(packageRoot, "extensions");
+diff --git a/src/plugins/discovery.ts b/src/plugins/discovery.ts
+--- a/src/plugins/discovery.ts
++++ b/src/plugins/discovery.ts
+@@ -15,6 +15,7 @@
+ import {
+   hasUsableBundledPluginTree,
+   isPluginInPackageBundledRoots,
++  isSourceCheckoutRoot,
+   resolveBundledPluginsDir,
+   resolveSourceCheckoutDependencyDiagnostic,
+ } from "./bundled-dir.js";
+@@ -436,8 +437,7 @@
+   const packageRoot = path.dirname(extensionsDir);
+   return (
+     pluginCacheExistsSync(path.join(packageRoot, ".git")) &&
+-    pluginCacheExistsSync(path.join(packageRoot, "pnpm-workspace.yaml")) &&
+-    pluginCacheExistsSync(path.join(packageRoot, "src")) &&
++    isSourceCheckoutRoot(packageRoot) &&
+     hasUsableBundledPluginTree(extensionsDir)
+   );
+ }
+diff --git a/scripts/lib/bundled-plugin-build-entries.d.mts b/scripts/lib/bundled-plugin-build-entries.d.mts
+--- a/scripts/lib/bundled-plugin-build-entries.d.mts
++++ b/scripts/lib/bundled-plugin-build-entries.d.mts
+@@ -25,6 +25,7 @@
+ 
+ export const DOCKER_SELECTED_PLUGIN_BUILD_IDS_ENV: string;
+ export const BUNDLED_PLUGIN_BUILD_ENV_NAMES: string[];
++export function readXiaobeiPluginBuildIds(cwd: string): Set<string> | null;
+ export function resolvePluginRuntimeFormat(packageJson: unknown): "cjs" | "esm";
+ export function pluginRuntimeExtension(runtimeFormat: "cjs" | "esm"): ".cjs" | ".js";
+ export function mapPluginCatalogEntries<T extends Record<string, unknown>>(
+diff --git a/scripts/bundled-plugin-assets.mts b/scripts/bundled-plugin-assets.mts
+--- a/scripts/bundled-plugin-assets.mts
++++ b/scripts/bundled-plugin-assets.mts
+@@ -5,7 +5,10 @@
+ import path from "node:path";
+ import { pathToFileURL } from "node:url";
+ // Discovers and runs bundled plugin package asset hooks.
+-import { collectSourceCheckoutPluginBuildEntries } from "./lib/bundled-plugin-build-entries.mjs";
++import {
++  collectSourceCheckoutPluginBuildEntries,
++  readXiaobeiPluginBuildIds,
++} from "./lib/bundled-plugin-build-entries.mjs";
+ import { assertRealOutputRoot } from "./lib/output-root-guard.mjs";
+ import { runPluginAssetCommand } from "./lib/plugin-asset-command.mts";
+ import { isRecord } from "./lib/record-shared.mjs";
+@@ -119,9 +122,14 @@
+     return [];
+   }
+ 
++  const selected = readXiaobeiPluginBuildIds(repoRoot);
+   const hooks = [];
+   for (const entry of entries) {
+-    if (!entry.isDirectory() || deferredPluginIds.has(entry.name)) {
++    if (
++      !entry.isDirectory() ||
++      (selected && !selected.has(entry.name)) ||
++      deferredPluginIds.has(entry.name)
++    ) {
+       continue;
+     }
+     const pluginDir = path.join(extensionsDir, entry.name);
+diff --git a/scripts/lib/static-extension-assets.mts b/scripts/lib/static-extension-assets.mts
+--- a/scripts/lib/static-extension-assets.mts
++++ b/scripts/lib/static-extension-assets.mts
+@@ -2,7 +2,10 @@
+ import fs from "node:fs";
+ import { createRequire } from "node:module";
+ import path from "node:path";
+-import { parseDockerSelectedPluginBuildIdFilter } from "./bundled-plugin-build-entries.mjs";
++import {
++  parseDockerSelectedPluginBuildIdFilter,
++  readXiaobeiPluginBuildIds,
++} from "./bundled-plugin-build-entries.mjs";
+ import { collectTrackedBundledPluginSourceCandidates } from "./bundled-plugin-source-utils.mts";
+ import { isRecord } from "./record-shared.mjs";
+ 
+@@ -88,10 +91,11 @@
+ }
+ 
+ function listExtensionPackageDirs(rootDir: string, fsImpl: typeof fs) {
+-  return (
++  const selected = readXiaobeiPluginBuildIds(rootDir);
++  const packages =
+     listTrackedExtensionPackageDirs(rootDir, fsImpl) ??
+-    listFilesystemExtensionPackageDirs(rootDir, fsImpl)
+-  );
++    listFilesystemExtensionPackageDirs(rootDir, fsImpl);
++  return packages.filter(({ dirName }) => !selected || selected.has(dirName));
+ }
+ 
+ function readPackageStaticAssetEntries(packageJson: Record<string, unknown>) {
+diff --git a/scripts/write-cli-startup-metadata.ts b/scripts/write-cli-startup-metadata.ts
+--- a/scripts/write-cli-startup-metadata.ts
++++ b/scripts/write-cli-startup-metadata.ts
+@@ -9,6 +9,7 @@
+ import pMap from "p-map";
+ import type { RootHelpRenderOptions } from "../src/cli/program/root-help.js";
+ import type { OpenClawConfig } from "../src/config/config.js";
++import { readXiaobeiPluginBuildIds } from "./lib/bundled-plugin-build-entries.mjs";
+ import { resolveCliStartupRootHelpBundleIdentity } from "./lib/cli-startup-root-help-bundle.js";
+ import {
+   inspectManagedProcessGroup,
+@@ -285,11 +286,12 @@
+ 
+ function readBundledChannelCatalog(
+   extensionsDirOverride: string = extensionsDir,
++  selected?: Set<string> | null,
+ ): BundledChannelCatalog {
+   const entries: ExtensionChannelEntry[] = [];
+   const signature = createHash("sha1");
+   for (const dirEntry of readdirSync(extensionsDirOverride, { withFileTypes: true })) {
+-    if (!dirEntry.isDirectory()) {
++    if (!dirEntry.isDirectory() || (selected && !selected.has(dirEntry.name))) {
+       continue;
+     }
+     const packageJsonPath = path.join(extensionsDirOverride, dirEntry.name, "package.json");
+@@ -878,14 +880,19 @@
+   const resolvedOutputPath = options?.outputPath ?? outputPath;
+   const resolvedExtensionsDir = options?.extensionsDir ?? extensionsDir;
+   const resolvedSourceRootDir = options?.sourceRootDir ?? rootDir;
+-  const channelCatalog = readBundledChannelCatalog(resolvedExtensionsDir);
++  const selected = readXiaobeiPluginBuildIds(resolvedSourceRootDir);
++  const hasBrowser = !selected || selected.has("browser");
++  const channelCatalog = readBundledChannelCatalog(resolvedExtensionsDir, selected);
+   const bundleIdentity = resolveCliStartupRootHelpBundleIdentity(resolvedDistDir);
+-  const browserHelpSourceSignature = resolveBrowserHelpSourceSignature(resolvedSourceRootDir);
++  const browserHelpSourceSignature = hasBrowser
++    ? resolveBrowserHelpSourceSignature(resolvedSourceRootDir)
++    : undefined;
+   const secretsHelpSourceSignature = resolveSecretsHelpSourceSignature(resolvedSourceRootDir);
+   const nodesHelpSourceSignature = resolveNodesHelpSourceSignature(resolvedSourceRootDir);
+   const subcommandHelpSourceSignature = resolveSubcommandHelpSourceSignature(resolvedSourceRootDir);
+   const bundledPluginsDir = path.join(resolvedDistDir, "extensions");
+-  const channelOptions = [...new Set([...CORE_CHANNEL_ORDER, ...channelCatalog.ids])];
++  const coreChannelOrder = selected ? CORE_CHANNEL_ORDER.filter((id) => selected.has(id)) : CORE_CHANNEL_ORDER;
++  const channelOptions = [...new Set([...coreChannelOrder, ...channelCatalog.ids])];
+ 
+   let existing: ExistingCliStartupMetadata | undefined;
+   try {
+@@ -936,7 +943,7 @@
+       : undefined;
+   if (
+     reusableRootHelpText &&
+-    reusableBrowserHelpText &&
++    (!hasBrowser || reusableBrowserHelpText) &&
+     reusableSecretsHelpText &&
+     reusableNodesHelpText &&
+     reusableSubcommandHelpText
+@@ -977,7 +984,7 @@
+     options?.renderSourceNodesHelpText ||
+     options?.renderSourceSubcommandHelpTextRecord;
+   const sourceCommandsToRender: SourceCommandHelpCommand[] = [];
+-  if (!reusableBrowserHelpText) {
++  if (hasBrowser && !reusableBrowserHelpText) {
+     sourceCommandsToRender.push("browser");
+   }
+   if (!reusableSecretsHelpText) {
+@@ -1009,11 +1016,9 @@
+               ((context, taskContext) =>
+                 renderSourceCommandHelpText(command, context, taskContext)),
+           );
+-  const browserHelpTextPromise = commandHelp(
+-    "browser",
+-    reusableBrowserHelpText,
+-    options?.renderSourceBrowserHelpText,
+-  );
++  const browserHelpTextPromise = hasBrowser
++    ? commandHelp("browser", reusableBrowserHelpText, options?.renderSourceBrowserHelpText)
++    : Promise.resolve(undefined);
+   const secretsHelpTextPromise = commandHelp(
+     "secrets",
+     reusableSecretsHelpText,
+diff --git a/tsdown.config.ts b/tsdown.config.ts
+--- a/tsdown.config.ts
++++ b/tsdown.config.ts
+@@ -6,6 +6,7 @@
+ import {
+   collectBundledPluginBuildEntries,
+   collectRetainedDoctorBuildEntries,
++  readXiaobeiPluginBuildIds,
+   collectPluginDeclarationSourceEntries,
+   collectSourceCheckoutPluginBuildEntries,
+   createBundledPluginBuildInventory,
+@@ -339,6 +340,7 @@
+ }
+ 
+ const bundledPluginBuildInventory = createBundledPluginBuildInventory();
++const xiaobeiPluginBuildIds = readXiaobeiPluginBuildIds(bundledPluginBuildInventory.cwd);
+ const bundledPluginBuildEntries = collectBundledPluginBuildEntries(bundledPluginBuildInventory);
+ const shouldBuildPrivateQaEntries = process.env.OPENCLAW_BUILD_PRIVATE_QA === "1";
+ const selectedPluginSdkEntrypoints = shouldBuildPrivateQaEntries
+@@ -739,9 +741,13 @@
+       ),
+     ),
+     ...listBundledPluginEntrySources(rootBundledPluginBuildEntries),
+-    "extensions/browser/native-host-entry": "extensions/browser/native-host-entry.ts",
+-    "extensions/browser/relay-daemon-entry": "extensions/browser/relay-daemon-entry.ts",
+-    "extensions/browser/setup-entry": "extensions/browser/setup-entry.ts",
++    ...(!xiaobeiPluginBuildIds || xiaobeiPluginBuildIds.has("browser")
++      ? {
++          "extensions/browser/native-host-entry": "extensions/browser/native-host-entry.ts",
++          "extensions/browser/relay-daemon-entry": "extensions/browser/relay-daemon-entry.ts",
++          "extensions/browser/setup-entry": "extensions/browser/setup-entry.ts",
++        }
++      : {}),
+     ...bundledHookEntries,
+   };
+ }

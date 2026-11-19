@@ -15,7 +15,8 @@ def config_path() -> Path:
     return Path(
         os.environ.get(
             "OPENCLAW_CONFIG_PATH",
-            Path.home() / ".openclaw" / "openclaw.json",
+            Path(os.environ.get("OPENCLAW_STATE_DIR") or Path.home() / ".openclaw")
+            / "openclaw.json",
         )
     ).expanduser()
 
@@ -175,20 +176,31 @@ def main() -> None:
         raise SystemExit(f"config.channels.{channel}.accounts must be an object")
     for account in plan_accounts:
         account_id = account["accountId"]
-        accounts_config[account_id] = {
-            **(accounts_config.get(account_id) if isinstance(accounts_config.get(account_id), dict) else {}),
-            "name": account["name"],
-            "appId": account["appId"],
-            "appSecret": account["appSecret"],
-            "dmPolicy": account["dmPolicy"],
-            "groupPolicy": account["groupPolicy"],
-        }
+        existing = accounts_config.get(account_id)
+        account_config = dict(existing) if isinstance(existing, dict) else {}
+        account_config.update(
+            name=account["name"], dmPolicy=account["dmPolicy"], groupPolicy=account["groupPolicy"]
+        )
+        if channel == "wecom":
+            account_config.pop("appId", None)
+            account_config.pop("appSecret", None)
+            account_config.update(botId=account["appId"], secret=account["appSecret"])
+            allow_from = account_config.get("allowFrom", channel_config.get("allowFrom", []))
+            if account["dmPolicy"] == "open":
+                entries = allow_from if isinstance(allow_from, list) else []
+                account_config["allowFrom"] = entries if "*" in entries else [*entries, "*"]
+            elif isinstance(allow_from, list) and "*" in allow_from:
+                account_config["allowFrom"] = [entry for entry in allow_from if entry != "*"]
+        else:
+            account_config.update(appId=account["appId"], appSecret=account["appSecret"])
+        accounts_config[account_id] = account_config
 
     plugins = ensure_dict(config, "plugins")
     plugin_entries = ensure_dict(plugins, "entries")
-    plugin_config = plugin_entries.setdefault(channel, {"enabled": True})
+    plugin_id = "wecom-openclaw-plugin" if channel == "wecom" else channel
+    plugin_config = plugin_entries.setdefault(plugin_id, {"enabled": True})
     if not isinstance(plugin_config, dict):
-        raise SystemExit(f"config.plugins.entries.{channel} must be an object")
+        raise SystemExit(f"config.plugins.entries.{plugin_id} must be an object")
     plugin_config["enabled"] = True
 
     bindings = ensure_list(config, "bindings")

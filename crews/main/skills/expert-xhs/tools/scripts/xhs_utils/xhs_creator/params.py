@@ -276,18 +276,60 @@ def generate_profile_request_params(
     cookies = profile.cookie_map
     if not cookies.get('a1'):
         raise ValueError('Creator profile Cookie must contain a1')
-    context = profile.next_sign_context(tier=tier, mns_profile=mns_profile)
-    b1 = (
-        profile.current_b1(context['now'], profile_name=b1_profile)
-        if b1_value is None
-        else str(b1_value)
-    )
+    from .state import REFERENCE_PROFILE
+    from xhs_utils.relay import compute
+    capabilities = REFERENCE_PROFILE.get('capabilities', [])
+    atomic = 'sign-request' in capabilities
+    bundled = atomic or 'bundle-sign' in capabilities
+    if atomic:
+        from .state import now_ms
+        context_inputs = profile.sign_context_inputs(tier=tier, mns_profile=mns_profile, timestamp_ms=now_ms())
+        context = {'now': context_inputs['timestamp_ms']}
+    else:
+        context = profile.next_sign_context(tier=tier, mns_profile=mns_profile)
+    cached_b1 = profile._named_b1_values.get(str(b1_profile)) if b1_profile and not profile._b1_state_explicit else None
+    given_b1 = b1_value if b1_value is not None else profile.fixed_b1 or cached_b1
+    if bundled:
+        b1 = given_b1
+    else:
+        b1 = (
+            profile.current_b1(context['now'], profile_name=b1_profile)
+            if b1_value is None else str(b1_value)
+        )
     dsl_pair = (
         profile.dsl_pair(context['now'])
         if dsl_pair_value is None
         else str(dsl_pair_value)
     )
-    result = run_signer(
+    if bundled:
+        body = data if isinstance(data, str) else '' if data is None else json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+        inputs = {'api': api, 'data': data, 'wire_body': body, 'cookie': '; '.join(f'{k}={v}' for k,v in cookies.items()),
+                  'dsl_pair': dsl_pair}
+        if atomic:
+            inputs['context'] = context_inputs
+        else:
+            inputs.update(tier=context['tier'], sign_context=context)
+        if b1 is not None: inputs['b1'] = str(b1)
+        else:
+            state = profile.b1_state
+            if b1_profile and not profile._b1_state_explicit:
+                from .state import CreatorB1RuntimeState
+                state = profile._named_b1_states.setdefault(str(b1_profile), CreatorB1RuntimeState.reference(
+                    started_at=profile.session.loadts, profile_name=str(b1_profile)))
+            inputs['b1_options'] = state.to_b1_options(context['now'])
+        result = compute('creator', 'sign-request' if atomic else 'bundle-sign', inputs)
+        if atomic:
+            context = result.get('context')
+            if not isinstance(context, dict) or not all(context.get(k) for k in ('tier', 'now', 'userAgent', 'xB3TraceId', 'xXrayTraceId')):
+                raise RuntimeError('OFB Relay 未返回 Creator 签名上下文')
+            if 'b1' not in result or not all(result.get(k) for k in ('xs', 'xt', 'xs_common')):
+                raise RuntimeError('OFB Relay 未返回 Creator 签名结果')
+            profile.session.next_seq()
+            profile.session.sign_count += 1
+        if b1_profile and not profile._b1_state_explicit:
+            profile._named_b1_values[str(b1_profile)] = result['b1']
+    else:
+        result = run_signer(
         api,
         data,
         cookie='; '.join(f'{key}={value}' for key, value in cookies.items()),
@@ -295,7 +337,7 @@ def generate_profile_request_params(
         dsl_pair=dsl_pair,
         tier=context['tier'],
         sign_context=context,
-    )
+        )
     headers = get_request_headers_template(
         context,
         method=method,
@@ -312,6 +354,8 @@ def generate_profile_request_params(
         'x-t': str(result['xt']),
         'x-s-common': result['xs_common'],
     })
+    if result.get('x_rap_param'):
+        headers['x-rap-param'] = result['x_rap_param']
     if data == '' or data is None:
         body = ''
     elif isinstance(data, str):

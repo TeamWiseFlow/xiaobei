@@ -5,6 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
+import { applyBundledPluginDefaults } from "./openclaw-plugins.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 let write = false;
@@ -50,6 +51,8 @@ const result = migrate(raw, {});
 if (result.partiallyValid)
   throw new Error("Doctor migration found remaining validation errors; config was not changed");
 const candidate = structuredClone(result.sourceConfig ?? result.config ?? raw);
+const template = JSON.parse(fs.readFileSync(path.join(root, "config-templates/openclaw.json"), "utf8"));
+applyBundledPluginDefaults(candidate, template);
 // xiaobei owns the pinned engine upgrade. Native discovery fetches the upstream
 // development branch even for a detached release and can leave large partial packs.
 candidate.update ??= {};

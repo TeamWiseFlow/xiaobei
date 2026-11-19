@@ -77,7 +77,8 @@ export async function preparedArchive() {
   const filename = profile.artifact?.filename;
   if (!filename || filename !== basename(filename)) throw new Error('Invalid prepared artifact name');
   const candidates = [process.env.XIAOBEI_PLATFORM_RUNTIME_ARCHIVE,
-    join(process.env.XIAOBEI_CACHE_DIR || join(homedir(), '.xiaobei/cache'), filename), join(cache, filename)].filter(Boolean);
+    join(process.env.XIAOBEI_CACHE_DIR || join(homedir(), '.xiaobei/cache'), filename), join(cache, filename),
+    join(root, 'assets', filename)].filter(Boolean);
   let archive;
   for (const file of candidates) {
     try { archive = await fs.readFile(file); break; }

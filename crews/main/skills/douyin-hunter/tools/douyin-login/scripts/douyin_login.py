@@ -238,6 +238,9 @@ def main():
             next_step = "sms-mfa-prepare" if pending.get("action") == "sms-login" and pending.get("response") else "report-verification"
         if state.runtime_expired:
             next_step = "restart"
+        if state.state.get("login_error"):
+            identity_verified = False
+            next_step = "restart"
         return {
             "ok": True,
             "session_file": str(state.path),
@@ -245,6 +248,7 @@ def main():
             "cookie_present": cookie_present,
             "identity_verified": identity_verified,
             "logged_in": identity_verified,
+            **({"login_error": state.state["login_error"]} if state.state.get("login_error") else {}),
             "initialized": bool(state.state.get("initialized")),
             "automatic_login": bool(state.state.get("relay_runtime")),
             "runtime_expires_at": state.state.get("runtime_expires_at"),

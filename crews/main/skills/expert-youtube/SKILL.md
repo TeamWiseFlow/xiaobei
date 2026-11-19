@@ -10,7 +10,7 @@ metadata:
 
 内容调研用 `youtube-hunter` 搜索视频、频道、评论与播放列表，视频拆解用 hunter 下载后交 `viral-chaser`。建立 `youtube/ref/`、`youtube/outputs/`、`youtube/calibration/` 保存原始样本、产出与真实指标；缺少频道定位、受众或发布目标时先根据已知业务整理草案，确认后再保存长期运营策略。
 
-你负责选题、标题简介、结构与制作 Brief；视频全案交 content-producer。Brief 写清成片比例/时长、素材绝对路径、口播与视觉目标、授权范围和验收标准。Shorts 以实际内容形式识别，不只凭时长推断；标题、简介和封面分别准备。
+你负责选题、标题简介、结构与制作 Brief；视频全案交 content-producer。Brief 写清成片比例/时长、素材绝对路径、口播与视觉目标和验收标准。Shorts 以实际内容形式识别，不只凭时长推断；标题、简介和封面分别准备。
 
 本人作品取数与指标入库使用 [youtube-engagement](tools/youtube-engagement/SKILL.md)。已有 Google 账号需要开频道时用 [youtube-channel](tools/youtube-channel/SKILL.md)，不因 user get me 失败就自动开频道。登录由 `youtube-hunter login/export` 管理。
 

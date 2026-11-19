@@ -40,6 +40,8 @@ kuaishou-publish publish --video /绝对路径/video.mp4 --visibility private --
 
 核对文本、媒体、账号、可见范围与声明后，已有发布授权时加 --confirm。
 
+对通过聊天预览确认的成片，先用 `video-edit` 的发布版本流程登记确认，再给发布预览和提交命令传母带 `--video` 与 `--video-approval`。核对结果随 `publish-result.kuaishou.json` 保留。
+
 脚本串行发布并保存 `publish-result.kuaishou.json`。平台明确接受提交、且取得创作者作品 ID 后可入库；私密/审核中的数字 `publishId` 或 `workId` 不等于公开短链 ID，`url:null` 不表示发布失败，不拼造 `/short-video/<数字ID>` 分享链接。无公开链接时 published-track 仍记录作品目录、账号和创作者 ID（保存在 notes 的 platform_runtime 字段），供本人取数匹配；以后取得真实公开链接再补入库。
 
 `published:true, recorded:false` 表示作品已识别、记录失败，重跑同一目录只补入库。`accepted:true, resolution_pending:true` 表示平台已接受提交，但作品 ID 尚待确认；保存 accepted 收据，不能将上传 fileId 当作品 ID，先检查 `kuaishou-engagement list` 或原平台，不重发。已有 submitting/unknown 结果文件时禁止重发，先核查并由用户确认结果；不要删除收据换目录重发。下一条独立作品使用新的作品目录。

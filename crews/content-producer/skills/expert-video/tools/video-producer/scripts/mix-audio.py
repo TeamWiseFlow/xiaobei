@@ -24,10 +24,10 @@ Usage:
      3. agent 拿 segments 按 shot 时长切片对应，assemble 时混入
 
   C. 纯 BGM → bgm-library 搜索、试听与下载
-     1. 按成片时长从 bgm-library 选曲、试听与下载，保留署名
+     1. 按成片时长从 bgm-library 选曲、试听与下载
      2. 落 audio/bgm.mp3，assemble 时混入
      BGM 可选路径：
-       - bgm-library：按英文风格标签或预设选曲，保留 ATTRIBUTION.txt
+       - bgm-library：按英文风格标签或预设选曲
        - 静音占位（无 BGM 需求时）
 
   D. 甲方口播录音 → ASR 时间戳 → 按时间戳补素材
@@ -76,7 +76,7 @@ def main() -> None:
             "alignment": None, "subtitles": None,
             "instruction": (
                 "按 Brief 确认每条纸拼贴 B-roll 是否无声。默认无声：记录 no-audio 的决定，"
-                "Stage 12 不添静音轨；需要声音时登记来源、授权和对齐证据，"
+                "Stage 12 不添静音轨；需要声音时登记素材路径和对齐证据，"
                 "用户/main 的锁定原声不得重做。此模板不代表音频已核定。"
             ),
         }
@@ -141,10 +141,10 @@ def main() -> None:
     print("   3. agent 拿 segments 按 shot 时长切片对应，assemble 时混入")
     print()
     print("C. 纯 BGM → bgm-library 搜索、试听与下载")
-    print("   1. 按成片时长从 bgm-library 选曲、试听与下载，保留署名")
+    print("   1. 按成片时长从 bgm-library 选曲、试听与下载")
     print("   2. 落 audio/bgm.mp3，assemble 时混入")
     print("   BGM 可选路径：")
-    print("     - bgm-library：按英文风格标签或预设选曲，保留 ATTRIBUTION.txt")
+    print("     - bgm-library：按英文风格标签或预设选曲")
     print("     - 静音占位（无 BGM 需求时）")
     print()
     print("混合场景：A/B/C/D/E 按 Brief 需求选择；E 的完整音轨不再叠加 B/C，agent 按 script.md 与 Brief 判断。")

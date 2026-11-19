@@ -19,11 +19,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / '_shared'))
+from video_version import master_for_review, sha256, write_new
 
 TARGET_MB_DEFAULT = 16
 SAFE_OUTPUT_DIRS = (Path("previews"), Path("tmp"), Path("output_videos"))
@@ -47,7 +52,7 @@ def die(message: str, code: int = 1) -> None:
 
 
 def log(message: str) -> None:
-    print(f"[info] {message}")
+    print(f"[info] {message}", file=sys.stderr)
 
 
 def ensure_safe_output(raw_path: str) -> Path:
@@ -117,31 +122,12 @@ def ffmpeg_compress(src: Path, dest: Path, crf: int, scale: float | None) -> boo
     return True
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="把视频压到 ≤16MB 用于聊天确认（产物仅用于确认，不参与合成）。"
-    )
-    parser.add_argument("input", help="输入视频路径（相对工作区）")
-    parser.add_argument("--output", required=True,
-                        help="输出预览路径（相对工作区，须在 previews/tmp/output_videos 或 <platform>/outputs/ 下）")
-    parser.add_argument("--target-mb", type=float, default=TARGET_MB_DEFAULT, dest="target_mb",
-                        help="目标上限 MB，默认 16")
-    args = parser.parse_args()
-
-    src = Path(args.input)
-    if not src.is_file():
-        die(f"input video not found: {src}")
-    dest = ensure_safe_output(args.output)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-
+def make_preview(src: Path, dest: Path, target: float) -> str:
     src_mb = file_size_mb(src)
-    target = args.target_mb
-
     if src_mb <= target:
         shutil.copyfile(src, dest)
         log(f"under-limit: input {src_mb:.2f}MB ≤ {target}MB, copied → {dest}")
-        print(f"[ok] under-limit {dest} {file_size_mb(dest):.2f}MB")
-        return
+        return "under-limit"
 
     log(f"input {src_mb:.2f}MB > {target}MB, compressing...")
     for crf, scale in LADDER:
@@ -150,8 +136,7 @@ def main() -> None:
         out_mb = file_size_mb(dest)
         if out_mb <= target:
             log(f"crf={crf} scale={scale} → {out_mb:.2f}MB ✓")
-            print(f"[ok] compressed {dest} {out_mb:.2f}MB")
-            return
+            return "compressed"
         log(f"crf={crf} scale={scale} → {out_mb:.2f}MB still over")
         dest.unlink(missing_ok=True)
 
@@ -159,6 +144,58 @@ def main() -> None:
         f"全部压缩档位仍超过 {target}MB（输入 {src_mb:.2f}MB）。"
         f"请改发原路径让用户本机查看：{src}"
     )
+
+
+def publication_preview(src, dest, target, review_path):
+    manifest = dest.with_suffix(dest.suffix + '.preview.json')
+    master, review = master_for_review(src, review_path)
+    with tempfile.TemporaryDirectory(dir=dest.parent, prefix='.preview-') as directory:
+        work = Path(directory)
+        snapshot = work / ('master' + src.suffix)
+        staged = work / ('preview' + dest.suffix)
+        shutil.copyfile(src, snapshot)
+        if sha256(snapshot) != master['sha256']:
+            raise ValueError('VIDEO_VERSION_MISMATCH: 母带正在变化，请重新审核')
+        make_preview(snapshot, staged, target)
+        preview = {'path': str(dest), 'sha256': sha256(staged)}
+        os.link(staged, dest)
+        try:
+            write_new(manifest, {'version': 1, 'kind': 'video_preview', 'master': master,
+                                 'preview': preview, 'review': review})
+        except BaseException:
+            dest.unlink()
+            raise
+    print(json.dumps({'ok': True, 'manifest': str(manifest), 'master': master, 'preview': preview},
+                     ensure_ascii=False))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="把视频压到 ≤16MB 用于聊天确认（产物仅用于确认，不参与合成）。")
+    parser.add_argument("input", help="输入视频路径（相对工作区）")
+    parser.add_argument("--output", required=True,
+                        help="输出预览路径（相对工作区，须在 previews/tmp/output_videos 或 <platform>/outputs/ 下）")
+    parser.add_argument("--target-mb", type=float, default=TARGET_MB_DEFAULT, dest="target_mb",
+                        help="目标上限 MB，默认 16")
+    parser.add_argument('--review', help='母带的 video-review 报告，生成发布用预览版本记录')
+    args = parser.parse_args()
+    if not math.isfinite(args.target_mb) or args.target_mb <= 0:
+        parser.error('--target-mb 必须为有限正数')
+
+    src = Path(args.input).resolve()
+    if not src.is_file():
+        die(f"input video not found: {src}")
+    dest = ensure_safe_output(args.output)
+    if src == dest:
+        die('预览输出不能覆盖输入')
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if args.review is not None:
+            publication_preview(src, dest, args.target_mb, args.review)
+        else:
+            mode = make_preview(src, dest, args.target_mb)
+            print(f"[ok] {mode} {dest} {file_size_mb(dest):.2f}MB")
+    except (ValueError, OSError) as exc:
+        die(str(exc))
 
 
 if __name__ == "__main__":

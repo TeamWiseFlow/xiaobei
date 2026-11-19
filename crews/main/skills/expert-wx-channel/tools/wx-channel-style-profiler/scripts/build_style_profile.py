@@ -98,7 +98,7 @@ REPORT_DIMENSION_PROMPTS = {
 }
 
 REPORT_OBSERVATION_PROMPTS = {
-    "video": "- 作品类型：视频（本框架只用于视频作品；图文样本走 note-dna-framework）。\n- 样本来源：待 Agent 补齐（对标账号批量作品 / 用户提供的单篇或多篇 / 用户想法转译）。\n- 账号与简介：待 Agent 补齐；非账号样本写未观测。\n- 发布时间与时间段：待 Agent 补齐；单篇只记本篇时间，不推导账号节奏。\n- 数据线索：待 Agent 补齐（播放 / 点赞 / 评论 / 分享 / 收藏）；只作证据，不直接判风格好坏。\n- 横竖屏与时长：待 Agent 补齐。\n- 素材来源与授权：待 Agent 补齐（实拍 / 影视或开源片源 / AIGC / 录屏 / 混合）。\n- 转录与关键帧来源：待 Agent 补齐（如 main 的 viral-chaser 产物路径）；缺失写未提供，不得编造。",
+    "video": "- 作品类型：视频（本框架只用于视频作品；图文样本走 note-dna-framework）。\n- 样本来源：待 Agent 补齐（对标账号批量作品 / 用户提供的单篇或多篇 / 用户想法转译）。\n- 账号与简介：待 Agent 补齐；非账号样本写未观测。\n- 发布时间与时间段：待 Agent 补齐；单篇只记本篇时间，不推导账号节奏。\n- 数据线索：待 Agent 补齐（播放 / 点赞 / 评论 / 分享 / 收藏）；只作证据，不直接判风格好坏。\n- 横竖屏与时长：待 Agent 补齐。\n- 素材来源：待 Agent 补齐（实拍 / 影视或开源片源 / AIGC / 录屏 / 混合）。\n- 转录与关键帧来源：待 Agent 补齐（如 main 的 viral-chaser 产物路径）；缺失写未提供，不得编造。",
 }
 
 TEMPLATE_STAGES = {
@@ -116,11 +116,11 @@ TEMPLATE_STAGE_FIELDS = {
 }
 
 TEMPLATE_INTROS = {
-    "video": "本模板是 main agent 出具**视频制作 Brief（brief.md）**与（口播类）**口播文案**的输入模板，必须由 DNA 文档推导，不得引入 DNA 文档未确认的规则。\n\n- 下列各段直接对应 Brief 的正文字段；Brief 的其余字段（素材清单与授权、验收标准、闸门批准人）由平台 Content Production Workflow 规定。\n- Brief **不含 DNA 信息**：Content Producer 看不到 main 的 DNA，只按 Brief 制作。\n- 模板不规定创作细节：逐句台词、镜头表、转场与编码参数归 Content Producer。\n- 账号运营子模块（简介写法、内容形式比例、发布习惯）写在 DNA 文档，不进本模板。",
+    "video": "本模板是 main agent 出具**视频制作 Brief（brief.md）**与（口播类）**口播文案**的输入模板，必须由 DNA 文档推导，不得引入 DNA 文档未确认的规则。\n\n- 下列各段直接对应 Brief 的正文字段；Brief 的其余字段（素材清单、验收标准、闸门批准人）由平台 Content Production Workflow 规定。\n- Brief **不含 DNA 信息**：Content Producer 看不到 main 的 DNA，只按 Brief 制作。\n- 模板不规定创作细节：逐句台词、镜头表、转场与编码参数归 Content Producer。\n- 账号运营子模块（简介写法、内容形式比例、发布习惯）写在 DNA 文档，不进本模板。",
 }
 
 TEMPLATE_CHECKLISTS = {
-    "video": "- 是否只用一个 DNA，且作品类型与该 DNA 的 `kind` 一致。\n- 短标题与视频描述是否都已拟定（视频号两者都必须填），且写法来自 DNA 文档。\n- 内容创意是否落到可复用的创意原型，而不是照抄样本主题。\n- 视频形态是否明确指向 Content Producer `expert-video` 的某个 workflow，或 main 的某个素材加工技能。\n- Brief 是否只含制作所需信息（不含 DNA 内容），素材是否给了绝对路径与授权说明。\n- 口播类（真人出镜 / 数字人 / 真人录音）是否附口播终稿（`voiceover.md` 绝对路径）或真人录音路径——无论口播子模块是否启用；剪辑配解说的旁白归 CP 写，Brief 口播字段写「不适用」。\n- 制作规格（横竖屏、时长带、画面风格、配音音色）是否尊重样本覆盖度；样本不足时是否标注未观测。\n- 业务植入是否落到位置 + 载体 + 衔接句（而不是只写「自然植入」），CTA 是否只有一个主行动、句式可执行且未越合规红线。\n- 用户输入是否已转译为具体执行规则。",
+    "video": "- 是否只用一个 DNA，且作品类型与该 DNA 的 `kind` 一致。\n- 短标题与视频描述是否都已拟定（视频号两者都必须填），且写法来自 DNA 文档。\n- 内容创意是否落到可复用的创意原型，而不是照抄样本主题。\n- 视频形态是否明确指向 Content Producer `expert-video` 的某个 workflow，或 main 的某个素材加工技能。\n- Brief 是否只含制作所需信息（不含 DNA 内容），素材是否给了绝对路径。\n- 口播类（真人出镜 / 数字人 / 真人录音）是否附口播终稿（`voiceover.md` 绝对路径）或真人录音路径——无论口播子模块是否启用；剪辑配解说的旁白归 CP 写，Brief 口播字段写「不适用」。\n- 制作规格（横竖屏、时长带、画面风格、配音音色）是否尊重样本覆盖度；样本不足时是否标注未观测。\n- 业务植入是否落到位置 + 载体 + 衔接句（而不是只写「自然植入」），CTA 是否只有一个主行动、句式可执行且未越合规红线。\n- 用户输入是否已转译为具体执行规则。",
 }
 
 DNA_SUBMODULE_NOTE = "- **口播文案子模块**（`narration-script`）：仅口播类视频启用，用于指导 main agent 写同类型视频的口播文案；它不是独立 DNA，未启用时写「未启用」。\n- **账号运营子模块**（`account-bio`、`content-mix-cadence`）：只在样本来自用户提供的对标账号（可从账号发布列表批量提取）时填写；结论只写进本 DNA 文档，不进 template；样本不足写「未观测」。"

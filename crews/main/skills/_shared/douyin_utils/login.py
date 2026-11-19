@@ -12,7 +12,7 @@ import requests
 from relay_sign import RelaySignError, douyin_v2
 
 from .http import DouyinRequestError, _send, session, require_runtime
-from .session import DEFAULT_SESSION, ApiSession, SessionError, runtime_fields, read_private, session_lock, write_private
+from .session import DEFAULT_SESSION, ApiSession, SessionError, runtime_fields, read_private, session_lock, write_private, identity_binding
 from .verification import (login_verification, login_verification_status,
                            validate_login_verification, validate_creator_verification)
 
@@ -47,6 +47,10 @@ CREATOR_ROUTES = {
     "verify-send": ("POST", {"/passport/web/send_code/"}),
     "verify-code": ("POST", {"/passport/web/validate_code/"}),
     "verify-confirm": ("POST", {"/passport/upsms/verify/", "/passport/upsms/chain_mobile/verify/"}),
+    "verify-face-prepare": ("POST", {"/passport/safe/get_auth_ticket/v1/"}),
+    "verify-face-check": ("POST", {"/passport/safe/verify_auth_ticket/"}),
+    "verify-qr-prepare": ("POST", {"/passport/web/get_qrcode/"}),
+    "verify-qr-check": ("POST", {"/passport/mobile/validate_by_qrcode/"}),
 }
 
 
@@ -222,6 +226,11 @@ def validate_mfa_plan(action, plan):
         allowed = (plan["method"] == "POST" and target.hostname == "login.douyin.com"
                    and target.path == ("/passport/web/sms_login/" if action.startswith("sms-")
                                       else "/passport/web/check_qrconnect/")) or (
+            plan["method"] == "POST" and target.hostname == "www.douyin.com"
+            and target.path == "/passport/ticket_guard/get_client_cert/"
+            and [v for k, v in parse_qsl(target.query, keep_blank_values=True) if k == "aid"] == ["6383"]
+            and plan["body"] == "server_data=1,aid=6383"
+        ) or (
             plan["method"] == "GET" and target.hostname in {
                 "www.douyin.com", "login.douyin.com", "passport.douyin.com", "sso.douyin.com"
             } and (target.path == "/" or target.path.startswith("/passport/")
@@ -285,6 +294,7 @@ def adopt_creator_verification(state, result, action):
                                        or previous["log_id"] != value["log_id"]):
         raise DouyinRequestError("INVALID_RELAY_RESPONSE")
     state.state["creator_verification"] = value
+    state.state["creator_verification_binding"] = identity_binding(state)
 
 
 def adopt_verification(state, result, action):
@@ -375,7 +385,16 @@ def flow(action, fields=None, *, consume_mfa=False, restart=False):
                     and verification.get("id") == previous.get("verification_id")
                     and verification.get("log_id") == fields.get("log_id")
                     and verification.get("status") == "prepared" and verification.get("ticket_present") is False)
-            if action != "verify-prepare" or not (original_prepare or rejected_send):
+            try:
+                completed = validate_creator_verification(verification)
+            except ValueError:
+                completed = {}
+            expired_completed = (not saved and completed.get("log_id") == fields.get("log_id")
+                    and completed.get("status") in {"prepared", "awaiting-code", "awaiting-up-sms", "awaiting-face",
+                                                    "awaiting-scan", "scanned", "ticket-issued", "expired", "refused"}
+                    and (completed.get("expires_at", float("inf")) <= time.time()
+                         or completed.get("status") in {"expired", "refused"}))
+            if action != "verify-prepare" or not (original_prepare or rejected_send or expired_completed):
                 raise DouyinRequestError("VERIFICATION_ACTION_PENDING")
             next_fields = {**fields, "restart": "true"}
             result = compute("flow", {"ua": state.ua, "runtime": state.state["relay_runtime"],
@@ -389,6 +408,7 @@ def flow(action, fields=None, *, consume_mfa=False, restart=False):
                                        "verification": verification})
             adopt(state, result, save=False)
             state.state.pop("creator_verification", None)
+            state.state.pop("creator_verification_binding", None)
             fields = next_fields
             saved = {"action": action, "fields": fields, "request": result["request"]}
             state.state[flow_key] = saved

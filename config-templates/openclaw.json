@@ -27,8 +27,8 @@
         "api": "anthropic-messages",
         "models": [
           {
-            "id": "deepseek-v4.1-flash",
-            "name": "deepseek-v4.1-flash",
+            "id": "deepseek-v4.1-flash-1017",
+            "name": "deepseek-v4.1-flash-1017",
             "reasoning": false,
             "input": [
               "text",
@@ -73,7 +73,7 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "bailian/deepseek-v4.1-flash",
+        "primary": "bailian/deepseek-v4.1-flash-1017",
         "fallbacks": [
           "bailian/qwen3.8-flash"
         ]
@@ -81,11 +81,11 @@
       "imageModel": {
         "primary": "bailian/qwen3.8-flash",
         "fallbacks": [
-          "bailian/deepseek-v4.1-flash"
+          "bailian/deepseek-v4.1-flash-1017"
         ]
       },
       "models": {
-        "bailian/deepseek-v4.1-flash": {},
+        "bailian/deepseek-v4.1-flash-1017": {},
         "bailian/qwen3.8-flash": {}
       },
       "compaction": {
@@ -103,7 +103,7 @@
       },
       "modelPolicy": {
         "allow": [
-          "bailian/deepseek-v4.1-flash",
+          "bailian/deepseek-v4.1-flash-1017",
           "bailian/qwen3.8-flash"
         ]
       },
@@ -118,9 +118,7 @@
         "skills": [
           "smart-search",
           "browser-guide",
-          "email-ops",
-          "visualize",
-          "tmux"
+          "email-ops"
         ],
         "subagents": {
           "allowAgents": [
@@ -141,10 +139,6 @@
         "workspace": "~/.openclaw/workspace-it-engineer",
         "skills": [
           "healthcheck",
-          "nano-pdf",
-          "skill-creator",
-          "visualize",
-          "tmux",
           "node-connect",
           "github",
           "gh-issues",
@@ -167,9 +161,7 @@
         "workspace": "~/.openclaw/workspace-content-producer",
         "skills": [
           "smart-search",
-          "browser-guide",
-          "visualize",
-          "tmux"
+          "browser-guide"
         ],
         "subagents": {
           "allowAgents": [
@@ -356,26 +348,32 @@
       "xai": {
         "enabled": false
       },
-      "browser": {
-        "enabled": false
-      },
       "xiaobei-browser": {
         "enabled": true
-      },
-      "phone-control": {
-        "enabled": false
-      },
-      "google-meet": {
-        "enabled": false
-      },
-      "teams-meetings": {
-        "enabled": false
       },
       "zoom-meetings": {
         "enabled": false
       },
-      "codex": {
+      "active-memory": {
         "enabled": false
+      },
+      "mcp-events": {
+        "enabled": false
+      },
+      "memory-wiki": {
+        "enabled": false
+      },
+      "cua-computer": {
+        "enabled": false
+      },
+      "imap": {
+        "enabled": false
+      },
+      "tokenjuice": {
+        "enabled": true,
+        "config": {
+          "agentIds": ["it-engineer"]
+        }
       },
       "memory-core": {
         "enabled": true
@@ -410,7 +408,7 @@
     "migrations": {
       "modelPolicyAllowlist": true
     },
-    "lastTouchedVersion": "2026.10.4"
+    "lastTouchedVersion": "2026.10.33"
   },
   "talk": {
     "agentId": "main"

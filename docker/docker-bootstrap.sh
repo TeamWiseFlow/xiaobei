@@ -111,7 +111,7 @@ log "STEP 4 done"
 # 容器里 /root/.openclaw 是持久卷，镜像升级后插件包不会自己跟着 pin 走，所以这里必须比版本。
 weixin_installed_version() {
     local pkg="$1" oc_home="${OPENCLAW_HOME:-/root/.openclaw}" v f
-    v="$((cd "$PROJECT_ROOT/openclaw" && pnpm openclaw plugins list --json) 2>/dev/null | python3 -c "
+    v="$(node "$PROJECT_ROOT/openclaw/dist/index.js" plugins list --json 2>/dev/null | python3 -c "
 import json, sys
 try:
     d = json.load(sys.stdin)
@@ -150,15 +150,15 @@ install_weixin_plugin() {
     if [ -n "$installed" ]; then
         log "openclaw-weixin 已装 ${installed}，pin=${ver} → --force 升级"
         force_flag="--force"
-    elif (cd "$PROJECT_ROOT/openclaw" && pnpm openclaw plugins list 2>/dev/null | grep -q "openclaw-weixin"); then
+    elif node "$PROJECT_ROOT/openclaw/dist/index.js" plugins list 2>/dev/null | grep -q "openclaw-weixin"; then
         log "⚠️ openclaw-weixin 已装但版本读不到；按 pin ${ver} 强制重装"
         force_flag="--force"
     fi
     log "installing openclaw-weixin plugin (${pkg}@${ver})"
-    if (cd "$PROJECT_ROOT/openclaw" && pnpm openclaw plugins install "${pkg}@${ver}" --pin $force_flag); then
+    if node "$PROJECT_ROOT/openclaw/dist/index.js" plugins install "${pkg}@${ver}" --pin --accept-capabilities $force_flag; then
         log "openclaw-weixin plugin installed (${ver})"
     else
-        log "⚠️ openclaw-weixin 插件预装失败；首启可手动：pnpm openclaw plugins install ${pkg}@${ver} --pin $force_flag"
+        log "⚠️ openclaw-weixin 插件预装失败；首启可手动：openclaw plugins install ${pkg}@${ver} --pin --accept-capabilities $force_flag"
     fi
 }
 log "STEP 5: installing openclaw-weixin plugin..."

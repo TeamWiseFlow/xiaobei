@@ -5,7 +5,7 @@
 #   两种技能解析模式，由 SOUL.md 中的 crew-type 决定：
 #
 #   inherit 模式（对内 Crew，crew-type: internal）：
-#   - 基线：list_default_global_skill_names 中 11 个指定的上游内置技能
+#   - 基线：list_default_global_skill_names 指定的上游内置技能
 #   - 自动追加：apply-addons.sh 写入 GLOBAL_SHARED_SKILLS 的 addon/项目全局技能
 #   - 可通过 BUILTIN_SKILLS（或显式参数）在此之上追加 Agent 专属技能
 #     （如 it-engineer 的 github / gh-issues / coding-agent）
@@ -72,7 +72,7 @@ list_builtin_skill_names() {
   done | sort
 }
 
-# wiseflow 指定的全局基线技能（对所有对内 Crew 统一开放的 6 个上游内置技能）
+# wiseflow 指定的全局基线技能（对所有对内 Crew 统一开放的上游内置技能）
 # 变更须同步更新 config-templates/openclaw.json 的 skills.entries 确保这些技能处于 enabled 状态
 #
 # 不在此基线的说明：
@@ -83,12 +83,9 @@ list_builtin_skill_names() {
 #   xurl / camsnap / clawhub / discord / alipay-mcp-config / canvas — 全局禁用
 list_default_global_skill_names() {
   cat <<'EOF'
-nano-pdf
 skill-creator
 tmux
 weather
-summarize
-gifgrep
 EOF
 }
 
@@ -220,9 +217,9 @@ console.log(JSON.stringify(Array.from(new Set(lines))));
   fi
 
   # ── inherit 模式（对内 Crew）──
-  # 层次：① 7 个基线上游技能  ② addon/项目全局技能  ③ Agent 专属技能（BUILTIN_SKILLS）  ④ -DENIED  ⑤ +workspace
+  # 层次：① 基线上游技能  ② addon/项目全局技能  ③ Agent 专属技能（BUILTIN_SKILLS）  ④ -DENIED  ⑤ +workspace
 
-  # ① wiseflow 指定的 7 个基线技能
+  # ① wiseflow 指定的基线技能
   local default_builtins=""
   default_builtins="$(list_default_global_skill_names)"
 

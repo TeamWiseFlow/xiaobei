@@ -17,6 +17,8 @@ description: 通过统一 API 会话发布抖音视频和原声图文，支持�
 
 核对目标账号、媒体、标题、正文和声明。不带 `--confirm` 只做本地预览，无网络副作用；已有发布授权后在原命令加 `--confirm`。
 
+对通过聊天预览确认的成片，给 `video run` 传母带 `--video` 和 `video-edit confirm-preview` 返回的 `--video-approval`。上传核对记录保存在 `video_confirmation`，续接准备或验证使用原任务的上传结果。
+
 ```bash
 douyin-publish video run --video /绝对路径/video.mp4 --title "标题" --caption @/绝对路径/body.txt --cover-vertical /绝对路径/vertical.jpg --cover-horizontal /绝对路径/horizontal.jpg
 douyin-publish note run --images /绝对路径/1.png /绝对路径/2.png --title "标题" --caption @/绝对路径/body.txt --original-sound
@@ -24,7 +26,7 @@ douyin-publish note run --images /绝对路径/1.png /绝对路径/2.png --title
 
 正文文件使用 UTF-8 和真实换行，文件只放已确认的纯正文与话题，不含标题或交付说明；不拼接 shell 命令读取正文。短正文仍可直接传入，以 `@` 开头的参数按文件路径处理。
 
-视频需要 3:4 竖封面和 4:3 横封面，工具等比补底并写入最终请求；默认 AI 声明，视频不接受 `--declaration none`。图文默认 AI 声明，非 AI 内容可传 `--declaration none`；仅支持明确指定 `--original-sound` 的原声图文，不承诺 HTTP 配乐选择。浏览器填表、草稿和配乐命令不能替代 HTTP 入口。
+**视频需要 3:4 竖封面和 4:3 横封面**，由工具等比补底并写入最终请求；默认 AI 声明，视频不接受 `--declaration none`。图文默认 AI 声明，非 AI 内容可传 `--declaration none`；仅支持明确指定 `--original-sound` 的原声图文，不承诺 HTTP 配乐选择。浏览器填表、草稿和配乐命令不能替代 HTTP 入口。
 
 已授权上传、暂不提交时，在 `run --confirm` 后加 `--prepare-only`；核对 `state: prepared` 后用相同类型的 `publish --confirm` 提交原请求。可见性用 `--visibility public|private|friends`，默认 public。
 
@@ -33,6 +35,12 @@ douyin-publish note run --images /绝对路径/1.png /绝对路径/2.png --title
 ## 结果核查与记录
 
 `status` 只读本地收据；`resume` 和 `get-link` 核查本次任务。提交前保存意图；网络异常、空响应或验证要求发生后，任何续接都不会自动再 POST。返回 `submission_attempted: true` 且无确认 ID 时报告“已尝试提交，正在核实”，不能说未发布或重发。验证完成也不等于发布成功。
+
+创作者验证到 `ticket-issued` 后，若用户已经明确确认原作品未发布并授权续接，用对应类型的 `retry-verified --not-published-confirmation "用户确认原文" --confirm` 续接原请求；不重新 `run`、上传或手改收据。该入口先核查本人作品，再允许同一验证流程续接一次。没有确认时默认仅预览；过期票据、账号或挑战不匹配会停止。中断或结果未知后再运行仍只核查，不重复提交。操作细节见 HTTP 说明。
+
+发布遇到 `gateway_biz_verify_with_face` 时先用 `verify-prepare` 查询可用方法，禁止用短信替代。人脸使用 `verify-face-prepare`，将返回的 `qr_file` 交用户在抖音 App 扫码刷脸，随后 `verify-face-check`；设备扫码使用 `verify-qr` 和 `verify-poll`，由已登录原账号的手机确认。两者到 `ticket-issued` 后才可按上节显式续接，不会自动发作品。操作细节先读 HTTP 说明。
+
+返回 `VERIFICATION_METHOD_UNSUPPORTED` / `verification.supported: false` 时停止。未识别的 `*_with_face`、缺少验证方法或不完整平台材料仍不支持；不要调用登录 MFA 处理发布挑战、手改收据或用旧短信票据替代。保留原任务并核查作品。
 
 只有真实作品 ID 与完整链接才能调用 `published-track record` 入库并去重。平台接受、公开、可播放、审核通过分别判断，不用全局最新旧作品替代本次作品。用户已确认发布成功时据此结案，不要求重复确认；未核实的公开和播放状态保持未知。
 

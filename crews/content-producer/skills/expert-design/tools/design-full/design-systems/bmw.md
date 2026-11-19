@@ -67,7 +67,7 @@ Photography is always premium: studio-lit vehicle renders on neutral backgrounds
 
 ## 3. Typography Rules
 
-**Primary:** BMW Type Next Latin (licensed, not publicly available)
+**Primary:** BMW Type Next Latin
 **Fallback stack:** `"Helvetica Neue", Helvetica, "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
 
 **Substitute recommendation:** Inter (variable) at weights 700 / 300 — closest open-source match to BMW Type Next's character.

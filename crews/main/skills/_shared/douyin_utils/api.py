@@ -216,7 +216,7 @@ def csrf(host):
     state.save()
 
 
-def call(name, params=None, *, body=None, confirm=False, expected_uid=None, _uifid_retry=False):
+def call(name, params=None, *, body=None, confirm=False, expected_uid=None, _uifid_retry=False, before_send=None, on_response=None):
     if name not in ENDPOINTS:
         raise ValueError("UNKNOWN_METHOD")
     e = ENDPOINTS[name]
@@ -256,6 +256,9 @@ def call(name, params=None, *, body=None, confirm=False, expected_uid=None, _uif
         query.update(values)
     # Device tokens are issued by the platform or supplied by this API lifecycle.
     tokens = state.state.get("tokens", {})
+    authenticated_self = name == "self" and bool(
+        re.fullmatch(r"[1-9][0-9]{0,19}", str(tokens.get("webid", "")))
+    )
     for k in ("webid", "msToken") if e["profile"] == "web" else ("msToken",) if e["profile"] != "creator" else ():
         if tokens.get(k):
             query[k] = tokens[k]
@@ -335,16 +338,32 @@ def call(name, params=None, *, body=None, confirm=False, expected_uid=None, _uif
         headers["agw-js-conv"] = "str"
     try:
         result = request(
-            e["profile"], "request", e["method"], "https://" + host + e["path"],
+            e["profile"], "request", e["method"], "https://" + host + (
+                "/aweme/v1/web/user/profile/self/" if authenticated_self else e["path"]),
             params=query, body=body,
             body_encoding="form" if e.get("form") else "json",
-            verify_identity=name == "self", expected_uid=expected_uid,
+            verify_identity=authenticated_self, expected_uid=expected_uid,
             binary_response=e.get("binary", False), empty_result=e.get("empty_result"),
             capture_response=name == "create", content_type=e.get("content_type"),
             static_headers=headers,
+            **({"before_send": before_send} if before_send is not None else {}),
+            **({"on_response": on_response} if on_response is not None else {}),
             **({"query_tail": {"verifyFp": cookie_values["s_v_web_id"], "fp": cookie_values["s_v_web_id"]}}
                if name == "replies" and cookie_values.get("s_v_web_id") else {}),
         )
+        if name == "self" and not authenticated_self:
+            # query/user supplies the device ID even when the authentication
+            # cookies have been rejected. Only the authenticated profile proves
+            # that this API session is logged in.
+            identity_query = dict(query)
+            identity_query.update({k: v for k, v in session().state.get("tokens", {}).items()
+                                   if k in {"webid", "msToken"}})
+            result = request(
+                "web", "request", "GET",
+                "https://www.douyin.com/aweme/v1/web/user/profile/self/",
+                params=identity_query, verify_identity=True, expected_uid=expected_uid,
+                static_headers=headers,
+            )
     except DouyinRequestError as exc:
         if (exc.code == "PLATFORM_UIFID_MISSING" and not e.get("write")
                 and e["profile"] == "web" and name != "feed" and not _uifid_retry
@@ -353,7 +372,7 @@ def call(name, params=None, *, body=None, confirm=False, expected_uid=None, _uif
             if not session().cookies("https://www.douyin.com/").count("UIFID="):
                 raise exc
             return call(name, params, body=body, confirm=confirm,
-                        expected_uid=expected_uid, _uifid_retry=True)
+                        expected_uid=expected_uid, _uifid_retry=True, before_send=before_send, on_response=on_response)
         raise
     if name == "live_fetch":
         from google.protobuf.json_format import MessageToDict

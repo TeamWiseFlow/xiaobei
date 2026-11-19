@@ -1,6 +1,11 @@
 // 错误诊断只保留定位所需字段；不转发请求体、响应正文、请求头或 stderr。
 import { isVideoSubmit } from './weibo-video.mjs';
 const ERROR_CODES = new Set(['ERROR', 'USAGE', 'UNSUPPORTED', 'CONFIRM_REQUIRED', 'AUTH_REQUIRED', 'AUTH_EXPIRED', 'NOT_IMPLEMENTED', 'RISK_CONTROL', 'NETWORK', 'UPSTREAM', 'SIGN_UNAVAILABLE', 'OFB_KEY_MISSING', 'OFB_KEY_INVALID', 'RELAY_URL_INVALID', 'RELAY_RATE_LIMITED', 'INVALID_INPUT', 'MATERIAL_UNAVAILABLE']);
+const RELAY_OPERATIONS = {
+  kuaishou: ['capabilities', 'bootstrap-material', 'falcon', 'sig3', 'encrypt', 'decrypt', 'kwf', 'kws', 'fingerprint-report', 'like-token'],
+  tiktok: ['capabilities', 'guarded-request', 'request', 'ticket-guard', 'aws-v4', 'x-bogus', 'frontier', 'shop', 'im-access'],
+  x: ['transaction'], weibo: ['session', 'upload-image', 'upload-video'], youtube: ['authorization'],
+};
 const SENSITIVE = /cookie|token|authorization|password|secret|ticket|private.?key|api_[sp][ht]|web_[sp][ht]|kw[fwcs]|ts.?sign/i;
 const PAIR = /\b(authorization|[\w.-]*token|[\w.-]*secret|password|ticket[\w.-]*|private[_-]?key|[\w.-]*api_[sp][ht]|[\w.-]*web_[sp][ht]|kwscode|kwssectoken|kwfv1|kwfcv1|kww|__NS_[\w]+)(["']?\s*[:=]\s*)((?:bearer|basic)\s+)?("[^"]*"|'[^']*'|[^\s,;&]+)/gi;
 const STAGES = {
@@ -54,6 +59,15 @@ export function safeDiagnostic(error, { redact, saved } = {}) {
   }
   if (error?.detail && typeof error.detail === 'object' && !Array.isArray(error.detail)) {
     const detail = {};
+    if (error.detail.source === 'relay' && Object.hasOwn(RELAY_OPERATIONS, error.detail.platform)
+        && RELAY_OPERATIONS[error.detail.platform].includes(error.detail.operation)) {
+      detail.relay = { source: 'relay', platform: error.detail.platform, operation: error.detail.operation };
+      const status = error.detail.status;
+      if (Number.isInteger(status) && status >= 100 && status <= 599) detail.relay.http_status = status;
+      if (Number.isInteger(error.detail.retry_after_seconds) && error.detail.retry_after_seconds >= 0 && error.detail.retry_after_seconds <= 300)
+        detail.relay.retry_after_seconds = error.detail.retry_after_seconds;
+      if (['timeout', 'connection', 'spawn', 'response_or_budget'].includes(error.detail.reason)) detail.relay.reason = error.detail.reason;
+    }
     for (const key of ['status', 'result', 'code', 'kind', 'path', 'message', 'reason', 'error_msg']) {
       const value = scalar(error.detail[key]);
       if (value !== undefined) detail[key] = value;

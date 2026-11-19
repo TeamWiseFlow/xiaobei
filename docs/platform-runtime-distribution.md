@@ -9,9 +9,10 @@ TikTok、快手、X、微博和 YouTube 五平台工具使用固定的 `xiaobei-
 安装器按下列顺序查找完整分发包：
 
 1. `XIAOBEI_PLATFORM_RUNTIME_ARCHIVE` 指定的文件。
-2. `XIAOBEI_CACHE_DIR` 下的固定文件名；未设置时为 `~/.xiaobei/cache/xiaobei-platform-backend-0.3.1.tgz`。
+2. `XIAOBEI_CACHE_DIR` 下的固定文件名；未设置时为 `~/.xiaobei/cache/xiaobei-platform-backend-0.3.3.tgz`。
 3. 技能私有安装缓存中的同名文件。
-4. 配置锁定的小贝发布资源。
+4. 随源码、tarball 和 Docker 分发的 `platform-runtime/assets/` 同名文件。
+5. 配置锁定的小贝发布资源。
 
 命中本地文件后先校验完整性，校验不符立即停止，不绕过错误继续下载其他文件。预下载包保留原文件名即可，不需要修改业务技能的配置。
 
@@ -21,7 +22,7 @@ TikTok、快手、X、微博和 YouTube 五平台工具使用固定的 `xiaobei-
 
 ## 发布资源准备
 
-客户端发布前，维护者必须把与配置 SHA-512 一致的包放到锁定发布资源中，或随安装包预置到上述缓存。尚未上传资源时，使用已准备的本地包完成构建和安装验收，不宣称在线获取已通过。
+客户端发布前，维护者必须把与配置 SHA-512 一致的包放到技能的 `assets/` 目录，并同步更新 `package.json` 的 `dependencyInstaller.inputs` 和 `runtime-profile.json`。统一安装器将分发包纳入依赖哈希；源码、tarball 和 Docker 首装无需预热缓存或等待独立 release 资源上传。发布资源作为额外下载渠道，不能代替随包资源的完整性验收。
 
 包内 `runtime-contract.json` 定义状态目录环境变量、错误类型导出、原始响应符号与 `signingMode: relay`。适配代码读取该协议，不在公开配置中绑定底层实现名称。版本或签名模式不匹配时拒绝加载，不回退旧本地签名包。依赖只保留传输、协议、配置、schema 与二维码编码，不安装视觉识别或 ONNX；图片转码复用统一 ffmpeg/ffprobe。
 

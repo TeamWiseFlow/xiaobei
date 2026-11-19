@@ -14,6 +14,7 @@ sys.path.insert(0, str(TOOLS / '_shared'))
 from publish_browser import Browser, MANAGE_URL, SESSION, publish_lock
 sys.path.insert(0, str(TOOLS.parent.parent / '_shared'))
 from publish_text import PublishTextError, read_publish_text
+from video_version import verify_upload
 import video_publish as video
 import note_publish as note
 
@@ -23,8 +24,15 @@ def content_options(parser):
     parser.add_argument('--caption', default='', help='正文文字或 @UTF-8正文文件路径')
 
 
+def verified_retry_options(commands):
+    command = commands.add_parser('retry-verified', help='用户确认未发布且验证票据有效时，续接原请求一次')
+    command.add_argument('--confirm', action='store_true')
+    command.add_argument('--not-published-confirmation', default='', help='用户确认原作品未发布的原文或 @UTF-8确认文件')
+
+
 def video_commands(parent):
     commands = parent.add_subparsers(dest='action', required=True)
+    verified_retry_options(commands)
     for name, function in (
         ('publish', video.cmd_publish),
         ('get-link', video.cmd_get_link), ('resume', video.cmd_resume),
@@ -38,7 +46,7 @@ def video_commands(parent):
         if name == 'verify-send':
             command.add_argument('--method', choices=('mobile_sms_verify', 'mobile_up_sms_verify'), default='mobile_sms_verify')
             command.add_argument('--confirm', action='store_true')
-    for name in ('verify-prepare', 'verify-qr', 'verify-poll', 'verify-confirm'):
+    for name in ('verify-prepare', 'verify-qr', 'verify-poll', 'verify-confirm', 'verify-face-prepare', 'verify-face-check'):
         command = commands.add_parser(name)
         if name == 'verify-prepare':
             command.add_argument('--restart', action='store_true', help='仅重建已过期的只读验证准备，不发送验证码或重发作品')
@@ -55,6 +63,7 @@ def video_commands(parent):
     run = commands.add_parser('run', help='完整视频流程；默认预览，--confirm 后提交')
     content_options(run)
     run.add_argument('--video', required=True)
+    run.add_argument('--video-approval', help='video-edit confirm-preview 生成的确认记录')
     run.add_argument('--cover-vertical', help='竖封面；等比补底到 3:4')
     run.add_argument('--cover-horizontal', help='横封面；等比补底到 4:3')
     run.add_argument('--declaration', choices=('aigc', 'ai', 'none'), default='aigc')
@@ -73,12 +82,13 @@ def video_commands(parent):
 
 def note_commands(parent):
     commands = parent.add_subparsers(dest='action', required=True)
+    verified_retry_options(commands)
     close = commands.add_parser('close')
     close.add_argument('--outcome', choices=('published', 'cancelled'), required=True)
     close.add_argument('--url')
     close.add_argument('--confirmation', required=True)
     close.add_argument('--confirm', action='store_true')
-    for name in ('verify-prepare', 'verify-qr', 'verify-poll', 'verify-send', 'verify-code', 'verify-confirm'):
+    for name in ('verify-prepare', 'verify-qr', 'verify-poll', 'verify-send', 'verify-code', 'verify-confirm', 'verify-face-prepare', 'verify-face-check'):
         verify = commands.add_parser(name)
         if name == 'verify-prepare':
             verify.add_argument('--restart', action='store_true', help='仅重建已过期的只读验证准备，不发送验证码或重发作品')
@@ -140,6 +150,8 @@ def preview_run(args):
     if args.command == 'video':
         result.update(cover_vertical=args.cover_vertical, cover_horizontal=args.cover_horizontal,
                       ready=bool(args.cover_vertical and args.cover_horizontal))
+        if args.video_approval is not None:
+            result['video_confirmation'] = verify_upload(args.video, args.video_approval)
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
@@ -198,6 +210,8 @@ def main(argv=None):
             note.validate(title=args.title, caption=args.caption)
     if hasattr(args, 'confirmation'):
         args.confirmation = read_publish_text(args.confirmation)
+    if hasattr(args, 'not_published_confirmation'):
+        args.not_published_confirmation = read_publish_text(args.not_published_confirmation)
     if hasattr(args, 'images'):
         args.images = [str(Path(path).expanduser().resolve()) for path in args.images]
         note.validate(images=args.images, title=getattr(args, 'title', '上传'))

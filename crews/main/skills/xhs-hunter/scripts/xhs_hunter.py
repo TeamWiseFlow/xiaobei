@@ -767,7 +767,8 @@ def main() -> int:
     subs.add_parser('login-phone', help='交互式手机号验证码登录')
     subs.add_parser('check', help='校验已保存的 PC 登录态')
     subs.add_parser('methods', help='列出全部可调用 PC 接口及参数')
-    subs.add_parser('verify-start', help='准备当前安全验证，发送一次短信或生成验证二维码')
+    verify_start = subs.add_parser('verify-start', help='准备当前安全验证，发送一次短信或生成验证二维码')
+    verify_start.add_argument('--phone-file', help='类型 213 使用，权限 0600 的手机号文件')
     verify = subs.add_parser('verify-code', help='提交当前安全验证的短信验证码')
     verify.add_argument('--code-file', required=True, help='权限 0600 的六位验证码文件')
     subs.add_parser('verify-confirm', help='查询验证二维码状态并续接原登录')
@@ -815,7 +816,7 @@ def main() -> int:
         if args.command == 'login-phone':
             return phone_login()
         if args.command in {'verify-start', 'verify-code', 'verify-confirm'}:
-            result = (verification_flow.start() if args.command == 'verify-start'
+            result = (verification_flow.start(args.phone_file) if args.command == 'verify-start'
                       else verification_flow.confirm(args.code_file if args.command == 'verify-code' else None))
             emit(result)
             return 0 if result.get('ok') else 4

@@ -657,7 +657,10 @@ class XHS_Creator_Apis:
             if not success:
                 raise RuntimeError(msg)
             progress['stage'] = 'readiness'
-            for _ in range(TRANSCODE_MAX_RETRIES):
+            readiness_deadline = time.monotonic() + TRANSCODE_MAX_RETRIES * TRANSCODE_RETRY_DELAY
+            for poll in range(TRANSCODE_MAX_RETRIES):
+                if time.monotonic() >= readiness_deadline:
+                    raise VideoReadinessError(readiness or {"state": "pending"})
                 success, msg, res = self.query_transcode(
                     fileInfo['video_id'],
                     proxies=proxies,
@@ -672,7 +675,8 @@ class XHS_Creator_Apis:
                     break
                 if readiness['state'] == 'readiness_unknown':
                     raise VideoReadinessError(readiness)
-                time.sleep(TRANSCODE_RETRY_DELAY)
+                time.sleep(min(10, TRANSCODE_RETRY_DELAY * (2 ** min(poll, 2)),
+                               max(0, readiness_deadline - time.monotonic())))
             else:
                 raise VideoReadinessError(readiness or {'state': 'pending'})
             progress['stage'] = 'payload'
@@ -749,12 +753,9 @@ class XHS_Creator_Apis:
             target_origin=self.edith_url,
             order_wire_headers=False,
         )
-        # Creator 发布请求需要独立的 Relay 签名配置。
-        headers['x-rap-param'] = generate_x_rap_param(
-            post_api,
-            body,
-            profile='creator',
-        )
+        # Older Relay releases compute RAP separately; atomic signing already includes it.
+        if not headers.get('x-rap-param'):
+            headers['x-rap-param'] = generate_x_rap_param(post_api, body, profile='creator')
         # 本地接入只提交一次。code=-1 或响应丢失时，调用方先人工核对后台，
         # 避免在平台已经收单但回包异常时创建重复笔记。
         progress.update(stage='submitting', submission_attempted=True)

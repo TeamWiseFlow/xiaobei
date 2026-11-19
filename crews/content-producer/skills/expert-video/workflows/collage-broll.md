@@ -27,19 +27,19 @@ Stage 3–10 调 `video-producer` 同名阶段命令，生成并填写纸拼贴�
 
 | Stage | 本类型动作与产物 |
 |---|---|
-| 0 | 核对文稿逐条可拆、规格和授权；缺字段向 Brief owner 澄清 |
+| 0 | 核对文稿逐条可拆、规格和素材；缺字段向 Brief owner 澄清 |
 | 1–2 | `script-write` 生成 `script/script.md` 隐喻清单；`script-self-eval` 按隐喻、纸片数、色彩与可转译性自检，低分返工 |
 | 3 | `storyboard-build` 按每条隐喻写镜头表，记录固定构图、视觉命题、原句、逐件进入顺序与时长；落 `storyboard/storyboard.json` |
 | 4 | `shot-decompose` 写空色场首帧、组装完成末帧及每层入场动作；落 `storyboard/shot_decompose.json` |
-| 5 | `character-register` 登记跨镜一致的人物/物件纸片、参考图、授权；无人物时明确登记空角色清单；落 `characters/registry.json` |
+| 5 | `character-register` 登记跨镜一致的人物/物件纸片、参考图；无人物时明确登记空角色清单；落 `characters/registry.json` |
 | GATE A | 呈交隐喻清单、分镜、首尾画面、人物/纸片一致性方案；停下等批准 |
 | 6 | `slot-plan` 为每镜 3–6 个独立纸片规划素材槽、色场和层级；落 `slots/slot-plan.json` |
-| 7 | `asset-resolve` 逐层落实图像、形状、纸纹，记录来源、授权或生成 prompt/模型/时间；落 `slots/asset-resolve.json` |
+| 7 | `asset-resolve` 逐层落实图像、形状、纸纹，记录来源或生成 prompt/模型/时间；落 `slots/asset-resolve.json` |
 | 8 | `slideshow-risk` 审核隐喻可读性、层独立性、真实入场、来源及水印/假字；做 HTML 静帧预览与人工检查，落 `slots/slideshow-risk.json`；fail 返工 |
 | 9 | `delivery-promise-lock` 逐条锁定时长、规格、声轨、纸片动作、封面和证据，落 `slots/delivery-promise.json` |
 | GATE B | 呈交每条素材来源、预览 contact sheet、最终定格帧与 Stage 8/9 审核；停下等批准 |
 | 10 | `render-shot` 建 `render/collage-render-plan.json`，按批准预览用 `visual-render` 实际渲染；特殊变形才用 `batch-i2v`。计划不等于已出片 |
-| 11 | `mix-audio` 建 `audio/collage-audio-plan.json`；默认逐条确认无声，有声音时登记来源、授权和对齐，不重做甲方口播 |
+| 11 | `mix-audio` 建 `audio/collage-audio-plan.json`；默认逐条确认无声，有声音时登记素材路径和对齐，不重做甲方口播 |
 | 12 | `assemble --manifest` 逐条核验并交接单段成片，输出项目成片路径；无声片保持无音轨，不附加静音轨 |
 | 13a | 公共 `video-review` 必跑；无声版的 `audio_absent` warning 是预期，有声版缺音轨则失败 |
 | 13b | `motion-audit` 逐层核验 Stage 9 的组装承诺，单条默认落 `review/collage-motion-audit.json`，批量条目各自指定审核路径；整体淡入不能通过 |
@@ -85,7 +85,7 @@ Stage 3–10 调 `video-producer` 同名阶段命令，生成并填写纸拼贴�
 
 ## 纸片素材与可控组装（Stage 6–9，GATE A 批准后）
 
-每条隐喻准备 3–6 个**独立的本地素材层**，用一张纯色 CSS 背景承载。素材可以是黑白半调人物/物件图片、彩色卡纸块、纸纹或连接件；不要求透明 PNG，规则矩形剪贴和 CSS `clip-path` 就能形成纸片。需要图像时调公共 `awk-img-gen` 分别生成，不生成一张无法拆开的完整尾帧。记录每个素材的 prompt、模型、时间和授权来源。文字、logo、水印、UI 不得混进素材。
+每条隐喻准备 3–6 个**独立的本地素材层**，用一张纯色 CSS 背景承载。素材可以是黑白半调人物/物件图片、彩色卡纸块、纸纹或连接件；不要求透明 PNG，规则矩形剪贴和 CSS `clip-path` 就能形成纸片。需要图像时调公共 `awk-img-gen` 分别生成，不生成一张无法拆开的完整尾帧。记录每个素材的 prompt、模型和时间。文字、logo、水印、UI 不得混进素材。
 
 底色按隐喻语义选择，同一批保持相近纸张质感和点色层级：焦橙/红用于时间与劳动，芥末黄用于警示与流失，墨绿用于认知与重置，深紫用于规范与沉淀，青绿用于协作与执行。主体以黑白半调为主，彩色卡纸只标出信息重点。
 

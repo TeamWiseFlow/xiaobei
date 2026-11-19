@@ -21,6 +21,11 @@ jobs:
       fail-fast: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    env:
+      NPM_REGISTRY: https://registry.npmjs.org
+      npm_config_registry: https://registry.npmjs.org
+      PNPM_CONFIG_REGISTRY: https://registry.npmjs.org
+      PIP_INDEX_URL: https://pypi.org/simple
 
     steps:
       - name: Checkout
@@ -57,6 +62,10 @@ jobs:
         # setup-python provides the runner toolchain and pip cache, not tools/python.
         # Initialize the same pinned venv as the installer before crew setup.
         run: node scripts/python-runtime.mjs install --root "$GITHUB_WORKSPACE"
+
+      - name: Install skill dependencies from clean checkout
+        # Check bundled runtime assets and npm lifecycle scripts before building the engine.
+        run: node scripts/install-skill-deps.mjs --root "$GITHUB_WORKSPACE" --state-dir "$HOME/.openclaw"
 
       - name: Read pinned openclaw version
         id: pin

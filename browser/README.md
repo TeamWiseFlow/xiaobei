@@ -46,7 +46,7 @@ Identity schema v2 records the SDK and fpgen identity. Old v1, corrupt or popula
 
 ## OpenClaw plugin and lifecycle service
 
-`browser/openclaw.plugin.json` and `plugin/index.ts` register the independent `xiaobei-browser` plugin through the public OpenClaw 2026.10.10 SDK. Its `xiaobei_browser` tool replaces the native browser tool. The public `skills/browser-guide/` skill remains in the normal shared skill layout; there is no second plugin-specific copy. Tool/file/evaluate/network restrictions remain enforced, including the native upload/inbound-media path rules. Unsupported SSRF/sandbox/run-bound policies fail closed.
+`browser/openclaw.plugin.json` and `plugin/index.ts` register the independent `xiaobei-browser` plugin through the public Plugin SDK of the OpenClaw release pinned in `openclaw.version`. Its `xiaobei_browser` tool replaces the native browser tool. Find the shared skill in `skills/browser-guide/`. Tool, file, evaluate, and network restrictions include the native upload and inbound media path rules. Unsupported SSRF, sandbox, and run-bound policies fail closed.
 
 The plugin service publishes an authenticated local broker in this installation's private runtime registry. `BrowserClient.start()` and both CLIs delegate startup to that service; subsequent actions reuse the per-session IPC endpoint. A browser launched for an agent exec is a child of the service owner, so command-tree cleanup cannot close the login window. A missing service returns `BROKER_REQUIRED` inside OpenClaw instead of launching a disposable daemon. Standalone CLI use without a Gateway retains local startup. A live but unreachable broker never falls back to local startup, and a start dispatched before a timeout is not replayed.
 

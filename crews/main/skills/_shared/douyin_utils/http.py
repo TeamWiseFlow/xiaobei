@@ -4,13 +4,14 @@ from __future__ import annotations
 import base64
 import json
 import re
+import time
 import uuid
 from functools import wraps
 from urllib.parse import parse_qsl, quote, unquote_plus, urlencode, urlsplit, urlunsplit
 import requests
 from relay_sign import RelaySignError, douyin_v2
-from .session import ApiSession, DEFAULT_SESSION, SessionError, session_lock, write_private
-from .verification import creator_verification
+from .session import ApiSession, DEFAULT_SESSION, SessionError, session_lock, write_private, identity_binding
+from .verification import creator_verification, creator_decision_diagnostic, creator_gateway_verification
 
 API_SESSION_FILE = DEFAULT_SESSION
 ALLOWED_HOSTS = {
@@ -111,15 +112,18 @@ def response_info(response):
     log_id = response.headers.get("x-tt-logid", "")
     if isinstance(log_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", log_id):
         info["log_id"] = log_id
+    if any(str(name).lower() == "x-tt-verify-passport-decision" for name in response.headers):
+        info["verification_decision"] = creator_decision_diagnostic(dict(response.headers))
     return info
 
 
 def private_response_headers(response):
     # Decision values can contain private material; never put them in response_info.
     return {
-        str(name).lower(): str(value)[:8192]
+        str(name).lower(): str(value)[:65536]
         for name, value in response.headers.items()
-        if str(name).lower() in {"content-type", "x-tt-logid", "bd_passport_security_gateway"}
+        if str(name).lower() in {"content-type", "content-length", "x-tt-logid", "bd_passport_security_gateway",
+                                 "access-control-expose-headers"}
         or str(name).lower().startswith(("x-tt-verify-", "bd-ticket-guard-"))
     }
 
@@ -557,15 +561,21 @@ def request(
     if return_response:
         return response
     verification = creator_verification(dict(response.headers)) if profile == "creator" else None
+    if profile == "creator" and not verification:
+        verification = creator_gateway_verification(dict(response.headers), response.content)
     if verification:
         raise DouyinRequestError(
-            "PLATFORM_VERIFICATION_REQUIRED", status=response.status_code,
+            "VERIFICATION_METHOD_UNSUPPORTED" if verification.get("supported") is False
+            else "PLATFORM_VERIFICATION_REQUIRED", status=response.status_code,
             response_info=response_info(response),
             response_prefix=response.content[:512] if capture_response else None,
             response_headers=private_response_headers(response) if capture_response else None,
             verification=verification,
         )
     if response.status_code == 401:
+        if profile == "web":
+            state.state.update(login_identity_pending=True, login_error="PLATFORM_AUTH_REJECTED")
+            state.save()
         raise DouyinRequestError("PLATFORM_AUTH_REJECTED", status=response.status_code)
     if response.status_code == 403:
         raise DouyinRequestError("PLATFORM_RISK_CONTROL", status=403,
@@ -596,6 +606,9 @@ def request(
         if not isinstance(status, (str, int)) or not re.fullmatch(r"-?[0-9]{1,10}", str(status)):
             raise DouyinRequestError("PLATFORM_BAD_RESPONSE")
         request_info, diagnostic = platform_error_context(state, profile, method, url, data, response)
+        if str(status) == "8" and profile == "web":
+            state.state.update(login_identity_pending=True, login_error="PLATFORM_LOGIN_REJECTED")
+            state.save()
         raise DouyinRequestError(
             "PLATFORM_LOGIN_REJECTED"
             if str(status) == "8"
@@ -603,19 +616,23 @@ def request(
             status=response.status_code, response_info=response_info(response),
             request_info=request_info, diagnostic_file=diagnostic,
         )
+    identity_url = urlsplit(url)
+    if (identity_url.hostname == "www.douyin.com" and identity_url.path == "/aweme/v1/web/query/user/"
+            and re.fullmatch(r"[1-9][0-9]{0,19}", str(data.get("id", "")))):
+        ident = str(data["id"])
+        state.state.setdefault("tokens", {}).update(device_id=ident, webid=ident)
+        state.state.setdefault("token_sources", {})["webid"] = "query-user.id"
+        state.save()
     if verify_identity:
         user = data.get("user") or data.get("user_info")
-        if not user and str(data.get("user_uid", "")).isdigit():
-            user = {"uid": str(data["user_uid"])}
-            data["user"] = user
-        if not isinstance(user, dict) or not str(user.get("uid", "")).isdigit():
+        if (identity_url.path == "/aweme/v1/web/query/user/"
+                or not isinstance(user, dict) or not str(user.get("uid", "")).isdigit()):
             raise DouyinRequestError("SELF_PROFILE_MISSING")
+        if expected_uid is not None and str(user["uid"]) != str(expected_uid):
+            raise DouyinRequestError("API_ACCOUNT_MISMATCH")
         state.state.update(uid=str(user["uid"]), sec_uid=user.get("sec_uid", ""))
-        identity_url = urlsplit(url)
-        if (identity_url.hostname == "www.douyin.com" and identity_url.path == "/aweme/v1/web/query/user/"
-                and re.fullmatch(r"[1-9][0-9]{0,19}", str(data.get("id", "")))):
-            ident = str(data["id"])
-            state.state.setdefault("tokens", {}).update(device_id=ident, webid=ident)
-            state.state.setdefault("token_sources", {})["webid"] = "query-user.id"
+        state.state.pop("login_error", None)
+        state.state["identity_check"] = {"uid": str(user["uid"]), "at": time.time(),
+                                         "binding": identity_binding(state)}
         state.save()
     return data

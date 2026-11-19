@@ -107,8 +107,8 @@ def validate_spec(spec):
                     raise ValueError('chart.label 最多 8 字')
         if kind == 'image':
             image = Path(scene.get('image', ''))
-            if not image.is_absolute() or not image.is_file() or not scene.get('source'):
-                raise ValueError('image 需要存在的绝对路径和 source 来源/授权')
+            if not image.is_absolute() or not image.is_file():
+                raise ValueError('image 需要存在的绝对路径')
     return spec
 
 

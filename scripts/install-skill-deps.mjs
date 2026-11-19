@@ -90,6 +90,8 @@ function main(argv) {
     const result = spawnSync(command, commandArgs, {
       cwd: skill.dir,
       stdio: "inherit",
+      // Deck rendering needs no CUDA EP from HyperFrames' ONNX dependency.
+      env: { ...process.env, ONNXRUNTIME_NODE_INSTALL_CUDA: "skip" },
     });
     if (result.error || result.status !== 0 || missing(skill)) {
       failures.push(skill.dir);

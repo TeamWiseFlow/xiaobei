@@ -46,6 +46,7 @@ foreach ($name in @('msyhl.ttc', 'msyh.ttc', 'msyhbd.ttc')) {
 }
 
 $oldPath = $env:PATH
+$oldInstallCuda = $env:ONNXRUNTIME_NODE_INSTALL_CUDA
 $env:PATH = "$(Split-Path $node);$oldPath"
 try {
     $manifest = Get-Content (Join-Path $tool 'package.json') -Raw | ConvertFrom-Json
@@ -56,6 +57,7 @@ try {
         if ((Get-Content $installed -Raw | ConvertFrom-Json).version -ne $dep.Value) { $needsNpm = $true; break }
     }
     if ($needsNpm) {
+        $env:ONNXRUNTIME_NODE_INSTALL_CUDA = 'skip'
         Write-Host 'Installing pinned deck-render npm packages...'
         Push-Location $tool
         try {
@@ -71,4 +73,5 @@ try {
     Write-Host 'deck-render ready: HyperFrames 0.8.50, shared Playwright/Chromium, Microsoft YaHei'
 } finally {
     $env:PATH = $oldPath
+    $env:ONNXRUNTIME_NODE_INSTALL_CUDA = $oldInstallCuda
 }

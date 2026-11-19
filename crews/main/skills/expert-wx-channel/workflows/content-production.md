@@ -201,7 +201,7 @@ DNA 约束的是选题与观看理由、短标题与视频描述写法、内容�
 - 视频名 / slug：
 - platform：wx_channel
 - workflow：reversal-ad / collage-broll / deck-talk（视频形态未确定时省略本字段；省略 = CP 按其通用制作流程做，叙事 / 动效 / 蒙太奇手法由 CP 据创意自定）
-- deck-talk 专属（仅该类型填写）：在 Brief 中逐项写 `- presenter_source：footage/avatar/audio`（兼容 none）、`- visual_source：slides/broll/mixed`、`- audio_origin：recorded/cloned/designed/stock-tts`、`- presenter：绝对路径`（需小窗时）、`- audio：绝对路径`（avatar/audio 模式）。实拍先用 talking-head-cut 剪好再交 CP；数字人交肖像+音频或音色档案；纯音频模式交音频，CP 配 B-roll。记录授权。
+- deck-talk 专属（仅该类型填写）：在 Brief 中逐项写 `- presenter_source：footage/avatar/audio`（兼容 none）、`- visual_source：slides/broll/mixed`、`- audio_origin：recorded/cloned/designed/stock-tts`、`- presenter：绝对路径`（需小窗时）、`- audio：绝对路径`（avatar/audio 模式）。实拍先用 talking-head-cut 剪好再交 CP；数字人交肖像+音频或音色档案；纯音频模式交音频，CP 配 B-roll。
 - 选题与观看理由：
 - 核心传达：
 - 内容创意：创意原型 + 展开逻辑 + 记忆点（+ 反转设计，如为反转植入类）
@@ -209,7 +209,7 @@ DNA 约束的是选题与观看理由、短标题与视频描述写法、内容�
 - 封面要求：封面主文案（用短标题或核心传达）+ 视觉方向
 - 制作规格：横屏 / 竖屏、时长带、画面风格、配音音色与声音形态、BGM 与音效、字幕
 - 口播文案：`voiceover.md` 绝对路径 / 真人口播录音绝对路径 / 不适用（口播 = 真人出镜、数字人、真人录音；剪辑配解说的**旁白归 CP 写**，写「不适用」）
-- 素材清单：逐条**绝对路径** + 来源 + 授权 + 规格（分辨率 / 帧率 / 时长——多源帧率不一致需 CP 在拼接时统一，注明各源帧率让 CP 规划期即预判最低公共规格）（无素材时写「无，由 CP 按 Brief 取材」）
+- 素材清单：逐条**绝对路径** + 来源 + 规格（分辨率 / 帧率 / 时长——多源帧率不一致需 CP 在拼接时统一，注明各源帧率让 CP 规划期即预判最低公共规格）（无素材时写「无，由 CP 按 Brief 取材」）
 - 交付物与验收：`video.mp4` + `cover.jpg` + `final-deliver.md`，回报三者绝对路径；验收标准
 - 闸门：GATE A / GATE B 批准人（用户或 main 代理批准 + 批准范围）
 - 禁止事项：事实与承诺边界、合规红线、禁用方向
@@ -236,6 +236,8 @@ main 负责监督并推动 CP 的进度，卡住时追问而不是替它做。
 
 第三个必停节点。成片与封面确认后才可发布。用户有意见按意见修改，直至确认。
 
+按 `video-edit` 的发布版本流程发送预览并保存确认记录。
+
 修改委托回 CP 时不用临时写任务描述，一律用**成片修改单**格式：
 
 ```markdown
@@ -251,11 +253,11 @@ CP 交付说明会相应增补「修改记录」段（其技能约定，见 expe
 
 ## Step 6 - 发布
 
-按 `wechat-channels-publish` 工具说明发布：登录与正文填充使用 `wechat-channels-publish` wrapper，其余页面操作按说明驱动 camoufox-cli。
+按 `wechat-channels-publish` 工具说明发布。登录、视频上传和正文填充使用 `wechat-channels-publish`，其他页面操作按工具说明执行。
 
 0. **封面变体准备（标准步骤，发布前完成）**：视频号发布页封面是双入口——个人主页卡 3:4、分享卡 4:3，直接裁 16:9 主图会切掉封面标题。CP 交付的 `cover.jpg` 是 16:9 主图，两个变体由 main 在发布前生成，采用**模糊底嵌入法**（实测参数）：目标画布 3:4 为 1080×1440、4:3 为 1440×1080；底图 = `cover.jpg` 放大铺满画布 + 高斯模糊 + 亮度压到 0.55；前景 = `cover.jpg` 全宽居中嵌入。产物落作品目录 `cover_profile_3x4.jpg` / `cover_share_4x3.jpg`，发布时两个封面入口分别上传对应变体（各入口的裁剪框里居中构图即可，标题不会被裁掉）。
 1. 打开创作者中心发布页，检查 `wechat-channel` session 登录态；失效时调用 `wechat-channels-publish login`，仅发送返回 `qr_verified: true` 的 `qr_path`，**Stop and wait** 等用户扫码确认，再用 `wechat-channels-publish login-confirm --keep-open` 核验并续作。
-2. 上传 `video.mp4`，等待上传与转码完成（最长 3 分钟）。
+2. 用 `wechat-channels-publish upload-video` 提交母带与对应确认记录，等待上传与转码完成（最长 3 分钟）。
 3. **设置封面**：两个封面入口分别上传 Step 6.0 生成的 `cover_profile_3x4.jpg`（个人主页卡）与 `cover_share_4x3.jpg`（分享卡），按工具说明「Step 5: 设置封面」执行；变体缺失时先用模糊底嵌入法补齐再上传，不要拿 16:9 主图直接对两个入口硬裁（会切标题）。（用户明确要用视频帧时在弹窗胶片条选帧代替。）
 4. **视频描述与短标题都要填**（均取 Step 4 定稿）：视频描述含话题标签，短标题按发布页字段单独填；两项都不得留空。
 5. 点击“发表”；弹出原创声明弹窗时按工具说明处理。发布后用户会在手机端补充原创声明等事项。

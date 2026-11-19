@@ -343,8 +343,9 @@ fi
 # 有 overrides 或 patches 时才需要同步依赖
 if [ "$NEEDS_INSTALL" = "true" ]; then
   echo "📦 Syncing dependencies..."
+  node "$PROJECT_ROOT/scripts/openclaw-plugins.mjs" prepare
   cd "$OPENCLAW_DIR"
-  # Preserve the upstream dependency graph and lockfile.
+  # Keep the upstream lockfile and install only the selected workspace projects.
   NODE_OPTIONS="--max-old-space-size=8192" pnpm install --frozen-lockfile
   cd "$PROJECT_ROOT"
 fi
@@ -375,6 +376,7 @@ elif [ "$NEEDS_INSTALL" = "true" ]; then
   echo "🔨 Building openclaw (patches applied, dist needs refresh)..."
   cd "$OPENCLAW_DIR"
   pnpm build
+  node "$PROJECT_ROOT/scripts/openclaw-plugins.mjs" verify
   cd "$PROJECT_ROOT"
   echo "✅ Build complete"
 fi

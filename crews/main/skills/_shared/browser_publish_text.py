@@ -2,10 +2,12 @@
 import argparse
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 
 from publish_text import PublishTextError, read_publish_text
+from video_version import verify_upload
 
 
 def browser(session, *args):
@@ -55,13 +57,42 @@ def channels_script(body):
     })()'''.replace('BODY', json.dumps(body, ensure_ascii=False), 1)
 
 
+def upload_channels_video(args):
+    source = Path(args.video).resolve(strict=True)
+    command = ['browser-guide', 'stage-upload', str(source)]
+    if args.inbound_root:
+        command.extend(['--inbound-root', args.inbound_root])
+    result = subprocess.run(command, capture_output=True, text=True, timeout=120, check=True)
+    target = Path(json.loads(result.stdout)['files'][0]['path'])
+    try:
+        confirmation = verify_upload(target, args.video_approval)
+    except (OSError, ValueError):
+        target.unlink(missing_ok=True)
+        raise
+    evidence = {'video_confirmation': confirmation, 'upload_file': str(target), 'upload_attempted': True}
+    try:
+        browser('wechat-channel', 'upload', 'input[type=file]', str(target))
+    except (ValueError, RuntimeError, OSError, subprocess.SubprocessError) as exc:
+        return {'ok': False, 'error': str(exc), **evidence}
+    return {'ok': True, **evidence}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('platform', choices=('wechat-channel',))
-    parser.add_argument('command', choices=('fill',))
-    parser.add_argument('--body', required=True, help='纯正文文字或 @UTF-8正文文件路径')
+    commands = parser.add_subparsers(dest='command', required=True)
+    fill = commands.add_parser('fill')
+    fill.add_argument('--body', required=True, help='纯正文文字或 @UTF-8正文文件路径')
+    upload = commands.add_parser('upload-video', help='暂存并上传用户已确认的母带')
+    upload.add_argument('--video', required=True)
+    upload.add_argument('--video-approval', required=True)
+    upload.add_argument('--inbound-root')
     args = parser.parse_args(argv)
     try:
+        if args.command == 'upload-video':
+            result = upload_channels_video(args)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0 if result['ok'] else 1
         body = read_publish_text(args.body)
         if not body.strip():
             raise ValueError('BODY_EMPTY')

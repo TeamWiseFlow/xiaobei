@@ -145,6 +145,8 @@ def public(job):
     }.get(job['stage'])
     if not result['supported']:
         result['next_action'] = '请用户在同账号网页完成验证'
+    elif challenge['type'] == '213' and job['stage'] == 'required':
+        result['next_action'] = 'verify-start --phone-file <0600 手机号文件>'
     if job.get('masked_phone'):
         result['masked_phone'] = job['masked_phone']
     if job['stage'] == 'awaiting_scan' and QR_FILE.is_file():
@@ -191,6 +193,10 @@ def _post(client, path, payload):
 
 def _base(job):
     c = job['challenge']
+    if c['type'] == '213':
+        return {'verifyType': '213', 'verifyBiz': int(c['status']),
+                'verifyUuid': re.sub(r'^(sg__|ae__|gcp__)', '', c['uuid']),
+                'sourceSite': 'https://www.xiaohongshu.com/explore'}
     if c['type'] == '120':
         uuid = re.sub(r'^(sg__|ae__|gcp__)', '', c['uuid'])
         return {'verifyUuid': uuid, 'verifyType': '120', 'verifyBiz': str(c['status']),
@@ -199,29 +205,44 @@ def _base(job):
             'verifyBiz': str(c['status']), 'sourceSite': '/'}
 
 
-def start():
+def start(phone_file=None):
     with _lock():
         job = _load()
         if job['stage'] != 'required':
             return public(job)
-        if job['challenge']['type'] not in {'120', '124'}:
+        if job['challenge']['type'] not in {'120', '124', '213'}:
             return public(job)
+        phone = None
+        if job['challenge']['type'] == '213':
+            if not phone_file:
+                return public(job)
+            phone = _read(Path(phone_file)).strip()
+            if not re.fullmatch(r'1\d{10}', phone):
+                raise ValueError('手机号文件必须只包含十一位大陆手机号')
         # Persist intent before any send/init; a repeated invocation cannot send twice.
         job['stage'] = 'preparing'
         _write(JOB_FILE, job)
         client = restore(job['original'])
         try:
-            # Verification is a fresh page load; never reuse the login report cache.
-            client._login_b1 = ''
-            client._webprofile_reported = False
-            cookies = client.profile.cookie_map
-            client._initialize_security(cookies)
-            client._activate(cookies)
-            client.ensure_webprofile(cookies)
-            cookies['xsecappid'] = 'fe-login'
-            client.profile.update_cookies(cookies)
+            if phone is None:
+                # Types 120/124 open a separate verification page; 213 uses the login session.
+                client._login_b1 = ''
+                client._webprofile_reported = False
+                cookies = client.profile.cookie_map
+                client._initialize_security(cookies)
+                client._activate(cookies)
+                client.ensure_webprofile(cookies)
+                cookies['xsecappid'] = 'fe-login'
+                client.profile.update_cookies(cookies)
             base = _base(job)
-            if job['challenge']['type'] == '120':
+            if phone is not None:
+                _post(client, '/api/redcaptcha/v2/getverifyuserinfo', {
+                    'verifyUuid': base['verifyUuid'], 'verifyType': '213'})
+                data = _post(client, '/api/redcaptcha/v2/vc/send', {
+                    **base, 'phoneNumber': phone, 'regionCode': 86})
+                job['masked_phone'] = phone[:3] + '****' + phone[-4:]
+                job['stage'] = 'awaiting_code'
+            elif job['challenge']['type'] == '120':
                 data = _post(client, '/api/redcaptcha/v2/vc/init', base)
                 job['masked_phone'] = next((v for v in data.values()
                                             if isinstance(v, str) and '*' in v and re.search(r'\d', v)), None)
@@ -234,6 +255,8 @@ def start():
                 raise RuntimeError('验证响应缺少任务编号；不要重复发送')
             job['rid'] = str(data['rid'])
             job['verification'] = snapshot(client)
+            if job['challenge']['type'] == '213':
+                job['original'] = job['verification']
             if job['stage'] == 'awaiting_scan':
                 url = 'https://www.xiaohongshu.com/web-login/qrcode-transfer?' + urlencode({
                     'rid': job['rid'], 'verifyUuid': job['challenge']['uuid'], 'verifyType': '124'})
@@ -332,6 +355,8 @@ def confirm(code_file=None):
                 elif status not in (1, 2, 4):
                     raise RuntimeError('安全验证返回未知状态')
             job['verification'] = snapshot(client)
+            if job['challenge']['type'] == '213':
+                job['original'] = job['verification']
             if passed:
                 job['stage'] = 'passed'
             _write(JOB_FILE, job)

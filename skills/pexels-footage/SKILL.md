@@ -1,6 +1,6 @@
 ---
 name: pexels-footage
-description: Search and download copyright-free images and video clips from Pexels
+description: Search and download images and video clips from Pexels
   API. Supports both photo search (--type image) and video search (--type video, default).
 metadata:
   openclaw:
@@ -12,7 +12,7 @@ metadata:
       - PEXELS_API_KEY
 ---
 
-# Pexels Footage — 版权免费图片/视频素材下载
+# Pexels Footage — 图片/视频素材下载
 
 Use this skill when:
 - You need real photos or video clips (not AI-generated) as source material
