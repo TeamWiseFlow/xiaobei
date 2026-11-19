@@ -16,11 +16,12 @@
 # ════════════════════════════════════════════════════════════════════
 # Stage 1: build（装齐 immutable 应用层 + 显示栈软件）
 # ════════════════════════════════════════════════════════════════════
-# docker buildx multi-arch：基础镜像 node:24.16.0-bookworm 自身是多架构的，
+# docker buildx multi-arch：Node Debian Bookworm 基础镜像自身是多架构的，
 # buildx --platform linux/amd64,linux/arm64 会自动拉对应架构的 node 镜像。
 # 统一浏览器资产锁按 process.arch 选择对应 Camoufox release，
 # 无需在此声明 TARGETARCH 分支。
-FROM node:24.16.0-bookworm AS xiaobei-build
+ARG XIAOBEI_NODE_VERSION=24.22.3
+FROM node:${XIAOBEI_NODE_VERSION}-bookworm AS xiaobei-build
 
 # NPM registry 走 ARG 参数——国内构建机走 npmmirror（省代理流量，与裸机 install.sh 同源），
 # 海外构建机（GitHub Actions arm64 runner）走 npmjs（不跨境，最快）。
@@ -113,7 +114,7 @@ RUN grep -q "BOOTSTRAP_CHAIN_EXIT=0" /opt/xiaobei/.bootstrap-log
 # ════════════════════════════════════════════════════════════════════
 # Stage 2: runtime（瘦运行镜像，从 build 拷 immutable 层）
 # ════════════════════════════════════════════════════════════════════
-FROM node:24.16.0-bookworm
+FROM node:${XIAOBEI_NODE_VERSION}-bookworm
 
 ENV PATH="/opt/xiaobei/tools/python/bin:${PATH}" \
     VIRTUAL_ENV=/opt/xiaobei/tools/python \

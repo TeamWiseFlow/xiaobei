@@ -8,6 +8,7 @@
 | `010-gateway-build-test.patch` | 验证 Gateway 各构建 profile 不生成原生客户端协议 |
 | `011-plugin-profile.patch` | 将插件构建、assets 和 Gateway 插件发现接入小贝发行清单 |
 | `012-tokenjuice-agent-scope.patch` | 按运行时的 agent ID 限制 Tokenjuice 试用范围 |
+| `013-doctor-browser-activation.patch` | 原生浏览器插件禁用时跳过其 Doctor 检查 |
 
 `patches/apply.sh` 是只应用源码补丁的入口：校验 pin，严格检查并应用补丁，不修改用户配置、安装依赖或操作服务。调用前要求上游工作树干净。`scripts/apply-addons.sh` 在其部署流程中调用此入口，随后完成配置同步、依赖及构建。
 

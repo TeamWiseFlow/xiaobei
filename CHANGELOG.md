@@ -1,7 +1,10 @@
 # v5.8.2
 
 - **升级至 OpenClaw 2026.10 LTS**。锁定官方 Gateway Extended Stable **2026.10.33**，包含长会话内存、消息重连和升级恢复修复。小贝继续构建 Gateway 和 Web Control UI。 [OpenClaw 发布说明](https://github.com/openclaw/openclaw/releases/tag/v2026.10.33)
+- **更新随包 Node.js**。四个平台的预构建包和 Docker 镜像使用 **24.22.3 LTS**，包含 11 月安全修复。 [Node.js 安全公告](https://nodejs.org/en/blog/vulnerability/november-2026-security-releases/)
 - **精简内置插件**。随包提供 50 个插件，保留默认记忆引擎 `memory-core`，仅在 IT Engineer 试用 `tokenjuice` 压缩长命令输出。Active Memory、MCP Events、Memory Wiki、桌面操作和 IMAP 触发器可按需启用。 [插件清单和启用场景](docs/openclaw-plugins.md)
+- **修正浏览器诊断**。原生浏览器插件禁用时，Doctor 跳过其 Chrome 扩展和 Relay 检查。
+- **精简默认技能**。默认技能列表移除需要额外安装命令行工具的 `gifgrep`、`nano-pdf` 和 `summarize`。
 - **更新微信渠道安装**。个人微信使用腾讯稳定版 **2.4.10**，源码升级校验插件归档并使用已构建的宿主安装，避免额外下载或构建 OpenClaw。Docker 预装时通过 OpenClaw 原生能力授权。企业微信由 `work-channel-binding` 按需安装并校验官方渠道插件 **2026.10.30**，按插件要求写入机器人账号凭据及 crew 路由。
 - **完善抖音登录和发布续接**。短信和人脸核验后续接原发布任务，复用已上传素材。对提交结果不明确的任务保留回执和诊断，先核查作品再决定是否续接。
 - **减少平台请求和重复签名**。小红书合并部分签名计算并复用有效会话材料，抖音在一次发布内复用有效图片上传凭据，TikTok 和快手合并适配的 Relay 调用。跨平台客户端统一处理限流和可重试请求。

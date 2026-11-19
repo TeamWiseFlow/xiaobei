@@ -14,7 +14,6 @@
 # 也不放行 node 等通用解释器--等价于对外 crew 开任意代码执行。
 +exp-invite
 +proactive-send
-+nano-pdf
 +jq
 +rg
 # 只读文本读取、检索和截取（支持 grep ... | head 等组合）

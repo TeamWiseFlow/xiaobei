@@ -14,7 +14,7 @@
 | 浏览器 | SDK 配套 **`158.0.1-beta.41`**；版本、各平台文件名/校验值见 `browser/assets.lock.json` |
 | 指纹 | 独立固定 `fpgen-js 1.3.0`，固定模型 `model-2/2026`；字体/语音/音频/GPU 等由 SDK 依身份生成；应用持久化原始身份输入 |
 | 附加资产 | uBlock Origin 1.75.0、GeoIP AIO 2026.10.28；模型、数据库、扩展均由显式安装器准备并校验，启动不追 latest |
-| Node | 浏览器包 >=22.15；完整产品遵循 OpenClaw 所需 Node 版本，当前分发 Node 24.16.0 |
+| Node | 浏览器包 >=22.15；完整产品遵循 OpenClaw 所需 Node 版本，当前分发 Node 24.22.3 |
 | 基座 | 5.8.x 跟随 OpenClaw **2026.10.x**；具体 SHA 继续由 `openclaw.version` 固定，当前锁定 2026.10.10 |
 | 裁剪 | 本轮不全面裁剪上游功能/依赖；跳过 Swift/Kotlin 客户端生成，保留 Web Control UI。浏览器工具仅暴露 runtime 已实现能力 |
 | 普通站点 | 共享持久化 `default`；平台专用 session、平台 API 会话继续遵循具体技能，不能按每个普通网站新建 profile |

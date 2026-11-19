@@ -3,12 +3,9 @@
   "name": "producer",
   "workspace": "{path_to_.openclaw}/workspace-content-producer",
   "skills": [
-    "nano-pdf",
     "skill-creator",
     "tmux",
     "weather",
-    "summarize",
-    "gifgrep",
     "aigc-video-gen",
     "awk-tts",
     "bgm-library",

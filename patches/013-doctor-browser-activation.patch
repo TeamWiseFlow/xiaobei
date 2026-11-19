@@ -1,0 +1,98 @@
+diff --git a/src/commands/doctor-browser.ts b/src/commands/doctor-browser.ts
+--- a/src/commands/doctor-browser.ts
++++ b/src/commands/doctor-browser.ts
+@@ -1,6 +1,7 @@
+ import { note } from "../../packages/terminal-core/src/note.js";
+ import type { OpenClawConfig } from "../config/types.openclaw.js";
+ import { loadBundledPluginPublicSurfaceModuleSyncCore } from "../plugin-sdk/facade-loader.js";
++import { normalizePluginsConfig, resolveEffectiveEnableState } from "../plugins/config-state.js";
+ 
+ type BrowserDoctorDeps = {
+   noteFn?: typeof note;
+@@ -18,6 +19,16 @@
+   maybeRepairOwnedChromeExtensionNativeHosts?: () => Promise<BrowserNativeHostRepairResult>;
+ };
+ 
++function shouldRunBrowserDoctor(cfg: OpenClawConfig): boolean {
++  return resolveEffectiveEnableState({
++    id: "browser",
++    origin: "bundled",
++    config: normalizePluginsConfig(cfg.plugins),
++    rootConfig: cfg,
++    enabledByDefault: true,
++  }).enabled;
++}
++
+ function loadBrowserDoctorSurface(): BrowserDoctorSurface {
+   return loadBundledPluginPublicSurfaceModuleSyncCore<BrowserDoctorSurface>({
+     dirName: "browser",
+@@ -25,7 +36,12 @@
+   });
+ }
+ 
+-export async function maybeRepairOwnedChromeExtensionNativeHosts(): Promise<BrowserNativeHostRepairResult> {
++export async function maybeRepairOwnedChromeExtensionNativeHosts(
++  cfg: OpenClawConfig,
++): Promise<BrowserNativeHostRepairResult> {
++  if (!shouldRunBrowserDoctor(cfg)) {
++    return { status: "skipped", reason: "browser plugin disabled", changes: [], warnings: [] };
++  }
+   try {
+     const repair = loadBrowserDoctorSurface().maybeRepairOwnedChromeExtensionNativeHosts;
+     return repair ? await repair() : { changes: [], warnings: [] };
+@@ -40,6 +56,9 @@
+ }
+ 
+ export async function noteChromeMcpBrowserReadiness(cfg: OpenClawConfig, deps?: BrowserDoctorDeps) {
++  if (!shouldRunBrowserDoctor(cfg)) {
++    return;
++  }
+   try {
+     await loadBrowserDoctorSurface().noteChromeMcpBrowserReadiness(cfg, deps);
+   } catch (error) {
+diff --git a/src/commands/doctor-browser.facade.test.ts b/src/commands/doctor-browser.facade.test.ts
+--- a/src/commands/doctor-browser.facade.test.ts
++++ b/src/commands/doctor-browser.facade.test.ts
+@@ -46,11 +46,29 @@
+       maybeRepairOwnedChromeExtensionNativeHosts: repair,
+     });
+ 
+-    await expect(maybeRepairOwnedChromeExtensionNativeHosts()).resolves.toEqual({
++    await expect(maybeRepairOwnedChromeExtensionNativeHosts({})).resolves.toEqual({
+       changes: ["repaired"],
+       warnings: [],
+     });
+     expect(repair).toHaveBeenCalledOnce();
++  });
++
++  it.each<NonNullable<OpenClawConfig["plugins"]>>([
++    { entries: { browser: { enabled: false }, "xiaobei-browser": { enabled: true } } },
++    { enabled: false },
++    { deny: ["browser"] },
++    { allow: ["xiaobei-browser"] },
++  ])("skips the native browser diagnostics when plugin policy is %j", async (plugins) => {
++    const cfg: OpenClawConfig = { browser: { enabled: true }, plugins };
++    const noteFn = vi.fn();
++
++    await noteChromeMcpBrowserReadiness(cfg, { noteFn });
++    await expect(maybeRepairOwnedChromeExtensionNativeHosts(cfg)).resolves.toMatchObject({
++      status: "skipped",
++      warnings: [],
++    });
++    expect(loadBundledPluginPublicSurfaceModuleSyncCore).not.toHaveBeenCalled();
++    expect(noteFn).not.toHaveBeenCalled();
+   });
+ 
+   it("warns and no-ops when the browser doctor surface is unavailable", async () => {
+diff --git a/src/flows/doctor-core-checks.ts b/src/flows/doctor-core-checks.ts
+--- a/src/flows/doctor-core-checks.ts
++++ b/src/flows/doctor-core-checks.ts
+@@ -630,7 +630,7 @@
+         changes: [],
+       };
+     }
+-    const result = await maybeRepairOwnedChromeExtensionNativeHosts();
++    const result = await maybeRepairOwnedChromeExtensionNativeHosts(ctx.cfg);
+     return {
+       ...(result.status
+         ? { status: result.status, reason: result.reason }

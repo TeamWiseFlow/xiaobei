@@ -2,8 +2,6 @@
 # 格式：每行一个技能名称；# 开头为注释；支持空行
 # 注意：不声明 self-improving，对外 crew 不允许自我升级
 
-# 知识检索与信息获取
-nano-pdf
 # 客户数据库（SQLite，schema 由 HRBP 升级流程维护）
 customer-db
 
