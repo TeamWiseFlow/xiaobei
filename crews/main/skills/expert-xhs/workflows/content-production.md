@@ -227,6 +227,8 @@ Brief 硬性规则：
 
 第四个必停节点。图文确认正文、图组与封面；视频确认成片、封面、标题正文与发布描述。
 
+视频按 `video-edit` 的发布版本流程发送预览并保存确认记录。
+
 ## Step 7 - 存文件
 
 `xhs/outputs/<note-name>/`：
@@ -249,7 +251,7 @@ xhs-publish check
 xhs-publish --mode image --title "标题" --body @/绝对路径/body.txt --images img1.jpg img2.jpg img3.jpg
 
 # 2'. 视频发布
-xhs-publish --mode video --title "标题" --body @/绝对路径/body.txt --video video.mp4 --cover cover.jpg
+xhs-publish --mode video --title "标题" --body @/绝对路径/body.txt --video video.mp4 --video-approval 确认记录.json --cover cover.jpg
 ```
 
 - `--body @/绝对路径/body.txt` 由脚本读取 UTF-8 正文文件，读取失败即停止。文件只放发布正文和话题，不含标题或分节说明；不要硬编码多行正文或用 `$(cat file)` 展开。

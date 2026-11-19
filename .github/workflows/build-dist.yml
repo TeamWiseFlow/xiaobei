@@ -101,6 +101,7 @@ jobs:
           cd openclaw
           NODE_OPTIONS=--max-old-space-size=8192 pnpm build
           NODE_OPTIONS=--max-old-space-size=8192 pnpm ui:build
+          node ../scripts/openclaw-plugins.mjs verify
         env:
           CI: 'true'
 
@@ -124,7 +125,9 @@ jobs:
           # 1. openclaw 引擎：dist + 源码 + lockfile + package.jsons，排除 node_modules / .git / 缓存
           #    用户侧 pnpm install --prod 按 lockfile 重建 node_modules
           #    Plugin SDK 的生成包装包属于构建产物，必须保留。
+          node "$REPO/scripts/openclaw-plugins.mjs" rsync-excludes > "$RUNNER_TEMP/openclaw-plugin-excludes"
           rsync -a \
+            --exclude-from="$RUNNER_TEMP/openclaw-plugin-excludes" \
             --include='/dist/extensions/node_modules/' \
             --include='/dist/extensions/node_modules/openclaw/***' \
             --exclude='node_modules' \

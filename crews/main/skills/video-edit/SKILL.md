@@ -240,6 +240,33 @@ video-edit preview <input.mp4> --output <project-dir>/previews/<NN>_preview.mp4
 
 默认压到 ≤16MB，`--target-mb` 可调。
 
+### 绑定发布确认版本
+
+发送最终成片给用户确认时，用当前母带的 `video-review` 报告生成带版本记录的预览。每个版本使用不同的预览文件名。
+
+```bash
+video-edit preview <母带.mp4> --output <作品目录>/previews/v1.mp4 --review <verdict.json>
+```
+
+发送返回的 `preview.path`，把同一次调用返回的 `manifest` 与预览消息关联。收到用户对该版本的明确确认后，用该条确认消息的引用登记。
+
+```bash
+video-edit confirm-preview <manifest> --confirmation-ref <用户确认消息引用>
+```
+
+发布时把返回的 `approval` 交给对应工具的 `--video-approval`，并将母带路径交给 `--video`。`VIDEO_VERSION_MISMATCH` 时停止，重新审核、预览和确认当前母带。缺少确认记录时如实标记未确认。保存质检报告、预览确认记录与平台回执，回执出现作品 ID 后一起归档。先处理旧回执中的待核实结果，再考虑新的发布动作。
+
+### 按需测量音频
+
+用户明确要求节奏或响度实测时，指定应测的混音窗口和实际选用的 BGM 段。测量只读，时间从各文件首个音频时间戳起算，单位为秒。
+
+```bash
+video-edit audio-report <成片.mp4> --window gap:2.1:2.5 --window voice:3.0:4.5 \
+  --bgm <曲目.wav> --bgm-window 47:57 --output <作品目录>/audio-report.json
+```
+
+整轨报告 LUFS 和真峰值 dBTP，短窗报告 RMS 和样本峰值 dBFS。需要比较分轨时，对各轨分别测量同一时间窗。BPM 根据实际选段估算，`ambiguous` 时报告候选值，`unknown` 时报告原因。短窗缺音或超出原文件范围时按实际覆盖报告。阈值按项目要求判断，结合试听核对口播清晰度、节奏和配乐衔接。
+
 ---
 
 ## 成片自检（强制闸门）

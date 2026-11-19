@@ -34,6 +34,8 @@ xhs-publish --mode video --title "标题" --body @/绝对路径/body.txt --video
 
 标题 1–20 字，正文 1–1000 字；图文需 1–18 张图片，视频需 `--video`。`--topics` 可补充话题，合计最多 10 个；`--private` 设为仅自己可见。笔记含 AI 合成内容时加 `--ai-declaration`，发布请求会带上创作者端的“笔记含 AI 合成内容”声明；纯实拍内容不加。正文中的 `#话题` 自动整理为 Creator 可识别的内联话题格式。
 
+对通过聊天预览确认的成片，传母带 `--video` 和 `video-edit confirm-preview` 返回的 `--video-approval`。把返回的 `video_confirmation` 与本次调用的回执和作品 ID 一同保留。
+
 发布前核对用户已认可的标题、正文、图片顺序及可见性；已有授权不重复索要同一批准。提交成功必须同时有 `ok: true` 和 `note_id`，再记录返回的 `url`。成功回执的 `status: submitted`、`accepted:true` 表示平台已接受；播放核实可以另行完成，不能把它退回“发布失败”或要求重发。
 
 失败按回执处理：

@@ -20,7 +20,7 @@ metadata:
 
 ## 共同约束
 
-- 先按 workspace AGENTS.md 的 Tools 节及 OFB_ENV.md 确认程序、配置和 stateDir。本文基于仓库 `openclaw.version` 的 2026.10.4；运行版本另行核实，不把旧构建信息当现役事实。
+- 先按 workspace AGENTS.md 的 Tools 节及 OFB_ENV.md 确认程序、配置和 stateDir。源码版本见仓库 `openclaw.version`，运行版本用已安装的 CLI 核实。
 - 优先用当前会话可用且获授权的 `automations`、`gateway`、`sessions_*`、`plugins` 等原生工具。CLI 表中的 `openclaw` 指已安装入口；源码部署用已构建的 `node <PROJECT_ROOT>/openclaw/dist/index.js`，生产中不运行 `pnpm openclaw` 或开发构建入口。
 - 维护范围沿用本次已有授权。只查日志不自动重启、改配置或发测试消息；不重复索取已获得的授权。管理权限不等于聊天 allowlist，权限不足交可信管理员，不直接写 SQLite 绕过。
 - 不手改活动 SQLite、旧 sessions.json、cron JSON 或 exec-approvals.json。数据库备份用原生备份或 SQLite 一致性快照，不对打开的数据库做 Git checkout/rebase 或复制单个主文件当作完整备份。

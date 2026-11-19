@@ -71,4 +71,4 @@
 
 1. **成片同步**：脚本改动涉及画面或口播的，按 `content-production.md` Step 5 重新走视频制作（已有成片只需轻剪辑时走 `talking-head-cut` / `video-edit`）。
 2. **存文件**：稿件与成片归位 `wx_channel/outputs/<video-name>/`，同步更新 `brief.md`、`voiceover.md`（如有）、`cover.jpg` 与 `dna-meta.json`。
-3. **发布 + 入库**：按 `wechat-channels-publish` 工具说明发布，再按 `content-production.md` Step 7 调 `published-track record` 入库——`--title` 仍传完整视频描述；视频描述改过的，用新文案重跑记录。
+3. **发布 + 入库**：按 `video-edit` 的发布版本流程登记当前成片的确认，再按 `wechat-channels-publish` 工具说明发布。按 `content-production.md` Step 7 调 `published-track record` 入库，`--title` 传本次完整视频描述。

@@ -22,13 +22,13 @@ Supported channels:
 Before collecting account credentials, confirm the selected channel plugin is installed and enabled.
 
 - Feishu: follow `./skills/work-channel-binding/docs/feishu.md` and the current OpenClaw Feishu setup path.
-- WeCom: installs the plugin by running:
+- WeCom: check `wecom-openclaw-plugin` in the OpenClaw plugin list. If it is missing or needs to be upgraded to the repository pin, run the following after user confirmation.
 
 ```bash
-WISEFLOW_CONFIRM_WECOM_INSTALL=confirmed ./skills/work-channel-binding/scripts/install-wecom-channel.sh
+WISEFLOW_CONFIRM_WECOM_INSTALL=confirmed work-channel-binding install-wecom
 ```
 
-After installing a channel plugin, tell the user that Gateway may need a restart before binding verification succeeds.
+The wrapper verifies the pinned WeCom package checksum and lets OpenClaw install and enable the plugin. After installing a channel plugin, tell the user that Gateway may need a restart before binding verification succeeds.
 
 ## Required Flow
 
@@ -36,7 +36,7 @@ After installing a channel plugin, tell the user that Gateway may need a restart
 2. Show the relevant tutorial:
    - `./skills/work-channel-binding/docs/feishu.md`
    - `./skills/work-channel-binding/docs/wecom.md`
-3. Confirm channel plugin readiness. For WeCom, if the plugin is not installed yet, run `WISEFLOW_CONFIRM_WECOM_INSTALL=confirmed ./skills/work-channel-binding/scripts/install-wecom-channel.sh` from Main Agent after user confirmation; do not ask the user to run `npx` manually.
+3. Confirm channel plugin readiness using the prerequisites above.
 4. Collect account information:
    - account id;
    - account name;
@@ -47,19 +47,20 @@ After installing a channel plugin, tell the user that Gateway may need a restart
    - `groupPolicy` for group chats.
    If the user is unsure, default both policies to `open`. Explain that even when group chat policy is `open`, group chats only respond to messages that mention the bot. Do not repeat secrets back in summaries; scripts must redact them in output.
 5. Run a binding check:
-   - `python3 ./skills/work-channel-binding/scripts/check-work-channel-bindings.py`
+   - `work-channel-binding check`
 6. Prepare a dry-run plan:
-   - `python3 ./skills/work-channel-binding/scripts/prepare-work-channel-binding.py --channel <feishu|wecom> --plan-file <plan.json> --account-id <account> --account-name <name> --agent-id <agent> --app-id <id> --app-secret <secret> --dm-policy open --group-policy open`
+   - `work-channel-binding prepare --channel <feishu|wecom> --plan-file <plan.json> --account-id <account> --account-name <name> --agent-id <agent> --app-id <id> --app-secret <secret> --dm-policy open --group-policy open`
+   - For WeCom, pass the Bot ID as `--app-id` and the bot Secret as `--app-secret`.
 7. Show a redacted summary and ask for user's confirmation.
 8. Apply only after confirmation:
-   - `python3 ./skills/work-channel-binding/scripts/apply-work-channel-binding.py --plan-file <plan.json>`
+   - `work-channel-binding apply --plan-file <plan.json>`
 9. Ask for Gateway restart confirmation.
 10. Before restarting, record followup:
-   - `python3 ./skills/work-channel-binding/scripts/record-pending-followup.py --reason work-channel-binding`
+   - `work-channel-binding record-followup --reason work-channel-binding`
 11. Restart Gateway only after user confirmation:
-   - `WISEFLOW_CONFIRM_GATEWAY_RESTART=confirmed ./skills/work-channel-binding/scripts/restart-gateway-confirmed.sh work-channel-binding`
+   - `WISEFLOW_CONFIRM_GATEWAY_RESTART=confirmed work-channel-binding restart work-channel-binding`
 12. On next session, complete followup:
-   - `python3 ./skills/work-channel-binding/scripts/complete-pending-followup.py`
+   - `work-channel-binding complete-followup`
 
 ## Gateway Logs for Verification
 

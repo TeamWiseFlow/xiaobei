@@ -356,26 +356,32 @@
       "xai": {
         "enabled": false
       },
-      "browser": {
-        "enabled": false
-      },
       "xiaobei-browser": {
         "enabled": true
-      },
-      "phone-control": {
-        "enabled": false
-      },
-      "google-meet": {
-        "enabled": false
-      },
-      "teams-meetings": {
-        "enabled": false
       },
       "zoom-meetings": {
         "enabled": false
       },
-      "codex": {
+      "active-memory": {
         "enabled": false
+      },
+      "mcp-events": {
+        "enabled": false
+      },
+      "memory-wiki": {
+        "enabled": false
+      },
+      "cua-computer": {
+        "enabled": false
+      },
+      "imap": {
+        "enabled": false
+      },
+      "tokenjuice": {
+        "enabled": true,
+        "config": {
+          "agentIds": ["it-engineer"]
+        }
       },
       "memory-core": {
         "enabled": true

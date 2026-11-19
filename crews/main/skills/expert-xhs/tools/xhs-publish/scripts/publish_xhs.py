@@ -14,6 +14,7 @@ from apis.xhs_readiness import VideoReadinessError  # noqa: E402
 from apis.xhs_submission import NoteSubmissionError  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "_shared"))
 from publish_text import PublishTextError, read_publish_text  # noqa: E402
+from video_version import verified_video  # noqa: E402
 
 SUBMISSION_RECOVERY = (
     "先用 xhs-engagement list 核查；列表可能滞后，未查到也不要自动重发。"
@@ -166,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--body", required=True, help="正文文字或 @UTF-8正文文件路径")
     parser.add_argument("--images", nargs="+")
     parser.add_argument("--video")
+    parser.add_argument("--video-approval", help="video-edit confirm-preview 生成的确认记录")
     parser.add_argument("--cover")
     parser.add_argument("--topics", nargs="*")
     parser.add_argument("--private", action="store_true")
@@ -191,15 +193,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.mode == "video" and not args.video:
         emit({"ok": False, "error": "VIDEO_REQUIRED", "message": "视频模式需 --video"})
         return 1
+    if args.video_approval is not None and args.mode != 'video':
+        parser.error('--video-approval 只用于视频发布')
     topics = extract_topics(body, args.topics)
     if len(topics) > 10:
         emit({"ok": False, "error": "TOO_MANY_TOPICS", "message": "最多 10 个话题"})
         return 1
     try:
-        result = publish(args, rewrite_topics_in_body(body, topics), topics)
+        with verified_video(args.video, args.video_approval) as (path, confirmation):
+            args.video = path
+            result = publish(args, rewrite_topics_in_body(body, topics), topics)
+        if confirmation is not None:
+            result['video_confirmation'] = confirmation
     except CreatorSessionMissing as exc:
         emit({"ok": False, "error": "SESSION_MISSING", "message": str(exc)})
         return 2
+    except (ValueError, OSError) as exc:
+        emit({'ok': False, 'error': str(exc), 'submission_attempted': False})
+        return 1
     emit(result)
     return 0 if result.get("ok") else 1
 

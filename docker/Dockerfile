@@ -98,6 +98,7 @@ RUN { \
         && test -d /opt/xiaobei/openclaw/.git \
         && test -x /opt/xiaobei/docker/docker-bootstrap.sh \
         && NODE_OPTIONS="--max-old-space-size=4096" /opt/xiaobei/docker/docker-bootstrap.sh \
+        && node scripts/openclaw-plugins.mjs trim-distribution \
         && install -d /opt/xiaobei/runtime-seed/openclaw \
         && cp -a /root/.openclaw/. /opt/xiaobei/runtime-seed/openclaw/; \
         echo "BOOTSTRAP_CHAIN_EXIT=$?" >> /opt/xiaobei/.bootstrap-log; \

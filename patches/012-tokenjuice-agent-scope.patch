@@ -1,0 +1,90 @@
+diff --git a/extensions/tokenjuice/openclaw.plugin.json b/extensions/tokenjuice/openclaw.plugin.json
+--- a/extensions/tokenjuice/openclaw.plugin.json
++++ b/extensions/tokenjuice/openclaw.plugin.json
+@@ -13,6 +13,12 @@
+   "configSchema": {
+     "type": "object",
+     "additionalProperties": false,
+-    "properties": {}
++    "properties": {
++      "agentIds": {
++        "type": "array",
++        "description": "Agent IDs whose shell tool output may be compacted.",
++        "items": { "type": "string", "minLength": 1 }
++      }
++    }
+   }
+ }
+diff --git a/extensions/tokenjuice/index.ts b/extensions/tokenjuice/index.ts
+--- a/extensions/tokenjuice/index.ts
++++ b/extensions/tokenjuice/index.ts
+@@ -6,6 +6,15 @@
+   name: "tokenjuice",
+   description: "Compacts exec and bash tool results with tokenjuice reducers.",
+   register(api) {
+-    api.registerAgentToolResultMiddleware(createTokenjuiceAgentToolResultMiddleware());
++    const agentIds = api.pluginConfig?.agentIds;
++    if (!Array.isArray(agentIds) || agentIds.length === 0) {
++      return;
++    }
++    const middleware = createTokenjuiceAgentToolResultMiddleware();
++    api.registerAgentToolResultMiddleware((event, ctx) => {
++      if (ctx.agentId && agentIds.includes(ctx.agentId)) {
++        return middleware(event, ctx);
++      }
++    });
+   },
+ });
+diff --git a/extensions/tokenjuice/index.test.ts b/extensions/tokenjuice/index.test.ts
+--- a/extensions/tokenjuice/index.test.ts
++++ b/extensions/tokenjuice/index.test.ts
+@@ -60,12 +60,12 @@
+     expect(manifest).not.toHaveProperty("enabledByDefault");
+   });
+ 
+-  it("registers tokenjuice tool result middleware for OpenClaw, Codex, and Agents API runtimes", () => {
++  it("limits registered middleware to the configured agent IDs", async () => {
+     const captured = capturePluginRegistration({
+       id: "tokenjuice",
+       contracts: manifest.contracts,
+       register(api) {
+-        plugin.register(api);
++        plugin.register({ ...api, pluginConfig: { agentIds: ["it-engineer"] } });
+       },
+     });
+ 
+@@ -74,6 +74,34 @@
+     const registration = captured.agentToolResultMiddlewares[0];
+     expect(typeof registration?.handler).toBe("function");
+     expect(registration?.runtimes).toEqual(["openclaw", "codex", "agentsapi"]);
++
++    const result = { content: [{ type: "text" as const, text: "raw" }], details: undefined };
++    const event = {
++      toolCallId: "command",
++      toolName: "exec",
++      args: { command: "git status", agentId: "it-engineer" },
++      result,
++    };
++    for (const agentId of ["main", "content-producer", "sales-cs", undefined]) {
++      expect(await registration?.handler(event, { runtime: "openclaw", agentId })).toBeUndefined();
++    }
++    expect(toolResultHandler).not.toHaveBeenCalled();
++    toolResultHandler.mockResolvedValueOnce({ content: [{ type: "text", text: "compacted" }] });
++    await expect(
++      registration?.handler(event, { runtime: "openclaw", agentId: "it-engineer" }),
++    ).resolves.toMatchObject({ result: { content: [{ text: "compacted" }] } });
++  });
++
++  it.each([undefined, { agentIds: [] }])("does not register without an agent scope", (pluginConfig) => {
++    const captured = capturePluginRegistration({
++      id: "tokenjuice",
++      contracts: manifest.contracts,
++      register(api) {
++        plugin.register({ ...api, pluginConfig });
++      },
++    });
++    expect(captured.agentToolResultMiddlewares).toEqual([]);
++    expect(createTokenjuiceOpenClawEmbeddedExtension).not.toHaveBeenCalled();
+   });
+ 
+   it("synthesises exec status when bash provides metadata-only details", async () => {

@@ -16,6 +16,7 @@ from .http import (DouyinRequestError, prepare, request, session, public_error_i
                    private_response_headers, response_info)
 from .login import flow, refresh_channel, refresh_security
 from .media import upload, UploadCredentials
+from video_version import verified_video
 from .payload import PublishPayload
 from .session import read_private, write_private, session_lock, identity_binding, SessionError
 from .verification import creator_verification, validate_creator_verification, decode_verification_qr, validate_face_action
@@ -182,7 +183,7 @@ def verification_next(value):
 def summary(job):
     result = {k: job[k] for k in ("attempt_id", "uid", "kind", "state", "submission_attempted", "item_id", "url", "error", "verification", "evidence",
                                 "preparation_step", "preparation_completed_steps", "failed_at", "relay_info", "http_status",
-                                "request_info", "response_info", "diagnostic_file") if k in job}
+                                "request_info", "response_info", "diagnostic_file", "video_confirmation") if k in job}
     result.update(ok=job["state"] in {"confirmed", "cancelled"}, receipt=str(STATE_PATH), session_source="api",
                   publication_confirmed=job["state"] == "confirmed",
                   accepted=True if job["state"] == "confirmed" else None,
@@ -635,7 +636,7 @@ def wait_video_ready(uid, media):
 
 def run(args, *, stop_before_submit=False, prepare_cover=None):
     image_credentials = UploadCredentials()
-    with publication_lock():
+    with publication_lock(), verified_video(getattr(args, 'video', None), getattr(args, 'video_approval', None)) as (video_path, confirmation):
         if pending():
             raise DouyinRequestError("PUBLISH_PENDING")
         if STATE_PATH.exists():
@@ -653,6 +654,8 @@ def run(args, *, stop_before_submit=False, prepare_cover=None):
                "kind": args.command, "created_at": time.time(), "creation_id": creation_id,
                "title": args.title, "caption": args.caption, "state": "uploading", "baseline": baseline,
                "submission_attempted": False}
+        if confirmation is not None:
+            job['video_confirmation'] = confirmation
         write_private(STATE_PATH, job)
         try:
             with preparation_step(job, "declaration_suggestion"):
@@ -675,7 +678,7 @@ def run(args, *, stop_before_submit=False, prepare_cover=None):
             else:
                 with preparation_step(job, "video_upload"):
                     ensure_owner(uid)
-                    media = upload(args.video, "video", user_id=uid, expected_uid=uid)
+                    media = upload(video_path, "video", user_id=uid, expected_uid=uid)
                     job["uploaded_media"] = asset_metadata(media)
                     if min(media.get("width", 0), media.get("height", 0), media.get("duration", 0)) <= 0:
                         raise DouyinRequestError("VIDEO_METADATA_MISSING")

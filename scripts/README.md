@@ -274,4 +274,4 @@ cd openclaw && pnpm build && cd ..   # 首次或修改源码后手动 build
 | 修改了 crew markdown 后同步 | `./scripts/setup-crew.sh` |
 | 开发调试（前台运行） | `cd openclaw && pnpm build && cd .. && ./scripts/dev.sh gateway` |
 
-OpenClaw 2026.10.10 的微信插件安装需要显式能力授权。安装器仍使用 `openclaw-weixin.version.json` 的固定版本，先完成该插件的安装和原生授权，再运行 Doctor 与服务重启。
+安装器使用 `openclaw-weixin.version.json` 的固定版本安装个人微信插件，并在运行 Doctor 和重启服务前完成 OpenClaw 原生能力授权。源码升级优先使用随附的插件包，也可从 npm 下载固定版本，两条路径都校验 SHA-512 后通过 OpenClaw 安装归档。企业微信插件由 IT Engineer 的 `work-channel-binding` 按需安装。

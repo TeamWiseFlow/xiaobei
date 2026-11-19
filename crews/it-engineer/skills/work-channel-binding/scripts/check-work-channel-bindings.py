@@ -12,7 +12,8 @@ def config_path() -> Path:
     return Path(
         os.environ.get(
             "OPENCLAW_CONFIG_PATH",
-            Path.home() / ".openclaw" / "openclaw.json",
+            Path(os.environ.get("OPENCLAW_STATE_DIR") or Path.home() / ".openclaw")
+            / "openclaw.json",
         )
     ).expanduser()
 
@@ -38,17 +39,21 @@ def configured_accounts(channels: dict[str, Any]) -> dict[str, list[dict[str, An
         accounts = channel_config.get("accounts")
         if not isinstance(accounts, dict):
             continue
-        result[channel] = [
-            {
+        result[channel] = []
+        for account_id, value in sorted(accounts.items()):
+            account = value if isinstance(value, dict) else {}
+            credentials = (
+                {"hasBotId": bool(account.get("botId")), "hasSecret": bool(account.get("secret"))}
+                if channel == "wecom"
+                else {"hasAppId": bool(account.get("appId")), "hasAppSecret": bool(account.get("appSecret"))}
+            )
+            result[channel].append({
                 "accountId": account_id,
-                "name": account.get("name") if isinstance(account, dict) else None,
-                "hasAppId": bool(account.get("appId")) if isinstance(account, dict) else False,
-                "hasAppSecret": bool(account.get("appSecret")) if isinstance(account, dict) else False,
-                "dmPolicy": account.get("dmPolicy") if isinstance(account, dict) else None,
-                "groupPolicy": account.get("groupPolicy") if isinstance(account, dict) else None,
-            }
-            for account_id, account in sorted(accounts.items())
-        ]
+                "name": account.get("name"),
+                **credentials,
+                "dmPolicy": account.get("dmPolicy"),
+                "groupPolicy": account.get("groupPolicy"),
+            })
     return result
 
 
@@ -56,8 +61,9 @@ def main() -> None:
     path = config_path()
     config = load_config(path)
     raw_agents = config.get("agents")
+    raw_agents_entries = raw_agents.get("entries") if isinstance(raw_agents, dict) else None
     raw_agents_list = raw_agents.get("list", []) if isinstance(raw_agents, dict) else []
-    agents = {
+    agents = set(raw_agents_entries) if isinstance(raw_agents_entries, dict) else {
         agent.get("id")
         for agent in raw_agents_list
         if isinstance(agent, dict) and agent.get("id")

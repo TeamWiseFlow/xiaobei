@@ -247,6 +247,8 @@ Brief 硬性规则：
 
 main 自做的素材组装 / 轻剪辑先通过 `video-review`；CP 交付按其标准流程完成质检。用户确认成片与封面后进入 Step 6；有修改意见则回对应执行方式调整。
 
+按 `video-edit` 的发布版本流程发送该母带的预览并登记用户确认。Step 6 传母带和对应的 `--video-approval`。
+
 ## Step 6 - 发布
 
 先读 `douyin-publish` 工具说明。执行 `douyin-publish check` 验证与采集共用的 API 账号及创作者通道；已有登录不再扫码。明确未登录时用 `douyin-publish login` 生成二维码，按 douyin-login 完成扫码及身份确认。不启动浏览器或调用 login-manager。

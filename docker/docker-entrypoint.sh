@@ -143,6 +143,8 @@ render_awk_api_key() {
     let updated = false;
     // Preserve explicit settings in existing volumes when retiring the env patch.
     const template = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+    const { applyBundledPluginDefaults } = require(process.argv[3]);
+    updated = applyBundledPluginDefaults(config, template) || updated;
     // Existing persistent volumes must follow the pinned distribution policy too.
     if (config.update?.checkOnStart !== false || config.update?.auto?.enabled !== false) {
       config.update ??= {};
@@ -180,7 +182,7 @@ render_awk_api_key() {
       fs.writeFileSync(p, JSON.stringify(config, null, 2) + "\n");
       console.log("[xiaobei] runtime configuration synchronized");
     }
-  ' "$OPENCLAW_HOME/openclaw.json" "$XIAOBEI_ROOT/config-templates/openclaw.json"
+  ' "$OPENCLAW_HOME/openclaw.json" "$XIAOBEI_ROOT/config-templates/openclaw.json" "$XIAOBEI_ROOT/scripts/openclaw-plugins.mjs"
 }
 
 # ─── 6. 启用 weixin channel + 首启扫码绑定 ─────────────────────────

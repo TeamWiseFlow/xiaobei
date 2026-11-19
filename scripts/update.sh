@@ -193,39 +193,33 @@ install_weixin_channel() {
     plugin_tgz="$(find "$vendor_dir" -maxdepth 1 -type f \( -name "openclaw-weixin-${plugin_version}.tgz" -o -name "tencent-weixin-openclaw-weixin-${plugin_version}.tgz" \) -print -quit 2>/dev/null || true)"
   fi
 
-  if [ -n "$plugin_tgz" ]; then
-    if [ -n "$plugin_integrity" ]; then
-      node -e '
-        const fs = require("fs");
-        const crypto = require("crypto");
-        const file = process.argv[1];
-        const expected = process.argv[2];
-        const actual = "sha512-" + crypto.createHash("sha512").update(fs.readFileSync(file)).digest("base64");
-        if (actual !== expected) {
-          console.error(`integrity mismatch for ${file}`);
-          process.exit(1);
-        }
-      ' "$plugin_tgz" "$plugin_integrity"
+  # 走原生归档安装，由宿主链接 openclaw peer，避免 npm 按插件的宽泛 peer 范围再下载宿主。
+  if ! (
+    if [ -z "$plugin_tgz" ]; then
+      local download_dir archive_name
+      download_dir="$(mktemp -d)" || exit 1
+      trap 'rm -rf "$download_dir"' EXIT
+      archive_name="$(npm pack "${plugin_pkg}@${plugin_version}" --ignore-scripts --silent --pack-destination "$download_dir")" || exit 1
+      plugin_tgz="$download_dir/$archive_name"
     fi
-    # --force = "Overwrite an existing installed plugin"（7.1-2 起就有该 flag）。
-    # bundled 路径本来就每次都装（不像 install.sh 有幂等跳过），缺这个 flag 时
-    # 在已装过该插件的实例上会失败，进而触发下面的 exit 1，把整次 update 打断。
-    if (cd "$OPENCLAW_DIR" && pnpm openclaw plugins install "$plugin_tgz" --force --accept-capabilities); then
-      echo "  ✅ bundled openclaw-weixin installed (${plugin_version})"
-    else
-      echo "❌ Bundled openclaw-weixin install failed"
-      echo "   Re-run with --skip-weixin only if you intentionally want to configure the onboarding channel later."
-      exit 1
-    fi
-  else
-    # 直接安装插件 pin；weixin-cli 自身的版本锁不会锁住它内部安装的插件版本。
-    if ! (cd "$OPENCLAW_DIR" && pnpm openclaw plugins install "${plugin_pkg}@${plugin_version}" --pin --force --accept-capabilities); then
-      echo "❌ openclaw-weixin online install failed"
-      echo "   Fix network/npm access or re-run with --skip-weixin to configure the onboarding channel later."
-      exit 1
-    fi
-    echo "  ✅ openclaw-weixin installed (${plugin_version})"
+    node -e '
+      const fs = require("fs");
+      const crypto = require("crypto");
+      const [file, expected] = process.argv.slice(1);
+      const actual = "sha512-" + crypto.createHash("sha512").update(fs.readFileSync(file)).digest("base64");
+      if (actual !== expected) {
+        console.error(`integrity mismatch for ${file}`);
+        process.exit(1);
+      }
+    ' "$plugin_tgz" "$plugin_integrity" || exit 1
+    cd "$OPENCLAW_DIR" || exit 1
+    node "$OPENCLAW_DIR/dist/index.js" plugins install "$plugin_tgz" --force --accept-capabilities
+  ); then
+    echo "❌ openclaw-weixin install failed"
+    echo "   Fix the archive or npm access, or use --skip-weixin to configure the channel later."
+    exit 1
   fi
+  echo "  ✅ openclaw-weixin installed (${plugin_version})"
 
   node -e '
     const fs = require("fs");
@@ -347,8 +341,6 @@ else
   fi
   echo "  ✅ openclaw checked out at $OPENCLAW_VERSION"
 
-  echo "  📦 Installing dependencies..."
-  (cd "$OPENCLAW_DIR" && pnpm install --frozen-lockfile)
   OPENCLAW_UPDATED=true
 fi
 echo ""
@@ -385,6 +377,7 @@ echo ""
 echo "🔨 Building openclaw..."
 # Source upgrades need runtime artifacts; declaration/package checks stay in CI.
 (cd "$OPENCLAW_DIR" && OPENCLAW_RUN_NODE_SKIP_DTS_BUILD=1 pnpm build)
+node "$PROJECT_ROOT/scripts/openclaw-plugins.mjs" verify
 echo "  ✅ Build complete"
 
 echo "🎨 Building Control UI assets..."
@@ -585,10 +578,10 @@ if _daemon_is_installed; then
     systemctl --user daemon-reload 2>/dev/null || true
   fi
   # 让 daemon 自升级 runtime（openclaw 引擎刚被重 build，需 daemon 重启后加载新 dist）
-  pnpm openclaw daemon restart 2>/dev/null || true
+  node "$OPENCLAW_DIR/dist/index.js" daemon restart 2>/dev/null || true
 else
   echo "📦 daemon first-time install"
-  pnpm openclaw daemon install
+  node "$OPENCLAW_DIR/dist/index.js" daemon install
   if [ "$(uname -s)" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
     systemctl --user daemon-reload 2>/dev/null || true
   fi
@@ -639,7 +632,7 @@ elif [ "$(uname -s)" = "Darwin" ]; then
 
     # 重启 gateway 使新环境变量生效
     cd "$OPENCLAW_DIR"
-    pnpm openclaw gateway restart 2>/dev/null || true
+    node "$OPENCLAW_DIR/dist/index.js" gateway restart 2>/dev/null || true
   else
     echo "⚠️  macOS gateway env file not found at $MACOS_GATEWAY_ENV"
     echo "   Skipping env injection. Ensure gateway is installed: openclaw daemon install"

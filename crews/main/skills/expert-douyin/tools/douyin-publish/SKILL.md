@@ -17,6 +17,8 @@ description: 通过统一 API 会话发布抖音视频和原声图文，支持�
 
 核对目标账号、媒体、标题、正文和声明。不带 `--confirm` 只做本地预览，无网络副作用；已有发布授权后在原命令加 `--confirm`。
 
+对通过聊天预览确认的成片，给 `video run` 传母带 `--video` 和 `video-edit confirm-preview` 返回的 `--video-approval`。上传核对记录保存在 `video_confirmation`，续接准备或验证使用原任务的上传结果。
+
 ```bash
 douyin-publish video run --video /绝对路径/video.mp4 --title "标题" --caption @/绝对路径/body.txt --cover-vertical /绝对路径/vertical.jpg --cover-horizontal /绝对路径/horizontal.jpg
 douyin-publish note run --images /绝对路径/1.png /绝对路径/2.png --title "标题" --caption @/绝对路径/body.txt --original-sound

@@ -2,13 +2,13 @@
 
 ## 前置：安装 WeCom OpenClaw channel plugin
 
-Main Agent 会在绑定流程中自动执行安装脚本：
+用户确认安装或升级后，由 IT Engineer 运行：
 
 ```bash
-WISEFLOW_CONFIRM_WECOM_INSTALL=confirmed /home/wukong/wiseflow-pro/crews/it-engineer/skills/work-channel-binding/scripts/install-wecom-channel.sh
+WISEFLOW_CONFIRM_WECOM_INSTALL=confirmed work-channel-binding install-wecom
 ```
 
-用户不需要手动运行 `npx`。安装完成后，后续绑定账号与修改 `openclaw.json` 可能需要重启 Gateway 才能生效。
+安装器从仓根 `openclaw-weixin.version.json` 读取 `@wecom/wecom-openclaw-plugin` 的版本和校验值。插件 ID 为 `wecom-openclaw-plugin`，渠道 ID 为 `wecom`。后续绑定使用 `channels.wecom.accounts.<accountId>` 下的 `botId` 和 `secret`，配置后按技能的生效流程验证。
 
 ## 用户侧需要完成：
 

@@ -14,6 +14,7 @@ sys.path.insert(0, str(TOOLS / '_shared'))
 from publish_browser import Browser, MANAGE_URL, SESSION, publish_lock
 sys.path.insert(0, str(TOOLS.parent.parent / '_shared'))
 from publish_text import PublishTextError, read_publish_text
+from video_version import verify_upload
 import video_publish as video
 import note_publish as note
 
@@ -62,6 +63,7 @@ def video_commands(parent):
     run = commands.add_parser('run', help='完整视频流程；默认预览，--confirm 后提交')
     content_options(run)
     run.add_argument('--video', required=True)
+    run.add_argument('--video-approval', help='video-edit confirm-preview 生成的确认记录')
     run.add_argument('--cover-vertical', help='竖封面；等比补底到 3:4')
     run.add_argument('--cover-horizontal', help='横封面；等比补底到 4:3')
     run.add_argument('--declaration', choices=('aigc', 'ai', 'none'), default='aigc')
@@ -148,6 +150,8 @@ def preview_run(args):
     if args.command == 'video':
         result.update(cover_vertical=args.cover_vertical, cover_horizontal=args.cover_horizontal,
                       ready=bool(args.cover_vertical and args.cover_horizontal))
+        if args.video_approval is not None:
+            result['video_confirmation'] = verify_upload(args.video, args.video_approval)
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
