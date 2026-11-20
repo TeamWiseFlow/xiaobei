@@ -1,8 +1,10 @@
 # Browser data bundled with releases
 
-Release builds place the checksum-verified GeoIP database and signed uBlock Origin
-XPI pinned by `../assets.lock.json` in this directory. Do not commit these binary
-assets to the source repository.
+Release builds place the latest checksum-verified GeoIP snapshot and the signed
+uBlock Origin XPI pinned by `../assets.lock.json` in this directory. GeoIP's
+`geoip-aio-all-latest.mmdb.json` records the resolved release, URL and SHA-256;
+installation uses that snapshot without contacting upstream. Do not commit these
+binary assets or generated snapshot metadata to the source repository.
 
 ## uBlock Origin
 

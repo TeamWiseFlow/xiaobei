@@ -115,6 +115,8 @@ jobs:
 
       - name: Stage engine (no node_modules)
         id: stage
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           REPO="$GITHUB_WORKSPACE"
@@ -144,7 +146,7 @@ jobs:
           # 3. xiaobei-browser（dist + bridge + fixed assets, dependencies installed on target）
           rsync -a --exclude='node_modules' --exclude='.git' --exclude='.browsers' \
             "$REPO/browser/" "$STAGE/browser/"
-          # 随包保存固定 GeoIP 和 uBlock，客户安装不依赖历史 tag 或 Mozilla 下载。
+          # 构建时解析最新 GeoIP 并保存其摘要，和固定 uBlock 一起随包分发。
           node "$REPO/scripts/prepare-browser-data.mjs" --output "$STAGE/browser/data"
 
           # 4. xiaobei 模板与脚本

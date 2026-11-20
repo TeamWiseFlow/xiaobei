@@ -57,8 +57,7 @@
     }
   },
   "geoip": {
-    "version": "2026.10.28",
-    "url": "https://github.com/daijro/geoip-all-in-one/releases/download/2026.10.28/geoip-aio-all.mmdb",
-    "sha256": "29509b4e1486f31f28d4d28a98868437a467f0836b63873fe7cb912b9098aa61"
+    "version": "latest",
+    "releaseApi": "https://api.github.com/repos/daijro/geoip-all-in-one/releases/latest"
   }
 }
