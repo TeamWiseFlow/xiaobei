@@ -20,6 +20,7 @@ import { ensureModel, MODEL_PIN } from "fpgen-js";
 import { assetPaths, lock } from "./asset-paths.mjs";
 import { githubDownloadUrl } from "./download-network.mjs";
 import { downloadAsset, verify } from "./download-asset.mjs";
+import { prepareGeoipData } from "./geoip-data.mjs";
 export { lock };
 export { verify };
 async function download(url, file, sha256, bundledName) {
@@ -172,7 +173,9 @@ export async function installAssets({ modelInstaller = prepareModel } = {}) {
     }
     if (JSON.parse(readFileSync(join(addon, "manifest.json"), "utf8")).version !== lock.ubo.version)
       throw new Error("Installed UBO differs from the asset lock");
-    if (!existsSync(paths.geoip)) {
+    if (lock.geoip.version === "latest") {
+      await prepareGeoipData(directory, lock.geoip, { bundledDirectory: fileURLToPath(new URL("../data/", import.meta.url)) });
+    } else if (!existsSync(paths.geoip)) {
       const file = join(stage, "geoip.mmdb");
       await download(lock.geoip.url, file, lock.geoip.sha256, `geoip-aio-all-${lock.geoip.version}.mmdb`);
       renameSync(file, paths.geoip);

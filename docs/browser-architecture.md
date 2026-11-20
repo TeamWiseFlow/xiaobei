@@ -13,7 +13,7 @@
 | 自动化 | **`playwright-core 1.62.1`**；SDK peer `<1.63`，不得与 OpenClaw 的 1.63 强行合并依赖树 |
 | 浏览器 | SDK 配套 **`158.0.1-beta.41`**；版本、各平台文件名/校验值见 `browser/assets.lock.json` |
 | 指纹 | 独立固定 `fpgen-js 1.3.0`，固定模型 `model-2/2026`；字体/语音/音频/GPU 等由 SDK 依身份生成；应用持久化原始身份输入 |
-| 附加资产 | uBlock Origin 1.75.0、GeoIP AIO 2026.10.28；模型、数据库、扩展均由显式安装器准备并校验，启动不追 latest |
+| 附加资产 | uBlock Origin 1.75.0；GeoIP AIO 在构建或首次源码安装时解析最新 release，按其 SHA-256 校验并随包保存快照，启动不联网更新 |
 | Node | 浏览器包 >=22.15；完整产品遵循 OpenClaw 所需 Node 版本，当前分发 Node 24.22.3 |
 | 基座 | 5.8.x 跟随 OpenClaw **2026.10.x**；具体 SHA 继续由 `openclaw.version` 固定，当前锁定 2026.10.10 |
 | 裁剪 | 本轮不全面裁剪上游功能/依赖；跳过 Swift/Kotlin 客户端生成，保留 Web Control UI。浏览器工具仅暴露 runtime 已实现能力 |
@@ -71,7 +71,7 @@ flowchart TD
 
 当前目标资产位于 `~/.camoufox-cli/assets/158.0.1-beta.41/`，与原 SDK cache 及用户 profiles 分开。`CAMOUFOX_INSTALL_DIR` 如设置，作为版本化资产的父目录；`XIAOBEI_BROWSER_ASSETS` 可指定完整资产目录；隔离状态使用 `XIAOBEI_BROWSER_HOME`。所有运行面必须使用同一份锁和路径解析。源码先更新、依赖尚未升级时，已安装 SDK 按 `browser/asset-locks/` 的对应锁继续使用原配资产；安装后自动选新锁。分发准备始终读取 `targetLock`，不把旧运行库的资产打进新包。
 
-安装器校验浏览器 ZIP、UBO、fpgen 模型和 GeoIP；下载失败或摘要不符不得输出 ready。旧二进制不会因安装新版而被覆盖；重复资产安装不触碰 profiles/浏览器配置；插件注册配置由统一迁移脚本处理。部署选择新版本后显式安装，不让运行时调用 SDK 的 fetch/latest 或在线 GeoIP 自动刷新。数据库是固定快照，后续按需要更新资产锁和复测，不默默改变运行身份。
+安装器校验浏览器 ZIP、UBO、fpgen 模型和 GeoIP；下载失败或摘要不符不得输出 ready。旧二进制不会因安装新版而被覆盖；重复资产安装不触碰 profiles/浏览器配置；插件注册配置由统一迁移脚本处理。GeoIP 在新的构建目录或首次源码安装时查询最新 release，以资源提供的 SHA-256 下载；快照和来源摘要随 tarball 保存。客户安装优先使用包内快照，新包携带不同摘要时显式替换已安装数据库；重复安装复用已验证的快照。运行时只读取本地数据，不调用 SDK 的 fetch/latest 或在线刷新。
 
 SDK 启动显式传 `executable_path` 和 UBO 路径，排除重复加载默认扩展；浏览器 ZIP 内置 UBO 时先核对版本，macOS 使用 app 的 Resources 路径。fpgen 模型必须预装并解压，通过公开 `setModelDir` 选择固定目录，缺失则失败。代理地理信息从固定本地 GeoIP 读取，公共 IP 查询仍需通过指定代理联网。SDK 的 Linux fontconfig/原生目录缓存可能再生成；它们不是平台登录态，不代替持久 profile。
 

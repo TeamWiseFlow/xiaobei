@@ -119,13 +119,13 @@ irm https://raw.atomgit.com/wiseflow/xiaobei/raw/master/scripts/install-atomgit.
 
 #### 浏览器资源下载缓存
 
-主程序 tarball、Camoufox、uBlock 和 GeoIP 的预下载文件统一放在 `~/.xiaobei/cache/`，保留下载链接中的原始文件名、不要解压，直接重跑一键安装脚本即可，无需额外环境变量。例如当前 uBlock 文件为 `~/.xiaobei/cache/ublock_origin-1.74.0.xpi`，浏览器文件名见 `browser/assets.lock.json` 的平台 `asset.name`。资源安装器会先核对 SHA-256，再使用本地文件；不匹配则报错，不跳过校验或自动换文件。
+主程序 tarball、Camoufox 和 uBlock 的预下载文件统一放在 `~/.xiaobei/cache/`，保留下载链接中的原始文件名、不要解压，直接重跑一键安装脚本即可，无需额外环境变量。例如当前 uBlock 文件为 `~/.xiaobei/cache/ublock_origin-1.75.0.xpi`，浏览器文件名见 `browser/assets.lock.json` 的平台 `asset.name`。GeoIP 先查询最新 release，再读取缓存中 `geoip-aio-all-<该资源 SHA-256>.mmdb`；使用摘要区分数据库，避免旧日期缓存阻止更新。资源安装器会先核对 SHA-256，再使用本地文件；不匹配则报错，不跳过校验。
 
 自定义公共缓存目录用 `XIAOBEI_CACHE_DIR`；只覆盖浏览器资源目录用 `XIAOBEI_BROWSER_DOWNLOADS`，其优先级更高。仍可单独运行 `~/xiaobei/tools/node/bin/node ~/xiaobei/browser/scripts/install-assets.mjs`，它使用相同的默认缓存和覆盖规则。缓存中缺少的资源继续从原地址下载；指纹模型使用 SDK 自身的安装目录。
 
-正式 tarball 在构建时通过 `scripts/prepare-browser-data.mjs` 保存 `browser/assets.lock.json` 固定的 GeoIP 数据库和 uBlock 原始 XPI。安装时优先读取包内 `browser/data/geoip-aio-all-<版本>.mmdb` 和 `browser/data/ublock_origin-<版本>.xpi`，校验 SHA-256，uBlock 解压后再核对 manifest 版本；客户机无需访问这两项资源的上游下载地址。源码部署或旧包缺少内置文件时，才依次尝试预下载缓存和上游地址。
+正式 tarball 在构建时通过 `scripts/prepare-browser-data.mjs` 查询 GeoIP 最新 release，按该资源的 SHA-256 下载数据库，保存为 `browser/data/geoip-aio-all-latest.mmdb`，同时写入同名 `.json` 来源记录（实际 tag、URL、SHA-256）。uBlock 原始 XPI 仍按 `browser/assets.lock.json` 固定版本保存。安装时优先读取包内数据库、来源记录和 `browser/data/ublock_origin-<版本>.xpi`，校验 SHA-256，uBlock 解压后再核对 manifest 版本；客户机无需访问这两项资源的上游下载地址。
 
-GeoIP 上游每周构建且只保留最近两版，随包保存使旧包不依赖上游历史 release。更新资源 pin 必须同步版本、URL、SHA-256；GeoIP 运行目录使用带版本号的文件名，避免与旧数据库的校验值混用。固定上游文件已删除且没有可信缓存时，构建应失败并要求维护者更新 pin，不在客户安装时静默改用 latest。uBlock 保留原始签名 XPI，不重新打包或修改其内容。
+GeoIP 不再固定上游日期。新构建目录和首次源码安装解析最新 release，缺少资源或摘要时停止，不回退已删除的旧 tag。重复准备同一个目录复用已验证的快照；新 tarball 携带不同摘要时，安装器替换已安装的 GeoIP 快照，保留旧版数据库文件及 profiles/配置。运行时只读取本地数据库，不在线刷新。uBlock 保留原始签名 XPI，不重新打包或修改其内容。
 
 Camoufox、uBlock 和 GeoIP 的内置资源下载默认包含首次最多尝试 5 次。连接中断、HTTP 408/429/5xx 会分别等待 3、6、12、24 秒后重试；同一次安装中优先用 Range 续传，服务端不支持时从头重下。每 30 秒显示下载进度，连续 2 分钟没有新数据才超时，没有固定的总下载时限。HTTP 403/404、磁盘写入错误和 SHA-256 校验失败会立即报错。指纹模型沿用 SDK 自带的重试，并打印请求次数及错误原因。
 

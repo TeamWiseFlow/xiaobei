@@ -5,6 +5,7 @@ package-lock.json
 .deck-render-browser
 browser/data/*.mmdb
 browser/data/*.xpi
+browser/data/*.mmdb.json
 
 # default ignore
 /test/
